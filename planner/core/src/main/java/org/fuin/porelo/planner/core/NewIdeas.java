@@ -132,10 +132,11 @@ public final class NewIdeas {
     /**
      * Checks a story to be made over issues that stand on the board, and answers what the store
      * saves. Each issue must stand on the board in an open state of the workflow, be no story and
-     * no sub-issue, be named once and be held by no other story; one held by a story of the same
-     * title whose body carries this request's {@link StoryFromIssues#marker() marker} and whose
-     * every issue is named too is let through, since that is the story a cut-off save of the same
-     * request made, and the store takes it or refuses the issue before it writes.
+     * no sub-issue, be held back by no warning, be named once and belong to no other story; one
+     * that belongs to a story of the same title whose body carries this request's {@link
+     * StoryFromIssues#marker() marker} and whose every issue is named too is let through, since
+     * that is the story a cut-off save of the same request made, and the store takes it or refuses
+     * the issue before it writes.
      *
      * @param board the board the story is saved against
      * @param story the story, or null when it is missing or no object
@@ -206,14 +207,19 @@ public final class NewIdeas {
         if (board.story(id).isPresent()) {
             return id + " is a story, not an issue.";
         }
-        if (board.outsideIssue(id).isPresent()) {
+        final org.fuin.porelo.planner.store.Issue issue = board.issue(id).orElse(null);
+        if (issue == null) {
+            return "There is no issue " + id + " on the board.";
+        }
+        if (!board.workflow().states().contains(issue.state())) {
             return "The issue "
                     + id
                     + " stands outside the workflow; move it into a state of the workflow first.";
         }
-        final org.fuin.porelo.planner.store.Issue issue = board.issue(id).orElse(null);
-        if (issue == null) {
-            return "There is no issue " + id + " on the board.";
+        final java.util.Optional<String> held = board.holdsWork(id);
+        if (held.isPresent()) {
+            // A held issue is neither added to nor taken from a story, whatever else it allows.
+            return held.get();
         }
         if (board.workflow().closed().contains(issue.state())) {
             return "The issue "

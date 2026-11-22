@@ -451,6 +451,14 @@ public final class FieldsBoardWriter implements BoardWriter {
                 throw new StoreException.NotSavable(
                         id, "the issue " + id + " is closed; a new story takes open issues only");
             }
+            if (!workflow.states().contains(issue.state())) {
+                throw new StoreException.NotSavable(
+                        id,
+                        "the issue "
+                                + id
+                                + " stands outside the workflow; a new story takes issues of the"
+                                + " workflow only");
+            }
             plan.read(id, item);
             existing.add(new NewItems.Over(id, item));
         }

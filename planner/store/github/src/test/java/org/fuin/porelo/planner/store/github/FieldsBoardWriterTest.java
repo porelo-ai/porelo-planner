@@ -3434,6 +3434,19 @@ class FieldsBoardWriterTest {
 
     /** An item as it stands once GitHub hangs it under a parent, all else unchanged. */
     private static ItemView under(final ItemView item, final String parent) {
+        return linked(item, parent, item.subIssueIds());
+    }
+
+    /** An item as it stands once a person hung another issue under it on GitHub. */
+    private static ItemView holdingAlso(final ItemView item, final String subIssueId) {
+        final List<String> subIssues = new ArrayList<>(item.subIssueIds());
+        subIssues.add(subIssueId);
+        return linked(item, item.parentIssueId(), subIssues);
+    }
+
+    /** An item with another parent and other sub-issues, all else unchanged. */
+    private static ItemView linked(
+            final ItemView item, final @Nullable String parent, final List<String> subIssues) {
         return new ItemView(
                 item.itemId(),
                 item.issueId(),
@@ -3446,38 +3459,13 @@ class FieldsBoardWriterTest {
                 item.fields(),
                 item.labels(),
                 parent,
-                item.subIssueIds(),
-                item.blockedByIds(),
-                item.comments(),
-                item.link(),
-                item.updatedAt(),
-                item.archived(),
-                item.blockers());
-    }
-
-    /** An item as it stands once a person hung another issue under it on GitHub. */
-    private static ItemView holdingAlso(final ItemView item, final String subIssueId) {
-        final List<String> subIssues = new ArrayList<>(item.subIssueIds());
-        subIssues.add(subIssueId);
-        return new ItemView(
-                item.itemId(),
-                item.issueId(),
-                item.repository(),
-                item.number(),
-                item.title(),
-                item.body(),
-                item.open(),
-                item.stateReason(),
-                item.fields(),
-                item.labels(),
-                item.parentIssueId(),
                 subIssues,
                 item.blockedByIds(),
-                item.comments(),
                 item.link(),
                 item.updatedAt(),
                 item.archived(),
                 item.blockers(),
+                item.unseenBlockers(),
                 item.issueType());
     }
 
@@ -3780,6 +3768,40 @@ class FieldsBoardWriterTest {
                                 github.writer()
                                         .createStoryFromIssues(snapshot(a, b), SHOWN, overTwo()))
                 .as("a closed issue")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e -> assertThat(e.subject()).as("the issue").isEqualTo("A1"));
+        assertThat(github.calls).as("no call made").isEmpty();
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowIsRefusedByTheStoreBeforeAnyCall() {
+        // Harm: an issue whose state the workflow lacks hung into a new story when the check
+        // before the store let it by.
+        final ItemView a =
+                item("A1", "example-lib", 1, true, "", ordered(FieldNames.STATUS, "Parked"));
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(a, b);
+        final Map<String, ItemView> items = new LinkedHashMap<>();
+        items.put("A1", a);
+        items.put("B2", b);
+        final Snapshot current =
+                new Snapshot(
+                        new Board(
+                                SHOWN,
+                                WORKFLOW,
+                                List.of(),
+                                List.of(
+                                        issue(a).withWarnings(
+                                                        List.of(Warning.stateOutsideWorkflow())),
+                                        issue(b)),
+                                new Work(Map.of(), List.of()),
+                                CONFIG.repositories()),
+                        items,
+                        CONFIG);
+
+        assertThatThrownBy(() -> github.writer().createStoryFromIssues(current, SHOWN, overTwo()))
+                .as("an issue outside the workflow")
                 .isInstanceOfSatisfying(
                         StoreException.NotSavable.class,
                         e -> assertThat(e.subject()).as("the issue").isEqualTo("A1"));

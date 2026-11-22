@@ -7,12 +7,11 @@ import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
-import org.fuin.porelo.planner.store.OutsideIssue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
-import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +26,8 @@ class NewIdeasFromIssuesTest {
     /**
      * ST1 "Held", a person's own, holds a#1 and a#8; ST2 "Tag stories" holds a#5 and carries the
      * marker of the request over a#5 and a#6; a#2 is open and loose; a#10 hangs under a#2; a#3 is
-     * Finished, a#4 Rejected; a#6 is loose; o#7 stands outside the workflow.
+     * Finished, a#4 Rejected; a#6 is loose; o#7 stands in a state outside the workflow, warned;
+     * a#11 is loose and a#12 belongs to ST3, each held back by a warning a person's edit left.
      */
     private static final Board BOARD =
             new Board(
@@ -38,7 +38,8 @@ class NewIdeasFromIssuesTest {
                             List.of("Finished", "Rejected")),
                     List.of(
                             story("ST1", "Held", "", "a#1", "a#8"),
-                            story("ST2", "Tag stories", "Body.\n\n" + TAG_STORIES + "\n", "a#5")),
+                            story("ST2", "Tag stories", "Body.\n\n" + TAG_STORIES + "\n", "a#5"),
+                            story("ST3", "Other", "", "a#12")),
                     List.of(
                             issue("a#1", "Idea", null),
                             issue("a#2", "Backlog", null),
@@ -47,14 +48,26 @@ class NewIdeasFromIssuesTest {
                             issue("a#5", "Idea", null),
                             issue("a#6", "Idea", null),
                             issue("a#8", "Idea", null),
-                            issue("a#10", "Idea", "a#2")),
+                            issue("a#10", "Idea", "a#2"),
+                            issue("a#11", "Idea", null)
+                                    .withWarnings(List.of(Warning.unknownWorker())),
+                            issue("a#12", "Idea", null)
+                                    .withWarnings(List.of(Warning.unknownWorker())),
+                            new Issue(
+                                            "o#7",
+                                            "o",
+                                            "Loose",
+                                            "Somewhere",
+                                            null,
+                                            List.of(),
+                                            null,
+                                            null,
+                                            "")
+                                    .withWarnings(List.of(Warning.stateOutsideWorkflow()))),
                     new Work(Map.of(), List.of()),
                     List.of("a", "o"),
                     List.of(),
-                    "example-org",
-                    List.of(
-                            new OutsideIssue(
-                                    "o#7", "o", "Loose", "", null, null, null, Worker.AGENT)));
+                    "example-org");
 
     private static Story story(
             final String id, final String title, final String body, final String... issues) {
@@ -181,5 +194,18 @@ class NewIdeasFromIssuesTest {
         assertThat(faults(many))
                 .as("the bound named first")
                 .startsWith("existing: A story holds at most 100 issues.");
+    }
+
+    @Test
+    void anIssueHeldBackByAWarningIsTakenIntoNoStoryEvenWhenAnotherStoryHoldsIt() {
+        // Harm: a new story links an issue a person's hand edit left held back, building the
+        // planner's write on an item no edit may add to or take from a story; or the conflict
+        // with its story answered instead, so the person moves it where it is still held.
+        assertThat(BOARD.holdsWork("a#11")).as("a#11 held back").isPresent();
+        assertThat(faults(List.of("a#6", "a#11", "a#12")))
+                .as("each held issue refused by its place with the words of its hold")
+                .containsExactly(
+                        "existing[1]: " + BOARD.holdsWork("a#11").orElseThrow(),
+                        "existing[2]: " + BOARD.holdsWork("a#12").orElseThrow());
     }
 }

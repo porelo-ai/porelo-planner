@@ -723,10 +723,13 @@ public final class MockStore implements PlanningStore {
         for (int index = 0; index < story.existing().size(); index++) {
             final String id = story.existing().get(index);
             final Issue issue = issueOf(board, id);
-            if (board.workflow().closed().contains(issue.state())) {
+            if (!board.workflow().states().contains(issue.state())
+                    || board.workflow().closed().contains(issue.state())) {
                 throw new StoreException.NotSavable(
                         id,
-                        "the issue is " + issue.state() + "; a new story takes open issues only");
+                        "the issue is "
+                                + issue.state()
+                                + "; a new story takes open issues of the workflow only");
             }
             if (issue.parent() != null) {
                 throw new StoreException.NotSavable(

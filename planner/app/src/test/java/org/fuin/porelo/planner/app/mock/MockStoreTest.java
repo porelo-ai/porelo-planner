@@ -845,6 +845,8 @@ class MockStoreTest {
                                 issue ->
                                         !held.contains(issue.id())
                                                 && issue.parent() == null
+                                                && board.holdsWork(issue.id()).isEmpty()
+                                                && board.workflow().states().contains(issue.state())
                                                 && !board.workflow()
                                                         .closed()
                                                         .contains(issue.state()))
@@ -891,6 +893,8 @@ class MockStoreTest {
                                 issue ->
                                         !held.contains(issue.id())
                                                 && issue.parent() == null
+                                                && board.holdsWork(issue.id()).isEmpty()
+                                                && board.workflow().states().contains(issue.state())
                                                 && !board.workflow()
                                                         .closed()
                                                         .contains(issue.state()))
@@ -937,10 +941,43 @@ class MockStoreTest {
         assertThat(store.board()).as("the board after the refusal").isEqualTo(again.board());
     }
 
+    @Test
+    void anIssueOutsideTheWorkflowIsTakenIntoNoStoryOnTheMock() {
+        // Harm: the mock hangs an issue whose state the workflow lacks into a new story, which
+        // no real store does, so the window's tests pass against a board no planner serves.
+        final Board board = store.board();
+        final Issue outside =
+                board.issues().stream()
+                        .filter(issue -> !board.workflow().states().contains(issue.state()))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThatThrownBy(
+                        () ->
+                                store.createStoryFromIssues(
+                                        board.revision(),
+                                        new StoryFromIssues(
+                                                "A story",
+                                                "A gain.",
+                                                "A test.",
+                                                "High",
+                                                List.of(outside.id()))))
+                .as("an issue in a state the workflow lacks")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e -> assertThat(e.subject()).as("the issue").isEqualTo(outside.id()));
+        assertThat(store.board()).as("the board after the refusal").isEqualTo(board);
+    }
+
     /** Whether an issue stands open on the board and under no other issue. */
     private static boolean open(final Board board, final String id) {
         return board.issue(id)
-                .filter(i -> i.parent() == null && !board.workflow().closed().contains(i.state()))
+                .filter(
+                        i ->
+                                i.parent() == null
+                                        && board.holdsWork(i.id()).isEmpty()
+                                        && board.workflow().states().contains(i.state())
+                                        && !board.workflow().closed().contains(i.state()))
                 .isPresent();
     }
 }
