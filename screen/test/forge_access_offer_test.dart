@@ -244,8 +244,8 @@ void main() {
     expect([...source.fetches, ...other.fetches], isEmpty, reason: 'no fetch for the board changed meanwhile');
   });
 
-  // Harm: an offer kept above a board that reads again, or lost while the refusal still holds.
-  test('the board keeps a refusal of an action until a board read after it', () async {
+  // Harm: a board arrival hides the refusal before the person can act on it.
+  test('the board keeps an action refusal across reads and clears it for another project', () async {
     final source = _Source();
     final board = PlanningBoard(source, 'demo');
     addTearDown(board.dispose);
@@ -255,7 +255,7 @@ void main() {
     expect(board.refusal, same(_missing), reason: 'the action refusal kept whole');
     source.watches.single.add(_board());
     await Future<void>.delayed(Duration.zero);
-    expect(board.refusal, isNull, reason: 'a board read after it clears it');
+    expect(board.refusal, same(_missing), reason: 'a board read cannot undo the refused action');
     board.reportActionProblem(_missing);
     await board.changeProject(_Source(), 'other');
     expect(board.refusal, isNull, reason: 'another project clears it');

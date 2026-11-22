@@ -115,8 +115,14 @@ class FakePlanningSource implements PlanningSource {
   Future<PlanningSnapshot> planningWorkflow(String project) async =>
       PlanningSnapshot.from({'states': board['states'], 'phases': board['phases']});
 
+  /// Thrown by the next story reads instead of answering, while set.
+  Object? storiesFailure;
+
   @override
-  Future<PlanningSnapshot> stories(String project) async => _stories();
+  Future<PlanningSnapshot> stories(String project) async {
+    if (storiesFailure case final failure?) throw failure;
+    return _stories();
+  }
 
   /// Every preview asked of it: the project, the moves and the revision.
   final List<(String, List<PlanningMove>, String)> previews = [];
