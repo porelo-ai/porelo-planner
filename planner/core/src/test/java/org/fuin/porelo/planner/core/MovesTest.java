@@ -328,6 +328,81 @@ class MovesTest {
     }
 
     @Test
+    void aClosedParentElsewhereWithAnOpenSubIssueRefusesNoUnrelatedMoveOrCreate() {
+        // Harm: one closed parent over open work, left so on GitHub, refuses every move and every
+        // create on the board until someone finds and mends it.
+        final Board left = withClosedParentOverOpenWork();
+
+        final Moves.Planned moved =
+                Moves.check(left, List.of(issue("PL1", "Review")), false, DERIVE, NO_RUNS);
+        assertThat(moved.issues()).as("an issue's move").containsExactly(entry("PL1", "Review"));
+
+        final Moves.Planned finished =
+                Moves.check(left, List.of(story("ST3", "Finished")), false, DERIVE, NO_RUNS);
+        assertThat(finished.issues())
+                .as("a story finished over its issue")
+                .containsExactly(entry("PL3", "Finished"));
+
+        // A create is checked as the move of its new issue into its state, as the app sends it.
+        final Moves.Planned created =
+                Moves.check(
+                        withIssue(left, issue("porelo-planner#900", "Idea", null)),
+                        List.of(issue("porelo-planner#900", "Backlog")),
+                        false,
+                        DERIVE,
+                        NO_RUNS);
+        assertThat(created.issues())
+                .as("a new issue in its state")
+                .containsExactly(entry("porelo-planner#900", "Backlog"));
+    }
+
+    @Test
+    void aClosedParentOverOpenWorkStillRefusesAMoveThatConcernsIt() {
+        // Harm: work hidden under a closed parent once the parent or its sub-issue is moved.
+        final Board left = withClosedParentOverOpenWork();
+
+        final Moves.Refused parent =
+                refused(left, List.of(issue("PL6", "Rejected"), issue("PL1", "Review")));
+        assertThat(parent.parameters()).as("the parent moved").containsEntry("item", "PL6");
+        assertThat(parent.getMessage()).as("its open sub-issue").contains("PL6.1", "Backlog");
+
+        final Moves.Refused sub = refused(left, List.of(issue("PL6.1", "Idea")));
+        assertThat(sub.parameters())
+                .as("the parent of the sub-issue moved")
+                .containsEntry("item", "PL6");
+        assertThat(sub.getMessage()).as("the sub-issue moved").contains("PL6.1", "Idea");
+    }
+
+    @Test
+    void aStoryMoveCarryingASubIssueUnderAClosedParentIsRefused() {
+        // Harm: open work hidden under a closed parent when a story's move, not the issue's own,
+        // carries the sub-issue.
+        final Board left = withClosedParentOverOpenWork();
+        final List<Story> stories = new java.util.ArrayList<>(left.stories());
+        stories.add(story("ST9", "Backlog", true, "PL6.1"));
+        final Board carrying =
+                new Board(left.revision(), left.workflow(), stories, left.issues(), left.work());
+
+        final Moves.Refused carried = refused(carrying, List.of(story("ST9", "Review")));
+
+        assertThat(carried.parameters())
+                .as("the closed parent over the carried sub-issue")
+                .containsEntry("item", "PL6");
+    }
+
+    /** The board with PL6 Finished over PL6.1 in Backlog, as GitHub can hold it. */
+    private Board withClosedParentOverOpenWork() {
+        return withIssue(
+                withIssue(board, issue("PL6", "Finished", null)), issue("PL6.1", "Backlog", "PL6"));
+    }
+
+    private static Board withIssue(final Board on, final Issue added) {
+        final List<Issue> issues = new java.util.ArrayList<>(on.issues());
+        issues.add(added);
+        return new Board(on.revision(), on.workflow(), on.stories(), issues, on.work());
+    }
+
+    @Test
     void storyMovesApplyBeforeIssueMovesAsTheWindowSendsThem() {
         // The window shows an explicit issue move made after a story move as the one that wins.
         final Moves.Planned planned =

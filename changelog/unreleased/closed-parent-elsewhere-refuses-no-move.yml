@@ -1,0 +1,2 @@
+title: A closed parent elsewhere on the board that still has an open sub-issue no longer refuses a move or a create that touches neither of them.
+type: fixed

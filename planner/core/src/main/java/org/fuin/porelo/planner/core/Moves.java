@@ -329,7 +329,7 @@ public final class Moves {
                 checkCarriedParents(board, move, along.getOrDefault(move.id(), List.of()), states);
             }
         }
-        checkParents(board, workflow, states);
+        checkParents(board, workflow, states, moved);
         for (final Move move : moves) {
             if (move.story() && !move.follow() && completed(workflow, move.to())) {
                 checkCompleted(board, story(board, move.id()), move.to(), states);
@@ -490,9 +490,16 @@ public final class Moves {
         throw new Refused("MoveNotAllowed", reason, item(story.id(), story.state(), to, reason));
     }
 
-    /** After the batch, no parent stands in a closed state while a sub-issue of it is open. */
+    /**
+     * After the batch, no parent the batch moves stands in a closed state while a sub-issue of it
+     * is open, nor any parent of a sub-issue it moves; a closed parent over open work elsewhere on
+     * the board refuses no move that leaves both alone.
+     */
     private static void checkParents(
-            final Board board, final Workflow workflow, final Map<String, String> states) {
+            final Board board,
+            final Workflow workflow,
+            final Map<String, String> states,
+            final Set<String> moved) {
         final Map<String, @Nullable String> parents = new LinkedHashMap<>();
         board.issues().forEach(issue -> parents.put(issue.id(), issue.parent()));
         // A moved issue left out of the workflow stands under its parent once it is saved.
@@ -502,6 +509,7 @@ public final class Moves {
             final String state = states.get(sub.getKey());
             final String parentState = parent == null ? null : states.get(parent);
             if (parent != null
+                    && (moved.contains(parent) || moved.contains(sub.getKey()))
                     && state != null
                     && parentState != null
                     && workflow.closed().contains(parentState)
