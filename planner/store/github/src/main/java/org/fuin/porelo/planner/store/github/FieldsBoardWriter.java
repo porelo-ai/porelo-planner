@@ -26,6 +26,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -200,11 +201,13 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     /**
      * Reads the issue by its node id right before the write and refuses it, writing nothing, when
-     * the board read after the add would not show it: GitHub holds it on the project already, it is
-     * gone, closed, or moved to another repository, it is a story outside the project's own
-     * repository, which the board would show only as a warned issue, it hangs under an issue that
-     * is no item of the project or under one of another repository, or it is blocked by a story.
-     * Then it is added and given its values.
+     * GitHub holds it on the project already, or it is gone, closed, or moved to another
+     * repository; and when the board read after the add would show it, or an item it blocks, only
+     * as a warned issue no work starts on: a story outside the project's own repository, an issue
+     * under an issue that is no item of the project, that the board does not place, that is a
+     * sub-issue itself or that is of another repository, an issue blocked by a story or by an item
+     * the board does not place, or a story that blocks an item of the project. Then it is added and
+     * given its values.
      */
     @Override
     public void addUnlistedIssue(
@@ -249,8 +252,8 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (story && !repository.equals(current.config().own())) {
             throw new StoreException.NotSavable(
                     issue,
-                    "It is of the issue type Story outside the project's own repository, so the"
-                            + " board would show it as a warned issue no work starts on.");
+                    "It is of the issue type Story outside the project's own repository,"
+                            + warned(Warning.STORY_OUTSIDE_OWN_REPOSITORY));
         }
         checkParent(current, issue, repository, story, read.parentId());
         checkBlockers(current, issue, read.blockedBy());
@@ -292,9 +295,19 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /**
-     * Refuses an issue the board would leave out for what blocks it: a story, or an item the board
-     * does not place, as one archived, outside the workflow or itself left out. A blocker that is
-     * no item leaves the issue waiting on it, so it is taken.
+     * The end of a refusal for an add the board would show only as a warned issue: what it would
+     * then show, naming the warning.
+     */
+    private static String warned(final String warning) {
+        return " so the board would show the issue only as a warned issue no work starts on ("
+                + warning
+                + ").";
+    }
+
+    /**
+     * Refuses an issue the board would show only as a warned issue for what blocks it: a story, or
+     * an item the board does not place, as one archived, listed apart outside the workflow or left
+     * out. A blocker that is no item leaves the issue waiting on it, so it is taken.
      */
     private static void checkBlockers(
             final Snapshot current, final String issue, final GitHubGraphQl.IssueRefs blockers) {
@@ -309,22 +322,24 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
             if (IssueMapping.isStory(item)) {
                 throw new StoreException.NotSavable(
-                        issue, "It is blocked by a story, which the board does not hold.");
+                        issue, "It is blocked by a story," + warned(Warning.BLOCKED_BY_STORY));
             }
             if (current.board().issue(reference(item)).isEmpty()) {
                 throw new StoreException.NotSavable(
                         issue,
                         "Its blocker "
                                 + reference(item)
-                                + " is not on the board; it is archived, outside the workflow or"
-                                + " left out. Repair it first.");
+                                + " is not on the board, as one archived, listed apart outside the"
+                                + " workflow or left out,"
+                                + warned(Warning.DEPENDS_ON_UNPLACED)
+                                + " Repair the blocker first.");
             }
         }
     }
 
     /**
-     * Refuses a story that blocks an item of the project: the board leaves an issue blocked by a
-     * story out, so the add would take that issue off the board.
+     * Refuses a story that blocks an item of the project: the board shows an issue blocked by a
+     * story only as a warned issue, so the add would turn that issue into one.
      */
     private static void checkBlocksNoIssue(
             final Snapshot current, final String issue, final String nodeId) {
@@ -334,15 +349,18 @@ public final class FieldsBoardWriter implements BoardWriter {
                         issue,
                         "It blocks "
                                 + reference(item)
-                                + ", which the board leaves out once a story blocks it.");
+                                + ", and once a story blocks it, the board would show that issue"
+                                + " only as a warned issue no work starts on ("
+                                + Warning.BLOCKED_BY_STORY
+                                + ").");
             }
         }
     }
 
     /**
-     * Refuses an issue the board would leave out for its parent: one under an issue that is no item
-     * of the project, under a story or issue the board does not place, under a sub-issue, or an
-     * issue under an issue of another repository.
+     * Refuses an issue the board would show only as a warned issue for its parent: one under an
+     * issue that is no item of the project, under a story or issue the board does not place, under
+     * a sub-issue, or an issue under an issue of another repository.
      */
     private static void checkParent(
             final Snapshot current,
@@ -362,7 +380,11 @@ public final class FieldsBoardWriter implements BoardWriter {
                 }
             }
             throw new StoreException.NotSavable(
-                    issue, "Add " + named + " to the project first; it is no item of it.");
+                    issue,
+                    "Add "
+                            + named
+                            + " to the project first; it is no item of it,"
+                            + warned(Warning.PARENT_OUTSIDE_PROJECT));
         }
         final String named = reference(parent);
         final boolean placed =
@@ -374,8 +396,10 @@ public final class FieldsBoardWriter implements BoardWriter {
                     issue,
                     "Its parent "
                             + named
-                            + " is not on the board; it is archived, outside the workflow or left"
-                            + " out. Repair it first.");
+                            + " is not on the board, as one archived, listed apart outside the"
+                            + " workflow or left out,"
+                            + warned(Warning.DEPENDS_ON_UNPLACED)
+                            + " Repair the parent first.");
         }
         if (!IssueMapping.isStory(parent)
                 && current.board().issue(named).orElseThrow().parent() != null) {
@@ -383,13 +407,14 @@ public final class FieldsBoardWriter implements BoardWriter {
                     issue,
                     "Its parent "
                             + named
-                            + " is a sub-issue itself, which the board does not hold.");
+                            + " is a sub-issue itself,"
+                            + warned(Warning.SUB_ISSUE_OF_SUB_ISSUE));
         }
         if (!story && !IssueMapping.isStory(parent) && !parent.repository().equals(repository)) {
             throw new StoreException.NotSavable(
                     issue,
-                    "It stands under an issue of another repository, which the board does not"
-                            + " hold.");
+                    "It stands under an issue of another repository,"
+                            + warned(Warning.PARENT_IN_OTHER_REPOSITORY));
         }
     }
 
@@ -1415,7 +1440,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             String body) {
 
         static Seen of(final ItemView item) {
-            // The board leaves out an item whose lists run past one page, so one read has none.
+            // An item whose lists run past one page is compared by the page read; the board holds it back, warned.
             return new Seen(
                     item.fields(),
                     item.parentIssueId(),

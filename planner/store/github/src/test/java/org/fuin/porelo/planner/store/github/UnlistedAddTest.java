@@ -417,7 +417,9 @@ class UnlistedAddTest {
                 .as("a story the board cannot hold")
                 .isInstanceOf(StoreException.NotSavable.class)
                 .hasMessageContaining(
-                        "Story outside the project's own repository, so the board would show it as a warned issue");
+                        "Story outside the project's own repository, so the board would show the"
+                                + " issue only as a warned issue no work starts on"
+                                + " (StoryOutsideOwnRepository).");
         assertThat(github.calls).as("only the read").containsExactly("issueBoard");
     }
 
@@ -464,8 +466,8 @@ class UnlistedAddTest {
 
     @Test
     void anIssueUnderAParentTheBoardDoesNotHoldIsRefusedNamingTheParent() {
-        // Harm: the issue is added, then the board leaves it out for its parent outside the
-        // project, so it is in no list of the board while the window was told it was saved.
+        // Harm: the issue is added, then the board shows it only as a warned issue for its parent
+        // outside the project, while the window was told it was saved.
         final GitHub github = new GitHub();
         github.parentId = "I_lib_9";
         final Snapshot current =
@@ -479,14 +481,16 @@ class UnlistedAddTest {
                 .as("an issue under a parent outside the project")
                 .isInstanceOf(StoreException.NotSavable.class)
                 .hasMessage(
-                        "Add its parent example-lib#9 to the project first; it is no item of it.");
+                        "Add its parent example-lib#9 to the project first; it is no item of it, so"
+                                + " the board would show the issue only as a warned issue no work"
+                                + " starts on (ParentOutsideProject).");
         assertThat(github.calls).as("only the read").containsExactly("issueBoard");
     }
 
     @Test
     void anIssueUnderAnIssueOfAnotherRepositoryIsRefusedBeforeAnyWrite() {
-        // Harm: the issue is added, then the board leaves it out for standing in another
-        // repository than its parent issue, and it vanishes from the board.
+        // Harm: the issue is added, then the board shows it only as a warned issue for standing in
+        // another repository than its parent issue.
         final GitHub github = new GitHub();
         github.parentId = "I_" + OWN + "_3";
 
@@ -503,8 +507,8 @@ class UnlistedAddTest {
 
     @Test
     void anIssueBlockedByAStoryIsRefusedBeforeAnyWrite() {
-        // Harm: the issue is added, then the board leaves it out for waiting on a story, and it
-        // vanishes from the board.
+        // Harm: the issue is added, then the board shows it only as a warned issue for waiting on a
+        // story.
         final GitHub github = new GitHub();
         github.blockers =
                 List.of(new GitHubGraphQl.IssueRef("I_" + OWN + "_1", 1L, 1, OWNER + "/" + OWN));
@@ -603,10 +607,9 @@ class UnlistedAddTest {
 
     @Test
     void anIssueUnderAParentOrBlockerTheBoardDoesNotPlaceIsRefusedBeforeAnyWrite() {
-        // Harm: the add was answered as saved, then the next read left the issue out for its parent
-        // being a sub-issue, or its parent or blocker standing off the board - archived, outside
-        // the
-        // workflow or left out - so the issue stood on the project in no list of the board.
+        // Harm: the add was answered as saved, then the next read showed the issue only as a warned
+        // issue for its parent being a sub-issue, or its parent or blocker standing off the board:
+        // archived, listed apart outside the workflow or left out.
         final ItemView parent = item(LIB, 2, null);
         final ItemView top = item(LIB, 1, null);
 
@@ -689,9 +692,8 @@ class UnlistedAddTest {
 
     @Test
     void aStoryThatBlocksAnIssueOnTheBoardIsRefusedBeforeAnyWrite() {
-        // Harm: the story was added, then the next read left out the issue it blocks, a card at
-        // work
-        // that waited on it while the story stood outside the project.
+        // Harm: the story was added, then the next read showed the issue it blocks, a card at work
+        // that waited on it while the story stood outside the project, only as a warned issue.
         final GitHub github = new GitHub();
         github.type = IssueMapping.STORY_TYPE;
         github.repository = OWNER + "/" + OWN;
@@ -711,7 +713,8 @@ class UnlistedAddTest {
     @Test
     void anIssueWithMoreBlockersThanOneReadNamesIsRefused() {
         // Harm: a blocker past the first page, a story or an item off the board, was never checked,
-        // and the add was answered as saved while the next read left the issue out.
+        // and the add was answered as saved while the next read showed the issue only as a warned
+        // issue.
         final GitHub github = new GitHub();
         github.moreBlockers = true;
 

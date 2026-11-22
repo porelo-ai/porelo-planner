@@ -200,21 +200,24 @@ An issue offered under "Issues not on the project" is added with the person's ow
 checks the revision the window showed and that the board still offers the issue, then reads the issue right before the
 write: one GitHub no longer holds is no longer offered; one that is closed, moved to another repository or already an
 item of the project, as when a person added it on GitHub meanwhile, is a stale revision, and none of these writes
-anything. One the board could not place once added is refused with nothing written: of the type `Story` outside the
-project's own repository, which the board shows only as a warned issue, under a parent that is no item of the project or
-that the board does not place (archived, outside the workflow or left out), under a sub-issue, under an issue of another
-repository, blocked by a story or by an item the board does not place, or blocked by more issues than one read names;
-and a story that blocks an item of the project, which the board would then leave out. A story of another repository is
-not offered at all, since as a project item it stands on the board only as a warned issue no work starts on; a note
-among the faults names it. An issue is then added to the project and given the workflow's first state in `Status`,
-`Worker` Manual, so no agent takes an issue nobody chose, `Priority` Medium and the `Rank` after the last issue of that
-priority; a story is given `Priority` and `Rank` only, so its state follows its issues. An add GitHub refused writes
-nothing and is refused as such; once the add stands, or may stand after a call GitHub left unanswered, a stop is partly
-saved, naming the issue, since it then stands on the project outside the workflow until it gets its `Status`. A workflow
-of GitHub's own project that sets a `Status` on an added item writes after the planner and is seen at the next read. A
-person who adds the same issue on GitHub between the planner's read and its add has values the add then writes over;
-that moment is the one left. An issue GitHub no longer gives is refused as no longer offered, and the board is read
-whole, so the offer drops it at once. The Git store adds none and answers the add as not offered.
+anything. One the board would show only as a warned issue no work starts on is refused with nothing written, naming its
+warning: of the type `Story` outside the project's own repository (`StoryOutsideOwnRepository`); under a parent that is
+no item of the project (`ParentOutsideProject`) or that the board does not place, as one archived, listed apart outside
+the workflow or left out (`DependsOnUnplaced`); under a sub-issue (`SubIssueOfSubIssue`); under an issue of another
+repository (`ParentInOtherRepository`); blocked by a story (`BlockedByStory`) or by an item the board does not place
+(`DependsOnUnplaced`); and a story that blocks an item of the project, which the board would then show only as a warned
+issue (`BlockedByStory`). One blocked by more issues than one read names is refused too, since not all its blockers can
+be checked. A story of another repository is not offered at all, since as a project item it stands on the board only as
+a warned issue no work starts on; a note among the faults names it. An issue is then added to the project and given the
+workflow's first state in `Status`, `Worker` Manual, so no agent takes an issue nobody chose, `Priority` Medium and the
+`Rank` after the last issue of that priority; a story is given `Priority` and `Rank` only, so its state follows its
+issues. An add GitHub refused writes nothing and is refused as such; once the add stands, or may stand after a call
+GitHub left unanswered, a stop is partly saved, naming the issue, since it then stands on the project outside the
+workflow until it gets its `Status`. A workflow of GitHub's own project that sets a `Status` on an added item writes
+after the planner and is seen at the next read. A person who adds the same issue on GitHub between the planner's read
+and its add has values the add then writes over; that moment is the one left. An issue GitHub no longer gives is refused
+as no longer offered, and the board is read whole, so the offer drops it at once. The Git store adds none and answers
+the add as not offered.
 
 A look reads an item again when its own `updatedAt` or its issue's moved. GitHub moves an issue's `updatedAt` when its
 type is set, changed or cleared, so the next look sees a story made or unmade by its type.
