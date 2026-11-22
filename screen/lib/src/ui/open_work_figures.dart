@@ -170,6 +170,7 @@ String planningMinutes(double? minutes) {
   return '${whole ~/ 60} h ${(whole % 60).toString().padLeft(2, '0')}';
 }
 
-/// Whether [board]'s open-work figures say what is open now: not while it is not live, holds a move not yet read
-/// back, or is saving, since each makes the planner's last figures stale.
-bool planningFiguresKnown(PlanningBoard board) => board.live && board.pending.isEmpty && !board.saving;
+/// Whether [board]'s open-work figures are shown: while its watch is live or a Reload opens it anew. A save keeps
+/// the figures known before it until the planner's read after it replaces them, so a count once known never turns
+/// unknown.
+bool planningFiguresKnown(PlanningBoard board) => board.live || board.reopening;

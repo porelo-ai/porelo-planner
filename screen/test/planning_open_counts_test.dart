@@ -144,8 +144,8 @@ void main() {
     expect(boards.review.value, isNull, reason: 'gamma said nothing, so 2 would be a partial sum');
   });
 
-  // Harm: a count lowered by a move before the planner said what the move changed.
-  test('a move makes the counts unknown until the board read after its save', () async {
+  // Harm: a count once known turns into "?" while a move is saved, so every move blanks the window's figures.
+  test('the counts known before a move stay while it is saved', () async {
     // S2 of the small board stands in Review.
     final source = _HeldSource({...smallBoard(), 'work': _work, 'open': _open(review: 1, left: 2)});
     final boards = PlanningBoards(FakePlanningClient([provider('local', source)]));
@@ -156,13 +156,13 @@ void main() {
     final moving = boards.selected!.move('S1', 'Review');
     await pumpEventQueue();
 
-    expect(boards.review.value, isNull, reason: 'stale while the move is out');
+    expect(boards.review.value, 1, reason: 'the figures known before the move, until the read after it');
     source.gate.complete();
     await moving;
   });
 
-  // Harm: a moved issue still showing minutes left, or another story's blocked count kept after its blocker moved.
-  test('a saved move drops every story\'s figures and the moved issue\'s minutes until the next read', () {
+  // Harm: a moved issue still showing minutes left, or a story's known figures blanked by a save.
+  test('a saved move keeps every story\'s figures and drops the moved issue\'s minutes until the next read', () {
     final board = smallBoard();
     final stories = (board['stories'] as List).cast<Map<String, dynamic>>();
     final first = stories.first;
@@ -179,7 +179,8 @@ void main() {
     final saved = PlanningSnapshot.saved(read, 'r2', {issue['id'] as String: 'Finished'}, const {});
 
     expect(saved.stories.first.issues.first.minutesLeft, isNull, reason: 'the moved issue');
-    expect(saved.stories.last.open, isNull, reason: 'a story none of whose issues moved');
+    expect(saved.stories.first.open?.left, 1, reason: 'the moved story keeps its figures until the next read');
+    expect(saved.stories.last.open?.left, 1, reason: 'a story none of whose issues moved');
   });
 }
 

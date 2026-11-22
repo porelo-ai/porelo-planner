@@ -113,7 +113,7 @@ class PlanningNoStoryCard extends StatelessWidget {
   Widget _menu(BuildContext context, PlanIssue issue) => PopupMenuButton<(String, String, int)>(
     key: Key('planning-no-story-menu ${issue.id}'),
     tooltip: 'Change ${planningShown(issue.id, multiline: false)}',
-    enabled: board.live && !board.holdsMoves && !board.actionBusy && !board.waitsOnItsSave('issue ${issue.id}'),
+    enabled: board.takesMoves && !board.holdsMoves && !board.actionBusy && !board.waitsOnItsSave('issue ${issue.id}'),
     icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
     itemBuilder: (_) => [
       PopupMenuItem(

@@ -183,6 +183,19 @@ class PlanningBoard extends ChangeNotifier {
   /// Whether the watch is recovering, until its next board is accepted.
   bool catchingUp = false;
 
+  /// Whether a Reload opens the watch anew, until its first board or its end: the board shown meanwhile keeps
+  /// taking moves, each saved against the revision it shows.
+  bool reopening = false;
+
+  /// A Reload's reopen asked for while a save ran or a move was asked about, opened once that ends.
+  bool _reopenQueued = false;
+
+  /// Whether a Reload's read of the story list runs; it holds no move.
+  bool _reloading = false;
+
+  /// Whether the board shown takes moves: a complete board whose watch is live, or one a Reload opens anew.
+  bool get takesMoves => snapshot?.complete == true && (live || reopening);
+
   /// How far the planner's read of the board is while it reads, as its watch tells it; null otherwise.
   PlanningLoad? loading;
 
@@ -436,6 +449,7 @@ class PlanningBoard extends ChangeNotifier {
               unsupported = false;
               if (!ended && receivedVersion == reconnectVersion && !recovering) catchingUp = false;
               live = !ended && !catchingUp;
+              reopening = false;
             }
 
             if (saving) {
@@ -452,6 +466,7 @@ class PlanningBoard extends ChangeNotifier {
             _keepRefusal(error);
             problem = planningFailureWords(error);
             live = false;
+            reopening = false;
             notifyListeners();
           }
         },
@@ -466,6 +481,7 @@ class PlanningBoard extends ChangeNotifier {
           _keepRefusal(error);
           problem = unsupported ? null : planningFailureWords(error);
           live = false;
+          reopening = false;
           notifyListeners();
           // A retry can start without waiting again on this terminal subscription's cancellation.
           unawaited(watching?.cancel());
@@ -475,6 +491,7 @@ class PlanningBoard extends ChangeNotifier {
           _watching = null;
           ended = true;
           live = false;
+          reopening = false;
           catchingUp = false;
           _stopFollowingReconnect();
           notifyListeners();
@@ -489,6 +506,7 @@ class PlanningBoard extends ChangeNotifier {
       unsupported = planningUnsupported(error);
       problem = unsupported ? null : planningFailureWords(error);
       live = false;
+      reopening = false;
     }
   }
 
@@ -1120,6 +1138,8 @@ class PlanningBoard extends ChangeNotifier {
     _stopFollowingReconnect();
     catchingUp = false;
     live = false;
+    reopening = false;
+    _reopenQueued = false;
     final watching = _watching;
     _watching = null;
     if (watching != null) await watching.cancel();
@@ -1155,18 +1175,18 @@ class PlanningBoard extends ChangeNotifier {
   Future<void> retry() => changeProject(backend, project);
 
   /// Brings the board to what the repositories hold now, whatever its state: the planner fetches them, and a stream
-  /// that is down or a board with a problem has its watch re-opened, whose first answer is the board read anew.
+  /// that is down or a board whose watch failed has its watch opened anew, whose first answer is the board read anew.
+  /// The board shown keeps taking moves meanwhile.
   Future<void> reloadPlanning() async {
     if (_disposed || saving || fetching) return;
     _beginAction();
-    if (live && problem == null) return reload(fetch: true);
-    // Held like a save, so no second press and no move runs on the board the new watch replaces.
-    saving = true;
+    if (live) return reload(fetch: true);
     final source = backend;
     final name = project;
-    _changed();
     String? refused;
     Object? refusedError;
+    // Taken at once, so a move made while the planner fetches is saved against the board shown.
+    reopening = snapshot?.complete == true;
     fetching = true;
     _changed();
     try {
@@ -1178,18 +1198,46 @@ class PlanningBoard extends ChangeNotifier {
     } finally {
       fetching = false;
     }
-    if (_disposed) return;
-    // A project chosen meanwhile is opened by the save's end instead, which runs the queued change.
-    final switched = _queuedProject != null;
-    _finishOperation();
-    if (switched || !identical(backend, source) || project != name) return;
+    if (!_sameBoard(source, name)) return;
     moveProblem = refused;
-    await retry();
+    if (_queuedProject != null) {
+      // A project chosen meanwhile is opened by the save's end instead.
+      reopening = false;
+      _changed();
+      return;
+    }
+    await _reopen();
     // Kept past the new watch's start, so a board it reads afterwards is what clears it.
-    if (refusedError != null && !_disposed && identical(backend, source) && project == name) {
+    if (refusedError != null && _sameBoard(source, name)) {
       _keepRefusal(refusedError);
       _changed();
     }
+  }
+
+  /// Opens this project's watch anew and keeps everything shown: the board, its moves in flight, its figures and the
+  /// view's choices. While a save runs or a move is asked about it waits for their end, so their answer reaches the
+  /// board they were made on.
+  Future<void> _reopen() async {
+    if (_disposed) return;
+    if (saving || question != null) {
+      _reopenQueued = true;
+      _changed();
+      return;
+    }
+    _reopenQueued = false;
+    reopening = snapshot?.complete == true;
+    final generation = ++_generation;
+    _stopFollowingReconnect();
+    catchingUp = false;
+    live = false;
+    final watching = _watching;
+    _watching = null;
+    if (watching != null) await watching.cancel();
+    if (_disposed || generation != _generation) return;
+    problem = null;
+    unsupported = false;
+    _listen();
+    _changed();
   }
 
   /// The displayed destination: the move in flight's target until its answer.
@@ -1207,7 +1255,7 @@ class PlanningBoard extends ChangeNotifier {
   /// [revision] is the board's revision when the gesture began; the preview goes against it, so a board that changed
   /// during the gesture moves nothing.
   Future<void> move(String id, String to, {String? revision}) async {
-    if (_disposed || snapshot?.complete != true || !live) return;
+    if (_disposed || !takesMoves) return;
     final story = stories.where((story) => story.id == id).firstOrNull;
     final target = state(to);
     if (story == null || target == null) return;
@@ -1226,7 +1274,7 @@ class PlanningBoard extends ChangeNotifier {
   /// [to] is the state the person was offered; the planner checks that its issues still give it, so an offer read
   /// before they moved moves nothing.
   Future<void> followIssues(String id, String to, {String? revision}) async {
-    if (_disposed || snapshot?.complete != true || !live) return;
+    if (_disposed || !takesMoves) return;
     final story = stories.where((story) => story.id == id).firstOrNull;
     if (story == null || !story.stateGiven) return;
     if (snapshot!.revision.isEmpty) {
@@ -1280,7 +1328,7 @@ class PlanningBoard extends ChangeNotifier {
   /// offered.
   Future<void> moveIssue(String id, String to, {PlanIssue? reported, String? shown, String? revision}) async {
     if (_disposed || _oneAtATime(id)) return;
-    if (snapshot?.complete != true || !live || snapshot!.revision.isEmpty) {
+    if (!takesMoves || snapshot!.revision.isEmpty) {
       return refuseMove(id, 'the board is not live and complete.');
     }
     // Judged on the board's issue: the page's copy may be older or newer in any field.
@@ -1406,7 +1454,7 @@ class PlanningBoard extends ChangeNotifier {
       return;
     }
     final target = stories.where((each) => each.id == story).firstOrNull;
-    if (!live ||
+    if (!takesMoves ||
         snapshot?.complete != true ||
         snapshot!.revision.isEmpty ||
         revision != null && revision != snapshot!.revision ||
@@ -1417,7 +1465,6 @@ class PlanningBoard extends ChangeNotifier {
       _changed();
       return;
     }
-    final generation = _generation;
     final source = backend;
     final name = project;
     final at = snapshot!.revision;
@@ -1430,37 +1477,37 @@ class PlanningBoard extends ChangeNotifier {
     var refused = false;
     try {
       await source.setStoryIssues(name, story, issues, at);
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       try {
         final reply = await _read();
-        if (!_current(generation)) return;
+        if (!_sameBoard(source, name)) return;
         _acceptNewest(reply.$1, reply.$2);
         moveNotice = 'Issue changes saved.';
       } catch (error) {
-        if (_current(generation)) {
+        if (_sameBoard(source, name)) {
           moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
         }
       }
     } catch (error) {
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       refused = true;
       moveProblem = planningFailureWords(error);
       if (error is PlanningRefusal && {'StaleRevision', 'PartlySaved'}.contains(error.name)) {
         try {
           final reply = await _read();
-          if (!_current(generation)) return;
+          if (!_sameBoard(source, name)) return;
           _acceptNewest(reply.$1, reply.$2, reconcile: error.name != 'PartlySaved');
         } catch (readError) {
-          if (!_current(generation)) return;
+          if (!_sameBoard(source, name)) return;
           moveProblem = '$moveProblem\n${planningFailureWords(readError)}';
         }
       }
       _keepRefusal(error);
       moveRefusal = error is PlanningRefusal ? error : null;
     } finally {
-      if (_current(generation)) {
-        await _waitForNoStory(generation, reconcile: !refused);
-        if (_current(generation)) _finishOperation(reconcile: !refused);
+      if (_sameBoard(source, name)) {
+        await _waitForNoStory(_generation, reconcile: !refused);
+        if (_sameBoard(source, name)) _finishOperation(reconcile: !refused);
       }
     }
   }
@@ -1481,7 +1528,7 @@ class PlanningBoard extends ChangeNotifier {
   /// move. [revision] is the board's when the choice was offered.
   Future<void> moveOutside(String id, String to, {String? revision}) async {
     if (_disposed || _oneAtATime(id)) return;
-    if (snapshot?.complete != true || !live || snapshot!.revision.isEmpty) {
+    if (!takesMoves || snapshot!.revision.isEmpty) {
       return refuseMove(id, 'the board is not live and complete.');
     }
     if (!outside.any((issue) => issue.id == id)) return refuseMove(id, 'it is no longer outside the workflow.');
@@ -1544,22 +1591,24 @@ class PlanningBoard extends ChangeNotifier {
     moveProblem = null;
     moveNotice = null;
     moveRefusal = null;
-    final generation = _generation;
     final source = backend;
     final name = project;
     _changed();
     // The gesture's revision: a board that changed during it answers StaleRevision instead of being read anew.
-    await _preview(key, move, revision ?? snapshot!.revision, generation, source, name);
+    await _preview(key, move, revision ?? snapshot!.revision, source, name);
   }
 
   bool _current(int generation) => !_disposed && generation == _generation;
+
+  /// Whether the board still shows [source]'s [name]: a save's end is told to the board it was made on, whatever
+  /// watch failed or opened again meanwhile, and never to another project's.
+  bool _sameBoard(PlanningSource source, String name) => !_disposed && identical(backend, source) && project == name;
 
   /// Previews [move]; with no warning it is saved at once, else asked about.
   Future<void> _preview(
     String key,
     PlanningMove move,
     String revision,
-    int generation,
     PlanningSource source,
     String name, {
     bool again = false,
@@ -1571,13 +1620,13 @@ class PlanningBoard extends ChangeNotifier {
         throw const PlanningRefusal('BadAnswer', {}, 'The planner previewed another revision than the one moved.');
       }
     } catch (error) {
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       _pending.remove(key);
       final stale = error is PlanningRefusal && error.name == 'StaleRevision';
       _finishOperation();
       // The board the gesture began on is gone; the person moves again on the one read now.
       if (stale) await reload();
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       moveRefusal = error is PlanningRefusal ? error : null;
       _keepRefusal(error, action: true);
       moveProblem = stale
@@ -1586,11 +1635,11 @@ class PlanningBoard extends ChangeNotifier {
       _changed();
       return;
     }
-    if (!_current(generation)) return;
+    if (!_sameBoard(source, name)) return;
     final shown = preview.withWarnings(_localWarnings(move, preview));
     final asksReason = _asksReason(move);
     if (shown.warnings.isEmpty && !again && !asksReason) {
-      await _save(key, move, shown, revision, generation, source, name);
+      await _save(key, move, shown, revision, source, name);
       return;
     }
     question = PlanningMoveQuestion(key, move, shown, revision, again: again, asksReason: asksReason);
@@ -1639,7 +1688,6 @@ class PlanningBoard extends ChangeNotifier {
       move,
       asked.preview,
       asked.revision,
-      _generation,
       backend,
       project,
       confirmed: asked.warnings.isNotEmpty || asked.again,
@@ -1688,6 +1736,23 @@ class PlanningBoard extends ChangeNotifier {
   /// Numbers a read when it starts: a board streamed while it waits is newer than its answer may be, and the stream
   /// tells every revision in order, so it is never held on an older one.
   int _readStarts() => ++_replyOrder;
+
+  /// Reads the story list beside the moves: numbered when it starts, so a board streamed or saved meanwhile is never
+  /// replaced by it, and held back like a streamed board while a save runs. Answers the board read, or null where
+  /// the board went to another project meanwhile.
+  Future<PlanningSnapshot?> _readBeside(PlanningSource source, String name) async {
+    final order = _readStarts();
+    final reply = await source.stories(name);
+    final shown = snapshot;
+    if (!_sameBoard(source, name) || shown == null) return null;
+    final read = _checked(PlanningSnapshot.fromParts(shown, reply));
+    if (saving) {
+      if (order > (_deferredSnapshot?.$2 ?? 0)) _deferredSnapshot = (read, order, () {});
+    } else {
+      _accept(read, order: order);
+    }
+    return read;
+  }
 
   /// Shows the newer of a read's board and one streamed while the read waited, so pending moves are reconciled only
   /// against the board that stays.
@@ -1780,13 +1845,17 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
     final queued = _queuedProject;
     _queuedProject = null;
-    if (queued != null) unawaited(changeProject(queued.$1, queued.$2));
+    if (queued != null) {
+      unawaited(changeProject(queued.$1, queued.$2));
+    } else if (_reopenQueued) {
+      unawaited(_reopen());
+    }
   }
 
   /// Reloads and reconciles pending destinations while retaining their individual refusals; with [fetch], the
   /// provider first fetches the repositories, so the board read is what they hold now, not what it last polled.
   Future<void> reload({bool fetch = false}) async {
-    if (_disposed || saving || fetching) return;
+    if (_disposed || saving || fetching || _reloading) return;
     final generation = _generation;
     if (fetch) {
       // The planner's read of the whole board holds nothing: a change made meanwhile is saved at once, and the watch
@@ -1814,6 +1883,27 @@ class PlanningBoard extends ChangeNotifier {
       }
       // A change saved meanwhile reads the board at its own end.
       if (_disposed || generation != _generation || saving) return;
+      // The read beside the fetch holds no move: a board it brings late is shown only where it is the newest.
+      final source = backend;
+      final name = project;
+      _reloading = true;
+      try {
+        final read = await _readBeside(source, name);
+        if (read == null || !_sameBoard(source, name)) return;
+        moveProblem = null;
+        _clearRefusal();
+        final faults = snapshot?.faults ?? const <String>[];
+        problem = faults.isEmpty ? null : planningShown(faults.join('\n'));
+      } catch (error) {
+        if (_sameBoard(source, name)) {
+          _keepRefusal(error);
+          moveProblem = planningFailureWords(error);
+        }
+      } finally {
+        _reloading = false;
+        _changed();
+      }
+      return;
     }
     saving = true;
     _changed();
@@ -1843,13 +1933,13 @@ class PlanningBoard extends ChangeNotifier {
     PlanningMove move,
     PlanningMovePreview preview,
     String revision,
-    int generation,
     PlanningSource source,
     String name, {
     bool confirmed = false,
   }) async {
     var handedOn = false;
     var refused = false;
+    var readAfter = false;
     final shown = _pending[key];
     try {
       final reply = await source.saveMoves(name, [move], revision, digest: preview.digest, confirm: confirmed);
@@ -1857,7 +1947,7 @@ class PlanningBoard extends ChangeNotifier {
         try {
           await _endStopped(source, name, reply.stopped);
         } catch (error) {
-          if (_current(generation)) {
+          if (_sameBoard(source, name)) {
             moveProblem = planningShown(
               '${move.id} was moved and its work stopped, but its tasks could not be ended: '
               '${planningFailureWords(error)}',
@@ -1865,7 +1955,7 @@ class PlanningBoard extends ChangeNotifier {
           }
         }
       }
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       if (!reply.complete || reply.revision.isEmpty) {
         throw const FormatException('The planner did not report the saved revision and moved issues.');
       }
@@ -1908,21 +1998,10 @@ class PlanningBoard extends ChangeNotifier {
         reconcile: false,
       );
       _changed();
-      // SaveMoves does not return computed story states; read them from the store.
-      final latestOrder = _readStarts();
-      final PlanningSnapshot latest;
-      try {
-        latest = _checked(PlanningSnapshot.fromParts(snapshot!, await source.stories(name)));
-      } catch (error) {
-        if (_current(generation)) {
-          moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
-        }
-        return;
-      }
-      if (!_current(generation)) return;
-      _acceptNewest(latest, latestOrder);
+      // SaveMoves does not return computed story states; they are read from the store once the save has ended.
+      readAfter = true;
     } on PlanningRefusal catch (error) {
-      if (!_current(generation)) return;
+      if (!_sameBoard(source, name)) return;
       if (error.name == 'TimedOut') {
         // Only the screen stopped waiting; the planner finishes the save, and the streamed board shows when it landed.
         _pending[key]?.unanswered = true;
@@ -1935,11 +2014,11 @@ class PlanningBoard extends ChangeNotifier {
         // Never saved unseen: the board is read again and the move previewed and asked about anew.
         try {
           final reply = await _read();
-          if (!_current(generation)) return;
+          if (!_sameBoard(source, name)) return;
           _acceptNewest(reply.$1, reply.$2);
           if (shown != null && _needsNoStory(snapshot!, key, shown)) {
-            await _waitForNoStory(generation);
-            if (!_current(generation)) return;
+            await _waitForNoStory(_generation);
+            if (!_sameBoard(source, name)) return;
             if (_noStory?.revision != snapshot?.revision) {
               throw StateError(noStoryProblem ?? 'The current issue list could not be read.');
             }
@@ -1960,9 +2039,9 @@ class PlanningBoard extends ChangeNotifier {
             return;
           }
           handedOn = true;
-          await _preview(key, move, snapshot!.revision, generation, source, name, again: true);
+          await _preview(key, move, snapshot!.revision, source, name, again: true);
         } catch (readError) {
-          if (!_current(generation)) return;
+          if (!_sameBoard(source, name)) return;
           _pending.remove(key);
           moveProblem = planningShown('${move.id} was not moved: $detail\n${planningFailureWords(readError)}');
         }
@@ -1976,13 +2055,13 @@ class PlanningBoard extends ChangeNotifier {
       if (error.name == 'PartlySaved') {
         try {
           final reply = await _read();
-          if (_current(generation)) _acceptNewest(reply.$1, reply.$2, reconcile: false);
+          if (_sameBoard(source, name)) _acceptNewest(reply.$1, reply.$2, reconcile: false);
         } catch (readError) {
-          if (_current(generation)) moveProblem = '$moveProblem\n${planningFailureWords(readError)}';
+          if (_sameBoard(source, name)) moveProblem = '$moveProblem\n${planningFailureWords(readError)}';
         }
       }
     } catch (error) {
-      if (_current(generation)) {
+      if (_sameBoard(source, name)) {
         refused = true;
         _pending.remove(key);
         _keepRefusal(error, action: true);
@@ -1990,14 +2069,24 @@ class PlanningBoard extends ChangeNotifier {
       }
     } finally {
       if (!handedOn) {
-        if (_current(generation) && shown != null && snapshot != null && _needsNoStory(snapshot!, key, shown)) {
-          await _waitForNoStory(generation, reconcile: !refused);
+        if (_sameBoard(source, name) && shown != null && snapshot != null && _needsNoStory(snapshot!, key, shown)) {
+          await _waitForNoStory(_generation, reconcile: !refused);
         }
-        if (_current(generation)) {
+        if (_sameBoard(source, name)) {
           _finishOperation(reconcile: !refused);
           _awaitUnanswered();
         }
       }
+    }
+    if (!readAfter || !_sameBoard(source, name)) return;
+    try {
+      await _readBeside(source, name);
+    } catch (error) {
+      if (_sameBoard(source, name)) {
+        moveProblem = 'Saved, but planning could not be read again: ${planningFailureWords(error)}';
+      }
+    } finally {
+      if (!_disposed) _changed();
     }
   }
 
@@ -2183,6 +2272,7 @@ class PlanningBoard extends ChangeNotifier {
     _unansweredDeadline?.cancel();
     _fetchWait?.cancel();
     live = false;
+    reopening = false;
     catchingUp = false;
     _stopFollowingReconnect();
     _generation++;
@@ -2316,10 +2406,9 @@ class PlanningBoards extends ChangeNotifier {
     for (final project in projects) {
       // The board the project is shown from, as the working count takes it, so a stale machine's never wins.
       final board = _provider(project);
-      // A board that stopped answering, or holds a move not yet read back, has figures that no longer say what is open.
-      final figures = board != null && board.live && board.pending.isEmpty && !board.saving
-          ? board.snapshot?.open
-          : null;
+      // A board that stopped answering has figures that no longer say what is open; a save keeps the figures known
+      // before it until the planner's read after it replaces them.
+      final figures = board != null && (board.live || board.reopening) ? board.snapshot?.open : null;
       if (figures == null) {
         known = false;
         break;

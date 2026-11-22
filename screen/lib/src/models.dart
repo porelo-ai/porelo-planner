@@ -372,8 +372,8 @@ class PlanStory {
       link = source.link,
       work = source.work,
       workReported = source.workReported,
-      // Any move can change a story's figures, a blocker's in another story too, until the board read after it.
-      open = moves.isEmpty && destination == null ? source.open : null;
+      // The figures known before the move stay shown until the planner's read after the save replaces them.
+      open = source.open;
 
   /// Reads fields leniently and preserves unknown priorities.
   PlanStory.from(Map<String, dynamic> map)
@@ -589,8 +589,8 @@ class PlanningSnapshot {
        statesReported = source.statesReported,
        phasesReported = source.phasesReported,
        storiesReported = source.storiesReported,
-       // The board's figures are stale once anything moved, until the board read after the save.
-       open = moves.isEmpty && destinations.isEmpty ? source.open : null,
+       // The figures known before the save stay shown until the planner's read after it replaces them.
+       open = source.open,
        stories = [
          for (final story in source.stories)
            PlanStory.withMoves(story, moves, destinations[story.id], followed: followed.contains(story.id)),

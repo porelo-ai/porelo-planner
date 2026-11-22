@@ -288,8 +288,8 @@ void main() {
     );
   });
 
-  // Harm: the counts shown while a move is out, which no longer say what is open.
-  testWidgets('a move under way tells no figure as known', (tester) async {
+  // Harm: a count once known turns into "?" while a move is out, and the summary goes blank on every move.
+  testWidgets('a move under way keeps the figures known before it', (tester) async {
     final (source, _) = await _show(tester);
     expect(_text(tester, 'planning-summary left'), contains('3'), reason: 'the figures as read');
 
@@ -298,7 +298,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(_text(tester, 'planning-summary left'), isNot(matches(RegExp(r'\d'))), reason: 'the move is out');
+    expect(_text(tester, 'planning-summary left'), contains('3'), reason: 'the figures known before the move');
     source.moveHeld!.complete();
     await tester.pumpAndSettle();
   });

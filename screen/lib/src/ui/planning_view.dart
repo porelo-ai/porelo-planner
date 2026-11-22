@@ -539,7 +539,7 @@ class _BoardViewState extends State<_BoardView> {
         snapshot != null &&
         (snapshot.open != null ||
             snapshot.stories.any((story) => story.open != null) ||
-            // A saved move leaves the figures null until the next read; the row stays, reading unknown.
+            // Once the planner sent figures, the row stays, also where a board read later names none.
             _offered);
     _known = _offered && planningFiguresKnown(board) && snapshot?.open != null;
     final asked = widget.filter;
@@ -1303,7 +1303,7 @@ class _BoardViewState extends State<_BoardView> {
             itemCount: issues.length,
             itemBuilder: (context, index) {
               final issue = issues[index];
-              final held = !board.live || board.holdsMoves || board.waitsOnItsSave('issue ${issue.id}');
+              final held = !board.takesMoves || board.holdsMoves || board.waitsOnItsSave('issue ${issue.id}');
               return Card(
                 key: Key('planning-outside ${issue.id}'),
                 child: Padding(
@@ -1351,7 +1351,7 @@ class _BoardViewState extends State<_BoardView> {
       !board.holdsMoves &&
       !board.waitsOnItsSave(drag.story) &&
       {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
-      board.live &&
+      board.takesMoves &&
       board.stories.any((story) => story.id == drag.story && board.displayedState(story) != state.name);
 
   void _dropped(PlanState state, _CardDrag drag) {
@@ -1547,7 +1547,7 @@ class _BoardViewState extends State<_BoardView> {
     data: (story: story.id, revision: board.snapshot?.revision ?? ''),
     // A card under the pointer may leave the view while it is dragged, and its target then says nothing.
     onDragEnd: (_) => _hovered.value = null,
-    maxSimultaneousDrags: board.holdsMoves || board.waitsOnItsSave(story.id) || !board.live ? 0 : 1,
+    maxSimultaneousDrags: board.holdsMoves || board.waitsOnItsSave(story.id) || !board.takesMoves ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
       child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
@@ -1789,6 +1789,7 @@ class _BoardViewState extends State<_BoardView> {
       board.rulesOf(story.id).join('\n'),
       board.saving,
       board.live,
+      board.takesMoves,
       _known,
       _offered,
       _startUnavailable(story),
