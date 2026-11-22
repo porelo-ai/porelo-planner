@@ -72,6 +72,11 @@ public final class WorkRun {
 
     /** A project writer holds its lock across every record and store operation in the action. */
     public interface Record {
+        /**
+         * Reads the last complete written generation without waiting for a writer or repairing it.
+         */
+        Snapshot latest();
+
         /** Refuses competing writers rather than waiting on a different planner. */
         <T extends @Nullable Object> T locked(Action<T> action);
     }
@@ -1163,8 +1168,17 @@ public final class WorkRun {
                 .orElse(null);
     }
 
-    /** Reads a board and work generation together under the writer lock. */
+    /**
+     * Reads the board and the last written work generation without waiting for an ongoing save; the
+     * two may come from either side of a save, so nothing written may be decided on them.
+     */
     public <T> T view(final java.util.function.BiFunction<Board, Snapshot, T> answer) {
+        final Snapshot snapshot = record.latest();
+        return answer.apply(store.board(), snapshot);
+    }
+
+    /** Reads and repairs work with its board under the writer lock for a consistent view. */
+    public <T> T lockedView(final java.util.function.BiFunction<Board, Snapshot, T> answer) {
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);

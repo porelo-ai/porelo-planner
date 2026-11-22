@@ -728,7 +728,7 @@ public class BoardController {
             @PathVariable("project") final String project,
             @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
         final WorkRun work = projects.work(name(project));
-        return work.view(
+        return work.lockedView(
                 (board, snapshot) ->
                         new StoryList(
                                 board.revision().value(),
@@ -1062,7 +1062,7 @@ public class BoardController {
             @PathVariable("story") final String story) {
         final String checked = storyId(project, story);
         return projects.work(name(project))
-                .view(
+                .lockedView(
                         (board, snapshot) -> {
                             final Story found = found(board, checked);
                             return new StoryWorkReply(

@@ -42,6 +42,77 @@ class WorkRecordTest {
     @TempDir Path directory;
 
     @Test
+    void aLatestReadSeesWholeGenerationsWhileTheWriterHoldsTheLock() throws Exception {
+        // Prevents a busy planner from blocking details or serving a half-written work record.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var replacing = new CountDownLatch(1);
+        final var published = new CountDownLatch(1);
+        final var replace = new CompletableFuture<Void>();
+        final var release = new CompletableFuture<Void>();
+        final var replacements = new AtomicInteger();
+        final WorkRecord.Replace paused =
+                (written, target) -> {
+                    if (replacements.incrementAndGet() == 2) {
+                        replacing.countDown();
+                        replace.join();
+                    }
+                    Files.move(
+                            written,
+                            target,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                };
+        try (WorkRecord records =
+                        new WorkRecord(environment, false, PrivateFiles.of(environment), paused);
+                WorkRecord observer = new WorkRecord(environment, false);
+                var executor = Executors.newFixedThreadPool(2)) {
+            final var record = records.open("project", "https://example.org/store.git", null);
+            final var reader = observer.open("project", "https://example.org/store.git", null);
+            final var before = new WorkRun.Snapshot(7, Map.of());
+            final var after = new WorkRun.Snapshot(8, Map.of());
+            record.locked(
+                    session -> {
+                        session.write(before);
+                        return null;
+                    });
+            final var saving =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                session.write(after);
+                                                published.countDown();
+                                                release.join();
+                                                return true;
+                                            }));
+            try {
+                assertThat(replacing.await(5, TimeUnit.SECONDS))
+                        .as("the writer holds a new sibling before the atomic replacement")
+                        .isTrue();
+                assertThat(executor.submit(record::latest).get(1, TimeUnit.SECONDS))
+                        .as("the complete previous generation answers while replacement waits")
+                        .isEqualTo(before);
+                assertThat(executor.submit(reader::latest).get(1, TimeUnit.SECONDS))
+                        .as("an entry without a writer session reads despite the held file lock")
+                        .isEqualTo(before);
+                replace.complete(null);
+                assertThat(published.await(5, TimeUnit.SECONDS))
+                        .as("the replacement is published while the writer still holds the lock")
+                        .isTrue();
+                assertThat(executor.submit(record::latest).get(1, TimeUnit.SECONDS))
+                        .as("the next complete generation is visible before the lock is released")
+                        .isEqualTo(after);
+            } finally {
+                replace.complete(null);
+                release.complete(null);
+            }
+            assertThat(saving.get(5, TimeUnit.SECONDS))
+                    .as("the writer finishes after both generations have been read")
+                    .isTrue();
+        }
+    }
+
+    @Test
     void aTasksMachineNameSurvivesRestartVerbatim() {
         // Prevents a restart from losing or normalizing the machine needed to open a task.
         final String machine = "WSL Ubuntu Äpfel";
@@ -868,6 +939,30 @@ class WorkRecordTest {
                             });
         }
         return run;
+    }
+
+    @Test
+    void aLatestReadOfAnotherSourcesRecordAnswersNoRunsAndLeavesTheFile() throws Exception {
+        // Prevents a read without the lock from wiping another planning source's runs.
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            records.open("project", "https://example.org/store.git", "main")
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(9, Map.of()));
+                                return null;
+                            });
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final byte[] before = Files.readAllBytes(file);
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final WorkRun.Snapshot read =
+                    records.open("project", "https://example.org/other.git", "main").latest();
+            assertThat(read.generation()).as("another source's record read").isZero();
+        }
+        assertThat(Files.readAllBytes(file))
+                .as("the other source's record after a read without the lock")
+                .isEqualTo(before);
     }
 
     @Test

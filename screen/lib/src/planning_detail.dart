@@ -50,6 +50,10 @@ class PlanningDetail extends ChangeNotifier {
   /// Whether a replacement read group is pending; the last completed group stays readable.
   bool loading = true;
 
+  /// The matching board row while the first standalone story read is pending.
+  PlanStory? get boardStory =>
+      loading && story == null ? board.stories.where((story) => story.id == storyId).firstOrNull : null;
+
   /// The issue move in flight on the board.
   Map<String, PendingPlanningMove> get pendingMoves => board.pendingIssues;
 

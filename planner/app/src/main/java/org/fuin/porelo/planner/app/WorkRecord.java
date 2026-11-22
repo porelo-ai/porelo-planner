@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
@@ -50,6 +51,9 @@ import tools.jackson.databind.node.ObjectNode;
 public final class WorkRecord implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkRecord.class);
+
+    /** A wait for the writer lock longer than this is logged, so a slow read can be explained. */
+    private static final long TOLD_WAIT = TimeUnit.SECONDS.toNanos(2);
 
     static final int MOST_RECORD = 16 * 1024 * 1024;
     private static final int END_RESERVE = 2 * 1024 * 1024;
@@ -220,8 +224,8 @@ public final class WorkRecord implements AutoCloseable {
         private @Nullable FileChannel lockChannel;
         private @Nullable FileLock fileLock;
         private @Nullable Path directory;
-        private WorkRun.Snapshot stored = new WorkRun.Snapshot(0, Map.of());
-        private boolean closed;
+        private volatile WorkRun.Snapshot stored = new WorkRun.Snapshot(0, Map.of());
+        private volatile boolean closed;
 
         private Entry(
                 final String project, final String repository, final @Nullable String branch) {
@@ -233,7 +237,17 @@ public final class WorkRecord implements AutoCloseable {
         /** Holds the same writer lock across reading, saving and finalizing a generation. */
         @Override
         public <T extends @Nullable Object> T locked(final WorkRun.Action<T> action) {
+            final long started = System.nanoTime();
+            final String caller =
+                    StackWalker.getInstance()
+                            .walk(
+                                    frames ->
+                                            frames.skip(1)
+                                                    .findFirst()
+                                                    .map(StackWalker.StackFrame::getMethodName)
+                                                    .orElse("unknown"));
             mutex.lock();
+            boolean taken = false;
             try {
                 if (closed) {
                     throw unavailable(project, "The work record of " + project + " was closed.");
@@ -241,10 +255,47 @@ public final class WorkRecord implements AutoCloseable {
                 if (!memory) {
                     acquire();
                 }
+                taken = true;
+                toldWait(caller, started, true);
                 return action.apply(this);
             } finally {
+                if (!taken) {
+                    // A wait that ends refused is the one a person most needs explained.
+                    toldWait(caller, started, false);
+                }
                 mutex.unlock();
             }
+        }
+
+        private void toldWait(final String caller, final long started, final boolean taken) {
+            final long waited = System.nanoTime() - started;
+            if (waited > TOLD_WAIT) {
+                LOG.info(
+                        "Work record call {} of project {} waited {} ms for the writer lock and {}",
+                        caller,
+                        LogText.of(project),
+                        TimeUnit.NANOSECONDS.toMillis(waited),
+                        taken ? "took it" : "was refused");
+            }
+        }
+
+        /** Atomic replacement lets details read a complete generation without holding up saves. */
+        @Override
+        public WorkRun.Snapshot latest() {
+            if (closed) {
+                throw unavailable(project, "The work record of " + project + " was closed.");
+            }
+            if (memory) {
+                return stored;
+            }
+            final Path dir;
+            try {
+                dir = WorkRecord.this.directory(project);
+            } catch (final IOException | IllegalArgumentException failed) {
+                throw unavailable(project, "The work record's directory is refused", failed);
+            }
+            final Document doc = readDocument(dir);
+            return doc == null || !matches(doc) ? new WorkRun.Snapshot(0, Map.of()) : snapshot(doc);
         }
 
         private void acquire() {
@@ -303,18 +354,32 @@ public final class WorkRecord implements AutoCloseable {
             if (memory) {
                 return stored;
             }
-            final Path dir = opened();
-            final Path path = dir.resolve("work.json");
-            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            final Document doc = readDocument(opened());
+            if (doc == null) {
                 return new WorkRun.Snapshot(0, Map.of());
             }
-            final Document doc = document(tree(recorded(path)));
-            if (!repository.equals(doc.repository())
-                    || !java.util.Objects.equals(branch, doc.branch())) {
+            if (!matches(doc)) {
                 final WorkRun.Snapshot reset = new WorkRun.Snapshot(0, Map.of());
                 write(reset);
                 return reset;
             }
+            return snapshot(doc);
+        }
+
+        private @Nullable Document readDocument(final Path dir) {
+            final Path path = dir.resolve("work.json");
+            if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                return null;
+            }
+            return document(tree(recorded(path)));
+        }
+
+        private boolean matches(final Document doc) {
+            return repository.equals(doc.repository())
+                    && java.util.Objects.equals(branch, doc.branch());
+        }
+
+        private static WorkRun.Snapshot snapshot(final Document doc) {
             return new WorkRun.Snapshot(doc.generation(), doc.runs(), doc.ideas(), doc.results());
         }
 

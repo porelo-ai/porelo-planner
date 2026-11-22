@@ -43,6 +43,99 @@ class _HeldReload extends MockPlanningSource {
 }
 
 void main() {
+  // Harm: a busy planner leaves an empty story page even though its board already contains the story and issues.
+  testWidgets('a story shows its board row until its latest details arrive during a save', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1280, 2000)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final backend = MockPlanningSource();
+    final client = MockPlanningClient.of(backend, projects: ['demo']);
+    final boards = PlanningBoards(client);
+    final host = TestHost();
+    final pending = Completer<PlanStoryDetail>();
+    final saved = Completer<void>();
+    addTearDown(() async {
+      if (!saved.isCompleted) saved.complete();
+      boards.dispose();
+      client.dispose();
+      host.dispose();
+      await backend.end();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: planningView(boards: boards, host: host),
+        ),
+      ),
+    );
+    await settle(tester);
+    final board = boards.selected!;
+    final row = board.stories.firstWhere((story) => story.issues.isNotEmpty);
+    final moved = row.issues.first.id;
+    backend.readStory = (_, _) => pending.future;
+    host.go(PlanningPlace(project: board.project, source: boards.sourceOf(board), story: row.id));
+    await settle(tester);
+
+    final page = find.byType(PlanningStoryView);
+    expect(
+      find.descendant(of: page, matching: find.text(row.title)),
+      findsOneWidget,
+      reason: 'the story title is readable before the planner answers',
+    );
+    expect(
+      find.descendant(of: page, matching: find.text(row.state)),
+      findsWidgets,
+      reason: 'the story state is already known from the board',
+    );
+    for (final issue in row.issues) {
+      expect(
+        find.byKey(Key('planning-issue ${issue.id}')),
+        findsOneWidget,
+        reason: 'every issue in the board row is readable while details wait',
+      );
+    }
+    final stateMenu = tester.widget<PopupMenuButton<(String, String, bool, String)>>(
+      find.byKey(Key('planning-move $moved')),
+    );
+    expect(stateMenu.enabled, isFalse, reason: 'a board row alone cannot authorize a detail-page issue move');
+
+    backend.moveHeld = saved;
+    final saving = board.moveIssue(moved, 'Review');
+    await settle(tester);
+    expect(board.saving, isTrue, reason: 'the window still has a save in progress');
+    expect(
+      find.text('A change from this window is still being saved.'),
+      findsOneWidget,
+      reason: 'the story explains why the local change is still pending',
+    );
+    expect(
+      find.descendant(of: page, matching: find.text(row.title)),
+      findsOneWidget,
+      reason: 'starting a save must not erase the readable fallback',
+    );
+
+    pending.complete(
+      PlanStoryDetail.from({
+        'story': {...mockPlanningStory(backend.boards['demo']!, row.id)!, 'title': 'Latest standalone title'},
+      }),
+    );
+    await settle(tester);
+    expect(
+      find.descendant(of: page, matching: find.text('Latest standalone title')),
+      findsOneWidget,
+      reason: 'the standalone read replaces the board row when it arrives',
+    );
+    expect(
+      find.descendant(of: page, matching: find.text(row.title)),
+      findsNothing,
+      reason: 'the fallback cannot mask newer details',
+    );
+    saved.complete();
+    await tester.runAsync(() => saving);
+    await settle(tester);
+  });
+
   // Harm: a silent watch leaves an endless animation, preventing a waiting page or its test from settling.
   testWidgets('a planning page waiting for its first answer has no endless animation', (tester) async {
     final backend = _SilentPlanning();

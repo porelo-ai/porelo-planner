@@ -17,6 +17,38 @@ class _StrictPlanningBoard extends PlanningBoard {
 }
 
 void main() {
+  // Harm: the story page stays empty while a busy planner has not answered its detail read.
+  test('a story awaiting its first details exposes only its matching board row', () async {
+    final backend = MockPlanningSource();
+    final board = PlanningBoard(backend, 'demo');
+    await _flush();
+    final pending = Completer<PlanStoryDetail>();
+    backend.readStory = (_, _) => pending.future;
+    final detail = PlanningDetail(board, 'ST291', null);
+    final missing = PlanningDetail(board, 'missing', null);
+    addTearDown(() async {
+      detail.dispose();
+      missing.dispose();
+      board.dispose();
+      await backend.end();
+    });
+    final row = board.stories.singleWhere((story) => story.id == 'ST291');
+
+    expect(detail.loading, isTrue, reason: 'the standalone read is held');
+    expect(detail.story, isNull, reason: 'no standalone story has been published');
+    expect(detail.boardStory, same(row), reason: 'the requested row is already available from the board');
+    expect(missing.boardStory, isNull, reason: 'another story must never be substituted for a missing row');
+
+    pending.complete(
+      PlanStoryDetail.from({
+        'story': {'id': 'ST291', 'title': 'Latest standalone title'},
+      }),
+    );
+    await _flush();
+    expect(detail.story?.story?.title, 'Latest standalone title', reason: 'the completed read replaces the fallback');
+    expect(detail.boardStory, isNull, reason: 'the board row is only a fallback during the first read');
+  });
+
   // Harm: completing a request after leaving the screen notifies a disposed model or continues reading.
   test('late replies after disposal cannot publish or start the dependent read', () async {
     final backend = MockPlanningSource();

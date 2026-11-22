@@ -10,6 +10,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -25,6 +30,101 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class WorkRunTest {
+
+    @Test
+    void aDetailReadAnswersWithTheLastWrittenGenerationWhileASaveHoldsTheRecord() throws Exception {
+        // Prevents the window waiting up to 30 seconds with an empty page during a save.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Snapshot written = f.record.value;
+        final Board board = f.store.board();
+        final CountDownLatch held = new CountDownLatch(1);
+        final CompletableFuture<Void> release = new CompletableFuture<>();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            final var saving =
+                    executor.submit(
+                            () ->
+                                    f.run.alone(
+                                            () -> {
+                                                held.countDown();
+                                                release.join();
+                                                return true;
+                                            }));
+            try {
+                assertThat(held.await(5, TimeUnit.SECONDS))
+                        .as("the save holds the record before the detail read begins")
+                        .isTrue();
+                final var reading =
+                        executor.submit(
+                                () ->
+                                        f.run.view(
+                                                (current, snapshot) -> {
+                                                    assertThat(current)
+                                                            .as("the detail also reads the board")
+                                                            .isEqualTo(board);
+                                                    return snapshot;
+                                                }));
+                assertThat(reading.get(1, TimeUnit.SECONDS))
+                        .as("the last written generation is readable before the save finishes")
+                        .isEqualTo(written);
+            } finally {
+                release.complete(null);
+            }
+            assertThat(saving.get(5, TimeUnit.SECONDS))
+                    .as("the held save finishes after the reader has answered")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void aConsistentViewWaitsForTheWritersFinalGeneration() throws Exception {
+        // Prevents change events from publishing a board paired with an unfinished save's work.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Snapshot before = f.record.value;
+        final WorkRun.Snapshot after = new WorkRun.Snapshot(before.generation() + 1, before.runs());
+        final CountDownLatch held = new CountDownLatch(1);
+        final CountDownLatch calling = new CountDownLatch(1);
+        final CompletableFuture<Void> release = new CompletableFuture<>();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            final var saving =
+                    executor.submit(
+                            () ->
+                                    f.record.locked(
+                                            session -> {
+                                                held.countDown();
+                                                release.join();
+                                                session.write(after);
+                                                return true;
+                                            }));
+            final java.util.concurrent.Future<WorkRun.Snapshot> reading;
+            try {
+                assertThat(held.await(5, TimeUnit.SECONDS))
+                        .as("the save owns the record before the consistent read begins")
+                        .isTrue();
+                reading =
+                        executor.submit(
+                                () -> {
+                                    calling.countDown();
+                                    return f.run.lockedView((board, snapshot) -> snapshot);
+                                });
+                assertThat(calling.await(5, TimeUnit.SECONDS))
+                        .as("the consistent read is attempted before the writer finishes")
+                        .isTrue();
+                assertThatThrownBy(() -> reading.get(100, TimeUnit.MILLISECONDS))
+                        .as("a consistency-sensitive view waits for the save to finish")
+                        .isInstanceOf(TimeoutException.class);
+            } finally {
+                release.complete(null);
+            }
+            assertThat(saving.get(5, TimeUnit.SECONDS))
+                    .as("the writer publishes its final generation")
+                    .isTrue();
+            assertThat(reading.get(1, TimeUnit.SECONDS))
+                    .as("the consistent view observes the completed save")
+                    .isEqualTo(after);
+        }
+    }
 
     @Test
     void aWriteOfItsOwnRunsUnderTheRecordsLock() {
@@ -4666,7 +4766,7 @@ class WorkRunTest {
             final List<Moves.Move> moves,
             final java.util.function.Supplier<T> save) {
         final MovePreview preview =
-                run.preview(moves, run.view((board, work) -> board.revision().value()));
+                run.preview(moves, run.lockedView((board, work) -> board.revision().value()));
         return run.moves(
                         moves,
                         preview.revision(),
@@ -4863,7 +4963,7 @@ class WorkRunTest {
     }
 
     static final class Memory implements WorkRun.Record {
-        WorkRun.Snapshot value = new WorkRun.Snapshot(0, Map.of());
+        volatile WorkRun.Snapshot value = new WorkRun.Snapshot(0, Map.of());
         boolean refuseReaders;
         boolean held;
         int writes;
@@ -4875,6 +4975,12 @@ class WorkRunTest {
 
         /** Whether a write reused or lowered a generation already written. */
         boolean wentBack;
+
+        /** Publishes the last complete generation without entering the writer's monitor. */
+        @Override
+        public WorkRun.Snapshot latest() {
+            return value;
+        }
 
         /** Serializes actions as a disk record must. */
         @Override

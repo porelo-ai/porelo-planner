@@ -60,7 +60,8 @@ public final class Changes {
                         store.board(),
                         new WorkRun.Snapshot(0, java.util.Map.of()),
                         store::storyState)
-                : run.view((board, snapshot) -> new Frame(board, snapshot, store::storyState));
+                : run.lockedView(
+                        (board, snapshot) -> new Frame(board, snapshot, store::storyState));
     }
 
     /**

@@ -1582,7 +1582,13 @@ class _PlanningDetailViewState extends State<_PlanningDetailView> {
           ?widget.pageNote,
           // The issue page names the project in its own header.
           if (widget.issue == null) Text('Project ${widget.board.project} · From ${widget.board.backend.label}'),
-          if (detail.loading) const Text('Waiting for the planner’s answer.', key: Key('planning-waiting')),
+          if (detail.loading) ...[
+            Text(
+              widget.issue == null ? 'Reading the latest details…' : 'Waiting for the planner’s answer.',
+              key: const Key('planning-waiting'),
+            ),
+            if (widget.board.saving) const Text('A change from this window is still being saved.'),
+          ],
           if (widget.board.problem case final problem?) Text(problem, key: const Key('planning-watch-error')),
           if (!widget.board.live) const Text('Planning is no longer live. The last answer may be out of date.'),
           if (widget.board.problem != null || !widget.board.live)

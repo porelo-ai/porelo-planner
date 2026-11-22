@@ -93,14 +93,17 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
 
   @override
   Widget build(BuildContext context) {
-    final story = detail.story?.story;
-    final issues = detail.issues;
-    final completed = issues != null && issues.reported && issues.issues.every((issue) => issue.state.isNotEmpty)
-        ? issues.issues.where((issue) => {'Review', 'Finished'}.contains(issue.state)).length
+    final boardStory = detail.boardStory;
+    final story = detail.story?.story ?? boardStory;
+    final issues = detail.issues?.issues ?? boardStory?.issues;
+    final reported = detail.issues?.reported ?? boardStory?.issuesReported ?? false;
+    final supplied = detail.issues?.supplied ?? boardStory?.issuesReported ?? false;
+    final completed = issues != null && reported && issues.every((issue) => issue.state.isNotEmpty)
+        ? issues.where((issue) => {'Review', 'Finished'}.contains(issue.state)).length
         : null;
     final shown = issues == null
         ? const <PlanIssue>[]
-        : _list.shown(issues.issues, [for (final state in detail.board.states) state.name]);
+        : _list.shown(issues, [for (final state in detail.board.states) state.name]);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -117,7 +120,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
           ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),
           PlanningWebLink(link: story.link, label: 'Open story', openLink: openLink),
-          _description(context, story),
+          if (detail.story != null) _description(context, story),
         ],
         planningSection(context, 'Issues', heading: _issuesHeading(context, issues), [
           if (detail.moveUnavailable case final reason? when !detail.loading && !detail.saving) Text(reason),
@@ -127,15 +130,15 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
 
           if (issues == null && !detail.loading && detail.issuesProblem == null) const Text('Issues not reported'),
           if (issues != null) ...[
-            if (!issues.reported)
-              Text(issues.supplied ? 'Issues not reported completely' : 'Issues not reported')
-            else if (issues.issues.isEmpty)
+            if (!reported)
+              Text(supplied ? 'Issues not reported completely' : 'Issues not reported')
+            else if (issues.isEmpty)
               Text('No issues yet.', style: Theme.of(context).textTheme.bodySmall)
             else if (completed != null)
-              Text('$completed of ${issues.issues.length} in Review or Finished')
+              Text('$completed of ${issues.length} in Review or Finished')
             else
               const Text('Issue progress not reported'),
-            if (issues.issues.isNotEmpty && shown.isEmpty) ...[
+            if (issues.isNotEmpty && shown.isEmpty) ...[
               Text(
                 'Nothing matches.',
                 key: const Key('planning-issues-none-match'),
@@ -149,7 +152,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
                   child: const Text('Clear the filter'),
                 ),
               ),
-            ] else if (issues.issues.isNotEmpty)
+            ] else if (issues.isNotEmpty)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -181,7 +184,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
               ),
           ],
         ]),
-        if (story != null)
+        if (story != null && detail.story != null)
           planningSection(context, 'Work', [
             if (story.work == null)
               const Text('Work not reported')
@@ -230,11 +233,11 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
   }
 
   /// The issue list's head after its title: the count, the search and the sort.
-  List<Widget> _issuesHeading(BuildContext context, PlanIssueList? issues) {
-    if (issues == null || issues.issues.isEmpty) return const [];
+  List<Widget> _issuesHeading(BuildContext context, List<PlanIssue>? issues) {
+    if (issues == null || issues.isEmpty) return const [];
     final small = Theme.of(context).textTheme.bodySmall;
     return [
-      Text('${issues.issues.length}', style: small),
+      Text('${issues.length}', style: small),
       if (_list.searchOpen)
         // The larger share of the room left: beside a Spacer or the sort's label it got less than its icons need.
         Expanded(
