@@ -1303,7 +1303,7 @@ class _BoardViewState extends State<_BoardView> {
             itemCount: issues.length,
             itemBuilder: (context, index) {
               final issue = issues[index];
-              final held = !board.takesMoves || board.holdsMoves || board.waitsOnItsSave('issue ${issue.id}');
+              final held = !board.takesMoves || board.waitsOnItsSave('issue ${issue.id}');
               return Card(
                 key: Key('planning-outside ${issue.id}'),
                 child: Padding(
@@ -1348,7 +1348,7 @@ class _BoardViewState extends State<_BoardView> {
   final _hovered = ValueNotifier<String?>(null);
 
   bool _accepts(PlanState state, _CardDrag drag) =>
-      !board.holdsMoves &&
+      // A move made while another card's save is out is queued behind it.
       !board.waitsOnItsSave(drag.story) &&
       {'WAITING', 'WORKING', 'CLOSED'}.contains(state.kind) &&
       board.takesMoves &&
@@ -1547,7 +1547,7 @@ class _BoardViewState extends State<_BoardView> {
     data: (story: story.id, revision: board.snapshot?.revision ?? ''),
     // A card under the pointer may leave the view while it is dragged, and its target then says nothing.
     onDragEnd: (_) => _hovered.value = null,
-    maxSimultaneousDrags: board.holdsMoves || board.waitsOnItsSave(story.id) || !board.takesMoves ? 0 : 1,
+    maxSimultaneousDrags: board.waitsOnItsSave(story.id) || !board.takesMoves ? 0 : 1,
     feedback: Material(
       elevation: Space.tight,
       child: Padding(padding: const EdgeInsets.all(Space.small), child: Text(_line(story.id))),
@@ -1782,6 +1782,7 @@ class _BoardViewState extends State<_BoardView> {
       _work(story),
       _needsYou(story),
       board.pending[story.id],
+      board.refusalOf(story.id),
       board.holdsMoves,
       board.snapshot?.revision,
       board.pendingPriorities[story.id],
@@ -1856,6 +1857,12 @@ class _BoardViewState extends State<_BoardView> {
                 Text(_line(story.title)),
                 if (_offered) ...[const SizedBox(height: Space.small), _openWork(context, story)],
                 if (board.pending.containsKey(story.id)) const Text('Saving…'),
+                if (board.refusalOf(story.id) case final words?)
+                  Text(
+                    words,
+                    key: Key('planning-card-refused ${story.id}'),
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
                 if (board.pendingPriorities[story.id] case final priority?)
                   Text('Priority $priority pending', key: Key('planning-priority-pending ${story.id}')),
                 ...[

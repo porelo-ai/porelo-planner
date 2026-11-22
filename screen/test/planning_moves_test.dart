@@ -776,19 +776,22 @@ void main() {
     );
   });
 
-  // Harm: a second move sent while one is saved, or lost without a word.
-  test('a move made while another is saved is refused with words and nothing is queued', () async {
+  // Harm: a second move of the card being saved goes out beside its save, or a move of another card is lost.
+  test('a move made while another is saved is queued, and a second move of the same card is refused', () async {
     backend.gate = Completer<void>();
     final saved = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
-    await board.move('StoryTwo', 'Rejected');
+    await board.move('StoryOne', 'Rejected');
     expect(board.moveProblem, contains('Saving…'));
-    expect(backend.calls, hasLength(1));
-    expect(board.pending.keys, ['StoryOne']);
+    await board.move('StoryTwo', 'Rejected');
+    expect(backend.calls, hasLength(1), reason: 'one save is out at a time');
+    expect(board.pending.keys, ['StoryOne', 'StoryTwo']);
+    expect(board.queuedMoves, ['StoryTwo']);
     backend.gate!.complete();
     await saved;
-    expect(board.pending, isEmpty);
-    expect(backend.calls, hasLength(1), reason: 'nothing was queued');
+    await pumpEventQueue();
+    expect(backend.calls, hasLength(2), reason: 'the queued move was saved after it');
+    expect(board.queuedMoves, isEmpty);
   });
 
   // Harm: completing a write after a closed window notifies a disposed model.
@@ -1291,14 +1294,14 @@ void main() {
     expect(board.moveProblem, contains('Rejected'), reason: 'the person reads where the issue stands now');
   });
 
-  // Harm: a person's move lost without a word while a save runs.
-  test('a move chosen while a save runs is refused with words', () async {
+  // Harm: a person's move lost while a save runs.
+  test('a move chosen while a save runs is queued and shown pending', () async {
     backend.gate = Completer<void>();
     final saving = board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
     await board.moveIssue('IssueOne', 'Rejected', reported: issueOne());
-    expect(board.pending.keys, isNot(contains('issue IssueOne')), reason: 'nothing is taken while saving');
-    expect(board.moveProblem, contains('Saving…'), reason: 'the person reads why the move was not taken');
+    expect(board.pending.keys, contains('issue IssueOne'), reason: 'taken while saving');
+    expect(board.queuedMoves, ['issue IssueOne']);
     backend.gate!.complete();
     await saving;
   });
