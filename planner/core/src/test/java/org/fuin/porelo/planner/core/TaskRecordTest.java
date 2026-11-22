@@ -22,7 +22,7 @@ class TaskRecordTest {
                                         "t1",
                                         "example",
                                         null,
-                                        null,
+                                        List.of(),
                                         T0,
                                         T0.minusSeconds(1),
                                         End.DONE,
@@ -36,13 +36,16 @@ class TaskRecordTest {
     @Test
     void anEndTimeWithoutHowItEndedIsRefusedAndTheOtherWayRound() {
         assertThatThrownBy(
-                        () -> new TaskRecord("t1", "example", null, null, T0, T0, null, List.of()))
+                        () ->
+                                new TaskRecord(
+                                        "t1", "example", null, List.of(), T0, T0, null, List.of()))
                 .as("an end time alone refused")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 new TaskRecord(
-                                        "t1", "example", null, null, T0, null, End.DONE, List.of()))
+                                        "t1", "example", null, List.of(), T0, null, End.DONE,
+                                        List.of()))
                 .as("how it ended alone refused")
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -53,5 +56,24 @@ class TaskRecordTest {
         assertThatThrownBy(() -> new Call("EX1", T0, T0.minusSeconds(1)))
                 .as("refused")
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // A task counted twice for one issue would double that issue's minutes.
+    @Test
+    void aTaskNamingAnIssueTwiceIsRefused() {
+        assertThatThrownBy(
+                        () ->
+                                new TaskRecord(
+                                        "t1",
+                                        "example",
+                                        null,
+                                        List.of("EX1", "EX1"),
+                                        T0,
+                                        null,
+                                        null,
+                                        List.of()))
+                .as("refused")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("twice");
     }
 }

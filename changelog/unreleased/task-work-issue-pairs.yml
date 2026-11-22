@@ -1,0 +1,2 @@
+title: The velocity reads a task's work as Porelo's list of issue and phase pairs and counts the task for each issue in it, and still reads a record that names one pair or none.
+type: changed

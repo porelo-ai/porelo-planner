@@ -6,13 +6,14 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * What the velocity reads of Porelo's own record of one task: when it ran, how it ended, the issue
+ * What the velocity reads of Porelo's own record of one task: when it ran, how it ended, the issues
  * it was started for and the issue each of its calls was made for.
  *
  * @param task Porelo's id of the task
  * @param project the project the task belongs to
  * @param repository the repository it ran in, or null when it ran in none
- * @param issue the issue it was started for, or null when it was started for none
+ * @param issues the issues it was started for, each once, in Porelo's order; none when it was
+ *     started for none
  * @param startedAt when it started
  * @param endedAt when it ended, or null while it runs
  * @param end how it ended, or null while it runs
@@ -22,7 +23,7 @@ public record TaskRecord(
         String task,
         String project,
         @Nullable String repository,
-        @Nullable String issue,
+        List<String> issues,
         Instant startedAt,
         @Nullable Instant endedAt,
         @Nullable End end,
@@ -41,8 +42,8 @@ public record TaskRecord(
     }
 
     /**
-     * Refuses a blank task, project or issue, an end before the start and an end time without how
-     * it ended or the other way round.
+     * Refuses a blank task, project or issue, an issue named twice, an end before the start and an
+     * end time without how it ended or the other way round.
      */
     public TaskRecord {
         Objects.requireNonNull(startedAt, "startedAt");
@@ -52,8 +53,12 @@ public record TaskRecord(
         if (project.isBlank()) {
             throw new IllegalArgumentException("Task " + task + " names no project");
         }
-        if (issue != null && issue.isBlank()) {
+        issues = List.copyOf(issues);
+        if (issues.stream().anyMatch(String::isBlank)) {
             throw new IllegalArgumentException("Task " + task + " names a blank issue");
+        }
+        if (issues.stream().distinct().count() != issues.size()) {
+            throw new IllegalArgumentException("Task " + task + " names an issue twice");
         }
         if ((endedAt == null) != (end == null)) {
             throw new IllegalArgumentException(

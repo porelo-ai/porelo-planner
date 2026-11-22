@@ -86,10 +86,7 @@ public final class Velocity {
             if (ended == null) {
                 continue;
             }
-            final Set<String> issues = new LinkedHashSet<>();
-            if (record.issue() != null) {
-                issues.add(record.issue());
-            }
+            final Set<String> issues = new LinkedHashSet<>(record.issues());
             final Map<String, List<Instant[]>> intervals = new LinkedHashMap<>();
             for (final TaskRecord.Call call : record.calls()) {
                 final String issue = call.issue();

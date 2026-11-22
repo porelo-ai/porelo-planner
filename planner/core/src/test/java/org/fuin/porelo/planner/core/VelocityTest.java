@@ -172,7 +172,7 @@ class VelocityTest {
     void aRunningTaskGivesNothing() {
         issue("EX1", "own", "M", "Finished");
         final TaskRecord running =
-                new TaskRecord("t1", "example", "own", "EX1", T0, null, null, List.of());
+                new TaskRecord("t1", "example", "own", List.of("EX1"), T0, null, null, List.of());
 
         assertThat(velocity(List.of(running), "own", "M")).as("no sample").isEmpty();
     }
@@ -187,7 +187,7 @@ class VelocityTest {
                                 "t1",
                                 "example",
                                 "own",
-                                "EX1",
+                                List.of("EX1"),
                                 T0,
                                 T0.plusSeconds(30 * 60),
                                 End.FAILED,
@@ -197,6 +197,28 @@ class VelocityTest {
         assertThat(velocity(records, "own", "M"))
                 .as("30 and 40 minutes")
                 .hasValueSatisfying(minutes -> assertThat(minutes).isCloseTo(70.0, within(1e-9)));
+    }
+
+    // A task started for two issues counted for one of them alone gives it the other's minutes.
+    @Test
+    void aTaskStartedForTwoIssuesSharesItsMinutesBetweenThem() {
+        issue("EX1", "own", "M", "Finished");
+        issue("EX2", "own", "M", "Finished");
+        final List<TaskRecord> records =
+                List.of(
+                        new TaskRecord(
+                                "t1",
+                                "example",
+                                "own",
+                                List.of("EX1", "EX2"),
+                                T0,
+                                T0.plusSeconds(40 * 60),
+                                End.DONE,
+                                List.of()));
+
+        assertThat(velocity(records, "own", "M"))
+                .as("20 minutes each")
+                .hasValueSatisfying(minutes -> assertThat(minutes).isCloseTo(20.0, within(1e-9)));
     }
 
     // One task given twice must not be counted twice.
@@ -259,7 +281,7 @@ class VelocityTest {
                 id,
                 "example",
                 "own",
-                issue,
+                issue == null ? List.of() : List.of(issue),
                 T0.plusSeconds(from * 60L),
                 T0.plusSeconds(to * 60L),
                 End.DONE,

@@ -54,6 +54,9 @@ public final class PoreloTaskRecords implements TaskRecords {
         return issue.substring(issue.indexOf('/') + 1);
     }
 
+    /** The most issue and phase pairs Porelo records for one task's work. */
+    static final int MOST_PAIRS = 16;
+
     /** An issue of the Git store, or a tracker's issue with its owner, as Start is handed it. */
     private static final Pattern ISSUE =
             Pattern.compile(
@@ -222,7 +225,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                 throw refused("project", "names another project than " + project);
             }
             final String repository = textOrNull(record, "repository", "repository");
-            final String issue = work();
+            final List<String> issues = work();
             textOrNull(record, "agent", "agent");
             textOrNull(record, "model", "model");
             text(record, "modelFrom", "modelFrom");
@@ -241,7 +244,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                         task,
                         named,
                         repository,
-                        issue,
+                        issues,
                         startedAt,
                         endedAt,
                         end == null ? null : TaskRecord.End.valueOf(end.toUpperCase(Locale.ROOT)),
@@ -252,25 +255,56 @@ public final class PoreloTaskRecords implements TaskRecords {
             }
         }
 
-        private @Nullable String work() {
+        /**
+         * The issues of the task's work, a list of at most {@link PoreloTaskRecords#MOST_PAIRS}
+         * issue and phase pairs, each issue once; a Porelo that records one pair as an object, or
+         * none as null, is read the same, so the planner reads a record of either.
+         */
+        private List<String> work() {
             final JsonNode work = present(record, "work", "work");
             if (work.isNull()) {
-                return null;
+                return List.of();
             }
-            if (!work.isObject()) {
-                throw refused("work", "is neither null nor an object");
+            if (work.isObject()) {
+                return List.of(withinProject(pair(work, "work")));
             }
-            final String issue = text(work, "issue", "work.issue");
+            if (!work.isArray()) {
+                throw refused("work", "is neither a list of issue and phase pairs nor null");
+            }
+            if (work.size() > MOST_PAIRS) {
+                throw refused("work", "holds more than " + MOST_PAIRS + " pairs");
+            }
+            final List<String> named = new ArrayList<>();
+            final List<String> issues = new ArrayList<>();
+            for (int i = 0; i < work.size(); i++) {
+                final String issue = pair(work.get(i), "work[" + i + "]");
+                if (named.contains(issue)) {
+                    throw refused("work[" + i + "].issue", "names an issue an earlier pair names");
+                }
+                named.add(issue);
+                // Two owners' issues of one name are one issue of the board, which names no owner.
+                if (!issues.contains(withinProject(issue))) {
+                    issues.add(withinProject(issue));
+                }
+            }
+            return issues;
+        }
+
+        private String pair(final JsonNode pair, final String path) {
+            if (!pair.isObject()) {
+                throw refused(path, "is no object");
+            }
+            final String issue = text(pair, "issue", path + ".issue");
             if (!ISSUE.matcher(issue).matches()) {
-                throw refused("work.issue", "is no issue id (" + ISSUE.pattern() + ")");
+                throw refused(path + ".issue", "is no issue id (" + ISSUE.pattern() + ")");
             }
-            final String phase = text(work, "phase", "work.phase");
+            final String phase = text(pair, "phase", path + ".phase");
             if (phase.isBlank() || phase.length() > 64 || UNSOUND.matcher(phase).find()) {
                 throw refused(
-                        "work.phase",
+                        path + ".phase",
                         "is no phase (one line that is not blank, at most 64 characters)");
             }
-            return withinProject(issue);
+            return issue;
         }
 
         private void totals() {

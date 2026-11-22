@@ -77,7 +77,7 @@ class PoreloTaskRecordsTest {
                                 "t-1",
                                 "porelo-planner",
                                 "porelo-planner",
-                                "EX12",
+                                List.of("EX12"),
                                 Instant.parse("2026-11-02T10:00:00Z"),
                                 Instant.parse("2026-11-02T12:00:00.123456789Z"),
                                 TaskRecord.End.FAILED,
@@ -148,8 +148,8 @@ class PoreloTaskRecordsTest {
                                 "project",
                                 "repository",
                                 "work",
-                                "work.issue",
-                                "work.phase",
+                                "work[0].issue",
+                                "work[0].phase",
                                 "agent",
                                 "model",
                                 "modelFrom",
@@ -206,15 +206,16 @@ class PoreloTaskRecordsTest {
                 Arguments.of("project", NODES.nullNode()),
                 Arguments.of("repository", NODES.numberNode(7)),
                 Arguments.of("work", NODES.textNode("EX12")),
-                Arguments.of("work.issue", NODES.textNode("pl61")),
-                Arguments.of("work.issue", NODES.nullNode()),
-                Arguments.of("work.issue", NODES.textNode("porelo-x#3")),
-                Arguments.of("work.issue", NODES.textNode("example-org/Porelo-X#3")),
-                Arguments.of("work.issue", NODES.textNode("a..b/porelo-x#3")),
-                Arguments.of("work.issue", NODES.textNode("example-org/porelo-x#0")),
-                Arguments.of("work.phase", NODES.textNode(" ")),
-                Arguments.of("work.phase", NODES.textNode("build\nimplement")),
-                Arguments.of("work.phase", NODES.textNode("build:" + "x".repeat(59))),
+                Arguments.of("work[0]", NODES.textNode("EX12")),
+                Arguments.of("work[0].issue", NODES.textNode("pl61")),
+                Arguments.of("work[0].issue", NODES.nullNode()),
+                Arguments.of("work[0].issue", NODES.textNode("porelo-x#3")),
+                Arguments.of("work[0].issue", NODES.textNode("example-org/Porelo-X#3")),
+                Arguments.of("work[0].issue", NODES.textNode("a..b/porelo-x#3")),
+                Arguments.of("work[0].issue", NODES.textNode("example-org/porelo-x#0")),
+                Arguments.of("work[0].phase", NODES.textNode(" ")),
+                Arguments.of("work[0].phase", NODES.textNode("build\nimplement")),
+                Arguments.of("work[0].phase", NODES.textNode("build:" + "x".repeat(59))),
                 Arguments.of("agent", NODES.booleanNode(true)),
                 Arguments.of("model", NODES.numberNode(7)),
                 Arguments.of("modelFrom", NODES.nullNode()),
@@ -381,6 +382,87 @@ class PoreloTaskRecordsTest {
                 .doesNotContain("second line");
     }
 
+    // Prevents a task started for several issues from being counted for one of them only, or for
+    // none when Porelo writes the list a record of this Porelo holds.
+    @Test
+    void aTasksWorkIsReadAsItsListOfIssueAndPhasePairsEachIssueOnce() throws Exception {
+        final ObjectNode record = record();
+        record.putArray("work")
+                .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "build"))
+                .add(
+                        JSON.createObjectNode()
+                                .put("issue", "Example-Org/porelo-x#3")
+                                .put("phase", "read"));
+        answer(JSON.createArrayNode().add(record));
+
+        assertThat(records().since("porelo-planner", SINCE).getFirst().issues())
+                .as("both issues of the work, in Porelo's order")
+                .containsExactly("EX12", "porelo-x#3");
+
+        final ObjectNode sixteen = record();
+        final var most = sixteen.putArray("work");
+        for (int i = 1; i <= 16; i++) {
+            most.add(JSON.createObjectNode().put("issue", "EX" + i).put("phase", "build"));
+        }
+        answer(JSON.createArrayNode().add(sixteen));
+        assertThat(records().since("porelo-planner", SINCE).getFirst().issues())
+                .as("the most pairs Porelo records")
+                .hasSize(16);
+
+        final ObjectNode owners = record();
+        owners.putArray("work")
+                .add(JSON.createObjectNode().put("issue", "Org-A/porelo-x#3").put("phase", "build"))
+                .add(JSON.createObjectNode().put("issue", "Org-B/porelo-x#3").put("phase", "read"));
+        answer(JSON.createArrayNode().add(owners));
+        assertThat(records().since("porelo-planner", SINCE).getFirst().issues())
+                .as("two owners' issues of one name are the board's one issue")
+                .containsExactly("porelo-x#3");
+
+        final ObjectNode old = record();
+        old.putNull("work");
+        answer(JSON.createArrayNode().add(old));
+        assertThat(records().since("porelo-planner", SINCE).getFirst().issues())
+                .as("an older Porelo's null is a task for no issue")
+                .isEmpty();
+
+        final ObjectNode none = record();
+        none.putArray("work");
+        none.putNull("endedAt").putNull("end");
+        answer(JSON.createArrayNode().add(none));
+        assertThat(records().since("porelo-planner", SINCE).getFirst().issues())
+                .as("an empty work is a task for no issue")
+                .isEmpty();
+    }
+
+    // Prevents a record naming one issue twice, or more pairs than Porelo records, from being
+    // counted as if it were Porelo's.
+    @Test
+    void aWorkNamingAnIssueTwiceOrMoreThanSixteenPairsIsRefused() throws Exception {
+        final ObjectNode twice = record();
+        twice.putArray("work")
+                .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "build"))
+                .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "read"));
+        answer(JSON.createArrayNode().add(twice));
+        assertThat(refusal()).as("an issue twice").contains("field work[1].issue");
+
+        final ObjectNode second = record();
+        second.putArray("work")
+                .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "build"))
+                .add(JSON.createObjectNode().put("issue", "pl61").put("phase", "read"));
+        answer(JSON.createArrayNode().add(second));
+        assertThat(refusal())
+                .as("a bad second pair named by its place")
+                .contains("field work[1].issue");
+
+        final ObjectNode many = record();
+        final var pairs = many.putArray("work");
+        for (int i = 1; i <= 17; i++) {
+            pairs.add(JSON.createObjectNode().put("issue", "EX" + i).put("phase", "build"));
+        }
+        answer(JSON.createArrayNode().add(many));
+        assertThat(refusal()).as("seventeen pairs").contains("field work").contains("16 pairs");
+    }
+
     // Prevents a task started for a tracker's issue, which Porelo records with its owner and the
     // stage's phase, from failing every answer, or from being counted for no issue of the board.
     @Test
@@ -392,9 +474,9 @@ class PoreloTaskRecordsTest {
         answer(JSON.createArrayNode().add(record));
 
         final TaskRecord read = records().since("porelo-planner", SINCE).getFirst();
-        assertThat(read.issue())
+        assertThat(read.issues())
                 .as("the task's issue as the board names it")
-                .isEqualTo("porelo-x#12");
+                .containsExactly("porelo-x#12");
         assertThat(read.calls())
                 .as("the sub-agent's issue as the board names it")
                 .extracting(TaskRecord.Call::issue)
@@ -618,7 +700,7 @@ class PoreloTaskRecordsTest {
                           "task": "t-1",
                           "project": "porelo-planner",
                           "repository": "porelo-planner",
-                          "work": {"issue": "EX12", "phase": "build:implement"},
+                          "work": [{"issue": "EX12", "phase": "build:implement"}],
                           "agent": "claude",
                           "model": "claude-opus",
                           "modelFrom": "stream",
