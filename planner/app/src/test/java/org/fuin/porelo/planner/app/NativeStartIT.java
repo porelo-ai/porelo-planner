@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -596,6 +598,14 @@ class NativeStartIT {
         final long end = System.nanoTime() + bound.toNanos();
         while (System.nanoTime() < end && planner.isAlive()) {
             if (Files.exists(file)) {
+                if (RuntimeDirectories.WINDOWS) {
+                    // A passing start shows its PowerShell timings too, so any Build measures them.
+                    // Read leniently: a console line in another code page must not fail a passing
+                    // start.
+                    powerShellLines(new String(Files.readAllBytes(output), StandardCharsets.UTF_8))
+                            .forEach(
+                                    line -> System.out.println(output.getFileName() + ": " + line));
+                }
                 return RuntimeDirectories.read(runtime);
             }
             Thread.sleep(100);
@@ -613,10 +623,12 @@ class NativeStartIT {
 
     /** The last line the planner logged of a PowerShell call, or that it logged none. */
     private static String lastPowerShellLine(final String wrote) {
-        return wrote.lines()
-                .filter(line -> line.contains("PowerShell "))
-                .reduce((first, second) -> second)
-                .orElse("none");
+        return powerShellLines(wrote).reduce((first, second) -> second).orElse("none");
+    }
+
+    /** The lines the planner logged of its PowerShell calls, in order. */
+    private static Stream<String> powerShellLines(final String wrote) {
+        return wrote.lines().filter(line -> line.contains("PowerShell "));
     }
 
     /** The health answer of this build, from the version and commit the build computed. */
