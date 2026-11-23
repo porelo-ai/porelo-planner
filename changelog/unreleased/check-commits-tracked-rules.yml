@@ -1,0 +1,2 @@
+title: The executable's check-commits reads no issue prefixes any more but refuses an issue number by its shape or as a GitHub reference, takes a `Porelo-Issue:` trailer per issue and refuses a closing keyword before an issue reference, as the build tools do.
+type: changed

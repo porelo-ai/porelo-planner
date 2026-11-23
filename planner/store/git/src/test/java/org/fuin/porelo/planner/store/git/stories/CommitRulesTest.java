@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,8 +33,6 @@ class CommitRulesTest {
     private final List<String> askedRanges = new ArrayList<>();
 
     private final StringBuilder log = new StringBuilder();
-
-    private Set<String> prefixes = Set.of("BT", "SL", "PJ");
 
     // Each refused subject below was on a main branch, as measured over a day's commits.
     @Test
@@ -67,13 +64,173 @@ class CommitRulesTest {
                 .contains("a000003  names a requirement number: SL25");
     }
 
+    // Harm: an issue number told by no prefix the repository keeps, or written as a GitHub
+    // reference, reaches main and links or closes an issue there.
     @Test
-    void passesAWordOfANumbersShapeWhosePrefixNoIndexHas() {
-        // A word list of capitals and digits would refuse these; only the indexes' prefixes are
-        // numbers.
-        commit("a000004", "Take IPv4 only, and build for x86_64 with UTF8 and SHA256 names");
+    void refusesAnOldIdAndAGitHubReference() {
+        // not-a-citation
+        commit("a000041", "Close HO12 at last");
+        // not-a-citation
+        commit("a000042", "Fix the pin for #12");
+        // not-a-citation
+        commit("a000043", "Follow the planner\n\nAssisted-by: porelo-ai/porelo-host#7");
+        // not-a-citation
+        commit("a000044", "Follow https://github.com/Porelo-AI/porelo/issues/9 and GH-3");
+        // not-a-citation
+        commit("a000049", "Close \"#13\", '#14' and --#15");
+        // not-a-citation
+        commit("a000050", "Follow www.github.com/porelo-ai/porelo/issues/16 and -GH-17");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        // not-a-citation
+        assertThat(stderr())
+                .as("each number by its shape, no prefix read")
+                .contains("a000041  names a requirement number: HO12")
+                .contains("a000042  names a requirement number: #12")
+                .contains("a000043  names a requirement number: porelo-ai/porelo-host#7")
+                .contains(
+                        "a000044  names a requirement number:"
+                                + " https://github.com/Porelo-AI/porelo/issues/9")
+                .contains("a000044  names a requirement number: GH-3")
+                .contains("a000049  names a requirement number: #13")
+                .contains("a000049  names a requirement number: #14")
+                .contains("a000049  names a requirement number: #15")
+                .contains(
+                        "a000050  names a requirement number:"
+                                + " www.github.com/porelo-ai/porelo/issues/16")
+                .contains("a000050  names a requirement number: GH-17");
+    }
+
+    // Harm: the shape rule refuses words a subject needs, which would block every push.
+    @Test
+    void passesWordsOfNoNumbersShape() {
+        commit("a000045", "Take IPv4 only, and build for x86_64 with UTF8 and SHA256 names");
+        commit("a000046", "Keep the S256 challenge and the colour #fff\n\n" + AGENT);
 
         assertThat(check()).as(stderr()).isEqualTo(0);
+    }
+
+    // Harm: a repository without issue files gets no answer, so every push of it stops, and the
+    // planner says a line the build tools do not.
+    @Test
+    void passesACleanCommitWithNoIssuePrefixAndSaysOnlyItsCount() {
+        commit("a000051", "Read the pins once\n\n" + AGENT);
+
+        assertThat(check()).as(stderr()).isEqualTo(0);
+        assertThat(stdout())
+                .as("one line, no note on where the issues are kept")
+                .isEqualTo("OK    1 commit(s) in RANGE, 0 exempt" + System.lineSeparator());
+    }
+
+    // Harm: a commit loses its link to the issue it was made for, which the trailer alone gives.
+    @Test
+    void passesOnePoreloIssueTrailerPerIssue() {
+        // not-a-citation
+        commit(
+                "a000060",
+                "Take the issue trailer\n\n"
+                        + AGENT
+                        + "\nPorelo-Issue: porelo-ai/porelo#123\nporelo-issue: Porelo-AI/porelo-host#7");
+
+        assertThat(check()).as(stderr()).isEqualTo(0);
+    }
+
+    // Harm: a trailer the tracker cannot link passes as if it named its issue.
+    // not-a-citation
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Porelo-Issue: #123",
+                "Porelo-Issue: porelo-ai/porelo",
+                "Porelo-Issue: porelo-ai/porelo#123 too",
+                "Porelo-Issue: porelo-ai/porelo#0",
+                "Porelo-Issue: https://github.com/porelo-ai/porelo/issues/123",
+                "Porelo-Issue:porelo-ai/porelo#123",
+                "Porelo-Issue: porelo-ai/..#1",
+                "Porelo-Issue: porelo-ai/.#1"
+            })
+    void refusesAPoreloIssueTrailerOfAnotherForm(String trailer) {
+        commit("a000062", "Take the issue trailer\n\n" + AGENT + "\n" + trailer);
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr())
+                .contains(
+                        "a000062  a Porelo-Issue trailer not of the form"
+                                + " 'Porelo-Issue: <owner>/<repository>#<number>': "
+                                + trailer);
+    }
+
+    // Harm: a push closes an issue, whose Finished only the person sets.
+    // not-a-citation
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Fixes #12",
+                "closes porelo-ai/porelo#12",
+                "Resolved: https://github.com/o/r/issues/12",
+                "FIX octo/cat#3",
+                "Closes: #3",
+                "RESOLVES http://www.github.com/o/r/issues/4",
+                "fixes\n#5",
+                "Fixes GH-12"
+            })
+    void refusesAClosingKeywordBeforeAnIssueReference(String closing) {
+        // not-a-citation
+        commit("a000063", "Take the pin\n\n" + AGENT + "\nPorelo-Issue: porelo-ai/porelo#12");
+        commit("a000064", "Take the pin, " + closing.replace('\n', ' ') + "\n\n" + AGENT);
+        // In a trailer's value, the one place no other rule refuses it.
+        commit("a000065", "Take the pin\n\n" + AGENT + ", " + closing);
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        assertThat(stderr())
+                .doesNotContain("a000063  ")
+                .contains("a000064  closes an issue on push: " + closing.replace('\n', ' '))
+                .contains("a000065  closes an issue on push: " + closing);
+    }
+
+    // Harm: the closing rule refuses the words a subject needs, which would block pushes.
+    @Test
+    void passesAClosingWordWithoutAnIssueReference() {
+        commit("a000066", "Fix the pin, close the gap and resolve the prefix #fff\n\n" + AGENT);
+
+        assertThat(check()).as(stderr()).isEqualTo(0);
+    }
+
+    // Harm: the trailer carries a number into the subject past the number rule.
+    @Test
+    void refusesANumberInTheSubjectBesideAPoreloIssueTrailer() {
+        // not-a-citation
+        commit(
+                "a000067",
+                "Take porelo-ai/porelo#123 and #12\n\n"
+                        + AGENT
+                        + "\nPorelo-Issue: porelo-ai/porelo#123");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        // not-a-citation
+        assertThat(stderr())
+                .contains("a000067  names a requirement number: porelo-ai/porelo#123")
+                .contains("a000067  names a requirement number: #12")
+                .contains("2 fault(s) in 1 of 1 commit(s)");
+    }
+
+    // Harm: a number or a person hides in a trailer below the words the rules read, or a sign-off,
+    // which names its author by design, is refused where the build tools take it.
+    @Test
+    void readsEveryTrailerForNumbersAndAllButTheSignOffForWho() {
+        // not-a-citation
+        commit("a000026", "Read the pins once\n\nAssisted-by: BT12 helper");
+        commit("a000027", "Read the pins twice\n\nAssisted-by: the operator");
+        commit(
+                "a000028",
+                "Read the pins thrice\n\nSigned-off-by: The Operator <operator@example.org>");
+
+        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
+        // not-a-citation
+        assertThat(stderr())
+                .contains("a000026  names a requirement number: BT12")
+                .contains("a000027  says who: operator")
+                .doesNotContain("a000028");
     }
 
     @Test
@@ -423,28 +580,6 @@ class CommitRulesTest {
         assertThat(stderr()).contains("a000026  says who:");
     }
 
-    // Prevents a sign-off of somebody else from carrying a credit past the check.
-    @Test
-    void refusesWhoMadeTheChangeNamedInAnothersSignOff() {
-        commit(
-                "a000028",
-                "Read the pins once\n\nSigned-off-by: Agent Core, as the operator chose"
-                        + " <core@example.org>");
-
-        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
-        assertThat(stderr()).contains("a000028  says who:");
-    }
-
-    @Test
-    void refusesASignOffWithoutAnAddress() {
-        commit("a000029", "Read the pins once\n\nSigned-off-by: as the lead chose");
-
-        assertThat(check()).as(stderr()).isEqualTo(CommitRules.REFUSED);
-        assertThat(stderr())
-                .contains(
-                        "a000029  below the subject, a line that is not a trailer: Signed-off-by:");
-    }
-
     // Prevents a credit the shared rules forbid an agent from passing as a trailer.
     @Test
     void refusesACoAuthoredByTrailer() {
@@ -484,33 +619,48 @@ class CommitRulesTest {
                         stream(err),
                         range -> {
                             throw new java.io.IOException("fatal: bad revision 'RANGE'");
-                        },
-                        () -> prefixes);
+                        });
 
         assertThat(check.check("RANGE", false)).isEqualTo(CommitRules.UNANSWERED);
         assertThat(stderr()).contains("fatal: bad revision 'RANGE'");
-    }
-
-    @Test
-    void noPrefixFoundIsUnansweredNeverAPass() {
-        // Without a prefix the number rule would hold nothing and say so nowhere.
-        prefixes = Set.of();
-        commit("a000025", "Read the pins once");
-
-        assertThat(check()).isEqualTo(CommitRules.UNANSWERED);
-        assertThat(stderr()).contains("no issue prefix");
     }
 
     // 'git log --output=FILE' writes a file: a range from a workflow must not become an option.
     @ParameterizedTest
     @ValueSource(strings = {"--output=/tmp/x", "--all", "-n1", "", " "})
     void aRangeThatGitWouldReadAsAnOptionIsNotRun(String range) {
-        assertThat(
-                        new CommitRules(stream(out), stream(err), this::fakeLog, () -> prefixes)
-                                .check(range, false))
+        assertThat(new CommitRules(stream(out), stream(err), this::fakeLog).check(range, false))
                 .as("the range '%s'", range)
                 .isEqualTo(CommitRules.UNANSWERED);
         assertThat(askedRanges).as("git was not run").isEmpty();
+    }
+
+    // Harm: a log that splits into another count of commits than git counts passes as an account
+    // of the range, or is refused in other words than the build tools'.
+    @Test
+    void givesNoAnswerWhenTheLogSplitsIntoMoreCommitsThanGitCounts() {
+        commit("a000070", "Read the pins once");
+        commit("a000071", "Clean");
+        final CommitRules.Git counted =
+                new CommitRules.Git() {
+                    @Override
+                    public String log(String range) {
+                        return fakeLog(range);
+                    }
+
+                    @Override
+                    public java.util.OptionalLong count(String range) {
+                        return java.util.OptionalLong.of(1);
+                    }
+                };
+
+        assertThat(new CommitRules(stream(out), stream(err), counted).check("RANGE", false))
+                .isEqualTo(CommitRules.UNANSWERED);
+        assertThat(stderr())
+                .isEqualTo(
+                        "could not read the commits of RANGE: the log splits into 2 commit(s)"
+                                + " where git counts 1; a message holds git's separators"
+                                + System.lineSeparator());
     }
 
     // Prevents a message from forging an exempt commit's record and hiding its own body behind it.
@@ -530,7 +680,13 @@ class CommitRulesTest {
         assertThat(checkRepository())
                 .as("a log that does not split into its commits: %s", stderr())
                 .isEqualTo(CommitRules.UNANSWERED);
-        assertThat(stderr()).as("why").contains("separator");
+        assertThat(stderr())
+                .as("why, a record in the build tools' words")
+                .contains(
+                        "record".equals(separator)
+                                ? "the log splits into 2 commit(s) where git counts 1; a message"
+                                        + " holds git's separators"
+                                : "field separator(s): a name, address or message holds one");
     }
 
     // Prevents a name that merely starts like a bot's from taking the bots' exemption.
@@ -552,8 +708,8 @@ class CommitRulesTest {
     @Test
     void readsWhatGitItselfWrites() throws IOException, InterruptedException {
         git("init", "-q", "-b", "main");
-        write("issues/workflow.yml", Files.readString(Path.of("src/test/resources/workflow.yml")));
-        git("add", "issues/workflow.yml");
+        write("README.md", "x\n");
+        git("add", "README.md");
         git("commit", "-q", "--allow-empty", "-m", "Read the pins once", "-m", AGENT);
         git(
                 "commit",
@@ -567,11 +723,7 @@ class CommitRulesTest {
         final String good = git("log", "-1", "--skip=1", "--format=%h").strip();
 
         final int code =
-                new CommitRules(
-                                stream(out),
-                                stream(err),
-                                CommitRules.Git.in(directory, isolated()),
-                                () -> prefixes)
+                new CommitRules(stream(out), stream(err), CommitRules.Git.in(directory, isolated()))
                         .check("HEAD", false);
 
         assertThat(code).as(stderr()).isEqualTo(CommitRules.REFUSED);
@@ -586,36 +738,8 @@ class CommitRulesTest {
                 .contains("1 fault(s)");
     }
 
-    @Test
-    void takesOnlyThePrefixesOfItsOwnIssuesAndTheirRows() throws IOException {
-        // Without a prefix a requirement number of that repository goes through as a word; another
-        // repository's index is not read, so its state cannot decide this repository's check.
-        write("issues/workflow.yml", Files.readString(Path.of("src/test/resources/workflow.yml")));
-        write(
-                "issues/README.md",
-                "## Idea\n| <a id=\"bt17\"></a>[BT17](BT17-A.md) | x |\n"
-                        + "| <a id=\"xy05\"></a>XY05 | done |\n");
-        write(
-                "issues/BT17-A.md",
-                "As [PJ27](https://github.com/porelo-ai/porelo-project/blob/main/issues/README.md#pj27)"
-                        + " says.\n");
-        // A test's fixture deeper down holds issues of whatever prefix it was written with.
-        write(
-                "src/test/resources/sample/issues/README.md",
-                "| <a id=\"f05\"></a>[F05](F05-A-Fixture.md) | a fixture |\n");
-        write("src/test/resources/sample/issues/F05-A-Fixture.md", "# F05 - A Fixture\n");
-
-        assertThat(CommitRules.prefixes(directory))
-                .as("its own file's and a finished row's, never the linked index's or a fixture's")
-                .containsExactlyInAnyOrder("BT", "XY");
-    }
-
     private int checkRepository() {
-        return new CommitRules(
-                        stream(out),
-                        stream(err),
-                        CommitRules.Git.in(directory, isolated()),
-                        () -> prefixes)
+        return new CommitRules(stream(out), stream(err), CommitRules.Git.in(directory, isolated()))
                 .check("HEAD", false);
     }
 
@@ -626,13 +750,11 @@ class CommitRulesTest {
     }
 
     private int check() {
-        return new CommitRules(stream(out), stream(err), this::fakeLog, () -> prefixes)
-                .check("RANGE", false);
+        return new CommitRules(stream(out), stream(err), this::fakeLog).check("RANGE", false);
     }
 
     private int checkOutside() {
-        return new CommitRules(stream(out), stream(err), this::fakeLog, () -> prefixes)
-                .check("RANGE", true);
+        return new CommitRules(stream(out), stream(err), this::fakeLog).check("RANGE", true);
     }
 
     private String fakeLog(String range) {

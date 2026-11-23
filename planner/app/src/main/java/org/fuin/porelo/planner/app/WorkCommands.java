@@ -135,11 +135,7 @@ final class WorkCommands {
         final boolean fromOutside = outside;
         return said(
                 (sayer, faulter) ->
-                        new CommitRules(
-                                        sayer,
-                                        faulter,
-                                        CommitRules.Git.in(here, Map.of()),
-                                        () -> CommitRules.prefixes(here))
+                        new CommitRules(sayer, faulter, CommitRules.Git.in(here, Map.of()))
                                 .check(checked, fromOutside));
     }
 
@@ -185,11 +181,7 @@ final class WorkCommands {
                 "NOTE  the event's commits: "
                         + decided.range()
                         + (decided.outside() ? ", from outside" : ", from inside"));
-        return new CommitRules(
-                        out,
-                        err,
-                        CommitRules.Git.in(here, Map.of()),
-                        () -> CommitRules.prefixes(here))
+        return new CommitRules(out, err, CommitRules.Git.in(here, Map.of()))
                 .check(decided.range(), decided.outside());
     }
 
@@ -250,8 +242,7 @@ final class WorkCommands {
                                                 new CommitRules(
                                                                 sayer,
                                                                 faulter,
-                                                                CommitRules.Git.in(here, Map.of()),
-                                                                () -> CommitRules.prefixes(here))
+                                                                CommitRules.Git.in(here, Map.of()))
                                                         .check(range, false))
                                 .check(java.time.Duration.ofHours(hours)));
     }

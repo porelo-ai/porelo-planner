@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -19,13 +20,16 @@ import java.util.regex.Pattern;
  * exit codes the build tools' {@code check-commits} gives.
  *
  * <p>A subject of one line of at most 72 characters, {@code [skip ci]} counted; below it only a
- * blank line and trailers; no requirement number, since the issue is deleted once it is done; and
- * nobody named as having asked for or made the change, as far as {@link Who} can tell, in the
- * subject, the body and every trailer's value. A commit Dependabot or GitHub's Actions bot
- * authored, or GitHub committed in its web interface, is exempt from these checks on a push or a
- * pull request from the repository itself, whose writer may push anyway; a pull request from
- * outside sets the names it records itself, so there no commit is exempt. No measurement is read
- * from a commit's tree.
+ * blank line and trailers; no requirement number, since the issue is closed in its tracker; and
+ * nobody named as having asked for or made the change, as far as {@link Who} can tell. An issue
+ * number is told by its shape or as a GitHub reference; a {@code Porelo-Issue} trailer per issue,
+ * in GitHub's reference form, is the one place a number may stand, and no closing keyword may
+ * precede an issue reference anywhere in the message, so no push closes an issue. A commit
+ * Dependabot or GitHub's Actions bot authored, or GitHub committed in its web interface, is exempt
+ * from these checks on a push or a pull request from the repository itself, whose writer may push
+ * anyway; a pull request from outside sets the names it records itself, so there no commit is
+ * exempt. No measurement is read from a commit's tree: a task's measurements are fields of its item
+ * in the tracker.
  */
 public final class CommitRules {
 
@@ -53,22 +57,67 @@ public final class CommitRules {
      */
     private static final Pattern TRAILER =
             Pattern.compile(
-                    "^(?:Assisted-by: \\S.*"
-                            + "|Signed-off-by: [^<>]+ <[^<>\\s]+>"
+                    "^(?:(?:Assisted-by|Signed-off-by): \\S.*"
                             + "|Porelo-Change-Id: \\S+"
                             + "|Porelo-Signs-Anew: (?!/)(?!(?:.*/)?\\.\\.(?:/|$))[A-Za-z0-9._/-]+)$",
                     Pattern.CASE_INSENSITIVE);
 
-    /** A sign-off's key, in any case, and the name it gives. */
-    private static final Pattern SIGN_OFF_KEY =
-            Pattern.compile("^Signed-off-by: ([^<>]+) <", Pattern.CASE_INSENSITIVE);
+    /**
+     * The trailer that names the issue a commit was made for: its key in any case, the reference
+     * GitHub's {@code <owner>/<repository>#<n>}, the owner and repository as GitHub names them, a
+     * repository never of dots alone, and the number from 1.
+     */
+    private static final Pattern PORELO_ISSUE =
+            Pattern.compile(
+                    "^Porelo-Issue: [A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/(?!\\.+#)[A-Za-z0-9._-]+"
+                            + "#[1-9]\\d*$",
+                    Pattern.CASE_INSENSITIVE);
+
+    /** That trailer's key, in any case, to tell a trailer of another form from a body line. */
+    private static final Pattern PORELO_ISSUE_KEY =
+            Pattern.compile("Porelo-Issue:", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * A word GitHub closes an issue by when the commit reaches the default branch, followed by an
+     * issue reference as GitHub reads one: {@code #<n>}, {@code GH-<n>}, {@code
+     * <owner>/<repository>#<n>} or the issue's address.
+     */
+    private static final Pattern CLOSING =
+            Pattern.compile(
+                    "\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\\s*|\\s+)"
+                            + "(?:#\\d+|GH-\\d+|[\\w.-]+/[\\w.-]+#\\d+"
+                            + "|https?://(?:www\\.)?github\\.com/[\\w.-]+/[\\w.-]+/issues/\\d+)\\b",
+                    Pattern.CASE_INSENSITIVE);
 
     /** A sign-off, its key in any case, and the address it names. */
     private static final Pattern SIGN_OFF =
             Pattern.compile("^Signed-off-by: .*<([^<>\\s]+)>$", Pattern.CASE_INSENSITIVE);
 
-    /** A word of an issue number's shape, its prefix apart; whether it is one the prefixes say. */
-    private static final Pattern NUMBER = Pattern.compile("\\b([A-Z]{1,3})\\d+\\b");
+    /** A sign-off's key, in any case. */
+    private static final Pattern SIGN_OFF_KEY =
+            Pattern.compile("Signed-off-by:", Pattern.CASE_INSENSITIVE);
+
+    /** The shape of an issue number. */
+    private static final Pattern SHAPE = Pattern.compile("\\b[A-Z]{1,2}\\d{2,3}\\b");
+
+    /**
+     * A reference GitHub links to an issue of the project, the owner in any case: the issue's
+     * address, with or without its scheme, {@code porelo-ai/<repository>#<n>}, or {@code GH-<n>}.
+     */
+    private static final Pattern GITHUB_REFERENCE =
+            Pattern.compile(
+                    "(?<!\\w)(?:(?:https?://)?(?:www\\.)?github\\.com/porelo-ai/[\\w.-]+/issues/\\d+"
+                            + "|porelo-ai/[\\w.-]+#\\d+|GH-\\d+)\\b",
+                    Pattern.CASE_INSENSITIVE);
+
+    /**
+     * A number GitHub links in a commit message to an issue of the same repository: {@code #<n>},
+     * not part of a word, a path or a colour.
+     */
+    private static final Pattern BARE_REFERENCE = Pattern.compile("(?<![\\w&/#$])#\\d+\\b");
+
+    /** Names of an issue number's shape that are something else: PKCE's challenge method. */
+    private static final Set<String> NOT_NUMBERS = Set.of("S256");
 
     /** What git writes ahead of each commit, and between its fields. */
     private static final char RECORD = '\u001e';
@@ -80,8 +129,6 @@ public final class CommitRules {
     private final PrintStream err;
 
     private final Git git;
-
-    private final Prefixes prefixes;
 
     /** Reads the log of a range. */
     @FunctionalInterface
@@ -103,6 +150,17 @@ public final class CommitRules {
         String log(String range) throws IOException;
 
         /**
+         * Counts the commits of a range as git counts them, to hold the log's records to.
+         *
+         * @param range the range, never an option
+         * @return the count, or empty where this reader cannot count
+         * @throws IOException when git cannot be run or refuses the range
+         */
+        default OptionalLong count(String range) throws IOException {
+            return OptionalLong.empty();
+        }
+
+        /**
          * Runs git in a directory.
          *
          * @param directory the checkout
@@ -111,10 +169,33 @@ public final class CommitRules {
          */
         public static Git in(Path directory, Map<String, String> environment) {
             return new Git() {
-                /** Reads the requested range's log. */
+                /**
+                 * Reads the requested range's log, refused when a name, an address or a message
+                 * holds a field separator, which shifts or hides a commit's fields. This is
+                 * stricter than the build tools' check, which compares only the number of commits
+                 * and so misses a field shifted within one commit: such a log gets no answer, exit
+                 * 2.
+                 */
                 @Override
                 public String log(String range) throws IOException {
                     final String log = run(directory, environment, range);
+                    final long records = log.chars().filter(c -> c == RECORD).count();
+                    final long fields = log.chars().filter(c -> c == FIELD).count();
+                    if (fields > 5 * records) {
+                        throw new IOException(
+                                "the log of "
+                                        + records
+                                        + " record(s) holds "
+                                        + fields
+                                        + " field separator(s): a name, address or message holds"
+                                        + " one, so the commits cannot be told apart");
+                    }
+                    return log;
+                }
+
+                /** Counts the range's commits. */
+                @Override
+                public OptionalLong count(String range) throws IOException {
                     final String counted =
                             execute(
                                             directory,
@@ -129,21 +210,7 @@ public final class CommitRules {
                     if (!counted.matches("\\d{1,9}")) {
                         throw new IOException("git rev-list counted no number: " + counted);
                     }
-                    final long commits = Long.parseLong(counted);
-                    final long records = log.chars().filter(c -> c == RECORD).count();
-                    final long fields = log.chars().filter(c -> c == FIELD).count();
-                    if (records != commits || fields != 5 * commits) {
-                        throw new IOException(
-                                "the log of "
-                                        + commits
-                                        + " commit(s) holds "
-                                        + records
-                                        + " record and "
-                                        + fields
-                                        + " field separator(s): a name, address or message holds"
-                                        + " one, so the commits cannot be told apart");
-                    }
-                    return log;
+                    return OptionalLong.of(Long.parseLong(counted));
                 }
             };
         }
@@ -210,132 +277,6 @@ public final class CommitRules {
         }
     }
 
-    /** Reads the issue prefixes a requirement number is made of. */
-    @FunctionalInterface
-    public interface Prefixes {
-
-        /**
-         * Reads them.
-         *
-         * @return the prefixes, such as {@code BT}
-         * @throws IOException when the issues cannot be read
-         */
-        Set<String> read() throws IOException;
-    }
-
-    /** An issue file of the repository's own, named by its number. */
-    private static final Pattern ISSUE_FILE =
-            Pattern.compile("^(([A-Z]{1,3})\\d{2,3}(?:\\.[1-9]\\d{0,2})?)-.*\\.md$");
-
-    /** Where a tool writes what is not the repository's own. */
-    private static final List<String> GENERATED =
-            List.of(
-                    "/target/",
-                    "/build/",
-                    "/.git/",
-                    "/.idea/",
-                    "/.dart_tool/",
-                    "/node_modules/",
-                    "/.gradle/");
-
-    /**
-     * Reads the prefixes a requirement number of a repository is made of: those of its own issue
-     * files under {@code issues/} and those of every row of its own indexes there, so a finished
-     * issue's row keeps its prefix; a fixture deeper down is not the repository's own.
-     *
-     * @param root the repository's root, where git runs
-     * @return the prefixes, such as {@code PL}
-     * @throws IOException when a file or an index cannot be read
-     */
-    public static Set<String> prefixes(Path root) throws IOException {
-        final List<Path> pages =
-                committed(root).stream()
-                        .filter(path -> relative(root, path).startsWith("issues/"))
-                        .filter(path -> path.toString().endsWith(".md"))
-                        .filter(path -> !generated(root, path))
-                        .sorted()
-                        .toList();
-        final Set<String> prefixes = new java.util.HashSet<>();
-        for (final Path page : pages) {
-            final Matcher file = ISSUE_FILE.matcher(page.getFileName().toString());
-            if (file.matches()) {
-                prefixes.add(file.group(2));
-            }
-        }
-        for (final Path page : pages) {
-            if (!page.getFileName().toString().equals("README.md")) {
-                continue;
-            }
-            final Path workflowFile =
-                    Files.exists(root.resolve("stories/workflow.yml"))
-                            ? root.resolve("stories/workflow.yml")
-                            : root.resolve("issues/workflow.yml");
-            final String text = Files.readString(page, StandardCharsets.UTF_8);
-            try {
-                for (final IssueIndex row :
-                        IssueIndexes.read(
-                                        IssueIndexes.page(
-                                                relative(root, page), page.toString(), text),
-                                        root.toAbsolutePath().normalize().getFileName().toString(),
-                                        Workflow.read(workflowFile))
-                                .values()) {
-                    prefixes.add(row.number().replaceFirst("\\d.*$", ""));
-                }
-            } catch (IllegalArgumentException ex) {
-                throw new IOException(ex.getMessage(), ex);
-            }
-        }
-        return Set.copyOf(prefixes);
-    }
-
-    /**
-     * Returns what is committed: in a git checkout what git tracks, so a log or a file a tool left
-     * beside the work is not read; in a tree exported from a commit, which holds nothing else,
-     * every file.
-     */
-    private static ProcessBuilder withoutToken(ProcessBuilder builder) {
-        builder.environment().remove("GITHUB_TOKEN");
-        return builder;
-    }
-
-    private static List<Path> committed(Path root) throws IOException {
-        if (Files.exists(root.resolve(".git"))) {
-            final Process git =
-                    withoutToken(
-                                    new ProcessBuilder(
-                                                    "git", "-C", root.toString(), "ls-files", "-z")
-                                            .redirectError(ProcessBuilder.Redirect.DISCARD))
-                            .start();
-            final String listed =
-                    new String(git.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            try {
-                if (git.waitFor() != 0) {
-                    throw new IOException("git ls-files exited with " + git.exitValue());
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new IOException("interrupted while git listed the files", ex);
-            }
-            return java.util.stream.Stream.of(listed.split("\0"))
-                    .filter(name -> !name.isEmpty())
-                    .map(root::resolve)
-                    .filter(Files::isRegularFile)
-                    .toList();
-        }
-        try (java.util.stream.Stream<Path> tree = Files.walk(root)) {
-            return tree.filter(Files::isRegularFile).toList();
-        }
-    }
-
-    private static boolean generated(Path root, Path path) {
-        final String name = "/" + relative(root, path);
-        return GENERATED.stream().anyMatch(name::contains);
-    }
-
-    private static String relative(Path root, Path path) {
-        return root.relativize(path).toString().replace('\\', '/');
-    }
-
     /** One commit as git recorded it. */
     private record Commit(
             String hash,
@@ -356,13 +297,11 @@ public final class CommitRules {
      * @param out where the result goes
      * @param err where a refusal goes
      * @param git where the log is read
-     * @param prefixes where the issue prefixes are read, once a commit needs them
      */
-    public CommitRules(PrintStream out, PrintStream err, Git git, Prefixes prefixes) {
+    public CommitRules(PrintStream out, PrintStream err, Git git) {
         this.out = out;
         this.err = err;
         this.git = git;
-        this.prefixes = prefixes;
     }
 
     /**
@@ -372,7 +311,7 @@ public final class CommitRules {
      * @param outside true for a pull request from outside, whose every commit that is not exempt
      *     carries its author's {@code Signed-off-by:}
      * @return 0 when no commit breaks the rule, an empty range among them; {@link #REFUSED} when
-     *     one does; {@link #UNANSWERED} when the log or the prefixes cannot be read
+     *     one does; {@link #UNANSWERED} when the log cannot be read
      */
     public int check(String range, boolean outside) {
         if (range.isBlank() || range.startsWith("-")) {
@@ -382,35 +321,31 @@ public final class CommitRules {
         final List<Commit> commits;
         try {
             commits = parse(git.log(range));
+            final OptionalLong counted = git.count(range);
+            if (counted.isPresent() && counted.getAsLong() != commits.size()) {
+                // A message holding git's record and field separators forges a commit or hides its
+                // own body; the log is then no account of the range.
+                throw new IOException(
+                        "the log splits into "
+                                + commits.size()
+                                + " commit(s) where git counts "
+                                + counted.getAsLong()
+                                + "; a message holds git's separators");
+            }
         } catch (IOException ex) {
             err.println("could not read the commits of " + range + ": " + ex.getMessage());
             return UNANSWERED;
         }
         final List<String> faults = new ArrayList<>();
-        Set<String> known = null;
         int exempt = 0;
         int breaking = 0;
         for (final Commit commit : commits) {
+            // From outside, a recorded name is the writer's own word, which anyone can write.
             if (!outside && commit.exempt()) {
                 exempt++;
                 continue;
             }
-            if (known == null) {
-                try {
-                    known = prefixes.read();
-                } catch (IOException ex) {
-                    err.println("could not read the issue prefixes: " + ex.getMessage());
-                    return UNANSWERED;
-                }
-                if (known.isEmpty()) {
-                    err.println(
-                            "no issue prefix found under issues/, so a requirement number"
-                                    + " cannot be told - is the working directory a repository's"
-                                    + " root?");
-                    return UNANSWERED;
-                }
-            }
-            final List<String> broken = faults(commit, known, outside);
+            final List<String> broken = faults(commit, outside);
             if (!broken.isEmpty()) {
                 breaking++;
             }
@@ -440,7 +375,8 @@ public final class CommitRules {
         return REFUSED;
     }
 
-    private static List<String> faults(Commit commit, Set<String> known, boolean outside) {
+    /** The faults of one commit's message. */
+    private static List<String> faults(Commit commit, boolean outside) {
         final List<String> faults = new ArrayList<>();
         final String[] lines = commit.message().split("\n", -1);
         final String subject = lines[0];
@@ -452,32 +388,49 @@ public final class CommitRules {
             faults.add("the subject is not followed by a blank line");
         }
         final StringBuilder words = new StringBuilder(subject);
-        final StringBuilder numbered = new StringBuilder(subject);
         final List<String> trailers = new ArrayList<>();
         final int first = lines.length > 1 && lines[1].isEmpty() ? 2 : 1;
         for (int i = first; i < lines.length; i++) {
             if (TRAILER.matcher(lines[i]).matches()) {
                 trailers.add(lines[i]);
-                final String value = lines[i].substring(lines[i].indexOf(':') + 1);
-                numbered.append('\n').append(value);
-                if (!ownSignOff(lines[i], commit)) {
-                    words.append('\n').append(value);
-                }
+            } else if (PORELO_ISSUE.matcher(lines[i]).matches()) {
+                // The one place a number may stand, so the number rule reads it not.
+                continue;
+            } else if (PORELO_ISSUE_KEY.matcher(lines[i]).lookingAt()) {
+                faults.add(
+                        "a Porelo-Issue trailer not of the form"
+                                + " 'Porelo-Issue: <owner>/<repository>#<number>': "
+                                + lines[i]);
             } else {
                 faults.add(
                         "below the subject, a line that is not a trailer: "
                                 + (lines[i].isBlank() ? "(a blank line)" : lines[i]));
                 words.append('\n').append(lines[i]);
-                numbered.append('\n').append(lines[i]);
             }
         }
-        final Matcher number = NUMBER.matcher(numbered);
-        while (number.find()) {
-            if (known.contains(number.group(1))) {
-                faults.add("names a requirement number: " + number.group());
+        // A trailer is read too: none of them may carry a number, and only a sign-off, which names
+        // its author by design, may name a person.
+        final StringBuilder named = new StringBuilder(words);
+        for (final String trailer : trailers) {
+            words.append('\n').append(trailer);
+            if (!SIGN_OFF_KEY.matcher(trailer).lookingAt()) {
+                named.append('\n').append(trailer);
             }
         }
-        Who.named(words.toString(), List.of(commit.author(), commit.committer()))
+        for (final Pattern shape : List.of(SHAPE, GITHUB_REFERENCE, BARE_REFERENCE)) {
+            final Matcher number = shape.matcher(words);
+            while (number.find()) {
+                if (!NOT_NUMBERS.contains(number.group())) {
+                    faults.add("names a requirement number: " + number.group());
+                }
+            }
+        }
+        // Only the person sets Finished, never a push.
+        final Matcher closing = CLOSING.matcher(commit.message());
+        while (closing.find()) {
+            faults.add("closes an issue on push: " + closing.group());
+        }
+        Who.named(named.toString(), List.of(commit.author(), commit.committer()))
                 .forEach(party -> faults.add("says who: " + party));
         if (outside && !signedOffByAuthor(trailers, commit.authorMail())) {
             faults.add(
@@ -486,17 +439,6 @@ public final class CommitRules {
                             + ">, which a pull request from outside carries on every commit");
         }
         return faults;
-    }
-
-    /** A sign-off names its author or committer by design; any other name is read as words. */
-    private static boolean ownSignOff(String trailer, Commit commit) {
-        final Matcher signOff = SIGN_OFF_KEY.matcher(trailer);
-        if (!signOff.lookingAt()) {
-            return false;
-        }
-        final String name = signOff.group(1).strip();
-        return name.equalsIgnoreCase(commit.author().strip())
-                || name.equalsIgnoreCase(commit.committer().strip());
     }
 
     private static boolean signedOffByAuthor(List<String> trailers, String mail) {

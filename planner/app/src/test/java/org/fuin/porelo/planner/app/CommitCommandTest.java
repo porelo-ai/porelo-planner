@@ -28,6 +28,18 @@ class CommitCommandTest {
 
     private static final String BUILD_TOOLS = "org.fuin.porelo.release.Main";
 
+    /** An issue number by its shape alone, of a prefix no issue file of the fixture has. */
+    private static final String SHAPED = "HO12"; // not-a-citation
+
+    /** An issue in GitHub's reference form, as the issue trailer names one. */
+    private static final String TRACKED = "porelo-ai/porelo-planner#39"; // not-a-citation
+
+    /** A number GitHub links to an issue of the same repository. */
+    private static final String BARE = "#12"; // not-a-citation
+
+    /** An issue in GitHub's reference form under another owner, which GitHub links elsewhere. */
+    private static final String OTHER_OWNER = "octo/cat#3"; // not-a-citation
+
     @TempDir Path dir;
 
     // Prevents a repository that moves to the planner's check from passing what the build tools
@@ -39,6 +51,19 @@ class CommitCommandTest {
                 "Describe the work and keep on describing it until the subject runs over its length"
                         + " | HEAD",
                 "Describe EX12 | HEAD",
+                "Describe " + SHAPED + " | HEAD",
+                "Describe the work\n\nPorelo-Issue: " + TRACKED + " | HEAD",
+                "Describe the work\n\nPorelo-Issue: " + BARE + " | HEAD",
+                "Describe the work, fixes " + BARE + " | HEAD",
+                "Describe the entity &" + BARE + "; | HEAD",
+                "Describe the path a/" + BARE + " | HEAD",
+                "Describe the word foo" + BARE + " | HEAD",
+                "Describe the cost $" + BARE + " | HEAD",
+                "Describe the work beside " + OTHER_OWNER + " | HEAD",
+                "Describe the work beside porelo-ai/x" + BARE + " | HEAD",
+                "Describe S256 beside " + TRACKED + " | HEAD",
+                "Describe the work\n\nAssisted-by: x, closes " + TRACKED + " | HEAD",
+                "Describe the work\n\nSigned-off-by: The Operator <operator@example.org> | HEAD",
                 "Describe the work\n\nA prose body below the subject. | HEAD",
                 "Describe the work | HEAD --outside",
                 "Describe the work | HEAD^..HEAD",
