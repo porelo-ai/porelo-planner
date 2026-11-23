@@ -174,8 +174,8 @@ class NativeStartIT {
                         .as("preparing work uses the real move contract")
                         .startsWith("200 ");
                 final String prepared = call(address, "GET", "/projects/alpha/stories", null);
-                final String base =
-                        json.readTree(prepared.substring(4)).path("revision").asString();
+                final tools.jackson.databind.JsonNode seen =
+                        json.readTree(Seens.ofAnswer(prepared.substring(4)));
                 final String order =
                         call(
                                 address,
@@ -191,8 +191,8 @@ class NativeStartIT {
                                                 "Implementing",
                                                 "mode",
                                                 "UNATTENDED",
-                                                "revision",
-                                                base)));
+                                                "seen",
+                                                seen)));
                 assertThat(order).as("the offer is persisted before answering").startsWith("200 ");
                 final String offer =
                         json.readTree(order.substring(4)).at("/tasks/0/offer").asString();
