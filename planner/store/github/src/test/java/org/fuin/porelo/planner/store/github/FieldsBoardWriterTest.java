@@ -101,7 +101,8 @@ class FieldsBoardWriterTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-project", "example-lib", "example-tool"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("example-project", "example-lib", "example-tool")),
                     FIELD_IDS,
                     OPTION_IDS,
                     "PVT_7");

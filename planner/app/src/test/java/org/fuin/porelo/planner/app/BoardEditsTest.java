@@ -59,7 +59,7 @@ class BoardEditsTest {
                             issue("AB3", List.of()),
                             issue("AB4", List.of())),
                     new Work(Map.of(), List.of()),
-                    List.of("porelo-store"));
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of("porelo-store")));
 
     private final List<String> written = new ArrayList<>();
 

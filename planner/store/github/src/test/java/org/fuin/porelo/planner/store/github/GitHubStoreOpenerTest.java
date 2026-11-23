@@ -61,7 +61,10 @@ class GitHubStoreOpenerTest {
                 "example-org",
                 kind,
                 "7",
-                List.of("example-project", "example-lib"),
+                List.of(
+                        new org.fuin.porelo.planner.store.ProjectRepository(
+                                "example-project", "example"),
+                        new org.fuin.porelo.planner.store.ProjectRepository("example-lib", "lib")),
                 workflow,
                 new Work(java.util.Map.of(), List.of()),
                 commit,
@@ -137,13 +140,17 @@ class GitHubStoreOpenerTest {
                 .as("the first board reads")
                 .isInstanceOf(StoreException.class);
         assertThat(read)
-                .as("the project the file names, on its forge")
+                .as("the project the file names, on its forge, each repository with its folder")
                 .extracting(c -> c.project(), c -> c.forge(), c -> c.repositories())
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(
                                 new ProjectRef("example-org", 7),
                                 URI.create("https://github.com"),
-                                List.of("example-project", "example-lib")));
+                                List.of(
+                                        new org.fuin.porelo.planner.store.ProjectRepository(
+                                                "example-project", "example"),
+                                        new org.fuin.porelo.planner.store.ProjectRepository(
+                                                "example-lib", "lib"))));
     }
 
     @Test

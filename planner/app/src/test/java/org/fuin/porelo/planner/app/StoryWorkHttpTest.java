@@ -100,7 +100,8 @@ class StoryWorkHttpTest {
                                                 "Build {story}: {issues}; {tasks}",
                                                 Map.of("codex", "model-a"))),
                                 List.of()),
-                        List.of("project", "alpha"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("project", "alpha")));
         final PlanningStore store =
                 new PlanningStore() {
                     /** Supplies the immutable board or the scenario's refusal. */

@@ -451,7 +451,7 @@ public final class ItemsBoardReader implements BoardReader {
         final String owner = config.project().owner();
         final RepositoryIssues.Read read =
                 unlisted.read(
-                        config.repositories(),
+                        config.names(),
                         (repository, page, etag) ->
                                 call.of(
                                         "the open issues of " + repository,
@@ -715,7 +715,7 @@ public final class ItemsBoardReader implements BoardReader {
         final int slash = nameWithOwner.indexOf('/');
         return slash > 0
                 && nameWithOwner.substring(0, slash).equalsIgnoreCase(config.project().owner())
-                && config.repositories()
+                && config.names()
                         .contains(nameWithOwner.substring(slash + 1).toLowerCase(Locale.ROOT));
     }
 
@@ -817,7 +817,7 @@ public final class ItemsBoardReader implements BoardReader {
     public @Nullable Snapshot fromCopy(final BoardCopy copy, final ProjectConfig config) {
         if (!copy.project().equals(BoardCopyMapping.project(config))
                 || !copy.filesCommit().equals(config.commit())
-                || !copy.repositories().equals(config.repositories())) {
+                || !copy.repositories().equals(config.names())) {
             return null;
         }
         final TrackerBoard board = copy.board();
@@ -955,7 +955,7 @@ public final class ItemsBoardReader implements BoardReader {
                     REPOSITORY_PART.matcher(repository).matches()
                             ? "An open issue of " + repository
                             : "An open issue";
-            if (!Ids.isReference(id) || !read.repositories().contains(repository)) {
+            if (!Ids.isReference(id) || !read.names().contains(repository)) {
                 faults.add(
                         where
                                 + " outside the project has no reference into its repositories"

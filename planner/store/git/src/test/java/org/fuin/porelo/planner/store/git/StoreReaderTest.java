@@ -470,7 +470,8 @@ class StoreReaderTest {
                         List.of(),
                         part.issues(),
                         new org.fuin.porelo.planner.store.Work(Map.of(), List.of()),
-                        List.of("porelo-other"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-other")));
 
         assertThat(board.holdsWork("XY01.1"))
                 .as("the part is held with its parent, in the parent's words")

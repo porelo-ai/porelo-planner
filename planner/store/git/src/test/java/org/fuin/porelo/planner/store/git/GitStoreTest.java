@@ -602,7 +602,7 @@ class GitStoreTest {
                         Duration.ofSeconds(10),
                         4,
                         queue);
-        assertThat(store.board().repositories())
+        assertThat(store.board().names())
                 .as("the store's declared repository order")
                 .containsExactly("store", "other");
     }

@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
@@ -26,7 +27,7 @@ class NewIdeasTest {
                     List.of(),
                     List.of(),
                     new Work(Map.of(), List.of()),
-                    List.of("porelo-project", "porelo-other"));
+                    ProjectRepository.named(List.of("porelo-project", "porelo-other")));
 
     static NewIdeas.Story story() {
         return new NewIdeas.Story("Tag stories", "People find stories", "Tag one", "High");
@@ -190,11 +191,33 @@ class NewIdeasTest {
     }
 
     @Test
+    void aRefusedRepositoryIsToldWithTheNamesAllowedAndItselfOnlyWhenItIsAName() {
+        // Harm: a discussion told only that a repository is wrong guesses again and is refused
+        // again; one echoing any text would carry an agent's words into the window and the log.
+        assertThat(faultWords(i -> issues(issue("porelo-pi"))))
+                .as("a well-formed name the project lacks, named with the names allowed")
+                .startsWith("issues[0].repository: ")
+                .contains("porelo-pi", "porelo-project, porelo-other");
+        for (final String sent :
+                new String[] {"Porelo Pi", "a".repeat(101), "porelo-pi\nsecret", "../porelo"}) {
+            assertThat(faultWords(i -> issues(issue(sent))))
+                    .as("the value %s, no repository name, is not repeated", sent)
+                    .startsWith("issues[0].repository: ")
+                    .contains("porelo-project, porelo-other")
+                    .doesNotContain(sent, "Porelo Pi", "aaaa", "secret", "../");
+        }
+        assertThat(faultWords(i -> issues(new NewIdeas.Issue(null, "Tags", "Text", "S", "Agent"))))
+                .as("a missing repository is told with the names allowed")
+                .startsWith("issues[0].repository: ")
+                .contains("porelo-project, porelo-other");
+    }
+
+    @Test
     void aRefusalListsEveryFaultUpToAHundredAndNeverRepeatsWhatWasSent() {
         // A fault echoing the sent text would carry an agent's words into the window and the log.
         final List<NewIdeas.@Nullable Issue> issues = new ArrayList<>();
         for (int index = 0; index < 300; index++) {
-            issues.add(new NewIdeas.Issue("secret-repo", "secret\u0007", "", "secret", "x"));
+            issues.add(new NewIdeas.Issue("secret repo", "secret\u0007", "", "secret", "x"));
         }
         final WorkRefusal refused =
                 catchThrowableOfType(
@@ -228,7 +251,7 @@ class NewIdeasTest {
         // A format wider than the check lets a discussion write an idea the planner then refuses.
         final java.util.regex.Matcher bounds =
                 java.util.regex.Pattern.compile("\"maxLength\": ([0-9]+)")
-                        .matcher(IdeaDiscussion.FORMAT);
+                        .matcher(IdeaDiscussion.format(List.of("porelo-project")));
         final List<Integer> found = new ArrayList<>();
         while (bounds.find()) {
             found.add(Integer.valueOf(bounds.group(1)));
@@ -241,7 +264,7 @@ class NewIdeasTest {
                         NewIdeas.MOST_LINE,
                         NewIdeas.MOST_TITLE,
                         NewIdeas.MOST_TEXT);
-        assertThat(IdeaDiscussion.FORMAT)
+        assertThat(IdeaDiscussion.format(List.of("porelo-project")))
                 .as("titles, gain and test are one line without C1 controls or separators")
                 .contains("\\\\u007F-\\\\u009F\\\\u2028\\\\u2029");
     }
@@ -255,6 +278,10 @@ class NewIdeasTest {
     }
 
     private static String fault(final UnaryOperator<NewIdeas.Idea> change) {
+        return faultWords(change).split(":", 2)[0];
+    }
+
+    private static String faultWords(final UnaryOperator<NewIdeas.Idea> change) {
         final WorkRefusal refused =
                 catchThrowableOfType(
                         WorkRefusal.class,
@@ -262,6 +289,6 @@ class NewIdeasTest {
         assertThat(refused).as("the idea is refused").isNotNull();
         final List<?> faults = (List<?>) refused.parameters().get("faults");
         assertThat(faults).as("exactly one fault").hasSize(1);
-        return String.valueOf(faults.getFirst()).split(":", 2)[0];
+        return String.valueOf(faults.getFirst());
     }
 }

@@ -48,7 +48,7 @@ class ItemsBoardReaderUnlistedTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of(OWN, LIB),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of(OWN, LIB)),
                     Map.of(),
                     Map.of());
 

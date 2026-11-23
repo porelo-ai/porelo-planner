@@ -60,7 +60,7 @@ class MovePreviewTest {
                             issue("PL3", OWN, "Review"),
                             issue("PL4", OWN, "Backlog")),
                     WORK,
-                    List.of(OWN, OTHER));
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of(OWN, OTHER)));
 
     @Test
     void aStoryRejectedShowsTheIssueOfAnotherRepositoryItClosesAlongWithItsStates() {
@@ -243,7 +243,7 @@ class MovePreviewTest {
                             issue("PL7", OWN, "Review"),
                             issue("PL8", OWN, "Reading")),
                     WORK,
-                    List.of(OWN));
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of(OWN)));
 
     @Test
     void aStoryFinishedOverRejectedIssuesOnlyIsSavedWithItsIssuesLeftRejected() {

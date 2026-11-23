@@ -192,7 +192,7 @@ class WorkRecordTest {
                 List.of(),
                 issues,
                 new org.fuin.porelo.planner.store.Work(Map.of(), List.of()),
-                List.of("alpha", "beta"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha", "beta")));
     }
 
     @Test

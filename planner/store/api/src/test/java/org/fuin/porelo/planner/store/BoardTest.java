@@ -29,7 +29,11 @@ class BoardTest {
     @Test
     void repositoryIdentityIsExplicitOrderedAndImmutable() {
         // Story-wide work must start in the own repository even when all issues live elsewhere.
-        final List<String> repositories = new ArrayList<>(List.of("project", "porelo-planner"));
+        final List<ProjectRepository> repositories =
+                new ArrayList<>(
+                        List.of(
+                                new ProjectRepository("project", "porelo"),
+                                ProjectRepository.named("porelo-planner")));
         final Board board =
                 new Board(
                         new Revision("r"),
@@ -40,7 +44,12 @@ class BoardTest {
                         repositories);
         repositories.clear();
         assertThat(board.repositories())
-                .as("own first and copied")
+                .as("own first and copied, each with its folder")
+                .containsExactly(
+                        new ProjectRepository("project", "porelo"),
+                        ProjectRepository.named("porelo-planner"));
+        assertThat(board.names())
+                .as("the names alone")
                 .containsExactly("project", "porelo-planner");
         assertThatThrownBy(() -> board.repositories().clear())
                 .as("repository identity cannot be changed")
@@ -53,7 +62,8 @@ class BoardTest {
                                         List.of(),
                                         List.of(issue("XY03", "Idea")),
                                         new Work(Map.of(), List.of()),
-                                        List.of("project")))
+                                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                                List.of("project"))))
                 .as("issues cannot escape the project's repositories")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
@@ -64,7 +74,8 @@ class BoardTest {
                                         List.of(),
                                         List.of(),
                                         new Work(Map.of(), List.of()),
-                                        List.of("project", "project")))
+                                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                                List.of("project", "project"))))
                 .as("duplicate repositories cannot create duplicate work")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
@@ -75,8 +86,26 @@ class BoardTest {
                                         List.of(),
                                         List.of(),
                                         new Work(Map.of(), List.of()),
-                                        List.of("../other")))
+                                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                                List.of("../other"))))
                 .as("repository names are checked before they reach tasks")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                new Board(
+                                        new Revision("r"),
+                                        WORKFLOW,
+                                        List.of(),
+                                        List.of(),
+                                        new Work(Map.of(), List.of()),
+                                        List.of(
+                                                new ProjectRepository("project", "porelo"),
+                                                new ProjectRepository("porelo", "porelo"))))
+                .as("two repositories read in one folder would let a task read one as the other")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("A board gives two repositories one folder");
+        assertThatThrownBy(() -> new ProjectRepository("project", "../other"))
+                .as("a folder is checked as a name before it reaches a brief")
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -95,7 +124,7 @@ class BoardTest {
                                         null, ""),
                                 issue("XY04", "Idea")),
                         new Work(Map.of(), List.of()));
-        assertThat(board.repositories())
+        assertThat(board.names())
                 .as("first occurrence of each issue repository")
                 .containsExactly("porelo-planner", "other");
     }
@@ -248,7 +277,7 @@ class BoardTest {
                 List.of(),
                 issues,
                 new Work(Map.of(), List.of()),
-                List.of("porelo-planner"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("porelo-planner")),
                 List.of(),
                 "porelo-ai",
                 unlisted);
@@ -311,7 +340,8 @@ class BoardTest {
                 stories,
                 issues,
                 new Work(Map.of(), List.of()),
-                List.of("porelo-planner", "porelo"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-planner", "porelo")));
     }
 
     private static Issue in(final String repository, final String id, final Warning... warnings) {

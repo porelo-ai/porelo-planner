@@ -65,7 +65,7 @@ class NewIdeasFromIssuesTest {
                                             "")
                                     .withWarnings(List.of(Warning.stateOutsideWorkflow()))),
                     new Work(Map.of(), List.of()),
-                    List.of("a", "o"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of("a", "o")),
                     List.of(),
                     "example-org");
 

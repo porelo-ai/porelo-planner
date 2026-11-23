@@ -600,7 +600,8 @@ class BoardReadsTest {
                 stories,
                 issues,
                 base.work(),
-                List.of("porelo-store", "porelo-other"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-store", "porelo-other")));
     }
 
     @Test
@@ -710,7 +711,8 @@ class BoardReadsTest {
                 List.of(new Story("ST1", "Story", "Backlog", "High", "M", named, "", null)),
                 issues,
                 base.work(),
-                List.of("porelo-store", "porelo-other"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-store", "porelo-other")),
                 List.of(),
                 null);
     }

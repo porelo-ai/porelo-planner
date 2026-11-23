@@ -196,7 +196,7 @@ final class NewItems {
      */
     Planned issue(final NewIssue issue, final String priority) {
         final String repository = issue.repository();
-        if (!current.config().repositories().contains(repository)) {
+        if (!current.config().names().contains(repository)) {
             throw new StoreException.NotSavable(
                     "", repository + " is no repository of the project");
         }

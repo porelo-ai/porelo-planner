@@ -73,7 +73,8 @@ class IssueMappingTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-project", "example-lib"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("example-project", "example-lib")),
                     Map.of(),
                     Map.of());
 
@@ -371,7 +372,8 @@ class IssueMappingTest {
                         "c0ffee0",
                         porelo,
                         new Work(Map.of(), List.of()),
-                        List.of("example-project", "example-lib"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("example-project", "example-lib")),
                         Map.of(),
                         Map.of());
         final Item story =
@@ -1060,7 +1062,8 @@ class IssueMappingTest {
                                 "c0ffee0",
                                 REVIEWED,
                                 new Work(Map.of(), List.of()),
-                                List.of("example-project", "example-lib"),
+                                org.fuin.porelo.planner.store.ProjectRepository.named(
+                                        List.of("example-project", "example-lib")),
                                 Map.of(),
                                 Map.of()),
                         RULED);

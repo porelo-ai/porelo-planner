@@ -50,7 +50,8 @@ class GitHubUnlistedStreamTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("porelo-store", "porelo-other"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("porelo-store", "porelo-other")),
                     Map.of(),
                     Map.of(),
                     "PVT_7");

@@ -69,7 +69,7 @@ class ListIssueEndpointTest {
                                 null,
                                 "")),
                 new Work(Map.of(), List.of()),
-                List.of("porelo-lib"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("porelo-lib")),
                 List.of(),
                 "porelo-ai",
                 offering

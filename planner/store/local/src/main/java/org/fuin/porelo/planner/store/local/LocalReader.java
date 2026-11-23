@@ -257,7 +257,8 @@ final class LocalReader {
             if (!name.matches()) {
                 throw new IllegalStateException("An item file's name was not checked");
             }
-            if (!project.repositories().contains(name.group(1))) {
+            if (!org.fuin.porelo.planner.store.ProjectRepository.names(project.repositories())
+                    .contains(name.group(1))) {
                 faults.add(file.getKey() + " is left out: its repository is none of the project's");
                 continue;
             }
@@ -294,7 +295,8 @@ final class LocalReader {
                 IssueMapping.local(
                         views,
                         project.workflow(),
-                        project.repositories(),
+                        org.fuin.porelo.planner.store.ProjectRepository.names(
+                                project.repositories()),
                         // The whole rule, its warnings and its fault with it, as the GitHub store
                         // takes it.
                         org.fuin.porelo.planner.store.github.StoryStates.following(

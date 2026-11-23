@@ -25,7 +25,7 @@
         "additionalProperties": false,
         "required": ["repository", "title", "mustBeTrue", "worker"],
         "properties": {
-          "repository": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$", "description": "One of the project's repositories, named by no other issue." },
+          "repository": { "enum": ["{repositories}"], "description": "One of the project's repositories, named by no other issue." },
           "title": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "One line." },
           "mustBeTrue": { "type": "string", "minLength": 1, "maxLength": 65536, "pattern": "\\S", "description": "What must be true, from the point of view of whoever uses it; not blank." },
           "size": { "enum": ["XS", "S", "M", "L", "XL"], "description": "Only when it is known." },

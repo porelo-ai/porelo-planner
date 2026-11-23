@@ -379,7 +379,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         final int slash = nameWithOwner.indexOf('/');
         return slash > 0
                 && nameWithOwner.substring(0, slash).equalsIgnoreCase(config.project().owner())
-                && config.repositories()
+                && config.names()
                         .contains(nameWithOwner.substring(slash + 1).toLowerCase(Locale.ROOT));
     }
 
@@ -448,7 +448,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         final AtomicBoolean over = new AtomicBoolean();
         final Map<String, CompletableFuture<ConditionalReads.Answer>> issues =
                 new LinkedHashMap<>();
-        for (final String repository : config.repositories()) {
+        for (final String repository : config.names()) {
             final String etag = known.issues().get(repository);
             issues.put(
                     repository,

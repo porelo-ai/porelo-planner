@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
@@ -21,7 +21,7 @@ import org.fuin.porelo.planner.store.Workflow;
  *     board's revision covers
  * @param workflow the project's workflow
  * @param work the project's work rules
- * @param repositories the project's repositories by name, its own first
+ * @param repositories the project's repositories, its own first, each with its folder
  * @param fieldIds the GitHub ids of the project's fields, by field name; empty until they are read
  * @param optionIds the GitHub ids of each single-select field's options, by field name and option
  *     name
@@ -34,7 +34,7 @@ public record ProjectConfig(
         String commit,
         Workflow workflow,
         Work work,
-        List<String> repositories,
+        List<ProjectRepository> repositories,
         Map<String, String> fieldIds,
         Map<String, Map<String, String>> optionIds,
         String projectId) {
@@ -47,7 +47,7 @@ public record ProjectConfig(
      * @param commit the commit the project's files were read from
      * @param workflow the project's workflow
      * @param work the project's work rules
-     * @param repositories the project's repositories by name, its own first
+     * @param repositories the project's repositories, its own first, each with its folder
      * @param fieldIds the GitHub ids of the project's fields, by field name
      * @param optionIds the GitHub ids of each single-select field's options
      */
@@ -57,7 +57,7 @@ public record ProjectConfig(
             final String commit,
             final Workflow workflow,
             final Work work,
-            final List<String> repositories,
+            final List<ProjectRepository> repositories,
             final Map<String, String> fieldIds,
             final Map<String, Map<String, String>> optionIds) {
         this(forge, project, commit, workflow, work, repositories, fieldIds, optionIds, "");
@@ -73,7 +73,6 @@ public record ProjectConfig(
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project holds its own repository");
         }
-        repositories.forEach(Ids::name);
         fieldIds = Collections.unmodifiableMap(new LinkedHashMap<>(fieldIds));
         final Map<String, Map<String, String>> options = new LinkedHashMap<>();
         optionIds.forEach(
@@ -89,6 +88,15 @@ public record ProjectConfig(
      * @return its name
      */
     public String own() {
-        return repositories.get(0);
+        return repositories.get(0).name();
+    }
+
+    /**
+     * Answers the names of the project's repositories, by which GitHub knows them.
+     *
+     * @return their names, its own first
+     */
+    public List<String> names() {
+        return ProjectRepository.names(repositories);
     }
 }

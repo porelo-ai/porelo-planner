@@ -383,7 +383,7 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     /** Checks the tracker the project's files name, and answers what its board is read with. */
     private static ProjectConfig config(final TrackedProject project) {
-        final String own = project.repositories().get(0);
+        final String own = project.repositories().get(0).name();
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
                     own, "project.yml names a tracker of a kind the planner does not keep");

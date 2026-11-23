@@ -138,7 +138,7 @@ public final class Rules {
         }
         final boolean story = offered.kind() == UnlistedIssue.Kind.STORY;
         if (story
-                && (!offered.repository().equals(board.repositories().getFirst())
+                && (!offered.repository().equals(board.repositories().getFirst().name())
                         || !links.blockedItems().isEmpty())) {
             throw new StoreException.NotSavable(
                     id,

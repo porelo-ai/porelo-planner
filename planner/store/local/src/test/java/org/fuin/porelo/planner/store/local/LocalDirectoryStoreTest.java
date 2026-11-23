@@ -65,7 +65,8 @@ class LocalDirectoryStoreTest {
                     "",
                     "local",
                     "",
-                    List.of("plans", "engine"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("plans", "engine")),
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
                     "files",
@@ -99,7 +100,7 @@ class LocalDirectoryStoreTest {
                 "",
                 "local",
                 "",
-                List.of("plans", "engine"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("plans", "engine")),
                 WORKFLOW,
                 new Work(Map.of(), List.of()),
                 "files",

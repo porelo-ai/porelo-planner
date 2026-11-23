@@ -72,7 +72,8 @@ class GitHubCopiesLogTest {
                         "example-org",
                         "github",
                         "7",
-                        List.of("example-project"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("example-project")),
                         new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
                         new Work(Map.of(), List.of()),
                         "c0ffee0",

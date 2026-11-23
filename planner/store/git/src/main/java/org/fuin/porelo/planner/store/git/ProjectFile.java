@@ -88,8 +88,10 @@ public final class ProjectFile {
             throw GitStore.refusal(name, e);
         }
         final Project project;
+        final Map<String, String> folders;
         try {
             project = Project.read(text, Set.of());
+            folders = Project.folders(text);
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(name, GitRunner.scrubbed(e.getMessage()));
         }
@@ -108,10 +110,15 @@ public final class ProjectFile {
                             + most);
         }
         final List<Repository> repositories = new ArrayList<>();
-        repositories.add(new Repository(name, own, branch));
+        repositories.add(new Repository(name, own, branch, folder(folders, name)));
         for (final Map.Entry<String, String> central : project.centrals().entrySet()) {
             if (!central.getKey().equals(name)) {
-                repositories.add(repository(name, central.getKey(), central.getValue()));
+                repositories.add(
+                        repository(
+                                name,
+                                central.getKey(),
+                                central.getValue(),
+                                folder(folders, central.getKey())));
             }
         }
         final Project.Tracker tracker;
@@ -134,7 +141,8 @@ public final class ProjectFile {
                         repository(
                                 name,
                                 name,
-                                java.util.Objects.requireNonNull(project.centrals().get(name))),
+                                java.util.Objects.requireNonNull(project.centrals().get(name)),
+                                folder(folders, name)),
                         tracker));
     }
 
@@ -190,7 +198,12 @@ public final class ProjectFile {
                 tracker.owner(),
                 tracker.kind(),
                 tracker.project(),
-                repositories.stream().map(Repository::name).toList(),
+                repositories.stream()
+                        .map(
+                                repository ->
+                                        new org.fuin.porelo.planner.store.ProjectRepository(
+                                                repository.name(), repository.folder()))
+                        .toList(),
                 workflow.board(),
                 WorkReader.read(work),
                 commit,
@@ -444,13 +457,18 @@ public final class ProjectFile {
     }
 
     private static Repository repository(
-            final String own, final String name, final String central) {
+            final String own, final String name, final String central, final String folder) {
         try {
-            return new Repository(name, new CloneUrl(central), null);
+            return new Repository(name, new CloneUrl(central), null, folder);
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(
                     own, FILE + ": repository " + name + ": " + GitRunner.scrubbed(e.getMessage()));
         }
+    }
+
+    /** A repository's folder; the same file named every repository, so each has one. */
+    private static String folder(final Map<String, String> folders, final String name) {
+        return java.util.Objects.requireNonNull(folders.get(name), "folder");
     }
 
     /**

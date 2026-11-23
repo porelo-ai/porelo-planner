@@ -243,7 +243,7 @@ class WorkOrderTest {
                                         rule.risks(),
                                         result)),
                         List.of()),
-                List.of("project", "alpha"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("project", "alpha")),
                 List.of(),
                 owner);
     }

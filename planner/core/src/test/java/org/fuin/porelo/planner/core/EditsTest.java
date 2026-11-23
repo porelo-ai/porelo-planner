@@ -426,7 +426,8 @@ class EditsTest {
                                 issue("AB2", null, List.of())
                                         .withWarnings(List.of(Warning.parentOutsideProject()))),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store", "porelo-other"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store", "porelo-other")));
         final String words =
                 "AB1 names an issue in porelo-store and porelo-other; it can be neither worked nor"
                         + " moved until one id is changed.";
@@ -519,7 +520,8 @@ class EditsTest {
                                         null,
                                         "")),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store")),
                         List.of(),
                         "porelo-ai",
                         List.of(made));

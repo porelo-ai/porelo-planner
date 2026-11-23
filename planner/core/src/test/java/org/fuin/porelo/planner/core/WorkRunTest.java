@@ -792,7 +792,7 @@ class WorkRunTest {
                                                 null, null, "")))
                         .toList(),
                 board.work(),
-                List.of("alpha", "beta"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha", "beta")));
     }
 
     @Test

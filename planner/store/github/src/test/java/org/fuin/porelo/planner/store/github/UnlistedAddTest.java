@@ -70,7 +70,7 @@ class UnlistedAddTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of(OWN, LIB),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of(OWN, LIB)),
                     FIELD_IDS,
                     OPTION_IDS,
                     "PVT_7");

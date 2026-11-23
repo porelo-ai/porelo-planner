@@ -266,7 +266,8 @@ class VelocityTest {
                         List.of(),
                         issues,
                         new Work(Map.of(), List.of()),
-                        List.of("own", "other"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("own", "other")));
         return Velocity.median(records, board, repository, size);
     }
 

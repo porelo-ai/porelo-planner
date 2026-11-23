@@ -675,7 +675,8 @@ class WorkProposalTest {
                                 issue("AA1", "alpha", "Done", "Finished", null, ""),
                                 issue("AA2", "alpha", "Open", "Idea", null, "")),
                         new Work(Map.of("Implementing", rule), List.of()),
-                        List.of("project", "alpha"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("project", "alpha")));
         assertThatThrownBy(() -> WorkProposal.propose(board, "ST1", "Implementing"))
                 .as("the refusal says where the open issue stands and where the rule takes from")
                 .isInstanceOf(WorkRefusal.class)
@@ -1373,7 +1374,8 @@ class WorkProposalTest {
                         issue("BB1", "beta", "Other parent", "Backlog", null, ""),
                         issue("CC1", "alpha", "Closed parent", "Finished", null, "")),
                 new Work(Map.of("Building", rule), List.of()),
-                List.of("project", "alpha", "beta"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("project", "alpha", "beta")));
     }
 
     static Issue issue(

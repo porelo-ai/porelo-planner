@@ -37,7 +37,7 @@ class UnchangedTest {
                         new Issue("AB1", "sample", "Issue", "Idea", null, List.of(), null, null, "")
                                 .withVersion(SEEN)),
                 new Work(Map.of(), List.of()),
-                List.of("sample"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("sample")),
                 List.of(),
                 null,
                 List.of(

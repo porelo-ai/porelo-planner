@@ -4,9 +4,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
@@ -34,8 +37,11 @@ public record IdeaDiscussion(
     /** The name of the file the task hands back. */
     public static final String RESULT = "idea.json";
 
-    /** The idea format, {@code idea-1.json}, a JSON schema. */
-    public static final String FORMAT = format();
+    /** What stands in the idea format where a project's repositories' names go. */
+    private static final String REPOSITORIES = "[\"{repositories}\"]";
+
+    /** The idea format, {@code idea-1.json}, a JSON schema, without the project's names. */
+    private static final String TEMPLATE = template();
 
     private static final int MOST = 4000;
 
@@ -77,14 +83,34 @@ public record IdeaDiscussion(
         throw WorkRefusal.noDiscussion("The project has no sound work rule that offers an agent.");
     }
 
+    /**
+     * The idea format for a project: {@code idea-1.json}, a JSON schema that allows only the
+     * project's repositories by name.
+     *
+     * @param repositories the names of the project's repositories, each checked as one
+     * @return the format
+     */
+    public static String format(final List<String> repositories) {
+        // Each name was checked as a repository's name, so it needs no escaping in JSON.
+        return TEMPLATE.replace(
+                REPOSITORIES,
+                repositories.stream()
+                        .map(name -> "\"" + name + "\"")
+                        .collect(Collectors.joining(", ", "[", "]")));
+    }
+
     private static boolean named(final String name) {
         return !name.isBlank() && name.length() <= 128;
     }
 
     private static String brief(final Board board, final String idea) {
         final StringBuilder places = new StringBuilder();
-        for (final String repository : board.repositories()) {
-            places.append("- /workspace/").append(repository).append("/\n");
+        for (final ProjectRepository repository : board.repositories()) {
+            places.append("- `")
+                    .append(repository.name())
+                    .append("`, read at `/workspace/")
+                    .append(repository.folder())
+                    .append("/`\n");
         }
         final String fence = fence(idea);
         return "Discuss an idea with the person and, once the person agrees, write it down as one"
@@ -95,8 +121,9 @@ public record IdeaDiscussion(
                 + idea
                 + "\n"
                 + fence
-                + "\n\nThe project's repositories are here, read only; read what the discussion"
-                + " needs and change nothing:\n"
+                + "\n\nThe project's repositories are here, each by the name an issue's"
+                + " repository carries and the folder it is read at, read only; read what the"
+                + " discussion needs and change nothing:\n"
                 + places
                 + "\nAsk the person until the story's title, what a user gains, the test that shows"
                 + " it works and its priority are clear, and which repositories it concerns. For"
@@ -106,7 +133,7 @@ public record IdeaDiscussion(
                 + "When the person agrees, write the idea as this task's result, "
                 + RESULT
                 + ", at most 1 MiB of JSON valid against this schema:\n```json\n"
-                + FORMAT
+                + format(board.names())
                 + "```\n";
     }
 
@@ -120,14 +147,20 @@ public record IdeaDiscussion(
         return "`".repeat(Math.max(3, longest + 1));
     }
 
-    private static String format() {
+    private static String template() {
+        final String template;
         try (InputStream in =
                 Objects.requireNonNull(
                         IdeaDiscussion.class.getResourceAsStream("idea-1.json"),
                         "idea-1.json is not on the class path")) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            template = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (final IOException e) {
             throw new UncheckedIOException("idea-1.json cannot be read", e);
         }
+        if (template.indexOf(REPOSITORIES) < 0
+                || template.indexOf(REPOSITORIES) != template.lastIndexOf(REPOSITORIES)) {
+            throw new IllegalStateException("idea-1.json does not name its repositories once");
+        }
+        return template;
     }
 }

@@ -59,7 +59,7 @@ class RulesTest {
                 stories,
                 issues,
                 new Work(Map.of("Building", work), List.of()),
-                List.of("sample", "other"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("sample", "other")),
                 List.of(),
                 null,
                 List.of(

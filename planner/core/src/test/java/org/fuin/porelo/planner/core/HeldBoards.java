@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Warning;
 
 /** Boards a store gives when it could not fully read an issue, for the routes' tests. */
@@ -68,15 +69,17 @@ final class HeldBoards {
             throw new IllegalArgumentException("no issue " + id);
         }
         issues.add(copy);
-        final List<String> repositories = new ArrayList<>(board.repositories());
-        if (!repositories.contains(repository)) {
-            repositories.add(repository);
+        final List<ProjectRepository> repositories = new ArrayList<>(board.repositories());
+        if (!board.names().contains(repository)) {
+            repositories.add(ProjectRepository.named(repository));
         }
         return with(board, issues, repositories);
     }
 
     private static Board with(
-            final Board board, final List<Issue> issues, final List<String> repositories) {
+            final Board board,
+            final List<Issue> issues,
+            final List<ProjectRepository> repositories) {
         return new Board(
                 board.revision(),
                 board.workflow(),

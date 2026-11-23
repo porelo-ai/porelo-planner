@@ -17,7 +17,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Checks an idea a discussion wrote against the idea format and the board, before the store writes
  * anything from it; a refusal lists every fault by its field in fixed words and never repeats what
- * was sent beyond an issue's id, which the reader checked as one.
+ * was sent beyond an issue's id, which the reader checked as one, and a repository's name that has
+ * the form of one; a refused repository is told with the names the project allows.
  */
 public final class NewIdeas {
 
@@ -287,10 +288,21 @@ public final class NewIdeas {
             final Set<String> named) {
         final int before = faults.list.size();
         final String repository = issue.repository();
-        if (repository == null
-                || !NAME.matcher(repository).matches()
-                || !board.repositories().contains(repository)) {
-            faults.add(field + ".repository: The repository is no repository of the project.");
+        if (repository == null || !NAME.matcher(repository).matches()) {
+            faults.add(
+                    field
+                            + ".repository: The repository is no repository name; it must be one of "
+                            + String.join(", ", board.names())
+                            + ".");
+        } else if (!board.names().contains(repository)) {
+            // A well-formed name is safe to repeat, and tells the agent which name it got wrong.
+            faults.add(
+                    field
+                            + ".repository: The repository "
+                            + repository
+                            + " is no repository of the project; it must be one of "
+                            + String.join(", ", board.names())
+                            + ".");
         } else if (!named.add(repository)) {
             faults.add(
                     field

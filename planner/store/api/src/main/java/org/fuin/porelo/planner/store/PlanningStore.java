@@ -502,7 +502,9 @@ public interface PlanningStore {
             } catch (final StoreException.StaleRevision moved) {
                 if (attempt >= HELD_ATTEMPTS) {
                     throw new StoreException.Busy(
-                            board.repositories().isEmpty() ? "" : board.repositories().getFirst());
+                            board.repositories().isEmpty()
+                                    ? ""
+                                    : board.repositories().getFirst().name());
                 }
             }
         }

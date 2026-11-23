@@ -71,7 +71,8 @@ class IdeasEndpointTest {
                 List.of(),
                 List.of(),
                 new Work(Map.of(), List.of()),
-                List.of("porelo-store", "porelo-other"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-store", "porelo-other")));
     }
 
     @BeforeEach
@@ -225,7 +226,7 @@ class IdeasEndpointTest {
                                 + OFFER
                                 + "\", \"idea\": {\"story\": {\"title\": \"secret\\n\","
                                 + " \"gain\": \"G\", \"test\": \"T\", \"priority\": \"High\","
-                                + " \"secret\": 1}, \"issues\": [{\"repository\": \"secret\","
+                                + " \"secret\": 1}, \"issues\": [{\"repository\": \"secret repo\","
                                 + " \"title\": \"T\", \"mustBeTrue\": \"W\", \"size\": 3,"
                                 + " \"worker\": \"AGENT\"}, 5]}}")
                 .andExpect(status().isUnprocessableContent())

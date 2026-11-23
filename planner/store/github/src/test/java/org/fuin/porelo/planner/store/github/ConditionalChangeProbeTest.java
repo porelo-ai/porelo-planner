@@ -53,7 +53,7 @@ class ConditionalChangeProbeTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    REPOSITORIES,
+                    org.fuin.porelo.planner.store.ProjectRepository.named(REPOSITORIES),
                     Map.of(),
                     Map.of());
 
@@ -813,7 +813,7 @@ class ConditionalChangeProbeTest {
                         "example-org",
                         "github",
                         "7",
-                        REPOSITORIES,
+                        org.fuin.porelo.planner.store.ProjectRepository.named(REPOSITORIES),
                         WORKFLOW,
                         new Work(Map.of(), List.of()),
                         "c0ffee0",
@@ -873,7 +873,7 @@ class ConditionalChangeProbeTest {
                 CONFIG.commit(),
                 WORKFLOW,
                 CONFIG.work(),
-                repositories,
+                org.fuin.porelo.planner.store.ProjectRepository.named(repositories),
                 Map.of(),
                 Map.of());
     }

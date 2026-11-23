@@ -58,7 +58,7 @@ public final class LocalDirectoryStores implements TrackedStores {
     @Override
     public PlanningStore open(final TrackedProject project, final Source again) {
         throw new StoreException.Unreadable(
-                project.repositories().getFirst(),
+                project.repositories().getFirst().name(),
                 "a local directory's project is opened by the project's name");
     }
 
@@ -86,7 +86,7 @@ public final class LocalDirectoryStores implements TrackedStores {
             final Source again,
             final @Nullable Path chosen) {
         Ids.name(name);
-        final String own = project.repositories().getFirst();
+        final String own = project.repositories().getFirst().name();
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
                     own, "project.yml names a tracker of another kind than a local directory");

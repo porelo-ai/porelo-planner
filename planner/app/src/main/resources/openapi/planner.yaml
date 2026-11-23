@@ -2246,7 +2246,10 @@ components:
               reason: The title must have 1 to 256 characters.
     IdeaRefused:
       description: >-
-        An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in or
+        An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated, but for a refused
+        issue's repository: its fault always names the project's repositories allowed, and the value sent only when it
+        is a well-formed repository name (at most 100 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit).
+        The body is no hand-in or
         no new story - larger than 1048576 bytes (65536 for a story from existing issues), not JSON, not an object, a member missing or unknown, offer no
         lowercase UUID, or seen no object of versions by item id - with one fault; or the idea breaks the idea format, at most 100
         faults, each starting with the field it names (story, story.title, issues, issues[0].repository, existing,

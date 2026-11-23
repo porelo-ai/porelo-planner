@@ -39,7 +39,8 @@ class BoardFaultsTest {
                         List.of(),
                         List.of(),
                         new Work(Map.of(), List.of("stories/work.yml is missing")),
-                        List.of("porelo-store"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store")),
                         List.of("ST3: a reference names no issue, and is left out"));
 
         assertThat(BoardController.workflowOf(board, false).faults())
@@ -87,7 +88,8 @@ class BoardFaultsTest {
                         List.of(story),
                         List.of(accepted),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store")),
                         List.of(),
                         "example-org");
 
@@ -120,7 +122,8 @@ class BoardFaultsTest {
                         List.of(),
                         List.of(),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store", "porelo-other"),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store", "porelo-other")),
                         List.of(),
                         "example-org",
                         List.of(
@@ -147,7 +150,8 @@ class BoardFaultsTest {
                         List.of(),
                         List.of(),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store")));
 
         final JsonNode event = mapper().valueToTree(boardOf(tracked));
 
@@ -201,7 +205,8 @@ class BoardFaultsTest {
                         List.of(empty, low),
                         List.of(urgent, issue("porelo-store#2", null)),
                         new Work(Map.of(), List.of()),
-                        List.of("porelo-store"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-store")));
 
         final JsonNode event = mapper().valueToTree(boardOf(board));
 

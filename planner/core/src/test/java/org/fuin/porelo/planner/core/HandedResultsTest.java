@@ -803,7 +803,8 @@ class HandedResultsTest {
                                             Worker.AGENT,
                                             Risk.ORDINARY)),
                             new Work(Map.of(WORKING, analysis), List.of()),
-                            List.of("alpha"));
+                            org.fuin.porelo.planner.store.ProjectRepository.named(
+                                    List.of("alpha")));
         }
 
         String state(final String id) {

@@ -24,7 +24,8 @@ class NewIssuesTest {
                     List.of(),
                     List.of(),
                     new Work(Map.of(), List.of()),
-                    List.of("porelo-store", "porelo-other"));
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("porelo-store", "porelo-other")));
 
     @Test
     void anIssueWithinEveryBoundIsTakenWithItsTitleTrimmed() {

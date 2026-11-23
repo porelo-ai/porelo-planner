@@ -12,7 +12,7 @@ import java.util.List;
  * @param owner the owner both the own repository and the tracker's project belong to
  * @param kind the tracker's kind, as {@code project.yml} names it
  * @param project the tracker's project within the owner, as {@code project.yml} names it
- * @param repositories the project's repositories by name, its own first
+ * @param repositories the project's repositories, its own first, each with its folder
  * @param workflow the project's workflow
  * @param work the project's work rules
  * @param filesCommit the own repository's commit the files were read from
@@ -23,7 +23,7 @@ public record TrackedProject(
         String owner,
         String kind,
         String project,
-        List<String> repositories,
+        List<ProjectRepository> repositories,
         Workflow workflow,
         Work work,
         String filesCommit,

@@ -20,7 +20,7 @@ class TrackedStoresTest {
                 local ? "" : "acme",
                 kind,
                 local ? "" : "1",
-                List.of("plans"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("plans")),
                 WORKFLOW,
                 new Work(Map.of(), List.of()),
                 "c1",

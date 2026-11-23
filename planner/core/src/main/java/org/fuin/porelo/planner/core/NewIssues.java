@@ -76,7 +76,7 @@ public final class NewIssues {
             final @Nullable String size,
             final @Nullable String worker,
             final @Nullable String task) {
-        if (repository == null || !board.repositories().contains(repository)) {
+        if (repository == null || !board.names().contains(repository)) {
             throw refused("repository", "The repository is no repository of the project.");
         }
         if (title == null || BREAKS.matcher(title).find()) {

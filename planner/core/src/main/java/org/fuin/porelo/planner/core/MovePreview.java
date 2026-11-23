@@ -232,7 +232,8 @@ public record MovePreview(
                             List.of(),
                             List.of()));
         }
-        final String own = board.repositories().isEmpty() ? "" : board.repositories().getFirst();
+        final String own =
+                board.repositories().isEmpty() ? "" : board.repositories().getFirst().name();
         final Set<String> working = board.work().rules().keySet();
         for (final Map.Entry<String, List<String>> carried : plan.along().entrySet()) {
             // Each issue a story's finish takes along is settled and its file deleted, so all are

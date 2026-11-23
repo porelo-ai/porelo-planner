@@ -822,7 +822,8 @@ class MovesTest {
                 List.of(story),
                 List.of(issues),
                 WORK,
-                List.of("porelo-planner", "porelo"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-planner", "porelo")));
     }
 
     @Test

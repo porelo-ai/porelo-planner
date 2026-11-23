@@ -71,7 +71,7 @@ class LogLinesTest {
                                 null,
                                 "")),
                 new Work(Map.of(), List.of()),
-                List.of("porelo-store"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("porelo-store")),
                 List.of("issues/AB02-Broken.md has no head\n" + FORGED));
     }
 

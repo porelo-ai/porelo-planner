@@ -41,7 +41,8 @@ class GitHubStoreFailedSaveTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-project"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("example-project")),
                     Map.of(),
                     Map.of());
 
@@ -64,7 +65,8 @@ class GitHubStoreFailedSaveTest {
                                         null,
                                         "# One")),
                         new Work(Map.of(), List.of()),
-                        List.of("example-project"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("example-project")));
         final ItemView item =
                 new ItemView(
                         "PVTI_one",

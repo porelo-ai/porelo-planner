@@ -23,7 +23,8 @@ import org.jspecify.annotations.Nullable;
  * @param stories every story
  * @param issues every issue of every repository
  * @param work the work rules and what could not be read of them
- * @param repositories the project's repositories, its own first
+ * @param repositories the project's repositories, its own first, each with the folder a task
+ *     reading the whole project finds it in
  * @param faults what has no place on the board at all, such as a file that names no item, naming it
  *     and why; an item the store could not fully read is on the board with its warnings instead
  * @param owner the owner of the tracker that keeps the stories and issues, as the store verified it
@@ -37,7 +38,7 @@ public record Board(
         List<Story> stories,
         List<Issue> issues,
         Work work,
-        List<String> repositories,
+        List<ProjectRepository> repositories,
         List<String> faults,
         @Nullable String owner,
         List<UnlistedIssue> unlisted) {
@@ -63,7 +64,7 @@ public record Board(
             final List<Story> stories,
             final List<Issue> issues,
             final Work work,
-            final List<String> repositories,
+            final List<ProjectRepository> repositories,
             final List<String> faults,
             final @Nullable String owner) {
         this(revision, workflow, stories, issues, work, repositories, faults, owner, List.of());
@@ -86,7 +87,7 @@ public record Board(
             final List<Story> stories,
             final List<Issue> issues,
             final Work work,
-            final List<String> repositories,
+            final List<ProjectRepository> repositories,
             final List<String> faults) {
         this(revision, workflow, stories, issues, work, repositories, faults, null);
     }
@@ -107,7 +108,7 @@ public record Board(
             final List<Story> stories,
             final List<Issue> issues,
             final Work work,
-            final List<String> repositories) {
+            final List<ProjectRepository> repositories) {
         this(revision, workflow, stories, issues, work, repositories, List.of());
     }
 
@@ -124,7 +125,8 @@ public record Board(
                 stories,
                 issues,
                 work,
-                issues.stream().map(Issue::repository).distinct().toList());
+                ProjectRepository.named(
+                        issues.stream().map(Issue::repository).distinct().toList()));
     }
 
     /**
@@ -142,9 +144,14 @@ public record Board(
         repositories = List.copyOf(repositories);
         faults = List.copyOf(faults);
         unlisted = List.copyOf(unlisted);
-        repositories.forEach(Ids::name);
-        if (new HashSet<>(repositories).size() != repositories.size()) {
+        final List<String> names = ProjectRepository.names(repositories);
+        if (new HashSet<>(names).size() != names.size()) {
             throw new IllegalArgumentException("A board names a repository twice");
+        }
+        // A task reading the whole project finds each repository in a folder of its own.
+        if (repositories.stream().map(ProjectRepository::folder).distinct().count()
+                != repositories.size()) {
+            throw new IllegalArgumentException("A board gives two repositories one folder");
         }
         final Map<String, Story> storyIds = new LinkedHashMap<>();
         for (final Story story : stories) {
@@ -157,7 +164,7 @@ public record Board(
         }
         final Map<String, Issue> issueIds = new LinkedHashMap<>();
         for (final Issue issue : issues) {
-            if (!repositories.contains(issue.repository())) {
+            if (!names.contains(issue.repository())) {
                 throw new IllegalArgumentException(
                         "An issue names a repository outside the project");
             }
@@ -176,11 +183,20 @@ public record Board(
                     || !unlistedIds.add(made.id())) {
                 throw new IllegalArgumentException("Issue " + made.id() + " is on the board twice");
             }
-            if (!repositories.contains(made.repository())) {
+            if (!names.contains(made.repository())) {
                 throw new IllegalArgumentException(
                         "An issue names a repository outside the project");
             }
         }
+    }
+
+    /**
+     * The names of the project's repositories, which an issue's repository carries.
+     *
+     * @return their names, its own first
+     */
+    public List<String> names() {
+        return ProjectRepository.names(repositories);
     }
 
     /**

@@ -143,7 +143,7 @@ public final class IssueMapping {
                 pastPage,
                 new Mapping(
                         config.workflow(),
-                        config.repositories(),
+                        config.names(),
                         config.forge(),
                         config.project().owner()),
                 states,

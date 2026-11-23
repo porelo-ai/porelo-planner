@@ -244,6 +244,54 @@ public record Project(
                 new Tracker(kind, reference.substring(0, slash), reference.substring(slash + 1)));
     }
 
+    /**
+     * The folder each repository a {@code project.yml} names is read in by a task that reads the
+     * whole project, as Porelo places them under {@code /workspace}: the own repository's is {@code
+     * project.name}, every other's its key under {@code repositories}.
+     *
+     * @param text the file's text
+     * @return each repository's folder by the repository's name, the own one first, the others in
+     *     the file's order
+     * @throws IllegalArgumentException when the text is no project, its name or a key is no folder
+     *     name, or a key is the project's name, which is the own repository's folder
+     */
+    public static Map<String, String> folders(String text) {
+        final JsonNode project = yaml(text, FILE);
+        final String name =
+                folder(
+                        string(required(project, "project", FILE), "name", FILE + " project"),
+                        FILE + " project name");
+        final Map<String, String> folders = new LinkedHashMap<>();
+        folders.put(own(project).name(), name);
+        final JsonNode declared = required(project, "repositories", FILE);
+        if (!declared.isObject()) {
+            throw new IllegalArgumentException("project.yml repositories: expected a mapping");
+        }
+        final var entries = declared.properties().iterator();
+        while (entries.hasNext()) {
+            final var entry = entries.next();
+            final String where = "project.yml repositories." + Central.shown(entry.getKey());
+            final String key = folder(entry.getKey(), where);
+            if (key.equals(name)) {
+                throw new IllegalArgumentException(
+                        where + ": the key is the project's name, its own repository's folder");
+            }
+            if (folders.putIfAbsent(repository(entry.getValue(), where).name(), key) != null) {
+                throw new IllegalArgumentException(where + ": duplicate repository");
+            }
+        }
+        return Collections.unmodifiableMap(folders);
+    }
+
+    private static String folder(String value, String where) {
+        try {
+            return org.fuin.porelo.planner.store.Ids.name(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    where + ": not a folder name ([a-z0-9][a-z0-9._-]{0,99}, without '..')", e);
+        }
+    }
+
     private static Repository own(JsonNode project) {
         return repository(required(project, "project", FILE), FILE + " project");
     }

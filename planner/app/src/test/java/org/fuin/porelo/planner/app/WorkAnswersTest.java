@@ -271,6 +271,6 @@ class WorkAnswersTest {
                                 null)),
                 List.of(AGENTS, MANUAL),
                 new Work(Map.of("Building", build), List.of()),
-                List.of("alpha"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha")));
     }
 }

@@ -1018,7 +1018,7 @@ public class BoardController {
         final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new org.fuin.porelo.planner.app.answers.Board(
                 workflow.revision(),
-                board.repositories(),
+                board.names(),
                 workflow.states(),
                 workflow.phases(),
                 workflow.work(),

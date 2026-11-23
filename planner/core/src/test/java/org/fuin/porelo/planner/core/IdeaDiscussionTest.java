@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,54 @@ class IdeaDiscussionTest {
                 .contains("/workspace/project/", "/workspace/alpha/", "/workspace/beta/");
         assertThat(offer.prompt())
                 .as("the person's first words and the idea format the planner holds")
-                .contains("Let people tag stories", IdeaDiscussion.FORMAT, "idea.json");
-        assertThat(IdeaDiscussion.FORMAT)
+                .contains("Let people tag stories", "idea.json");
+        assertThat(IdeaDiscussion.format(List.of("project")))
                 .as("the format asks who works each issue, never assuming it")
                 .contains("\"$id\": \"idea-1.json\"", "\"worker\"", "\"Agent\"", "\"Manual\"");
         assertThat(List.of(offer.agent(), offer.model(), offer.mode()))
                 .as("the first rule's first agent and model, in the conversation's mode")
                 .containsExactly("zeta", "large", "AGENT");
+    }
+
+    @Test
+    void theBriefNamesEachRepositoryBesideTheFolderTheTaskReadsItFrom() {
+        // Harm: an agent sent to a folder that does not exist, or writing a name the planner
+        // refuses, when a repository's folder is not its name.
+        final IdeaDiscussion offer = IdeaDiscussion.offer(namedApart(), "Let people tag stories");
+
+        assertThat(offer.prompt())
+                .as("the own repository read in the project's name, the other in its key")
+                .contains(
+                        "`porelo-project`, read at `/workspace/porelo/`",
+                        "`porelo-pi`, read at `/workspace/pi/`")
+                .doesNotContain("/workspace/porelo-project/", "/workspace/porelo-pi/");
+    }
+
+    @Test
+    void theIdeaFormatAllowsOnlyTheProjectsRepositoryNames() {
+        // Harm: a discussion writes a repository the planner then refuses, and the idea is lost.
+        final IdeaDiscussion offer = IdeaDiscussion.offer(namedApart(), "An idea");
+
+        assertThat(offer.prompt())
+                .as("the repository's names as the format's only values, the own one first")
+                .contains("\"repository\": { \"enum\": [\"porelo-project\", \"porelo-pi\"]");
+        assertThat(IdeaDiscussion.format(List.of("porelo-project", "porelo-pi")))
+                .as("the format the brief carries")
+                .isSubstringOf(offer.prompt());
+    }
+
+    /** A project whose folders are not its repositories' names, as Porelo places them. */
+    private static Board namedApart() {
+        final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                List.of(),
+                List.of(),
+                board.work(),
+                List.of(
+                        new ProjectRepository("porelo-project", "porelo"),
+                        new ProjectRepository("porelo-pi", "pi")));
     }
 
     @Test
@@ -113,9 +155,9 @@ class IdeaDiscussionTest {
     void aBriefOverItsBoundIsRefused() {
         // Start takes at most 64 KiB of brief; a longer one would fail in the window instead.
         final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
-        final List<String> many = new ArrayList<>(board.repositories());
+        final List<ProjectRepository> many = new ArrayList<>(board.repositories());
         for (int i = 0; i < 700; i++) {
-            many.add("r" + i + "-".repeat(90));
+            many.add(ProjectRepository.named("r" + i + "-".repeat(90)));
         }
 
         assertThatThrownBy(

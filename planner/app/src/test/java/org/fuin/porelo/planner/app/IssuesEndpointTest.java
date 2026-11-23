@@ -77,7 +77,8 @@ class IssuesEndpointTest {
                                         "Build",
                                         Map.of("agent", "model"))),
                         List.of()),
-                List.of("porelo-store", "porelo-other"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(
+                        List.of("porelo-store", "porelo-other")));
     }
 
     @BeforeEach

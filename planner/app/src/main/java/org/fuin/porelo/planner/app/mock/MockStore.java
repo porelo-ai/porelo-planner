@@ -248,7 +248,8 @@ public final class MockStore implements PlanningStore {
                         .map(issue -> issue.withWarnings(offering(issue.warnings(), move)))
                         .toList(),
                 work,
-                file.repositories());
+                // The mock board knows no project.yml, so each repository's folder is its name.
+                org.fuin.porelo.planner.store.ProjectRepository.named(file.repositories()));
     }
 
     /** Each warning about the state alone with the correction given, the others with none. */
@@ -953,12 +954,12 @@ public final class MockStore implements PlanningStore {
         final Set<String> written = new LinkedHashSet<>();
         writes.issues().keySet().forEach(id -> written.add(repository(board, id)));
         writes.workers().keySet().forEach(id -> written.add(repository(board, id)));
-        final String own = board.repositories().getFirst();
+        final String own = board.repositories().getFirst().name();
         if (!writes.stories().isEmpty()) {
             written.add(own);
         }
         final List<String> order = new ArrayList<>();
-        board.repositories().stream()
+        board.names().stream()
                 .filter(name -> !name.equals(own) && written.contains(name))
                 .forEach(order::add);
         if (written.contains(own)) {

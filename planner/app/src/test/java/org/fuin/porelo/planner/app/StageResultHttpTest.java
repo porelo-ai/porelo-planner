@@ -254,7 +254,8 @@ class StageResultHttpTest {
                                             null)),
                             List.of(issueIn("Backlog")),
                             new Work(Map.of("In analysis", analysis), List.of()),
-                            List.of("alpha"));
+                            org.fuin.porelo.planner.store.ProjectRepository.named(
+                                    List.of("alpha")));
         }
 
         private static Issue issueIn(final String state) {

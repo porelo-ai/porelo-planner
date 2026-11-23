@@ -361,7 +361,8 @@ class NextStepTest {
                                         null,
                                         "")),
                         original.work(),
-                        List.of("alpha", "beta"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("alpha", "beta")));
         final WorkRule rule =
                 new WorkRule(
                         List.of("Building"),
@@ -923,6 +924,6 @@ class NextStepTest {
                                 "Reworking",
                                 rule("Reworking")),
                         List.of()),
-                List.of("alpha"));
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha")));
     }
 }

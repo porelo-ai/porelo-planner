@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.jspecify.annotations.Nullable;
@@ -101,21 +102,44 @@ class ProjectFileTest {
         final List<Repository> repositories = ProjectFile.repositories(remote, OWN, "main", 10);
         assertThat(repositories)
                 .as(
-                        "the own repository first, with the branch the window named; the others on"
-                                + " their default branch")
+                        "the own repository first, with the branch the window named, read in the"
+                                + " project's name; the others on their default branch, each read"
+                                + " in its key")
                 .containsExactly(
-                        new Repository("porelo-project", OWN, "main"),
+                        new Repository("porelo-project", OWN, "main", "porelo"),
                         new Repository(
                                 "porelo",
                                 new CloneUrl("git@github.com:porelo-ai/porelo.git"),
-                                null),
+                                null,
+                                "core"),
                         new Repository(
                                 "porelo-frontend",
                                 new CloneUrl("https://github.com/porelo-ai/porelo-frontend"),
-                                null));
+                                null,
+                                "frontend"));
         assertThat(remote.fetched)
                 .as("only the own repository fetched, on its branch")
                 .containsExactly(Map.entry("porelo-project", OWN.value() + "@main"));
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "name: \"porelo\"|name: \"Porelo Project\"|project.yml project name",
+                "name: \"porelo\"||missing required field name",
+                "core:|Core:|project.yml repositories.Core",
+                "core:|porelo:|the key is the project's name",
+            })
+    void aProjectWhoseFoldersCannotBeToldIsRefused(
+            final String from, final @Nullable String to, final String words) {
+        // Harm: a task's brief points at a folder Porelo never makes, or at another repository's.
+        final Files remote = with(PROJECT.replace(from, to == null ? "" : to));
+        assertThatThrownBy(() -> ProjectFile.repositories(remote, OWN, null, 10))
+                .as("a project whose folders cannot be told")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("porelo-project")
+                .hasMessageContaining(words);
     }
 
     @Test
@@ -244,8 +268,10 @@ class ProjectFileTest {
                 .as("the tracker as the file names it, and the commit its files were read at")
                 .containsExactly("porelo-ai", "github", "7", "c1");
         assertThat(project.repositories())
-                .as("the repositories, the own first")
-                .containsExactly("porelo-project", "porelo-frontend");
+                .as("the repositories, the own first, each with the folder Porelo reads it in")
+                .containsExactly(
+                        new ProjectRepository("porelo-project", "porelo"),
+                        new ProjectRepository("porelo-frontend", "frontend"));
         assertThat(ProjectFile.read(with(PROJECT), OWN, null, 10).tracked())
                 .as("a project without a tracker stays the Git store's")
                 .isNull();
@@ -269,7 +295,9 @@ class ProjectFileTest {
                 .containsExactly("local", "", "");
         assertThat(project.repositories())
                 .as("repositories on any host")
-                .containsExactly("porelo-project", "porelo-frontend");
+                .containsExactly(
+                        new ProjectRepository("porelo-project", "porelo"),
+                        new ProjectRepository("porelo-frontend", "frontend"));
     }
 
     @Test

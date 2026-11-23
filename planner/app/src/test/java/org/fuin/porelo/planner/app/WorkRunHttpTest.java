@@ -251,7 +251,7 @@ class WorkRunHttpTest {
                                         null)),
                         List.of(manual, agents),
                         store.board().work(),
-                        List.of("alpha"));
+                        org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha")));
         final WorkRun.Snapshot none = new WorkRun.Snapshot(0, Map.of());
 
         assertThat(WorkAnswers.issue(board, agents, none).noRunHere())
@@ -1275,7 +1275,8 @@ class WorkRunHttpTest {
                             new Work(
                                     Map.of("Building", build, "Reading", read, "Reworking", rework),
                                     List.of()),
-                            List.of("alpha"));
+                            org.fuin.porelo.planner.store.ProjectRepository.named(
+                                    List.of("alpha")));
         }
 
         /** Supplies the same snapshot to every read. */

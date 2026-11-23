@@ -46,7 +46,7 @@ class GitHubShortLookStreamTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("porelo-store"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of("porelo-store")),
                     Map.of(),
                     Map.of(),
                     "PVT_7");
@@ -75,7 +75,9 @@ class GitHubShortLookStreamTest {
                                                         List.of(),
                                                         List.of(),
                                                         new Work(Map.of(), List.of()),
-                                                        List.of("porelo-store")),
+                                                        org.fuin.porelo.planner.store
+                                                                .ProjectRepository.named(
+                                                                List.of("porelo-store"))),
                                                 Map.of(),
                                                 CONFIG);
                                     }

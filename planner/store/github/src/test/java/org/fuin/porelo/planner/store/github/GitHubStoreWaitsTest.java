@@ -42,7 +42,7 @@ class GitHubStoreWaitsTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-lib"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(List.of("example-lib")),
                     Map.of(),
                     Map.of());
 

@@ -1923,7 +1923,12 @@ public final class GitStore implements PlanningStore {
                     stories,
                     issues,
                     work,
-                    repositories.stream().map(Repository::name).toList(),
+                    repositories.stream()
+                            .map(
+                                    repository ->
+                                            new org.fuin.porelo.planner.store.ProjectRepository(
+                                                    repository.name(), repository.folder()))
+                            .toList(),
                     faults);
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));

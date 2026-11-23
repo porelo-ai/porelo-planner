@@ -42,7 +42,7 @@ class TargetsTest {
                         story("ST3", List.of("AB3"), FROM_ISSUES.marker())),
                 List.of(issue("AB1"), issue("AB2"), issue("AB3"), issue("AB4")),
                 new Work(Map.of(), List.of()),
-                List.of("sample"),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("sample")),
                 List.of(),
                 null,
                 List.of(

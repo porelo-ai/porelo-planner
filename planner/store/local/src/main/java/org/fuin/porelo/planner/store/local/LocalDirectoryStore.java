@@ -153,7 +153,7 @@ public final class LocalDirectoryStore implements PlanningStore {
         this.clock = clock;
         this.lockWait = lockWait;
         this.lock = new FileProjectLock(directory);
-        this.own = project.repositories().getFirst();
+        this.own = project.repositories().getFirst().name();
     }
 
     @Override
@@ -627,7 +627,7 @@ public final class LocalDirectoryStore implements PlanningStore {
             final String priority,
             final @Nullable LocalItem story) {
         final Workflow workflow = plan.now.board().workflow();
-        if (!plan.now.board().repositories().contains(issue.repository())) {
+        if (!plan.now.board().names().contains(issue.repository())) {
             throw new StoreException.NotSavable(
                     "", issue.repository() + " is no repository of the project");
         }
@@ -704,7 +704,7 @@ public final class LocalDirectoryStore implements PlanningStore {
     private static TrackedProject checked(final TrackedProject project) {
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
-                    project.repositories().getFirst(),
+                    project.repositories().getFirst().name(),
                     "project.yml names a tracker of another kind than a local directory");
         }
         return project;

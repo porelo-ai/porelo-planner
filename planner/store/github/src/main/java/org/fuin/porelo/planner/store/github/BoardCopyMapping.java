@@ -63,7 +63,7 @@ final class BoardCopyMapping {
         return new BoardCopy(
                 project(read),
                 read.commit(),
-                read.repositories(),
+                read.names(),
                 takenAt,
                 new TrackerBoard(
                         read.projectId(),

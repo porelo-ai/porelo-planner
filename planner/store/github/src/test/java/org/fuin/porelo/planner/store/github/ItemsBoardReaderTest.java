@@ -70,7 +70,8 @@ class ItemsBoardReaderTest {
                     "c0ffee0",
                     WORKFLOW,
                     new Work(Map.of(), List.of()),
-                    List.of("example-project", "example-lib"),
+                    org.fuin.porelo.planner.store.ProjectRepository.named(
+                            List.of("example-project", "example-lib")),
                     Map.of(),
                     Map.of());
 
@@ -2396,7 +2397,8 @@ class ItemsBoardReaderTest {
                                 CONFIG.commit(),
                                 CONFIG.workflow(),
                                 CONFIG.work(),
-                                List.of("example-project"),
+                                org.fuin.porelo.planner.store.ProjectRepository.named(
+                                        List.of("example-project")),
                                 Map.of(),
                                 Map.of()))) {
             assertThat(reader.fromCopy(copy, other)).as("the copy read for %s", other).isNull();

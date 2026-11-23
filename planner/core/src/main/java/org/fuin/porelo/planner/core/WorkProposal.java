@@ -281,7 +281,7 @@ public record WorkProposal(
                 throw WorkRefusal.notAllowed(
                         story.state(), to, "The project names no own repository.");
             }
-            groups.put(board.repositories().getFirst(), issues);
+            groups.put(board.repositories().getFirst().name(), issues);
         } else {
             for (final Issue issue : issues) {
                 groups.computeIfAbsent(issue.repository(), key -> new ArrayList<>()).add(issue);
