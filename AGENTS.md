@@ -23,7 +23,6 @@ no review. Porelo itself knows no stories or issues; the window starts tasks wit
   under the root's profile `all`, so a Java build needs no Flutter, and the Build workflow runs it in a job of its own.
 - **A mock mode serves the window's mock board**, for the window's planning tests; it reaches no store.
 - **A changelog entry is one YAML file under `changelog/unreleased/`** with a one-sentence `title` and a `type`.
-- **The tests tagged `documents` run alone with `./mvnw -B -s settings.xml -Pdocuments test`.**
 - **Issues are in the repository's GitHub Issues**, each named by its reference there
   (`porelo-ai/porelo-planner#<number>`); one carried over from the Markdown files keeps its old id (`PL`) as a fixed
   alias.

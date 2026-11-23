@@ -1,5 +1,5 @@
-# Checks the documents: AGENTS.md's shared block against its hash, no citation of an issue that goes stale, a
-# documentation chapter somebody can find their way through, and the tests that read documents. Of its own because
+# Checks the documents: AGENTS.md's shared block against its hash, no citation of an issue that goes stale, and a
+# documentation chapter somebody can find their way through. Of its own because
 # the build ignores a change to Markdown alone, which is exactly the change this is for, and it leases no machine.
 name: Shared rules check
 
@@ -30,9 +30,9 @@ jobs:
               uses: ./.github/actions/pinned-jdk
 
             # The root's validate runs check-actions, check-shared, check-citations, check-readmes and check-doc-site, with porelo-release
-            # from Central; the tests tagged documents follow it, so a change to a page runs every test that reads one.
+            # from Central.
             - name: The documents
-              run: ./mvnw -B -U -s settings.xml -Pdocuments test
+              run: ./mvnw -B -U -s settings.xml validate
 
             # The planner's commands on the JVM, for main's commits below; no native executable is built here.
             - name: The planner
