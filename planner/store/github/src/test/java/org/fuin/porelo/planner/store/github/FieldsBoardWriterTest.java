@@ -265,10 +265,12 @@ class FieldsBoardWriterTest {
                                         new GitHubGraphQl.IssueFieldOption(
                                                 FieldNames.PRIORITY,
                                                 item.fields().get(FieldNames.PRIORITY)))
-                                : List.of()),
+                                : List.of(),
+                        0),
                 item.itemId(),
                 values,
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     /** GitHub's side of a write: what it holds, what it answers, and every call made. */
@@ -2204,7 +2206,8 @@ class FieldsBoardWriterTest {
                 edit.apply(read.issue()),
                 read.itemId(),
                 read.values(),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     private static BoardIssue issueWith(
@@ -2231,7 +2234,8 @@ class FieldsBoardWriterTest {
                 new GitHubGraphQl.PageInfo(false, null),
                 issue.issueType(),
                 null,
-                issue.fieldOptions());
+                issue.fieldOptions(),
+                0);
     }
 
     private static IssueRefs refs(final boolean more, final String... ids) {
@@ -2427,7 +2431,8 @@ class FieldsBoardWriterTest {
                         read.issue(),
                         "PVTI_again",
                         read.values(),
-                        new GitHubGraphQl.PageInfo(false, null)),
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0),
                 "item a person removed and added again");
     }
 

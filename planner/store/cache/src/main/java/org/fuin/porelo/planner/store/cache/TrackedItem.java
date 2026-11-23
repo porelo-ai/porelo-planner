@@ -17,6 +17,8 @@ import org.jspecify.annotations.Nullable;
  *     did not say
  * @param partial whether the read that gave it held only part of its labels or field values, so it
  *     is never taken as complete and is read again at the next look
+ * @param valueCount how many field values the tracker counts on the item, which may be more than
+ *     the values it gave
  */
 public record TrackedItem(
         String id,
@@ -24,12 +26,16 @@ public record TrackedItem(
         @Nullable Issue issue,
         List<Value> values,
         @Nullable Instant updatedAt,
-        boolean partial) {
+        boolean partial,
+        int valueCount) {
 
     /** Requires the id and copies the values. */
     public TrackedItem {
         Objects.requireNonNull(id, "id");
         values = List.copyOf(values);
+        if (valueCount < 0) {
+            throw new IllegalArgumentException("An item counts no values below none");
+        }
     }
 
     /**
@@ -51,6 +57,7 @@ public record TrackedItem(
      * @param type the name of its issue type at the tracker, or null when it has none
      * @param closedAt when the tracker closed it, or null when it never did
      * @param choices the options chosen in its single-select issue fields, in the tracker's order
+     * @param labelCount how many labels the tracker counts, which may be more than it named
      */
     public record Issue(
             String id,
@@ -68,7 +75,8 @@ public record TrackedItem(
             Links blockedBy,
             @Nullable String type,
             @Nullable Instant closedAt,
-            List<Choice> choices) {
+            List<Choice> choices,
+            int labelCount) {
 
         /** Requires every part the tracker always gives and copies the labels and choices. */
         public Issue {
@@ -81,6 +89,9 @@ public record TrackedItem(
             Objects.requireNonNull(subIssues, "subIssues");
             Objects.requireNonNull(blockedBy, "blockedBy");
             choices = List.copyOf(choices);
+            if (labelCount < 0) {
+                throw new IllegalArgumentException("An issue counts no labels below none");
+            }
         }
 
         /**
@@ -135,7 +146,8 @@ public record TrackedItem(
                     blockedBy,
                     type,
                     null,
-                    choices);
+                    choices,
+                    labels.size());
         }
 
         /**
@@ -187,7 +199,8 @@ public record TrackedItem(
                     blockedBy,
                     type,
                     null,
-                    List.of());
+                    List.of(),
+                    labels.size());
         }
 
         /**
@@ -238,7 +251,8 @@ public record TrackedItem(
                     blockedBy,
                     null,
                     null,
-                    List.of());
+                    List.of(),
+                    labels.size());
         }
     }
 

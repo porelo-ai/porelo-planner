@@ -118,11 +118,11 @@ class GitHubStoreListTest {
             if (item != null) {
                 on.add(
                         new GitHubGraphQl.IssueOnBoard(
-                                item.issue(), item.id(), item.values(), LAST));
+                                item.issue(), item.id(), item.values(), LAST, 0));
             } else if (MADE.equals(id) && !gone) {
                 on.add(
                         new GitHubGraphQl.IssueOnBoard(
-                                issue(LIB, 6, "Made by hand", null), null, List.of(), LAST));
+                                issue(LIB, 6, "Made by hand", null), null, List.of(), LAST, 0));
             } else {
                 on.add(null);
             }
@@ -150,7 +150,8 @@ class GitHubStoreListTest {
                                                     false,
                                                     issue(LIB, 6, "Made by hand", null),
                                                     List.of(),
-                                                    LAST));
+                                                    LAST,
+                                                    0));
                                     yield new Batch<>(
                                             List.of(Batch.Outcome.of("PVTI_6")),
                                             null,
@@ -192,7 +193,7 @@ class GitHubStoreListTest {
                 items.set(
                         at,
                         new GitHubGraphQl.ProjectItem(
-                                item.id(), item.archived(), item.issue(), kept, LAST));
+                                item.id(), item.archived(), item.issue(), kept, LAST, 0));
             }
         }
     }
@@ -220,7 +221,8 @@ class GitHubStoreListTest {
                 LAST,
                 type,
                 null,
-                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")));
+                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                0);
     }
 
     private static GitHubGraphQl.ProjectItem item(
@@ -234,7 +236,7 @@ class GitHubStoreListTest {
                     new GitHubGraphQl.ItemValue(
                             "F_" + FieldNames.STATUS, "O_Idea", "Idea", null, null));
         }
-        return new GitHubGraphQl.ProjectItem(id, false, issue, values, LAST);
+        return new GitHubGraphQl.ProjectItem(id, false, issue, values, LAST, 0);
     }
 
     /** Every field the store uses, of its kind and with its options. */

@@ -28,7 +28,7 @@ public final class ForyEncoding implements CopyEncoding {
      */
     static final int MOST_DEPTH = 16;
 
-    /** The most fields of one record Fory reads; the copy's largest record has fourteen. */
+    /** The most fields of one record Fory reads; the copy's largest record has seventeen. */
     static final int MOST_FIELDS = 64;
 
     /**

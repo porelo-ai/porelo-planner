@@ -140,8 +140,9 @@ final class BoardCopyMapping {
                 listedAt,
                 // Labels or values past the read's page are not held: the item is not whole.
                 Boolean.TRUE.equals(item.valuesPage().hasNextPage())
-                        || (issue != null
-                                && Boolean.TRUE.equals(issue.labelsPage().hasNextPage())));
+                        || (issue != null && Boolean.TRUE.equals(issue.labelsPage().hasNextPage())),
+                // GitHub's count, which tells a value past the page read in the item's version.
+                item.valueCount());
     }
 
     /**
@@ -167,7 +168,8 @@ final class BoardCopyMapping {
                                                 value.number()))
                         .toList(),
                 // Where a partial list goes on is not kept; it stays marked as not whole.
-                new GitHubGraphQl.PageInfo(item.partial(), null));
+                new GitHubGraphQl.PageInfo(item.partial(), null),
+                item.valueCount());
     }
 
     private static TrackedItem.Issue issue(final GitHubGraphQl.BoardIssue issue) {
@@ -189,7 +191,9 @@ final class BoardCopyMapping {
                 issue.closedAt(),
                 issue.fieldOptions().stream()
                         .map(chosen -> new TrackedItem.Choice(chosen.field(), chosen.option()))
-                        .toList());
+                        .toList(),
+                // GitHub's count, which tells a label past the page read in the item's version.
+                issue.labelCount());
     }
 
     private static GitHubGraphQl.BoardIssue issue(
@@ -217,7 +221,8 @@ final class BoardCopyMapping {
                                 chosen ->
                                         new GitHubGraphQl.IssueFieldOption(
                                                 chosen.field(), chosen.option()))
-                        .toList());
+                        .toList(),
+                issue.labelCount());
     }
 
     private static TrackedItem.Links links(final GitHubGraphQl.IssueRefs refs) {

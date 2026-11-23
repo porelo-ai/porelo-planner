@@ -21,12 +21,12 @@ final class ItemVersions {
     /**
      * The item's version over its project item id, its field values, its parent, sub-issues and
      * blockers with the count of blockers not seen and GitHub's counts of both, whether labels or
-     * values lie past the page read, its labels, its issue type, whether it is open and why it
-     * closed, whether it is archived, its title and its body.
+     * values lie past the page read, how many labels and values GitHub counts past it, its labels,
+     * its issue type, whether it is open and why it closed, whether it is archived, its title and
+     * its body.
      *
      * <p>Past a list's first page only its length is told: an entry swapped there for another
-     * leaves the version equal. Labels and field values have no count from GitHub's read, only
-     * whether more lie past the page, so only the first of them past it changes the version.
+     * leaves the version equal.
      *
      * @param item the item as GitHub gave it
      * @return its version
@@ -51,6 +51,9 @@ final class ItemVersions {
                 item.subIssueCount(),
                 item.blockerCount(),
                 item.partial(),
+                // Labels and values past their first page are told by GitHub's counts alone.
+                item.unseenLabels(),
+                item.unseenValues(),
                 item.labels().stream().sorted().toList(),
                 item.issueType(),
                 item.open(),
@@ -100,6 +103,8 @@ final class ItemVersions {
                         issue.closedAt(),
                         issue.subIssues().totalCount(),
                         issue.blockedBy().totalCount(),
-                        ItemsBoardReader.partial(now.valuesPage(), issue)));
+                        ItemsBoardReader.partial(now.valuesPage(), issue),
+                        ItemView.unseen(issue.labelCount(), issue.labels().size()),
+                        ItemView.unseen(now.valueCount(), now.values().size())));
     }
 }

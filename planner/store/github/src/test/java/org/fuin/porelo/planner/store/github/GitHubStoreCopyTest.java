@@ -125,7 +125,8 @@ class GitHubStoreCopyTest {
                                     false,
                                     null,
                                     List.of(),
-                                    new GitHubGraphQl.PageInfo(false, null))),
+                                    new GitHubGraphQl.PageInfo(false, null),
+                                    0)),
                     new GitHubGraphQl.PageInfo(false, null),
                     COST,
                     2);
@@ -142,7 +143,8 @@ class GitHubStoreCopyTest {
                                     item.issue(),
                                     item.id(),
                                     item.values(),
-                                    new GitHubGraphQl.PageInfo(false, null))),
+                                    new GitHubGraphQl.PageInfo(false, null),
+                                    item.valueCount())),
                     COST);
         }
 
@@ -171,9 +173,11 @@ class GitHubStoreCopyTest {
                             new GitHubGraphQl.PageInfo(false, null),
                             IssueMapping.STORY_TYPE,
                             null,
-                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
+                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                            0),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
-                    new GitHubGraphQl.PageInfo(false, null));
+                    new GitHubGraphQl.PageInfo(false, null),
+                    0);
         }
 
         private void answer(final String call) {

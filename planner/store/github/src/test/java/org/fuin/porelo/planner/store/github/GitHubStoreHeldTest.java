@@ -205,7 +205,11 @@ class GitHubStoreHeldTest {
                         item == null
                                 ? null
                                 : new GitHubGraphQl.IssueOnBoard(
-                                        item.issue(), item.id(), item.values(), NONE));
+                                        item.issue(),
+                                        item.id(),
+                                        item.values(),
+                                        NONE,
+                                        item.valueCount()));
             }
             return new GitHubGraphQl.IssueBoard(on, COST);
         }
@@ -246,9 +250,11 @@ class GitHubStoreHeldTest {
                             NONE,
                             type,
                             null,
-                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
+                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                            0),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
-                    NONE);
+                    NONE,
+                    0);
         }
     }
 

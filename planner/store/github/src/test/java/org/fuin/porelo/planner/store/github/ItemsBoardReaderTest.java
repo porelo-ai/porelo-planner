@@ -179,7 +179,8 @@ class ItemsBoardReaderTest {
                                                     refs(false)),
                                             on ? "PVTI_lib_3" : null,
                                             List.of(),
-                                            new GitHubGraphQl.PageInfo(false, null)));
+                                            new GitHubGraphQl.PageInfo(false, null),
+                                            0));
                         }
                         return new IssueBoard(issues, COST);
                     });
@@ -404,7 +405,8 @@ class ItemsBoardReaderTest {
                 new GitHubGraphQl.PageInfo(false, null),
                 type,
                 null,
-                List.of(new GitHubGraphQl.IssueFieldOption(FieldNames.PRIORITY, "Medium")));
+                List.of(new GitHubGraphQl.IssueFieldOption(FieldNames.PRIORITY, "Medium")),
+                0);
     }
 
     private static BoardIssue withPriority(final BoardIssue issue, final @Nullable String option) {
@@ -427,7 +429,8 @@ class ItemsBoardReaderTest {
                 issue.closedAt(),
                 option == null
                         ? List.of()
-                        : List.of(new GitHubGraphQl.IssueFieldOption("Priority", option)));
+                        : List.of(new GitHubGraphQl.IssueFieldOption("Priority", option)),
+                0);
     }
 
     @Test
@@ -441,7 +444,8 @@ class ItemsBoardReaderTest {
                         false,
                         withPriority(java.util.Objects.requireNonNull(original.issue()), "Urgent"),
                         original.values(),
-                        original.valuesPage());
+                        original.valuesPage(),
+                        0);
         final Snapshot read = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, urgent).read();
         assertThat(read.board().stories().getFirst().priority())
                 .as("the organization's Urgent wins over the project's High")
@@ -453,7 +457,8 @@ class ItemsBoardReaderTest {
                         false,
                         withPriority(java.util.Objects.requireNonNull(original.issue()), null),
                         original.values(),
-                        original.valuesPage());
+                        original.valuesPage(),
+                        0);
         final Snapshot absent =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, missing).read();
         assertThat(absent.board().stories().getFirst().warnings())
@@ -473,7 +478,8 @@ class ItemsBoardReaderTest {
                 false,
                 withPriority(java.util.Objects.requireNonNull(original.issue()), null),
                 original.values(),
-                original.valuesPage());
+                original.valuesPage(),
+                0);
     }
 
     /** The organization's single-select issue field Priority with the options given. */
@@ -644,7 +650,8 @@ class ItemsBoardReaderTest {
                         storyIssue(OWNER + "/example-project", 1, null, refs(false, subNodes)),
                         priority.equals("Highest") ? "Urgent" : priority),
                 List.of(option("F_status", "Idea"), option("F_priority", priority)),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     private static ProjectItem libIssue(final int number, final IssueRefs subs) {
@@ -662,18 +669,20 @@ class ItemsBoardReaderTest {
                         option("F_size", "M"),
                         number("F_rank", 3),
                         number("F_minutes", 12.5)),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     private static final String LIB_3 = node(OWNER + "/example-lib", 3);
 
     private static IssueOnBoard onBoard(final ProjectItem item) {
-        return new IssueOnBoard(item.issue(), item.id(), item.values(), item.valuesPage());
+        return new IssueOnBoard(
+                item.issue(), item.id(), item.values(), item.valuesPage(), item.valueCount());
     }
 
     private static ProjectItem partialValues(final ProjectItem item) {
         return new ProjectItem(
-                item.id(), item.archived(), item.issue(), item.values(), info("values-2"));
+                item.id(), item.archived(), item.issue(), item.values(), info("values-2"), 0);
     }
 
     private static ProjectItem withLabels(
@@ -699,9 +708,11 @@ class ItemsBoardReaderTest {
                         info(next),
                         issue.issueType(),
                         null,
-                        issue.fieldOptions()),
+                        issue.fieldOptions(),
+                        0),
                 item.values(),
-                item.valuesPage());
+                item.valuesPage(),
+                0);
     }
 
     @Test
@@ -768,7 +779,7 @@ class ItemsBoardReaderTest {
         final ProjectItem original = story(true, "High");
         final ProjectItem whole =
                 new ProjectItem(
-                        "PVTI_replaced", true, original.issue(), original.values(), info(null));
+                        "PVTI_replaced", true, original.issue(), original.values(), info(null), 0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -791,7 +802,7 @@ class ItemsBoardReaderTest {
         // Harm: a stale item's archive flag hides active work after the project item is replaced.
         final ProjectItem old = story(true, "High");
         final ProjectItem current =
-                new ProjectItem("PVTI_current", false, old.issue(), old.values(), info(null));
+                new ProjectItem("PVTI_current", false, old.issue(), old.values(), info(null), 0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -828,7 +839,8 @@ class ItemsBoardReaderTest {
                                 refs(false),
                                 refs(true, node(OWNER + "/example-lib", 4))),
                         libIssue(3, refs(false)).values(),
-                        info(null));
+                        info(null),
+                        0);
         final ProjectItem whole =
                 new ProjectItem(
                         partial.id(),
@@ -844,7 +856,8 @@ class ItemsBoardReaderTest {
                                         node(OWNER + "/example-lib", 4),
                                         node(OWNER + "/example-lib", 5))),
                         partial.values(),
-                        info(null));
+                        info(null),
+                        0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -918,7 +931,8 @@ class ItemsBoardReaderTest {
                         false,
                         storyIssue(OWNER + "/example-project", 1, null, refs(true)),
                         whole.values(),
-                        info(null));
+                        info(null),
+                        0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -947,7 +961,8 @@ class ItemsBoardReaderTest {
                         false,
                         before.issue(),
                         List.of(option("F_status", "Idea"), option("F_size", "M")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -973,7 +988,8 @@ class ItemsBoardReaderTest {
         final ProjectItem whole = libIssue(3, refs(false));
         for (final @Nullable IssueOnBoard gone :
                 Arrays.asList(
-                        null, new IssueOnBoard(whole.issue(), null, whole.values(), info(null)))) {
+                        null,
+                        new IssueOnBoard(whole.issue(), null, whole.values(), info(null), 0))) {
             final GitHub github =
                     new GitHub()
                             .fieldsPage(FIELDS, null)
@@ -1248,7 +1264,8 @@ class ItemsBoardReaderTest {
                         refs(false),
                         type),
                 List.of(option("F_status", "Backlog"), option("F_priority", "High")),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     @Test
@@ -1281,7 +1298,8 @@ class ItemsBoardReaderTest {
                                         false,
                                         null,
                                         List.of(option("F_status", "Idea")),
-                                        new GitHubGraphQl.PageInfo(false, null)))
+                                        new GitHubGraphQl.PageInfo(false, null),
+                                        0))
                         .read();
 
         assertThat(snapshot.board().stories())
@@ -1318,9 +1336,11 @@ class ItemsBoardReaderTest {
                                 was.labelsPage(),
                                 null,
                                 null,
-                                was.fieldOptions()),
+                                was.fieldOptions(),
+                                0),
                         open.values(),
-                        open.valuesPage());
+                        open.valuesPage(),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub()
@@ -1369,7 +1389,8 @@ class ItemsBoardReaderTest {
                         cut.archived(),
                         cut.issue(),
                         cut.values(),
-                        new GitHubGraphQl.PageInfo(true, "values-2"));
+                        new GitHubGraphQl.PageInfo(true, "values-2"),
+                        0);
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -1406,7 +1427,8 @@ class ItemsBoardReaderTest {
                                 refs(false),
                                 refs(false, LIB_3)),
                         List.of(option("F_status", "Backlog")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
         final Snapshot snapshot =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -1436,7 +1458,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue(OWNER + "/_repo", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
@@ -1457,7 +1480,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, capitals).read();
@@ -1481,7 +1505,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue(OWNER + "/lib\nInjected line", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, odd).read();
 
@@ -1722,7 +1747,8 @@ class ItemsBoardReaderTest {
                 item.archived(),
                 change.apply(java.util.Objects.requireNonNull(item.issue())),
                 item.values(),
-                item.valuesPage());
+                item.valuesPage(),
+                0);
     }
 
     private static BoardIssue changed(
@@ -1748,7 +1774,8 @@ class ItemsBoardReaderTest {
                 new GitHubGraphQl.PageInfo(false, null),
                 issue.issueType(),
                 null,
-                issue.fieldOptions());
+                issue.fieldOptions(),
+                0);
     }
 
     @Test
@@ -1813,7 +1840,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue("other-org/example-lib", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, stranger).read();
@@ -1836,7 +1864,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub()
@@ -1869,7 +1898,8 @@ class ItemsBoardReaderTest {
                         false,
                         issue(OWNER + "/example-lib", 5, List.of(), null, refs(false)),
                         List.of(option("F_status", "Parked")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
         final ProjectItem onHold =
                 new ProjectItem(
                         "PVTI_capitals",
@@ -1882,7 +1912,8 @@ class ItemsBoardReaderTest {
                                 refs(false),
                                 refs(false, node(OWNER + "/example-lib", 5))),
                         List.of(option("F_status", "On hold")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub()
@@ -1930,7 +1961,8 @@ class ItemsBoardReaderTest {
                         true,
                         issue(OWNER + "/Example-Lib", 3, List.of(), null, refs(false)),
                         List.of(option("F_status", "Finished")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub()
@@ -1957,7 +1989,8 @@ class ItemsBoardReaderTest {
                         whole.archived(),
                         whole.issue(),
                         whole.values(),
-                        new GitHubGraphQl.PageInfo(true, "values-2"));
+                        new GitHubGraphQl.PageInfo(true, "values-2"),
+                        0);
         final Snapshot read =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -1991,6 +2024,86 @@ class ItemsBoardReaderTest {
                 .isNotEqualTo(read.board().revision());
     }
 
+    /** The item with GitHub's counts of its labels and of its field values. */
+    private static ProjectItem counted(
+            final ProjectItem item, final int labelCount, final int valueCount) {
+        final BoardIssue issue = java.util.Objects.requireNonNull(item.issue());
+        return new ProjectItem(
+                item.id(),
+                item.archived(),
+                new BoardIssue(
+                        issue.id(),
+                        issue.databaseId(),
+                        issue.number(),
+                        issue.title(),
+                        issue.body(),
+                        issue.state(),
+                        issue.stateReason(),
+                        issue.updatedAt(),
+                        issue.repository(),
+                        issue.labels(),
+                        issue.parentId(),
+                        issue.subIssues(),
+                        issue.blockedBy(),
+                        issue.labelsPage(),
+                        issue.issueType(),
+                        issue.closedAt(),
+                        issue.fieldOptions(),
+                        labelCount),
+                item.values(),
+                item.valuesPage(),
+                valueCount);
+    }
+
+    /** The board read of one item beside the story it belongs to. */
+    private static Snapshot readOf(final ProjectItem item) {
+        return new GitHub()
+                .fieldsPage(FIELDS, null)
+                .itemsPage(null, story("High", LIB_3), item)
+                .boardItems(item)
+                .read();
+    }
+
+    @Test
+    void aLabelOrValueAddedPastThePageChangesTheItemsVersionAndTheBoardsRevision() {
+        // Harm: a label or field value added past the page read leaves the board's version of
+        // the item and the board's revision as they were, so the window is told nothing and a
+        // write made against the old board is taken as made against the item as it stands.
+        final ProjectItem whole = libIssue(3, refs(false));
+        final ProjectItem labelsCut = withLabels(whole, List.of("bug"), "labels-2");
+        final ProjectItem valuesCut =
+                new ProjectItem(
+                        whole.id(),
+                        whole.archived(),
+                        whole.issue(),
+                        whole.values(),
+                        new GitHubGraphQl.PageInfo(true, "values-2"),
+                        0);
+        final int values = whole.values().size();
+        for (final ProjectItem[] pair :
+                List.of(
+                        new ProjectItem[] {
+                            counted(labelsCut, 101, values), counted(labelsCut, 102, values)
+                        },
+                        new ProjectItem[] {
+                            counted(valuesCut, 0, values + 1), counted(valuesCut, 0, values + 2)
+                        })) {
+            final Snapshot before = readOf(pair[0]);
+            final Snapshot after = readOf(pair[1]);
+            final Issue first = before.board().issue("example-lib#3").orElseThrow();
+
+            assertThat(readOf(pair[0]).board().issue("example-lib#3").orElseThrow().version())
+                    .as("the same item read again")
+                    .isEqualTo(first.version());
+            assertThat(after.board().issue("example-lib#3").orElseThrow().version())
+                    .as("one more past the page, the page the same")
+                    .isNotEqualTo(first.version());
+            assertThat(after.board().revision())
+                    .as("the board's revision with one more past the page")
+                    .isNotEqualTo(before.board().revision());
+        }
+    }
+
     @Test
     void anItemOfTheOwnersRepositoryTheProjectDoesNotPlanIsAFaultAndTheBoardIsRead() {
         // Harm: one issue of a repository project.yml does not name, added to the project by
@@ -2007,7 +2120,8 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false)),
                         List.of(option("F_status", "Idea")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Snapshot snapshot =
                 new GitHub()
@@ -2417,7 +2531,8 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false)),
                         List.of(option("F_status", "Backlog")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -2448,7 +2563,8 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false)),
                         List.of(option("F_status", "Accepted"), option("F_worker", "Manual")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
 
         final Board before =
                 new GitHub()
@@ -2474,7 +2590,8 @@ class ItemsBoardReaderTest {
                         false,
                         accepted.issue(),
                         List.of(option("F_status", "Backlog"), option("F_worker", "Manual")),
-                        new GitHubGraphQl.PageInfo(false, null));
+                        new GitHubGraphQl.PageInfo(false, null),
+                        0);
         final Board after =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -2512,7 +2629,8 @@ class ItemsBoardReaderTest {
                                         true,
                                         null,
                                         List.of(),
-                                        new GitHubGraphQl.PageInfo(false, null)))
+                                        new GitHubGraphQl.PageInfo(false, null),
+                                        0))
                         .boardPage(onBoard(overflowing));
         final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
         final Snapshot read = reader.read(CONFIG);
@@ -2615,7 +2733,8 @@ class ItemsBoardReaderTest {
                         refs(false),
                         new IssueRefs(List.of(blockers), new PageInfo(false, null), 1)),
                 plain.values(),
-                plain.valuesPage());
+                plain.valuesPage(),
+                0);
     }
 
     /**
@@ -2654,9 +2773,11 @@ class ItemsBoardReaderTest {
                         issue.labelsPage(),
                         null,
                         null,
-                        issue.fieldOptions()),
+                        issue.fieldOptions(),
+                        0),
                 plain.values(),
-                plain.valuesPage());
+                plain.valuesPage(),
+                0);
     }
 
     /** An issue of another owner's repository as GitHub answers it by its id. */
@@ -2679,10 +2800,12 @@ class ItemsBoardReaderTest {
                         new GitHubGraphQl.PageInfo(false, null),
                         null,
                         null,
-                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
+                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                        0),
                 null,
                 List.of(),
-                new GitHubGraphQl.PageInfo(false, null));
+                new GitHubGraphQl.PageInfo(false, null),
+                0);
     }
 
     private static final IssueRef FAR = new IssueRef("I_far_7", 70L, 7, "other-org/elsewhere");
@@ -3039,14 +3162,16 @@ class ItemsBoardReaderTest {
                                 node(OWNER + "/example-project", 1),
                                 refs(false, lib4)),
                         List.of(option("F_status", "Backlog"), option("F_worker", "Person")),
-                        info(null));
+                        info(null),
+                        0);
         final ProjectItem part =
                 new ProjectItem(
                         "PVTI_lib_4",
                         false,
                         issue(OWNER + "/example-lib", 4, List.of(), LIB_3, refs(false)),
                         List.of(option("F_status", "Backlog")),
-                        info(null));
+                        info(null),
+                        0);
 
         final Board board =
                 new GitHub()

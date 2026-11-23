@@ -156,10 +156,12 @@ final class HeldSaves {
                                 none,
                                 issue.type(),
                                 issue.closedAt(),
-                                issue.choices()),
+                                issue.choices(),
+                                issue.labelCount()),
                 item.values(),
                 null,
-                item.partial());
+                item.partial(),
+                item.valueCount());
     }
 
     /**

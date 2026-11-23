@@ -675,7 +675,12 @@ public final class ItemsBoardReader implements BoardReader {
                 items.put(
                         itemId,
                         new GitHubGraphQl.ProjectItem(
-                                itemId, archived, on.issue(), on.values(), on.valuesPage()));
+                                itemId,
+                                archived,
+                                on.issue(),
+                                on.values(),
+                                on.valuesPage(),
+                                on.valueCount()));
             }
         }
         LOG.info("Read {} issues again after a save, in place of the whole project", all.size());
@@ -1296,7 +1301,8 @@ public final class ItemsBoardReader implements BoardReader {
                                     listed.archived(),
                                     on.issue(),
                                     on.values(),
-                                    on.valuesPage()));
+                                    on.valuesPage(),
+                                    on.valueCount()));
                 }
             }
             from += chunk.size();
@@ -1668,7 +1674,9 @@ public final class ItemsBoardReader implements BoardReader {
                 issue.closedAt(),
                 issue.subIssues().totalCount(),
                 issue.blockedBy().totalCount(),
-                partial(item.valuesPage(), issue));
+                partial(item.valuesPage(), issue),
+                ItemView.unseen(issue.labelCount(), issue.labels().size()),
+                ItemView.unseen(item.valueCount(), item.values().size()));
     }
 
     /**
@@ -1805,6 +1813,9 @@ public final class ItemsBoardReader implements BoardReader {
             // Whether labels or values lie past one page decides a warning on its own.
             add(digest, String.valueOf(Boolean.TRUE.equals(issue.labelsPage().hasNextPage())));
             add(digest, String.valueOf(Boolean.TRUE.equals(item.valuesPage().hasNextPage())));
+            // GitHub's counts tell a label or value added past that page.
+            add(digest, Integer.toString(issue.labelCount()));
+            add(digest, Integer.toString(item.valueCount()));
             // The type makes an item a story or an issue.
             addNullable(digest, issue.issueType());
             add(digest, issue.updatedAt().toString());

@@ -40,6 +40,9 @@ import org.jspecify.annotations.Nullable;
  * @param subIssueCount how many sub-issues GitHub counts, which may be more than it names
  * @param blockerCount how many blockers GitHub counts, which may be more than it names
  * @param partial whether its labels or its field values lie past the one page read of them
+ * @param unseenLabels how many more labels GitHub counts than the page read names
+ * @param unseenValues how many more field values GitHub counts on the project item than the page
+ *     read holds
  */
 public record ItemView(
         String itemId,
@@ -64,7 +67,9 @@ public record ItemView(
         @Nullable Instant closedAt,
         int subIssueCount,
         int blockerCount,
-        boolean partial) {
+        boolean partial,
+        int unseenLabels,
+        int unseenValues) {
 
     /**
      * An issue that blocks the item's, as GitHub names it.
@@ -89,11 +94,14 @@ public record ItemView(
             throw new IllegalArgumentException(
                     "An item counts no sub-issues or blockers below none");
         }
+        if (unseenLabels < 0 || unseenValues < 0) {
+            throw new IllegalArgumentException("An item counts no labels or values below none");
+        }
     }
 
     /**
-     * An item whose lists were read whole: GitHub counts the sub-issues and blockers it names, and
-     * no label or value lies past the page read.
+     * An item whose lists were read whole: GitHub counts the sub-issues, blockers, labels and
+     * values it names, and no label or value lies past the page read.
      *
      * @param itemId the project item's node id
      * @param issueId the issue's node id
@@ -160,7 +168,9 @@ public record ItemView(
                 closedAt,
                 subIssueIds.size(),
                 blockedByIds.size() + unseenBlockers,
-                false);
+                false,
+                0,
+                0);
     }
 
     /**
@@ -319,7 +329,9 @@ public record ItemView(
                 closedAt,
                 subIssueCount,
                 blockerCount,
-                partial);
+                partial,
+                unseenLabels,
+                unseenValues);
     }
 
     /**
@@ -352,7 +364,9 @@ public record ItemView(
                 at,
                 subIssueCount,
                 blockerCount,
-                partial);
+                partial,
+                unseenLabels,
+                unseenValues);
     }
 
     /**
@@ -413,5 +427,16 @@ public record ItemView(
                 0,
                 null,
                 null);
+    }
+
+    /**
+     * How many more entries GitHub counts than a read names; none when it counts fewer.
+     *
+     * @param count GitHub's count
+     * @param read how many the read named
+     * @return how many it did not name
+     */
+    static int unseen(final int count, final int read) {
+        return Math.max(0, count - read);
     }
 }

@@ -149,10 +149,12 @@ class UnlistedAddTest {
                                                                                         .issueFieldName(),
                                                                                 value.singleSelectOption()
                                                                                         .name()))
-                                                        .toList()),
+                                                        .toList(),
+                                                0),
                                         itemId,
                                         List.of(),
-                                        LAST));
+                                        LAST,
+                                        0));
             }
             return new GitHubGraphQl.IssueBoard(on, new GraphQlCost(1, 4999, Instant.EPOCH));
         }

@@ -130,7 +130,8 @@ class GitHubChangesTest {
                                                                     item,
                                                                     List.of(),
                                                                     new GitHubGraphQl.PageInfo(
-                                                                            false, null)));
+                                                                            false, null),
+                                                                    0));
                                         }
                                         return new GitHubGraphQl.IssueBoard(
                                                 on, new GraphQlCost(1, 4999, Instant.EPOCH));
@@ -158,7 +159,8 @@ class GitHubChangesTest {
                 none,
                 null,
                 null,
-                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")));
+                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                0);
     }
 
     /** An item as the copy holds it: open, in status Idea, with no links. */
@@ -195,7 +197,8 @@ class GitHubChangesTest {
                         new TrackedItem.Links(List.of(), false, null, 0)),
                 List.of(new TrackedItem.Value(STATUS, option, "Idea", null, null)),
                 THEN,
-                false);
+                false,
+                1);
     }
 
     /** An item as the list shows it, as {@link #held(String)} holds it. */
@@ -499,7 +502,8 @@ class GitHubChangesTest {
                                 issue.blockedBy()),
                         partial.values(),
                         partial.updatedAt(),
-                        false);
+                        false,
+                        partial.values().size());
         final GitHub github =
                 unchanged().page(null, "\"a2\"", "c2", listed("PVTI_1"), listed("PVTI_2"));
 
@@ -538,7 +542,8 @@ class GitHubChangesTest {
                         whole.issue(),
                         whole.values(),
                         whole.updatedAt(),
-                        true);
+                        true,
+                        whole.values().size());
         final GitHub github =
                 unchanged().page(null, "\"a2\"", "c2", listed("PVTI_1"), listed("PVTI_2"));
 
@@ -591,11 +596,13 @@ class GitHubChangesTest {
                                 none,
                                 null,
                                 null,
-                                open.fieldOptions()),
+                                open.fieldOptions(),
+                                0),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
-                        none);
+                        none,
+                        0);
         // REST's total_blocked_by counts closed blockers too.
         final ProjectItemSummary listed =
                 new ProjectItemSummary(
@@ -661,11 +668,13 @@ class GitHubChangesTest {
                                 none,
                                 null,
                                 null,
-                                open.fieldOptions()),
+                                open.fieldOptions(),
+                                0),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
-                        none);
+                        none,
+                        0);
         final ProjectItemSummary listed =
                 new ProjectItemSummary(
                         "PVTI_1",
@@ -730,11 +739,13 @@ class GitHubChangesTest {
                                 none,
                                 null,
                                 null,
-                                open.fieldOptions()),
+                                open.fieldOptions(),
+                                0),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
-                        none);
+                        none,
+                        0);
         final ProjectItemSummary listed =
                 new ProjectItemSummary(
                         "PVTI_1",
@@ -795,9 +806,11 @@ class GitHubChangesTest {
                         none,
                         null,
                         null,
-                        open.fieldOptions()),
+                        open.fieldOptions(),
+                        0),
                 List.of(new GitHubGraphQl.ItemValue(STATUS, "opt-idea", "Idea", null, null)),
-                none);
+                none,
+                0);
     }
 
     @Test

@@ -51,11 +51,14 @@ class ItemVersionsTest {
         return IntStream.rangeClosed(1, PAGE).mapToObj(n -> "label-" + n).toList();
     }
 
+    /**
+     * The version of the item as a read by its id gives it: the first page of each list with
+     * GitHub's counts, a hundred labels on the page and no field value on it.
+     */
     private static Version version(
-            final int subIssues,
-            final int blockers,
-            final boolean moreLabels,
-            final boolean moreValues) {
+            final int subIssues, final int blockers, final int labels, final int values) {
+        final boolean moreLabels = labels > PAGE;
+        final boolean moreValues = values > 0;
         final GitHubGraphQl.BoardIssue issue =
                 new GitHubGraphQl.BoardIssue(
                         "I_1",
@@ -74,13 +77,15 @@ class ItemVersionsTest {
                         new GitHubGraphQl.PageInfo(moreLabels, moreLabels ? "next" : null),
                         null,
                         null,
-                        List.of());
+                        List.of(),
+                        labels);
         return ItemVersions.of(
                 new GitHubGraphQl.IssueOnBoard(
                         issue,
                         "PVTI_1",
                         List.of(),
-                        new GitHubGraphQl.PageInfo(moreValues, moreValues ? "next" : null)),
+                        new GitHubGraphQl.PageInfo(moreValues, moreValues ? "next" : null),
+                        values),
                 Map.of(),
                 HELD);
     }
@@ -90,22 +95,36 @@ class ItemVersionsTest {
         // Harm: a sub-issue, blocker, label or field value added past the first hundred leaves the
         // item's version as it was, so a write made against the board read before it is taken as
         // made against the item as it stands.
-        final Version before = version(101, 101, false, false);
+        final Version before = version(101, 101, 100, 0);
 
-        assertThat(version(101, 101, false, false))
-                .as("the same item read again")
-                .isEqualTo(before);
-        assertThat(version(102, 101, false, false))
+        assertThat(version(101, 101, 100, 0)).as("the same item read again").isEqualTo(before);
+        assertThat(version(102, 101, 100, 0))
                 .as("a 102nd sub-issue, the first hundred the same")
                 .isNotEqualTo(before);
-        assertThat(version(101, 102, false, false))
+        assertThat(version(101, 102, 100, 0))
                 .as("a 102nd blocker, the first hundred the same")
                 .isNotEqualTo(before);
-        assertThat(version(101, 101, true, false))
+        assertThat(version(101, 101, 101, 0))
                 .as("a 101st label, the first hundred the same")
                 .isNotEqualTo(before);
-        assertThat(version(101, 101, false, true))
+        assertThat(version(101, 101, 100, 1))
                 .as("a field value past the first page, the first page the same")
+                .isNotEqualTo(before);
+    }
+
+    @Test
+    void everyLabelOrFieldValueAddedPastThePageChangesTheItemsVersion() {
+        // Harm: a second label or field value added past the page read leaves the item's version
+        // as it was once one lies there, so a write made against the board read before it is
+        // taken as made against the item as it stands.
+        final Version before = version(101, 101, 101, 1);
+
+        assertThat(version(101, 101, 101, 1)).as("the same item read again").isEqualTo(before);
+        assertThat(version(101, 101, 102, 1))
+                .as("a 102nd label, the first hundred the same")
+                .isNotEqualTo(before);
+        assertThat(version(101, 101, 101, 2))
+                .as("a second field value past the page, the page the same")
                 .isNotEqualTo(before);
     }
 }

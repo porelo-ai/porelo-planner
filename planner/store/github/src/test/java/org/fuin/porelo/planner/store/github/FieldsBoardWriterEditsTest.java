@@ -270,10 +270,12 @@ class FieldsBoardWriterEditsTest {
                                             new GitHubGraphQl.IssueFieldOption(
                                                     FieldNames.PRIORITY,
                                                     item.fields().get(FieldNames.PRIORITY)))
-                                    : List.of()),
+                                    : List.of(),
+                            0),
                     item.itemId(),
                     values,
-                    new GitHubGraphQl.PageInfo(false, null));
+                    new GitHubGraphQl.PageInfo(false, null),
+                    0);
         }
 
         private static IssueRefs refs(final List<String> nodes) {

@@ -112,7 +112,8 @@ class ItemsBoardReaderUnlistedTest {
                                                                 item.issue(),
                                                                 item.id(),
                                                                 item.values(),
-                                                                LAST))
+                                                                LAST,
+                                                                0))
                                         .orElse(null));
                     }
                     return new IssueBoardAnswer(on).board();
@@ -182,13 +183,15 @@ class ItemsBoardReaderUnlistedTest {
                         LAST,
                         type,
                         null,
-                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
+                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")),
+                        0),
                 List.of(
                         new GitHubGraphQl.ItemValue(
                                 "F_" + FieldNames.STATUS, "O_Idea", "Idea", null, null),
                         new GitHubGraphQl.ItemValue(
                                 "F_" + FieldNames.PRIORITY, "O_High", "High", null, null)),
-                LAST);
+                LAST,
+                0);
     }
 
     private ItemsBoardReader reader() {

@@ -113,15 +113,16 @@ class BoardCopiesTest {
                                         new TrackedItem.Value(
                                                 "PVTF_estimate", null, null, null, 82.0)),
                                 Instant.parse("2026-11-21T10:01:00Z"),
-                                true),
-                        new TrackedItem("PVTI_draft", true, null, List.of(), null, false)),
+                                true,
+                                2),
+                        new TrackedItem("PVTI_draft", true, null, List.of(), null, false, 0)),
                 new ChangeCursor(
                         Instant.parse("2026-11-21T10:04:00Z"),
                         List.of(
                                 new ChangeCursor.Page(
                                         null, "W/\"etag-1\"", true, List.of("PVTI_one")),
                                 new ChangeCursor.Page("c1", null, false, List.of()))),
-                List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false)),
+                List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false, 0)),
                 List.of(
                         new TrackedWait("I_far", "other-org/elsewhere", 7, false),
                         new TrackedWait("I_hidden", "other-org/private", 8, null)),
@@ -531,7 +532,8 @@ class BoardCopiesTest {
                                     one.choices()),
                             List.of(),
                             one.updatedAt(),
-                            false));
+                            false,
+                            0));
         }
         final BoardCopy large =
                 new BoardCopy(
