@@ -155,6 +155,7 @@ class GitHubChangesTest {
                 new GitHubGraphQl.IssueRefs(List.of(), none, 0),
                 new GitHubGraphQl.IssueRefs(List.of(), none, 0),
                 none,
+                null,
                 null);
     }
 
@@ -586,6 +587,7 @@ class GitHubChangesTest {
                                 open.subIssues(),
                                 blockers,
                                 none,
+                                null,
                                 null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
@@ -654,6 +656,7 @@ class GitHubChangesTest {
                                 open.subIssues(),
                                 blockers,
                                 none,
+                                null,
                                 null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
@@ -721,6 +724,7 @@ class GitHubChangesTest {
                                 open.subIssues(),
                                 blockers,
                                 none,
+                                null,
                                 null),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
@@ -784,6 +788,7 @@ class GitHubChangesTest {
                                 new GitHubGraphQl.PageInfo(more, more ? "c" : null),
                                 total),
                         none,
+                        null,
                         null),
                 List.of(new GitHubGraphQl.ItemValue(STATUS, "opt-idea", "Idea", null, null)),
                 none);

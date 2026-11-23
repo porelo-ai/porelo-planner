@@ -111,7 +111,9 @@ class GitHubAddsHttpTest {
         public Batch<String> addProjectItems(
                 final String token, final String projectId, final List<String> issueIds) {
             return new Batch<>(
-                    issueIds.stream().map(id -> Batch.Outcome.of("PVTI_" + id)).toList(), null);
+                    issueIds.stream().map(id -> Batch.Outcome.of("PVTI_" + id)).toList(),
+                    null,
+                    Duration.ofMinutes(1));
         }
 
         @Override
@@ -130,7 +132,9 @@ class GitHubAddsHttpTest {
                 final String projectId,
                 final List<GitHubGraphQl.FieldValue> values) {
             return new Batch<>(
-                    values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(), null);
+                    values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(),
+                    null,
+                    Duration.ofMinutes(1));
         }
 
         @Override

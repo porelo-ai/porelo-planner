@@ -330,7 +330,8 @@ class GitHubStoreLookTest {
                             new GitHubGraphQl.IssueRefs(subs, NONE, subs.size()),
                             none,
                             NONE,
-                            held.story ? IssueMapping.STORY_TYPE : null),
+                            held.story ? IssueMapping.STORY_TYPE : null,
+                            null),
                     values,
                     NONE);
         }

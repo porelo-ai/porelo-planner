@@ -204,7 +204,9 @@ final class BoardCopyMapping {
                 refs(issue.subIssues()),
                 refs(issue.blockedBy()),
                 new GitHubGraphQl.PageInfo(partial, null),
-                issue.type());
+                issue.type(),
+                // A board copy keeps no closing time, and nothing read from a copy uses one.
+                null);
     }
 
     private static TrackedItem.Links links(final GitHubGraphQl.IssueRefs refs) {

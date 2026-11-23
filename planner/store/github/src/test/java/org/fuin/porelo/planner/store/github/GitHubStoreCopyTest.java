@@ -168,7 +168,8 @@ class GitHubStoreCopyTest {
                             none,
                             none,
                             new GitHubGraphQl.PageInfo(false, null),
-                            IssueMapping.STORY_TYPE),
+                            IssueMapping.STORY_TYPE,
+                            null),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
                     new GitHubGraphQl.PageInfo(false, null));
         }

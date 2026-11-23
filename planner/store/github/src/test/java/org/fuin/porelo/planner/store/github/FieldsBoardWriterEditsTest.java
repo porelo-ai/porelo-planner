@@ -255,7 +255,8 @@ class FieldsBoardWriterEditsTest {
                             refs(item.subIssueIds()),
                             refs(item.blockedByIds()),
                             new GitHubGraphQl.PageInfo(false, null),
-                            item.issueType()),
+                            item.issueType(),
+                            null),
                     item.itemId(),
                     values,
                     new GitHubGraphQl.PageInfo(false, null));
@@ -283,7 +284,9 @@ class FieldsBoardWriterEditsTest {
             calls.add("setFieldValues");
             mutations.add(List.copyOf(values));
             return new Batch<>(
-                    values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(), null);
+                    values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(),
+                    null,
+                    GitHubExceptions.WITHOUT_A_WORD);
         }
 
         private void link(final String call) {

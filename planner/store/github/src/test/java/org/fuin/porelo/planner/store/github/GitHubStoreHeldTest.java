@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.fuin.porelo.forge.github.Batch;
+import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
@@ -240,7 +241,8 @@ class GitHubStoreHeldTest {
                             none,
                             none,
                             NONE,
-                            type),
+                            type,
+                            null),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
                     NONE);
         }
@@ -273,14 +275,18 @@ class GitHubStoreHeldTest {
                                                                     "A body")),
                                                     false);
                                     case "addProjectItems" ->
-                                            new Batch<>(List.of(Batch.Outcome.of("PVTI_2")), null);
+                                            new Batch<>(
+                                                    List.of(Batch.Outcome.of("PVTI_2")),
+                                                    null,
+                                                    GitHubExceptions.WITHOUT_A_WORD);
                                     case "setFieldValues" -> {
                                         final List<?> values = (List<?>) args[2];
                                         yield new Batch<>(
                                                 values.stream()
                                                         .map(value -> Batch.Outcome.of("PVTI_2"))
                                                         .toList(),
-                                                null);
+                                                null,
+                                                GitHubExceptions.WITHOUT_A_WORD);
                                     }
                                     default -> null;
                                 });

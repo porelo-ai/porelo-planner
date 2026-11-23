@@ -6,6 +6,9 @@ import java.time.Instant;
 /** Makes the forge client's failures in a test, whose constructors only its package reaches. */
 public final class GitHubExceptions {
 
+    /** The wait the client takes after a rate limit whose answer names none. */
+    public static final Duration WITHOUT_A_WORD = Duration.ofMinutes(1);
+
     private GitHubExceptions() {}
 
     /**
@@ -24,7 +27,9 @@ public final class GitHubExceptions {
                 Delivery.ANSWERED,
                 new RateLimit(5000L, 0L, Instant.now().plus(wait), wait),
                 true,
-                null);
+                null,
+                false,
+                WITHOUT_A_WORD);
     }
 
     /**
@@ -41,6 +46,8 @@ public final class GitHubExceptions {
                 Delivery.ANSWERED,
                 new RateLimit(5000L, 4000L, Instant.now().plusSeconds(3600), null),
                 false,
+                null,
+                false,
                 null);
     }
 
@@ -51,6 +58,7 @@ public final class GitHubExceptions {
      * @return the failure
      */
     public static GitHubException unanswered(final String message) {
-        return new GitHubException(0, message, Delivery.SENT_UNANSWERED, null, false, null);
+        return new GitHubException(
+                0, message, Delivery.SENT_UNANSWERED, null, false, null, false, null);
     }
 }

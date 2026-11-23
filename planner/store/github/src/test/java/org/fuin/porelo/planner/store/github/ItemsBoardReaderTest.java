@@ -344,7 +344,8 @@ class ItemsBoardReaderTest {
                 subs,
                 blockers,
                 new GitHubGraphQl.PageInfo(false, null),
-                type);
+                type,
+                null);
     }
 
     private static String node(final String nameWithOwner, final int number) {
@@ -415,7 +416,8 @@ class ItemsBoardReaderTest {
                         issue.subIssues(),
                         issue.blockedBy(),
                         info(next),
-                        issue.issueType()),
+                        issue.issueType(),
+                        null),
                 item.values(),
                 item.valuesPage());
     }
@@ -1025,6 +1027,7 @@ class ItemsBoardReaderTest {
                                 was.subIssues(),
                                 was.blockedBy(),
                                 was.labelsPage(),
+                                null,
                                 null),
                         open.values(),
                         open.valuesPage());
@@ -1433,7 +1436,8 @@ class ItemsBoardReaderTest {
                 issue.subIssues(),
                 issue.blockedBy(),
                 new GitHubGraphQl.PageInfo(false, null),
-                issue.issueType());
+                issue.issueType(),
+                null);
     }
 
     @Test
@@ -2267,6 +2271,7 @@ class ItemsBoardReaderTest {
                         issue.subIssues(),
                         blockers,
                         issue.labelsPage(),
+                        null,
                         null),
                 plain.values(),
                 plain.valuesPage());
@@ -2290,6 +2295,7 @@ class ItemsBoardReaderTest {
                         refs(false),
                         refs(false),
                         new GitHubGraphQl.PageInfo(false, null),
+                        null,
                         null),
                 null,
                 List.of(),

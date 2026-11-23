@@ -204,7 +204,8 @@ class GitHubStoreWriterFailureTest {
                                             Batch.Outcome.of(
                                                     ((GitHubGraphQl.FieldValue) value).itemId()))
                             .toList(),
-                    null);
+                    null,
+                    GitHubExceptions.WITHOUT_A_WORD);
         }
 
         ProjectWrites.Created createIssue() {
@@ -244,6 +245,7 @@ class GitHubStoreWriterFailureTest {
                             none,
                             none,
                             NONE,
+                            null,
                             null),
                     List.of(new GitHubGraphQl.ItemValue("F_status", option, state, null, null)),
                     NONE);
@@ -276,7 +278,8 @@ class GitHubStoreWriterFailureTest {
                                                                                             "I_",
                                                                                             "PVTI_")))
                                                             .toList(),
-                                                    null);
+                                                    null,
+                                                    GitHubExceptions.WITHOUT_A_WORD);
                                     case "issuesCreatedSince" ->
                                             new ProjectWrites.FoundPage(List.of(), false);
                                     default -> null;

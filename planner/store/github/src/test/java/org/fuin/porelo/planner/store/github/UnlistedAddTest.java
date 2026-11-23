@@ -96,12 +96,17 @@ class UnlistedAddTest {
         boolean gone;
         boolean moreBlockers;
         Function<List<String>, Batch<String>> add =
-                ids -> new Batch<>(List.of(Batch.Outcome.of("PVTI_added")), null);
+                ids ->
+                        new Batch<>(
+                                List.of(Batch.Outcome.of("PVTI_added")),
+                                null,
+                                GitHubExceptions.WITHOUT_A_WORD);
         Function<List<GitHubGraphQl.FieldValue>, Batch<String>> set =
                 list ->
                         new Batch<>(
                                 list.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(),
-                                null);
+                                null,
+                                GitHubExceptions.WITHOUT_A_WORD);
 
         GitHubGraphQl.IssueBoard read(final List<String> ids) {
             final List<GitHubGraphQl.@Nullable IssueOnBoard> on = new ArrayList<>();
@@ -131,7 +136,8 @@ class UnlistedAddTest {
                                                                 : LAST,
                                                         blockers.size()),
                                                 LAST,
-                                                type),
+                                                type,
+                                                null),
                                         itemId,
                                         List.of(),
                                         LAST));
@@ -565,7 +571,12 @@ class UnlistedAddTest {
                                         .contains("GitHub holds " + LIB + "#6"));
 
         final GitHub refused = new GitHub();
-        refused.set = list -> new Batch<>(List.of(Batch.Outcome.refused("FORBIDDEN")), null);
+        refused.set =
+                list ->
+                        new Batch<>(
+                                List.of(Batch.Outcome.refused("FORBIDDEN")),
+                                null,
+                                GitHubExceptions.WITHOUT_A_WORD);
         assertThatThrownBy(() -> refused.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("a value GitHub refused")
                 .isInstanceOf(StoreException.PartlySaved.class);
@@ -576,7 +587,12 @@ class UnlistedAddTest {
         // Harm: an add GitHub refused was reported as partly saved, so the window told the person
         // the issue stands on the project although nothing was written.
         final GitHub github = new GitHub();
-        github.add = ids -> new Batch<>(List.of(Batch.Outcome.refused("FORBIDDEN")), null);
+        github.add =
+                ids ->
+                        new Batch<>(
+                                List.of(Batch.Outcome.refused("FORBIDDEN")),
+                                null,
+                                GitHubExceptions.WITHOUT_A_WORD);
 
         assertThatThrownBy(() -> github.writer().addUnlistedIssue(offering(), SHOWN, LIB + "#6"))
                 .as("an add GitHub refused")

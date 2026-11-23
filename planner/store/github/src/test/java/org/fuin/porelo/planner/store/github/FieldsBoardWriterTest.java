@@ -242,7 +242,8 @@ class FieldsBoardWriterTest {
                                 item.subIssueIds().size()),
                         none,
                         new GitHubGraphQl.PageInfo(false, null),
-                        item.issueType()),
+                        item.issueType(),
+                        null),
                 item.itemId(),
                 values,
                 new GitHubGraphQl.PageInfo(false, null));
@@ -381,7 +382,9 @@ class FieldsBoardWriterTest {
             }
             added.addAll(issueIds);
             return new Batch<>(
-                    issueIds.stream().map(id -> Batch.Outcome.of("PVTI_" + id)).toList(), null);
+                    issueIds.stream().map(id -> Batch.Outcome.of("PVTI_" + id)).toList(),
+                    null,
+                    GitHubExceptions.WITHOUT_A_WORD);
         }
 
         @Override
@@ -573,7 +576,10 @@ class FieldsBoardWriterTest {
     }
 
     private static Batch<String> saved(final List<FieldValue> values) {
-        return new Batch<>(values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(), null);
+        return new Batch<>(
+                values.stream().map(v -> Batch.Outcome.of(v.itemId())).toList(),
+                null,
+                GitHubExceptions.WITHOUT_A_WORD);
     }
 
     private static Map<String, String> ordered(final String... pairs) {
@@ -767,7 +773,8 @@ class FieldsBoardWriterTest {
                                                         Batch.Outcome.of(values.get(0).itemId()),
                                                         Batch.Outcome.<String>refused(
                                                                 "refused for " + TOKEN)),
-                                                null));
+                                                null,
+                                                GitHubExceptions.WITHOUT_A_WORD));
 
         assertThatThrownBy(
                         () ->
@@ -1475,7 +1482,8 @@ class FieldsBoardWriterTest {
                                                                                         value
                                                                                                 .itemId()))
                                                         .toList(),
-                                                null));
+                                                null,
+                                                GitHubExceptions.WITHOUT_A_WORD));
         assertThatThrownBy(
                         () ->
                                 github.writer()
@@ -1510,7 +1518,8 @@ class FieldsBoardWriterTest {
                                                 ? Batch.Outcome.of(value.itemId())
                                                 : Batch.Outcome.<String>refused("refused"))
                         .toList(),
-                null);
+                null,
+                GitHubExceptions.WITHOUT_A_WORD);
     }
 
     @Test
@@ -1603,7 +1612,8 @@ class FieldsBoardWriterTest {
                                                                                 .<String>refused(
                                                                                         "refused"))
                                                         .toList(),
-                                                null));
+                                                null,
+                                                GitHubExceptions.WITHOUT_A_WORD));
         assertThatThrownBy(
                         () ->
                                 github.writer()
@@ -1846,7 +1856,8 @@ class FieldsBoardWriterTest {
                 subIssues,
                 blockedBy,
                 new GitHubGraphQl.PageInfo(false, null),
-                issue.issueType());
+                issue.issueType(),
+                null);
     }
 
     private static IssueRefs refs(final boolean more, final String... ids) {

@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.forge.github.Batch;
+import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.planner.store.Board;
@@ -148,7 +149,10 @@ class GitHubStoreListTest {
                                                     issue(LIB, 6, "Made by hand", null),
                                                     List.of(),
                                                     LAST));
-                                    yield new Batch<>(List.of(Batch.Outcome.of("PVTI_6")), null);
+                                    yield new Batch<>(
+                                            List.of(Batch.Outcome.of("PVTI_6")),
+                                            null,
+                                            GitHubExceptions.WITHOUT_A_WORD);
                                 }
                                 case "setFieldValues" -> {
                                     final List<GitHubGraphQl.FieldValue> values =
@@ -158,7 +162,8 @@ class GitHubStoreListTest {
                                             values.stream()
                                                     .map(v -> Batch.Outcome.of(v.itemId()))
                                                     .toList(),
-                                            null);
+                                            null,
+                                            GitHubExceptions.WITHOUT_A_WORD);
                                 }
                                 default ->
                                         throw new AssertionError(
@@ -211,7 +216,8 @@ class GitHubStoreListTest {
                 none,
                 none,
                 LAST,
-                type);
+                type,
+                null);
     }
 
     private static GitHubGraphQl.ProjectItem item(

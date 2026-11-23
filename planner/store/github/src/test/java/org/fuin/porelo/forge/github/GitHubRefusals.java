@@ -21,6 +21,14 @@ public final class GitHubRefusals {
             final String message,
             final boolean rateLimited,
             final @Nullable String accepted) {
-        return new GitHubException(status, message, Delivery.ANSWERED, null, rateLimited, accepted);
+        return new GitHubException(
+                status,
+                message,
+                Delivery.ANSWERED,
+                null,
+                rateLimited,
+                accepted,
+                false,
+                rateLimited ? GitHubExceptions.WITHOUT_A_WORD : null);
     }
 }

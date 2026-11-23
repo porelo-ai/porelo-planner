@@ -179,7 +179,8 @@ class ItemsBoardReaderUnlistedTest {
                         none,
                         none,
                         LAST,
-                        type),
+                        type,
+                        null),
                 List.of(
                         new GitHubGraphQl.ItemValue(
                                 "F_" + FieldNames.STATUS, "O_Idea", "Idea", null, null),
