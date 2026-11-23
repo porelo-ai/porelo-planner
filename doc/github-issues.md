@@ -130,9 +130,10 @@ Markdown store's stage records count them; a pause and a person's move are shown
   text and its link, built from its repository and number, opened only when it is HTTPS. A login of no login's form
   and an association GitHub does not name are left out, and the window shows none; neither stands in a fault or a
   log line. It is a story when its issue type is `Story` and it is in the project's own repository, and
-  an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, at most
-  50 pages of 100 across all repositories within 20 s; a repository not reached, or one GitHub refuses to list, keeps
-  the list last read for it and is named as a fault. A new or retitled one changes the board's revision.
+  an issue otherwise; the label `story` does not decide it. The list is read at each whole read of the board, each
+  repository's to its last page, all within 20 s times the factor `services`; a repository not reached, one GitHub
+  refuses to list, or one whose next page GitHub answers as the page before keeps the list last read for it and is
+  named as a fault. A new or retitled one changes the board's revision.
 - Only an item without a valid reference, one of another owner and one of a repository `project.yml` does not name
   are left out and named as a fault; an item without an issue is left out unnamed.
 - Every other item a person edited into something the board cannot hold is shown, and the issues under it stay

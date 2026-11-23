@@ -43,6 +43,12 @@ final class OpenIssues implements RepositoryIssues.Pages {
 
     final List<Ask> asks = new ArrayList<>();
 
+    /**
+     * The repositories whose list GitHub answers with its first pages in turn, by how many: one
+     * answers the first page whatever page is asked.
+     */
+    final Map<String, Integer> cycles = new HashMap<>();
+
     /** How far the clock moves at each ask; nothing unless a test says so. */
     Duration perAsk = Duration.ZERO;
 
@@ -110,20 +116,25 @@ final class OpenIssues implements RepositoryIssues.Pages {
             final int page,
             final @Nullable String etag) {
         asks.add(new Ask(repository, page, etag));
+        if (asks.size() > 1000) {
+            throw new AssertionError("a list read without end");
+        }
         now = now.plus(perAsk);
         final Function<Integer, RuntimeException> failure = failures.get(repository);
         if (failure != null) {
             throw failure.apply(page);
         }
         final List<Issue> all = issues.getOrDefault(repository, List.of());
-        final int from = Math.min(all.size(), (page - 1) * RepositoryIssues.PAGE_SIZE);
+        final Integer cycle = cycles.get(repository);
+        final int at = cycle == null ? page : (page - 1) % cycle + 1;
+        final int from = Math.min(all.size(), (at - 1) * RepositoryIssues.PAGE_SIZE);
         final List<Issue> items =
                 all.subList(from, Math.min(all.size(), from + RepositoryIssues.PAGE_SIZE));
         final String tag =
                 "W/\""
                         + repository
                         + "-"
-                        + page
+                        + at
                         + "-"
                         + Integer.toHexString(
                                 Objects.hash(

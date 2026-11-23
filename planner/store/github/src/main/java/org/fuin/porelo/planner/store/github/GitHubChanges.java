@@ -41,6 +41,12 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
     /** The items one page of the list asks for, as many as GitHub gives. */
     static final int PAGE_SIZE = 100;
 
+    /**
+     * The most pages of items one look asks; a project beyond them is not looked at but read whole,
+     * which reads its list to the end.
+     */
+    static final int MOST_LOOK_PAGES = 50;
+
     /** Reads one page of the project's REST item list, sent with a tag. */
     @FunctionalInterface
     public interface ItemPages {
@@ -246,8 +252,8 @@ public final class GitHubChanges implements TrackerChanges, ItemIssues {
         boolean shifted = false;
         @Nullable String after = null;
         for (int at = 0; ; at++) {
-            if (at >= ItemsBoardReader.MOST_PAGES) {
-                // The whole read refuses such a project; the look does not stand for it.
+            if (at >= MOST_LOOK_PAGES) {
+                // The look does not stand for such a project; the whole read reads it.
                 LOG.info(
                         "GitHub's item list has too many pages for a look, after {} ms",
                         since(started));

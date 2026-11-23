@@ -134,19 +134,71 @@ class RepositoryIssuesTest {
     }
 
     @Test
-    void aRepositoryBeyondThePageBoundListsNoneOfItsIssues() {
-        // Harm: a list cut short in silence, as if the issues past the bound did not exist.
-        github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * RepositoryIssues.MOST_PAGES + 1));
+    void aRepositoryOfManyPagesIsListedToItsEnd() {
+        // Harm: a repository with thousands of open issues never listed, its issues missing from
+        // "Issues not on the project", though GitHub still gave a next page.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * 50 + 1));
 
         final RepositoryIssues.Read read = read(OWN);
 
-        assertThat(read.issues()).as("the issues listed").isEmpty();
-        assertThat(read.faults())
-                .as("the fault naming the repository")
-                .singleElement()
-                .asString()
-                .contains(OWN);
-        assertThat(github.asks).as("the pages asked for").hasSize(RepositoryIssues.MOST_PAGES);
+        assertThat(numbers(read))
+                .as("the issues listed, the last page's among them")
+                .hasSize(100 * 50 + 1)
+                .contains(OWN + "#5001");
+        assertThat(read.faults()).as("the faults").isEmpty();
+        assertThat(github.asks).as("the pages asked for").hasSize(51);
+    }
+
+    @Test
+    void aRepositoryWhoseNextPageGitHubAnswersAsTheOneBeforeKeepsItsListAndIsNamed() {
+        // Harm: a repository's list asked for without end on a GitHub that answers the same page
+        // again, the repositories after it never read.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 3));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 4));
+        read(OWN, LIB);
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 250));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 5));
+        github.cycles.put(OWN, 1);
+        github.asks.clear();
+
+        final RepositoryIssues.Read again = read(OWN, LIB);
+
+        assertThat(again.faults())
+                .as("the one fault naming the repository")
+                .containsExactly(
+                        "GitHub answered the same page again for the issues of "
+                                + OWN
+                                + "; the list last read of it is kept");
+        assertThat(numbers(again))
+                .as("the list last read of it, the other repository's read anew")
+                .hasSize(3 + 5);
+        assertThat(github.asksOf(OWN)).as("its pages asked for").hasSize(2);
+    }
+
+    @Test
+    void aRepositoryWhosePagesGitHubAnswersInACycleKeepsItsListAndIsNamed() {
+        // Harm: a repository's list asked for until the deadline, or without end, on a GitHub that
+        // answers two pages in turn, the repositories after it never read.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 3));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 4));
+        read(OWN, LIB);
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 250));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 5));
+        github.cycles.put(OWN, 2);
+        github.asks.clear();
+
+        final RepositoryIssues.Read again = read(OWN, LIB);
+
+        assertThat(again.faults())
+                .as("the one fault naming the repository")
+                .containsExactly(
+                        "GitHub answered the same page again for the issues of "
+                                + OWN
+                                + "; the list last read of it is kept");
+        assertThat(numbers(again))
+                .as("the list last read of it, the other repository's read anew")
+                .hasSize(3 + 5);
+        assertThat(github.asksOf(OWN)).as("its pages asked for, the first again last").hasSize(3);
     }
 
     @Test
@@ -227,6 +279,8 @@ class RepositoryIssuesTest {
         // made by hand are never shown.
         github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * 30));
         github.holds(LIB, OpenIssues.numbered(LIB, 1, 100 * 30));
+        // Each list takes 31 asks; the deadline leaves room for 41.
+        github.perAsk = RepositoryIssues.DEADLINE.dividedBy(40);
         final RepositoryIssues.Read first = read(OWN, LIB);
         assertThat(numbers(first)).as("the lists of the first read").hasSize(3000);
 

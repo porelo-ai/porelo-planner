@@ -507,7 +507,7 @@ class ItemsBoardReaderUnlistedTest {
                 .as("the one fault of the budget")
                 .singleElement()
                 .asString()
-                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 40 s and ")
+                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 40 s; ")
                 .contains(LIB);
     }
 
@@ -524,7 +524,7 @@ class ItemsBoardReaderUnlistedTest {
                 .as("the one fault of the budget")
                 .singleElement()
                 .asString()
-                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 2.2 s and ");
+                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 2.2 s; ");
     }
 
     @Test

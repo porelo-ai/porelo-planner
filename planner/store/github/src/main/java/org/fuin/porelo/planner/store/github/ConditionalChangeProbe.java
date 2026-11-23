@@ -552,7 +552,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             final AtomicBoolean over) {
         final List<Paged> pages = new ArrayList<>();
         @Nullable String after = null;
-        for (int page = 0; page < ItemsBoardReader.MOST_PAGES; page++) {
+        for (int page = 0; page < GitHubChanges.MOST_LOOK_PAGES; page++) {
             final @Nullable String cursor = after;
             final PageTag known =
                     page < before.size() && Objects.equals(before.get(page).after(), cursor)
@@ -603,7 +603,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             }
             after = next;
         }
-        // More pages than a read takes: the whole read refuses the project, so it is read.
+        // More pages than a look asks: they are answered changed, so the whole read reads them.
         pages.add(
                 new Paged(
                         new PageTag(after, null, null, false),

@@ -67,9 +67,6 @@ public final class ItemsBoardReader implements BoardReader {
     /** How often a read that failed on GitHub's side or on the way is sent, before its factor. */
     static final int READ_TRIES = 2;
 
-    /** The most pages of items or fields one read takes; a project beyond them is not read. */
-    static final int MOST_PAGES = 50;
-
     /** The most items a page carries, as the forge client asks for them. */
     static final int PAGE_SIZE = 100;
 
@@ -362,8 +359,9 @@ public final class ItemsBoardReader implements BoardReader {
         final Map<String, String> dataTypes = new LinkedHashMap<>();
         final Map<String, Long> restFieldIds = new LinkedHashMap<>();
         @Nullable String after = null;
+        final Set<String> fieldCursors = new HashSet<>();
         String projectId = "";
-        for (int page = 1; ; page++) {
+        while (true) {
             final @Nullable String cursor = after;
             final GitHubGraphQl.ProjectFields fields =
                     call.of(
@@ -393,7 +391,7 @@ public final class ItemsBoardReader implements BoardReader {
                     optionIds.put(field.name(), byName);
                 }
             }
-            after = call.next(fields.pageInfo(), cursor, page, "fields");
+            after = call.next(fields.pageInfo(), fields.fields().size(), fieldCursors, "fields");
             if (after == null) {
                 break;
             }
@@ -1037,8 +1035,9 @@ public final class ItemsBoardReader implements BoardReader {
         final String token = call.token;
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>();
         @Nullable String after = null;
+        final Set<String> itemCursors = new HashSet<>();
         int size = lastSize;
-        for (int page = 1; ; page++) {
+        while (true) {
             final @Nullable String cursor = after;
             final int first = size;
             final GitHubGraphQl.ProjectItems answer;
@@ -1064,7 +1063,6 @@ public final class ItemsBoardReader implements BoardReader {
                             "GitHub found a page of {} items too costly; it is asked for {}",
                             first,
                             size);
-                    page--;
                     continue;
                 }
                 throw e;
@@ -1098,7 +1096,7 @@ public final class ItemsBoardReader implements BoardReader {
                                 last != null ? last : now.lastRead(),
                                 FROM);
             }
-            after = call.next(answer.pageInfo(), cursor, page, "items");
+            after = call.next(answer.pageInfo(), answer.items().size(), itemCursors, "items");
             if (after == null) {
                 break;
             }
@@ -1379,29 +1377,33 @@ public final class ItemsBoardReader implements BoardReader {
         }
 
         /**
-         * Answers the cursor of the next page, or null after the last.
+         * Answers the cursor of the next page, or null after the last. No count of pages ends a
+         * list GitHub still continues; only a page that does not move the read on does, since
+         * GitHub could answer such pages without end: a cursor given before, or an empty page that
+         * names a next one.
          *
-         * @throws StoreException.Unreadable if the bound is passed or the cursor does not advance
+         * @param info the page's own account of what follows it
+         * @param carried how many entries the page carried
+         * @param seen every cursor this list has given so far, the one returned added to it
+         * @param what the list, as the refusal names it
+         * @throws StoreException.Unreadable if the page carried nothing and names a next one, or
+         *     the cursor names no place this list has not read
          */
         @Nullable String next(
                 final GitHubGraphQl.PageInfo info,
-                final @Nullable String cursor,
-                final int page,
+                final int carried,
+                final Set<String> seen,
                 final String what) {
             if (!Boolean.TRUE.equals(info.hasNextPage())) {
                 return null;
             }
-            if (page >= MOST_PAGES) {
+            if (carried == 0) {
                 throw new StoreException.Unreadable(
                         config.own(),
-                        "the project holds more "
-                                + what
-                                + " than "
-                                + MOST_PAGES
-                                + " pages carry; nothing of it is shown rather than a part");
+                        "GitHub named a next page of " + what + " after a page without any");
             }
             final String end = info.endCursor();
-            if (end == null || end.isBlank() || end.equals(cursor)) {
+            if (end == null || end.isBlank() || !seen.add(end)) {
                 throw new StoreException.Unreadable(
                         config.own(),
                         "GitHub named a next page of " + what + " without a new place to read on");

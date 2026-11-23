@@ -307,11 +307,20 @@ class FieldsBoardWriterTest {
         /** The field values GitHub took, by item id and field id. */
         private final Map<String, Map<String, FieldValue>> values = new LinkedHashMap<>();
 
-        /** The empty pages of comments before the one that holds {@code standing}. */
+        /**
+         * The pages of comments before the one that holds {@code standing}, each with one comment
+         * of its own.
+         */
         private int pagesBefore;
 
-        /** Whether every page of comments says another follows. */
-        private boolean endless;
+        /** The text of each comment on the pages before, or null for one of each page's own. */
+        private @Nullable String earlierBody;
+
+        /**
+         * The comments GitHub answers each page with in turn, over and over, another page always to
+         * follow; empty for an issue's real pages.
+         */
+        private final List<Comment> cycle = new ArrayList<>();
 
         /** What happens on GitHub while the comments are read, such as a person's edit. */
         private Runnable whileCommentsAreRead = () -> {};
@@ -629,11 +638,28 @@ class FieldsBoardWriterTest {
                 final int page) {
             calls.add("issueComments");
             whileCommentsAreRead.run();
-            if (endless || page <= pagesBefore) {
-                return new CommentsPage(List.of(), true);
+            if (calls.stream().filter("issueComments"::equals).count() > 100) {
+                throw new AssertionError("an issue's comments read without end");
             }
-            final List<String> found = new ArrayList<>(standing);
-            found.addAll(commented.getOrDefault(number, List.of()));
+            if (!cycle.isEmpty()) {
+                return new CommentsPage(List.of(cycle.get((page - 1) % cycle.size())), true);
+            }
+            if (page <= pagesBefore) {
+                final String body = earlierBody;
+                return new CommentsPage(
+                        List.of(
+                                new Comment(
+                                        page, body != null ? body : "A comment on page " + page)),
+                        true);
+            }
+            final List<Comment> found = new ArrayList<>();
+            long id = 10_000;
+            for (final String body : standing) {
+                found.add(new Comment(id++, body));
+            }
+            for (final String body : commented.getOrDefault(number, List.of())) {
+                found.add(new Comment(id++, body));
+            }
             return new CommentsPage(page == pagesBefore + 1 ? found : List.of(), false);
         }
 
@@ -2461,12 +2487,34 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void anIssueWithMoreCommentsThanAreReadIsRefusedWithoutWriting() {
-        // Harm: a stage whose comment stands beyond the pages read counted twice, or an issue's
-        // comments read without end.
+    void aStageCommentBehindManyPagesIsFoundAndNeitherWrittenNorAddedAgain() {
+        // Harm: a stage handed in again on an issue with many comments refused, or counted and
+        // shown twice, because its comment stands past a count of pages.
         final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
         final GitHub github = new GitHub().holding(one);
-        github.endless = true;
+        github.pagesBefore = 20;
+        github.standing.add(StageComment.write(stage("task-1:2", "implement"), null));
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.calls)
+                .as("the pages of comments read, the stage's on the last")
+                .filteredOn("issueComments"::equals)
+                .hasSize(21);
+        assertThat(github.comments).as("the stage comments written").isEmpty();
+        assertThat(github.mutations.get(0))
+                .as("the values written")
+                .extracting(FieldValue::fieldId)
+                .doesNotContain("F_Minutes", "F_VM_minutes", "F_Tokens", "F_Stages");
+    }
+
+    @Test
+    void anIssueWhoseCommentsGitHubAnswersWithTheSamePageAgainIsRefusedWithoutWriting() {
+        // Harm: an issue's comments read without end on a GitHub that answers the same page
+        // again, the save never answered.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.cycle.add(new ProjectWrites.Comment(1, "The same comment"));
 
         assertThatThrownBy(
                         () ->
@@ -2475,14 +2523,63 @@ class FieldsBoardWriterTest {
                                                 snapshot(one),
                                                 analysis(),
                                                 stage("task-1:2", "implement")))
-                .as("a result for an issue with more comments than are read")
-                .isInstanceOf(StoreException.NotSavable.class);
+                .as("a result for an issue whose comments GitHub answers with the same page")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining(
+                        "GitHub answered a page of the issue's comments that holds none not read"
+                                + " before, so it is not known whether its stage stands");
         assertThat(github.calls)
                 .as("the pages of comments read")
                 .filteredOn("issueComments"::equals)
-                .hasSize(FieldsBoardWriter.MOST_COMMENT_PAGES);
+                .hasSize(2);
         assertThat(github.mutations).as("the mutations sent").isEmpty();
         assertThat(github.updates).as("the issues updated").isEmpty();
+    }
+
+    @Test
+    void anIssueWhoseCommentsGitHubAnswersInACycleIsRefusedWithoutWriting() {
+        // Harm: a save that never answers while an issue's comments are read without end, on a
+        // GitHub that answers two pages in turn.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.cycle.add(new ProjectWrites.Comment(1, "A first comment"));
+        github.cycle.add(new ProjectWrites.Comment(2, "A second comment"));
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(one),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .as("a result for an issue whose comments GitHub answers in a cycle")
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("holds none not read before");
+        assertThat(github.calls)
+                .as("the pages of comments read, the first given again the last")
+                .filteredOn("issueComments"::equals)
+                .hasSize(3);
+        assertThat(github.mutations).as("the mutations sent").isEmpty();
+        assertThat(github.updates).as("the issues updated").isEmpty();
+    }
+
+    @Test
+    void aStageCommentAfterPagesOfAlikeCommentsIsFound() {
+        // Harm: a stage handed in again on an issue whose earlier comments all read "+1" refused,
+        // as if GitHub had answered one page again.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        github.pagesBefore = 2;
+        github.earlierBody = "+1";
+        github.standing.add(StageComment.write(stage("task-1:2", "implement"), null));
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.comments).as("the stage comments written").isEmpty();
+        assertThat(github.calls)
+                .as("the pages of comments read, the stage's on the last")
+                .filteredOn("issueComments"::equals)
+                .hasSize(3);
     }
 
     @Test

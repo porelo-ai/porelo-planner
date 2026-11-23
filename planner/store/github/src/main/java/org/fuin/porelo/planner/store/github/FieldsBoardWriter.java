@@ -45,8 +45,13 @@ import org.jspecify.annotations.Nullable;
  */
 public final class FieldsBoardWriter implements BoardWriter {
 
-    /** The most pages of an issue's comments read to find whether its stage was written. */
-    static final int MOST_COMMENT_PAGES = 20;
+    /**
+     * The first words of the refusal of a save whose issue's comments GitHub answered with a page
+     * of none but comments already read and a page after it, before what was sought in them.
+     */
+    static final String SAME_COMMENTS =
+            "GitHub answered a page of the issue's comments that holds none not read before, so it"
+                    + " is not known ";
 
     /** The number fields a stage's figures are added to. */
     private static final List<String> SUMMED =
@@ -1487,7 +1492,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     token,
                     id,
                     body -> ClosingComment.keeps(body, reason),
-                    "it holds more comments than are read to find whether its reason stands");
+                    "whether its reason stands");
         }
 
         /** The stage's comment as it stands on its issue already, found by its key, or null. */
@@ -1507,18 +1512,27 @@ public final class FieldsBoardWriter implements BoardWriter {
                         }
                         return false;
                     },
-                    "it holds more comments than are read to find whether its stage stands");
+                    "whether its stage stands");
             return found[0];
         }
 
-        /** Whether one of an item's comments is found, reading at most the pages allowed. */
+        /**
+         * Whether one of an item's comments is found, reading its comments to GitHub's last page.
+         * No count of pages ends the read; a page with a page after it that carries no comment this
+         * read has not seen, by the comments' ids, is GitHub answering a page it gave already,
+         * which would never end, and is refused.
+         *
+         * @param sought what the refusal names as sought, after {@link
+         *     FieldsBoardWriter#SAME_COMMENTS}
+         */
         private boolean holds(
                 final String token,
                 final String id,
                 final java.util.function.Predicate<String> found,
-                final String tooMany) {
+                final String sought) {
             final ItemView item = Objects.requireNonNull(items.get(id));
-            for (int page = 1; page <= MOST_COMMENT_PAGES; page++) {
+            final Set<Long> seen = new HashSet<>();
+            for (int page = 1; ; page++) {
                 final ProjectWrites.CommentsPage comments;
                 try {
                     comments =
@@ -1531,16 +1545,20 @@ public final class FieldsBoardWriter implements BoardWriter {
                 } catch (final RuntimeException e) {
                     throw refusals.refusal(item.repository(), e, token);
                 }
-                for (final String body : comments.bodies()) {
-                    if (found.test(body)) {
+                boolean fresh = false;
+                for (final ProjectWrites.Comment comment : comments.comments()) {
+                    if (found.test(comment.body())) {
                         return true;
                     }
+                    fresh |= seen.add(comment.id());
                 }
                 if (!comments.more()) {
                     return false;
                 }
+                if (!fresh) {
+                    throw new StoreException.NotSavable(id, SAME_COMMENTS + sought);
+                }
             }
-            throw new StoreException.NotSavable(id, tooMany);
         }
 
         /**

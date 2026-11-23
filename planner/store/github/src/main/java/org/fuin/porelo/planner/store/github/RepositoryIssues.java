@@ -5,9 +5,11 @@ import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.fuin.porelo.forge.github.Conditional;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubException;
@@ -33,9 +35,6 @@ public final class RepositoryIssues {
 
     /** The most issues a page carries, as the list is asked for them. */
     static final int PAGE_SIZE = 100;
-
-    /** The most pages one read of every repository's list takes, unchanged pages included. */
-    static final int MOST_PAGES = ItemsBoardReader.MOST_PAGES;
 
     /**
      * How long one read of every repository's list may take, apart from the project's read, before
@@ -106,8 +105,18 @@ public final class RepositoryIssues {
         }
     }
 
-    /** A page as last answered: its tag, the entries it carried, and its issues. */
-    private record Kept(@Nullable String etag, int count, List<Snapshot.Unlisted> issues) {}
+    /**
+     * A page as last answered: its tag, the node ids of the entries it carried, pull requests among
+     * them, and its issues.
+     */
+    private record Kept(
+            @Nullable String etag, List<String> entries, List<Snapshot.Unlisted> issues) {
+
+        /** How many entries the page carried. */
+        int count() {
+            return entries.size();
+        }
+    }
 
     /** A repository's pages as last read, and its issues; no pages after a copy was loaded. */
     private record Held(List<Kept> pages, List<Snapshot.Unlisted> issues) {}
@@ -128,6 +137,12 @@ public final class RepositoryIssues {
      * factor changes no revision.
      */
     static final String BUDGET_SPENT = "The issues outside the project were not all read";
+
+    /**
+     * The first words of the fault of a list whose next page GitHub answered with none but entries
+     * read before.
+     */
+    static final String SAME_PAGE = "GitHub answered the same page again for the issues of ";
 
     /** The deadline of the read met while a page was asked, after one failed on the way. */
     static final class OutOfTime extends RuntimeException {
@@ -189,8 +204,11 @@ public final class RepositoryIssues {
 
     /**
      * Reads every repository's list, page after page, until a page carries fewer entries than a
-     * page asks for; once the pages or the time are spent, the repository being read and those
-     * after it keep what was held of them, named in one fault.
+     * page asks for; no count of pages ends a list GitHub still continues. Once the time is spent,
+     * the repository being read and those after it keep what was held of them, named in one fault.
+     * A full page that carries no entry this repository's read has not seen, by the entries' node
+     * ids, is GitHub answering a page it gave already, which would never end: that repository keeps
+     * what was held of it, named in a fault of its own.
      *
      * <p>A read starts at the repository the last one did not reach, so a large repository never
      * keeps those after it unread.
@@ -223,9 +241,10 @@ public final class RepositoryIssues {
             }
             final Held before = held.get(repository);
             final List<Kept> pages = new ArrayList<>();
+            final Set<String> seen = new HashSet<>();
             boolean whole = false;
             for (int page = 1; ; page++) {
-                if (requests >= MOST_PAGES || clock.instant().isAfter(until)) {
+                if (clock.instant().isAfter(until)) {
                     // A list read in part is never shown: one cut short in silence lacks issues.
                     notRead.add(repository);
                     break;
@@ -271,6 +290,11 @@ public final class RepositoryIssues {
                 if (!answer.changed()) {
                     unchanged++;
                 }
+                final boolean fresh = seen.addAll(now.entries());
+                if (now.count() >= PAGE_SIZE && !fresh) {
+                    faults.add(SAME_PAGE + repository + "; the list last read of it is kept");
+                    break;
+                }
                 pages.add(now);
                 // Full is told by the entries GitHub gave, before pull requests are left out.
                 if (now.count() < PAGE_SIZE) {
@@ -293,9 +317,7 @@ public final class RepositoryIssues {
                     BUDGET_SPENT
                             + " within "
                             + Seconds.of(deadline)
-                            + " s and "
-                            + MOST_PAGES
-                            + " pages; the list last read is shown for "
+                            + " s; the list last read is shown for "
                             + String.join(", ", notRead));
         }
         final List<Snapshot.Unlisted> issues = new ArrayList<>();
@@ -324,8 +346,10 @@ public final class RepositoryIssues {
         if (page == null || page.items().size() > PAGE_SIZE) {
             return null;
         }
+        final List<String> entries = new ArrayList<>();
         final List<Snapshot.Unlisted> issues = new ArrayList<>();
         for (final Issue issue : page.items()) {
+            entries.add(issue.nodeId());
             // GitHub's issue list carries pull requests too.
             if (issue.pullRequest() != null) {
                 continue;
@@ -344,7 +368,7 @@ public final class RepositoryIssues {
                             author(user == null ? null : user.login()),
                             association(association == null ? null : association.getValue())));
         }
-        return new Kept(answer.etag(), page.items().size(), issues);
+        return new Kept(answer.etag(), List.copyOf(entries), issues);
     }
 
     /**

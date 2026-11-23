@@ -10,7 +10,6 @@ import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.model.Issue;
-import org.fuin.porelo.forge.github.model.IssueComment;
 import org.fuin.porelo.forge.github.model.IssueField;
 import org.fuin.porelo.forge.github.model.IssueFieldValue;
 import org.fuin.porelo.forge.github.model.IssueType;
@@ -48,16 +47,24 @@ public interface ProjectWrites {
     /**
      * A page of an issue's comments.
      *
-     * @param bodies each comment's text, oldest first
+     * @param comments each comment, oldest first
      * @param more whether a later page follows
      */
-    record CommentsPage(List<String> bodies, boolean more) {
+    record CommentsPage(List<Comment> comments, boolean more) {
 
-        /** Copies the texts. */
+        /** Copies the comments. */
         public CommentsPage {
-            bodies = List.copyOf(bodies);
+            comments = List.copyOf(comments);
         }
     }
+
+    /**
+     * One comment of an issue.
+     *
+     * @param id its id in REST, which no other comment shares
+     * @param body its text, empty for none
+     */
+    record Comment(long id, String body) {}
 
     /**
      * An issue GitHub made, as it answered it.
@@ -548,8 +555,12 @@ public interface ProjectWrites {
                                 token, owner, repository, number, null, page, COMMENTS_PER_PAGE);
                 return new CommentsPage(
                         comments.items().stream()
-                                .map(IssueComment::body)
-                                .map(body -> body == null ? "" : body)
+                                .map(
+                                        comment ->
+                                                new Comment(
+                                                        comment.id(),
+                                                        Objects.requireNonNullElse(
+                                                                comment.body(), "")))
                                 .toList(),
                         comments.more());
             }

@@ -1,0 +1,2 @@
+title: The planner reads a project's items, a repository's open issues and an issue's comments to GitHub's last page instead of refusing or cutting a long list at a count of pages.
+type: fixed

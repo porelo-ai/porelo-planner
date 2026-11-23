@@ -1862,21 +1862,40 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void aProjectBeyondTheBoundIsUnreadableAndNeverACutBoard() {
-        // Harm: a board cut at the bound shown as the whole project, its missing stories taken as
-        // gone.
+    void aLongProjectIsReadToItsLastPage() {
+        // Harm: a large project refused as unreadable at a count of pages, its board never shown,
+        // though GitHub still gave a next page.
         final GitHub github = new GitHub().fieldsPage(FIELDS, null);
-        for (int page = 1; page <= ItemsBoardReader.MOST_PAGES; page++) {
+        for (int page = 1; page <= 50; page++) {
             github.itemsPage("i" + page, libIssue(page, refs(false)));
+        }
+        github.itemsPage(null, libIssue(51, refs(false)));
+
+        final Snapshot snapshot = github.read();
+
+        assertThat(snapshot.board().issues())
+                .as("the issues of every page, the last one's among them")
+                .extracting(Issue::id)
+                .hasSize(51)
+                .contains("example-lib#51");
+        assertThat(github.calls).as("the fields' page and every items' page").hasSize(1 + 51);
+    }
+
+    @Test
+    void aCursorGivenAgainAfterAnotherIsRefused() {
+        // Harm: a read that asks for the same two pages for ever on a GitHub that leads its
+        // cursors back to one already read.
+        final GitHub github = new GitHub().fieldsPage(FIELDS, null);
+        for (int page = 1; page <= 60; page++) {
+            github.itemsPage(page % 2 == 1 ? "i1" : "i2", libIssue(page, refs(false)));
         }
 
         assertThatThrownBy(github::read)
-                .as("the read beyond the bound")
+                .as("the cursor given again")
                 .isInstanceOf(StoreException.Unreadable.class)
-                .hasMessageContaining("more items than " + ItemsBoardReader.MOST_PAGES + " pages");
-        assertThat(github.calls)
-                .as("no page beyond the bound asked for")
-                .hasSize(1 + ItemsBoardReader.MOST_PAGES);
+                .hasMessageContaining(
+                        "GitHub named a next page of items without a new place to read on");
+        assertThat(github.calls).as("no fourth page asked for").hasSize(1 + 3);
     }
 
     @Test
@@ -1894,6 +1913,40 @@ class ItemsBoardReaderTest {
                 .isInstanceOf(StoreException.Unreadable.class)
                 .hasMessageContaining("without a new place to read on");
         assertThat(github.calls).as("no third page asked for").hasSize(3);
+    }
+
+    @Test
+    void anEmptyPageOfItemsThatNamesANextOneIsRefused() {
+        // Harm: a read that asks for page after page for ever on a GitHub that gives no item and
+        // yet a new cursor each time.
+        final GitHub github = new GitHub().fieldsPage(FIELDS, null);
+        for (int page = 1; page <= 60; page++) {
+            github.itemsPage("i" + page);
+        }
+
+        assertThatThrownBy(github::read)
+                .as("the empty page that names a next one")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("GitHub named a next page of items after a page without any");
+        assertThat(github.calls).as("no second page of items asked for").hasSize(1 + 1);
+    }
+
+    @Test
+    void anEmptyPageOfFieldsThatNamesANextOneIsRefused() {
+        // Harm: a read that asks for the project's fields for ever on a GitHub that gives no field
+        // and yet a new cursor each time.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(List.of(), "f1")
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, libIssue(3, refs(false)));
+
+        assertThatThrownBy(github::read)
+                .as("the empty page that names a next one")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining(
+                        "GitHub named a next page of fields after a page without any");
+        assertThat(github.calls).as("no second page of fields asked for").hasSize(1);
     }
 
     @Test
