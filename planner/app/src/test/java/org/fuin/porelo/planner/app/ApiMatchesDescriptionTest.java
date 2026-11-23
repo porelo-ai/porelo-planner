@@ -303,6 +303,31 @@ class ApiMatchesDescriptionTest {
     }
 
     @Test
+    void theDescriptionAndTheDocumentNameTheBodyBoundTheFilterKeeps() throws Exception {
+        // Harm: the window or a reader told of a bound the planner no longer keeps.
+        final List<String> bounds =
+                List.of(
+                        "larger than " + AccessFilter.MOST_TEXT_BODY + " bytes",
+                        AccessFilter.MOST_LARGE_BODY + " bytes for",
+                        AccessFilter.MOST_RESULT + " bytes for");
+        assertThat(description.at("/info/description").asText().replaceAll("\\s+", " "))
+                .as("the description's own words")
+                .contains(bounds);
+        assertThat(
+                        description
+                                .at("/components/responses/Unauthorized/description")
+                                .asText()
+                                .replaceAll("\\s+", " "))
+                .as("the refused call's answer")
+                .contains(bounds);
+        assertThat(
+                        java.nio.file.Files.readString(java.nio.file.Path.of("../../doc/index.md"))
+                                .replaceAll("\\s+", " "))
+                .as("the planner's document")
+                .contains(bounds);
+    }
+
+    @Test
     void theTextEditsTakeExactlyTheMembersTheirSchemasName() {
         // A member the description names but the planner refuses, or one it takes unnamed, makes
         // the window's edit fail or write a part nobody described.

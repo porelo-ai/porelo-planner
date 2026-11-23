@@ -112,7 +112,7 @@ class ListIssueEndpointTest {
                         return current;
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         projects.put("alpha", "git@example.org:a/porelo-lib.git", null);
         changes =
                 new ChangesRegistry(

@@ -99,7 +99,7 @@ class GitHubShortLookStreamTest {
                                 states -> null),
                         origin -> "github_pat_look_0123456789",
                         Duration.ofMinutes(2));
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         try (ChangesRegistry changes =
                 new ChangesRegistry(
                         projects,

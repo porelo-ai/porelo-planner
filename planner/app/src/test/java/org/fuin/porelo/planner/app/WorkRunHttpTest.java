@@ -42,7 +42,7 @@ class WorkRunHttpTest {
     @BeforeEach
     void serveARealRunOverAFakeStore() {
         store = new Store();
-        projects = new Projects((p, r, b) -> store, 8);
+        projects = new Projects((p, r, b) -> store);
         projects.put("project", "https://example.org/store.git", null);
         changes =
                 new ChangesRegistry(

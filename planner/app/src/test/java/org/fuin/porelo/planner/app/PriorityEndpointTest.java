@@ -103,7 +103,7 @@ class PriorityEndpointTest {
                         return current;
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         changes =
                 new ChangesRegistry(
                         projects,

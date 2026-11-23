@@ -176,7 +176,6 @@ class BoardReadsTest {
                             opened.add(project + " " + repository + " " + branch);
                             return store;
                         },
-                        8,
                         records);
         mvc =
                 MockMvcBuilders.standaloneSetup(

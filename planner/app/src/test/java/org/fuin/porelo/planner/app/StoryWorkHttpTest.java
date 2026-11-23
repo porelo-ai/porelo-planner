@@ -118,7 +118,7 @@ class StoryWorkHttpTest {
                         return board();
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         projects.put("project", "https://example.org/p/project.git", null);
         mvc =
                 MockMvcBuilders.standaloneSetup(

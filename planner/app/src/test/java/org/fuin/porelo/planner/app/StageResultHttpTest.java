@@ -42,7 +42,7 @@ class StageResultHttpTest {
     @BeforeEach
     void serveARealRunOverAFakeStore() {
         store = new Store();
-        final Projects projects = new Projects((p, r, b) -> store, 8);
+        final Projects projects = new Projects((p, r, b) -> store);
         projects.put("project", "https://example.org/store.git", null);
         changes =
                 new ChangesRegistry(

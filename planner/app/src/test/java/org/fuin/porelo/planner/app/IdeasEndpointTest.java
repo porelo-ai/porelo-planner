@@ -102,7 +102,7 @@ class IdeasEndpointTest {
                         return new NewIdea.Added("ST" + added.size(), List.of("CD3"), current);
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         changes =
                 new ChangesRegistry(
                         projects,

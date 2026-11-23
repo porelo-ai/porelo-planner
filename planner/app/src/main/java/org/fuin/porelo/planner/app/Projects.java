@@ -3,7 +3,6 @@ package org.fuin.porelo.planner.app;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -44,30 +43,24 @@ public final class Projects {
 
     private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
-    private final Set<String> opening = ConcurrentHashMap.newKeySet();
-
     private final List<Consumer<String>> retired = new CopyOnWriteArrayList<>();
 
     private final Opener opener;
 
-    private final int most;
-
     private final WorkRecord records;
 
     /**
-     * Makes a registry.
+     * Makes a registry that keeps every project it is given.
      *
      * @param opener opens a project's store
-     * @param most the most projects kept
      */
-    public Projects(final Opener opener, final int most) {
-        this(opener, most, new WorkRecord(Map.of(), true));
+    public Projects(final Opener opener) {
+        this(opener, new WorkRecord(Map.of(), true));
     }
 
     /** Creates a registry using the supplied durable or mock work records. */
-    public Projects(final Opener opener, final int most, final WorkRecord records) {
+    public Projects(final Opener opener, final WorkRecord records) {
         this.opener = opener;
-        this.most = most;
         this.records = records;
     }
 
@@ -94,40 +87,35 @@ public final class Projects {
                     records.forget(project);
                     retired.forEach(listener -> listener.accept(project));
                 }
-                if (projects.size() + opening.size() >= most) {
-                    throw new Refusal(
-                            "TooManyProjects",
-                            HttpStatus.CONFLICT,
-                            "The planner keeps at most " + most + " projects",
-                            Map.of("project", project));
-                }
-                opening.add(project);
             }
+            final PlanningStore store =
+                    new LoggedStore(
+                            project,
+                            Objects.requireNonNull(
+                                    opener.open(project, repository, branch), "store"));
+            final WorkRun.Record record;
             try {
-                final PlanningStore store =
-                        new LoggedStore(
-                                project,
-                                Objects.requireNonNull(
-                                        opener.open(project, repository, branch), "store"));
-                final WorkRun.Record record = records.open(project, repository, branch);
+                record = records.open(project, repository, branch);
                 record.locked(session -> session.read());
-                projects.put(
-                        project,
-                        new Entry(
-                                source,
-                                store,
-                                new WorkRun(
-                                        store,
-                                        record,
-                                        java.time.Clock.systemUTC(),
-                                        why ->
-                                                LOG.info(
-                                                        "No next step in project {}: {}",
-                                                        LogText.of(project),
-                                                        LogText.of(why)))));
-            } finally {
-                opening.remove(project);
+            } catch (final RuntimeException | Error e) {
+                // The store is kept nowhere, so it is retired here or never.
+                store.retire();
+                throw e;
             }
+            projects.put(
+                    project,
+                    new Entry(
+                            source,
+                            store,
+                            new WorkRun(
+                                    store,
+                                    record,
+                                    java.time.Clock.systemUTC(),
+                                    why ->
+                                            LOG.info(
+                                                    "No next step in project {}: {}",
+                                                    LogText.of(project),
+                                                    LogText.of(why)))));
         }
     }
 

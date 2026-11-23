@@ -41,7 +41,7 @@ class ChangesRegistryTest {
     private final AtomicInteger refreshes = new AtomicInteger();
 
     private final Projects projects =
-            new Projects((project, repository, branch) -> store(repository), 8);
+            new Projects((project, repository, branch) -> store(repository));
 
     private final ChangesRegistry registry =
             new ChangesRegistry(

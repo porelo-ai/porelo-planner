@@ -45,14 +45,40 @@ public final class AccessFilter implements Filter {
     /** The seconds a signature's time may be off the planner's clock. */
     static final long WINDOW = 60;
 
-    /** The largest body checked for operations without a larger allowance. */
-    static final int MOST_BODY = 131072;
+    /** The most characters of an issue's title GitHub takes. */
+    static final int MOST_TITLE = 256;
+
+    /** The most characters of an issue's or a comment's body GitHub takes. */
+    static final int MOST_TEXT = 65536;
+
+    /**
+     * The most UTF-8 bytes one character takes: a character beyond the Basic Multilingual Plane.
+     */
+    static final int MOST_UTF8_CHAR = 4;
+
+    /** The bytes a body's JSON envelope may take around the texts it carries. */
+    static final int ENVELOPE = 4096;
+
+    /**
+     * The largest body of a request that carries text from or for an issue's body: the longest
+     * title and body GitHub takes, each character in its longest UTF-8 form, with their envelope.
+     */
+    static final int MOST_TEXT_BODY = (MOST_TITLE + MOST_TEXT) * MOST_UTF8_CHAR + ENVELOPE;
 
     /** The largest body of a new idea, story or issue. */
     static final int MOST_LARGE_BODY = 1048576;
 
-    /** The largest body of a stage's result: a result file of 1048576 bytes and its envelope. */
-    static final int MOST_RESULT = 1052672;
+    /**
+     * The largest body of a stage's result: a result file of {@value #MOST_LARGE_BODY} bytes and
+     * its envelope.
+     */
+    static final int MOST_RESULT = MOST_LARGE_BODY + ENVELOPE;
+
+    /**
+     * The largest body of any request: the largest of the three bounds {@link #most} gives, so a
+     * body larger than any request is refused before it is read.
+     */
+    static final int MOST_BODY = Math.max(MOST_RESULT, Math.max(MOST_LARGE_BODY, MOST_TEXT_BODY));
 
     /** The raw path a stage's result is handed in on. */
     private static final Pattern RESULT_PATH =
@@ -146,7 +172,7 @@ public final class AccessFilter implements Filter {
             proof(request, response, chain);
             return;
         }
-        // Read before it is checked, as it was sent, but never more than an operation takes.
+        // Read before it is checked, as it was sent, but never more than its operation takes.
         final int most = most(request);
         if (request.getContentLengthLong() > most) {
             refuse(response);
@@ -171,17 +197,21 @@ public final class AccessFilter implements Filter {
         }
     }
 
-    /** The most bytes the request's operation takes, by its method and raw path. */
+    /**
+     * The most bytes the request's operation can legally carry, by its method and raw path: a
+     * stage's result {@link #MOST_RESULT}, a new idea, story or issue {@link #MOST_LARGE_BODY},
+     * every other request {@link #MOST_TEXT_BODY}; never more than {@link #MOST_BODY}.
+     */
     static int most(final HttpServletRequest request) {
         if (!"POST".equals(request.getMethod())) {
-            return MOST_BODY;
+            return MOST_TEXT_BODY;
         }
         if (RESULT_PATH.matcher(request.getRequestURI()).matches()) {
             return MOST_RESULT;
         }
         return CREATION_PATH.matcher(request.getRequestURI()).matches()
                 ? MOST_LARGE_BODY
-                : MOST_BODY;
+                : MOST_TEXT_BODY;
     }
 
     /** An async or error dispatch of a request the filter verified, and nothing else. */

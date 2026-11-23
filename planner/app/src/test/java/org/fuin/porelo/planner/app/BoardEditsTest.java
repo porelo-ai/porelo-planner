@@ -132,7 +132,7 @@ class BoardEditsTest {
                         return new NewIdea.Added("ST3", List.of("AB5"), moved());
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         projects.put("alpha", "git@example.org:a/porelo-store.git", null);
         // The polls wait behind a held task, so only the edit itself can tell the windows.
         final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();

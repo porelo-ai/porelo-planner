@@ -144,7 +144,7 @@ class EditsEndpointTest {
                                 write(story.title() + " " + story.existing()));
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         projects.put("alpha", "git@example.org:a/porelo-store.git", null);
         changes =
                 new ChangesRegistry(

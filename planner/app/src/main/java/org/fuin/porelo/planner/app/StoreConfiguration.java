@@ -80,9 +80,6 @@ import org.springframework.http.HttpStatus;
 @Configuration(proxyBeanMethods = false)
 public class StoreConfiguration {
 
-    /** The most projects the planner keeps while it runs. */
-    static final int MOST_PROJECTS = 8;
-
     /**
      * Opens projects over the person's cache directory with the planner's own environment.
      *
@@ -421,7 +418,6 @@ public class StoreConfiguration {
                         // A board of its own, so a move in one project leaves another's as it was.
                         return mock.copy();
                     },
-                    MOST_PROJECTS,
                     records);
         }
         return fromGit(gits.getObject(), records);
@@ -447,7 +443,6 @@ public class StoreConfiguration {
                         throw notACloneUrl(project, String.valueOf(e.getMessage()));
                     }
                 },
-                MOST_PROJECTS,
                 records);
     }
 

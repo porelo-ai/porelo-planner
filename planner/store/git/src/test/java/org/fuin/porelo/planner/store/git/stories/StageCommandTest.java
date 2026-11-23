@@ -1057,26 +1057,6 @@ class StageCommandTest {
         assertThat(errors()).contains("session is not a readable regular file");
     }
 
-    // Prevents a session larger than its bound from being read whole into memory.
-    @Test
-    void refusesASessionOverItsBound() throws Exception {
-        final Path session = directory.resolve("large.jsonl");
-        final byte[] blanks = new byte[1024 * 1024];
-        java.util.Arrays.fill(blanks, (byte) ' ');
-        try (var file = Files.newOutputStream(session)) {
-            for (long written = 0;
-                    written <= StageCommand.SESSION_LIMIT;
-                    written += blanks.length) {
-                file.write(blanks);
-            }
-        }
-
-        assertThat(run("begin", "EX12", "implement", "--session", session.toString()))
-                .as("a session over 64 MB")
-                .isEqualTo(2);
-        assertThat(errors()).contains("larger than 64 MB");
-    }
-
     // Prevents a session swapped for a FIFO or a link after begin from hanging end or being read.
     @ParameterizedTest
     @ValueSource(strings = {"fifo", "link"})

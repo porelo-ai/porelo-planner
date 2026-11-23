@@ -146,7 +146,7 @@ class GitHubMoveDuringReadHttpTest {
                                         }),
                         origin -> "github_pat_measure_0123456789",
                         Duration.ofMinutes(2));
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         changes =
                 new ChangesRegistry(
                         projects,

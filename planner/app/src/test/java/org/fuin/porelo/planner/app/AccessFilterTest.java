@@ -173,101 +173,111 @@ class AccessFilterTest {
         assertThat(seen.size()).as("the nonces kept once the first one's time is refused").isOne();
     }
 
-    @Test
-    void aBodyLargerThanAnyOperationTakesIsRefusedWithoutBeingHeld() throws Exception {
-        // Harm: a stranger's endless or chunked body held in memory before it is checked.
-        final Counted declared = new Counted(AccessFilter.MOST_BODY + 1L);
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "POST /projects/p/tasks/analyze/events",
+                "POST /projects/p/issues/I1/comments",
+                "PUT /projects/p/issues/I1/text",
+                "POST /projects/p/ideas/discussion",
+                "POST /projects/p/ideas/",
+                "POST /projects/p/tasks/a/b/result",
+                "POST /projects/p%2fother/issues",
+                "PUT /projects/p/ideas",
+                "PUT /projects/p/tasks/analyze/result",
+                "GET /projects/p/issues"
+            })
+    void anOrdinaryBodyLargerThanGitHubsLongestTextIsRefusedWithoutBeingHeld(final String call)
+            throws Exception {
+        // Harm: a stranger's large, endless or chunked body held in memory before it is checked,
+        // up to the bound of a stage's result on a request that never carries more than a text.
+        final String method = call.substring(0, call.indexOf(' '));
+        final String path = call.substring(call.indexOf(' ') + 1);
+        final long most = 267264;
+        final Counted declared = new Counted(most + 1);
         final MockHttpServletResponse response = new MockHttpServletResponse();
         final Chain chain = new Chain();
         filter.doFilter(
-                withBody(
-                        signed("POST", "/projects/p/tasks/analyze/events", BODY, null),
-                        declared,
-                        AccessFilter.MOST_BODY + 1L),
-                response,
-                chain);
-        assertRefused(response, chain, "a declared length past the bound");
-        assertThat(declared.read).as("the bytes read of a declared length past the bound").isZero();
+                withBody(signed(method, path, BODY, null), declared, most + 1), response, chain);
+        assertRefused(response, chain, "a declared length past the bound of " + call);
+        assertThat(declared.read)
+                .as("the bytes read of a declared length past the bound of %s", call)
+                .isZero();
 
         lines.list.clear();
         final Counted endless = new Counted(Long.MAX_VALUE);
         final MockHttpServletResponse chunked = new MockHttpServletResponse();
         final Chain chunkedChain = new Chain();
         filter.doFilter(
-                withBody(
-                        signed("POST", "/projects/p/tasks/analyze/events", BODY, null),
-                        endless,
-                        -1),
-                chunked,
-                chunkedChain);
-        assertRefused(chunked, chunkedChain, "an endless body without a length");
+                withBody(signed(method, path, BODY, null), endless, -1), chunked, chunkedChain);
+        assertRefused(chunked, chunkedChain, "an endless body without a length on " + call);
         assertThat(endless.read)
-                .as("the bytes read of an endless body")
-                .isEqualTo(AccessFilter.MOST_BODY + 1L);
+                .as("the bytes read of an endless body on %s", call)
+                .isEqualTo(most + 1);
     }
 
     @ParameterizedTest
     @ValueSource(
             strings = {
-                "/projects/p/ideas",
-                "/projects/p/stories",
-                "/projects/p/issues",
-                "/projects/p/tasks/analyze/result"
+                "POST /projects/p/issues/I1/comments",
+                "PUT /projects/p/issues/I1/text",
+                "PUT /projects/p/stories/S1/text"
             })
-    void theFourLargePostBodiesPassAtOneMiBAndRefuseOneByteMore(final String path)
-            throws Exception {
-        // Harm: the signing filter refuses a hand-in a forge accepts before the parser sees it.
-        // Two bytes each, filling the operation's bound exactly.
+    void theLargestTextGitHubTakesPassesWithItsJsonEnvelope(final String call) throws Exception {
+        // Harm: a comment or an edit GitHub takes, refused by the signing filter as unsigned
+        // before its parser sees it.
+        final String method = call.substring(0, call.indexOf(' '));
+        final String path = call.substring(call.indexOf(' ') + 1);
+        // A title of 256 and a body of 65536 characters, each one in its longest UTF-8 form.
+        final String largest = new String(Character.toChars(0x1F600));
         final String body =
-                "é".repeat(AccessFilter.most(new MockHttpServletRequest("POST", path)) / 2);
+                "{\"title\":\""
+                        + largest.repeat(256)
+                        + "\",\"body\":\""
+                        + largest.repeat(65536)
+                        + "\",\"revision\":\"r1\"}";
+        final Chain chain = new Chain();
+        final MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(signed(method, path, body, null), response, chain);
+        assertThat(response.getStatus()).as("the status of %s", call).isEqualTo(200);
+        assertThat(chain.bodies).as("the body handed on for %s", call).containsExactly(body);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "POST /projects/p/ideas 1048576",
+                "POST /projects/p/stories 1048576",
+                "POST /projects/p/issues 1048576",
+                "POST /projects/p/tasks/analyze/result 1052672",
+                "POST /projects/p/issues/I1/comments 267264",
+                "PUT /projects/p/issues/I1/text 267264",
+                "PUT /projects/p/stories/S1/text 267264"
+            })
+    void aBodyPassesAtItsOperationsBoundAndIsRefusedOneByteBeyond(final String call)
+            throws Exception {
+        // Harm: the signing filter refuses a hand-in, a comment or an edit a forge accepts before
+        // the parser sees it, or takes a body larger than its operation can carry.
+        final String[] parts = call.split(" ");
+        final String method = parts[0];
+        final String path = parts[1];
+        // Two bytes each, filling the bound exactly.
+        final String body = "é".repeat(Integer.parseInt(parts[2]) / 2);
         for (final boolean declared : List.of(true, false)) {
             final Chain accepted = new Chain();
             filter.doFilter(
-                    length(signed("POST", path, body, null), declared),
+                    length(signed(method, path, body, null), declared),
                     new MockHttpServletResponse(),
                     accepted);
             assertThat(accepted.bodies)
-                    .as("the full body, declared length %s", declared)
+                    .as("the full body of %s, declared length %s", call, declared)
                     .containsExactly(body);
             final Chain rejected = new Chain();
             final MockHttpServletResponse response = new MockHttpServletResponse();
             filter.doFilter(
-                    length(signed("POST", path, body + " ", null), declared), response, rejected);
-            assertRefused(response, rejected, "one byte beyond the operation's bound");
+                    length(signed(method, path, body + " ", null), declared), response, rejected);
+            assertRefused(response, rejected, "one byte beyond the bound of " + call);
             lines.list.clear();
-        }
-    }
-
-    @Test
-    void onlyTheFourNamedPostOperationsTakeOneMiB() {
-        // Harm: a larger allowance also weakens the bound on other calls or malformed paths.
-        for (final String path :
-                List.of(
-                        "/projects/p/ideas",
-                        "/projects/p/stories",
-                        "/projects/p/issues",
-                        "/projects/p/tasks/analyze/result")) {
-            assertThat(AccessFilter.most(new MockHttpServletRequest("POST", path)))
-                    .as("the raised POST limit on %s", path)
-                    .isEqualTo(path.endsWith("/result") ? 1048576 + 4096 : 1048576);
-            for (final String method : List.of("GET", "PUT", "DELETE")) {
-                assertThat(AccessFilter.most(new MockHttpServletRequest(method, path)))
-                        .as("the original filter limit on %s %s", method, path)
-                        .isEqualTo(AccessFilter.MOST_BODY);
-            }
-        }
-        for (final String path :
-                List.of(
-                        "/projects/p/tasks/analyze/events",
-                        "/projects/p/tasks/a/b/result",
-                        "/projects/p/ideas/discussion",
-                        "/projects/p/ideas/",
-                        "/projects/p/issues/I1/comments",
-                        "/projects/p%2fother/issues",
-                        "/projects/p/stories/ST1/work/stop")) {
-            assertThat(AccessFilter.most(new MockHttpServletRequest("POST", path)))
-                    .as("the original filter limit on %s", path)
-                    .isEqualTo(AccessFilter.MOST_BODY);
         }
     }
 
@@ -618,7 +628,7 @@ class AccessFilterTest {
     private static MockHttpServletRequest withBody(
             final MockHttpServletRequest request, final Counted body, final long length) {
         final MockHttpServletRequest copy =
-                new MockHttpServletRequest("POST", request.getRequestURI()) {
+                new MockHttpServletRequest(request.getMethod(), request.getRequestURI()) {
                     @Override
                     public ServletInputStream getInputStream() {
                         return body;

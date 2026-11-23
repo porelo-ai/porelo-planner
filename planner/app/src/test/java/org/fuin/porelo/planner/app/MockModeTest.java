@@ -92,6 +92,23 @@ class MockModeTest {
     }
 
     @Test
+    void everyProjectTheWindowGivesIsKeptWithoutACount() throws Exception {
+        // Harm: a person who plans in more projects than a fixed count is refused the next one.
+        for (int project = 1; project <= 12; project++) {
+            assertThat(call(runtime, "PUT", "/projects/many" + project, SOURCE).statusCode())
+                    .as("giving project %d", project)
+                    .isEqualTo(204);
+        }
+        for (int project = 1; project <= 12; project++) {
+            assertThat(
+                            call(runtime, "GET", "/projects/many" + project + "/stories", null)
+                                    .statusCode())
+                    .as("reading project %d", project)
+                    .isEqualTo(200);
+        }
+    }
+
+    @Test
     void theMockListsAnIssueInNoStoryThroughTheBoardApi() throws Exception {
         // Harm: the window's tests cannot expose work omitted from every story.
         call(runtime, "PUT", "/projects/any", SOURCE);
@@ -376,8 +393,8 @@ class MockModeTest {
 
     @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
-        // Projects kept across the window's tests would leak a test's project into the next and
-        // run into the planner's bound on projects after a few tests.
+        // Projects kept across the window's tests would leak a test's project into the next, and
+        // the projects of every test before would pile up for as long as the mock runs.
         assertThat(call(runtime, "PUT", "/projects/kept", SOURCE).statusCode())
                 .as("a project given")
                 .isEqualTo(204);

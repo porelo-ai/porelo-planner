@@ -286,8 +286,8 @@ final class EditRequests {
     }
 
     /**
-     * Reads a comment: at most {@link AccessFilter#MOST_BODY} bytes, one JSON object with exactly a
-     * text.
+     * Reads a comment: at most {@link AccessFilter#MOST_TEXT_BODY} bytes, one JSON object with
+     * exactly a text.
      *
      * @param request the request
      * @param issue the issue's checked id, which a refusal names
@@ -297,7 +297,10 @@ final class EditRequests {
      */
     static CommentRequest comment(final HttpServletRequest request, final String issue) {
         final JsonNode body =
-                object(request, issue, read -> WorkRequests.read(read, AccessFilter.MOST_BODY));
+                object(
+                        request,
+                        issue,
+                        read -> WorkRequests.read(read, AccessFilter.MOST_TEXT_BODY));
         exactly(body, issue, Set.of("text"));
         final JsonNode text = body.get("text");
         if (!text.isString()) {
@@ -307,9 +310,9 @@ final class EditRequests {
     }
 
     /**
-     * Reads a story's or an issue's title and named parts: at most {@link AccessFilter#MOST_BODY}
-     * bytes, one JSON object with a revision and any of a title and the kind's parts, each a text,
-     * null removing a part that may be removed.
+     * Reads a story's or an issue's title and named parts: at most {@link
+     * AccessFilter#MOST_TEXT_BODY} bytes, one JSON object with a revision and any of a title and
+     * the kind's parts, each a text, null removing a part that may be removed.
      *
      * @param request the request
      * @param id the item's checked id, which a refusal names
@@ -321,7 +324,7 @@ final class EditRequests {
     static TextRequest text(
             final HttpServletRequest request, final String id, final TextEdit.Kind kind) {
         final JsonNode body =
-                object(request, id, read -> WorkRequests.read(read, AccessFilter.MOST_BODY));
+                object(request, id, read -> WorkRequests.read(read, AccessFilter.MOST_TEXT_BODY));
         final Map<String, TextEdit.Part> parts =
                 kind == TextEdit.Kind.STORY ? STORY_PARTS : ISSUE_PARTS;
         final Set<String> known = new java.util.HashSet<>(parts.keySet());

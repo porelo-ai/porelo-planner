@@ -95,7 +95,7 @@ anything on a new connection the listener proves it holds the token. A listener 
 
 Accepted risks:
 
-- **A slow body holds a thread.** The planner reads a body of up to 128 KiB before it checks the signature, so
+- **A slow body holds a thread.** The planner reads a body of up to 1052672 bytes before it checks the signature, so
   another local account can hold a thread per slow connection until the connection times out. The exposure is the
   planner's availability on the loopback address alone, never the token or the person's data; a planner reachable
   from more than the loopback address would change the answer.

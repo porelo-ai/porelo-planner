@@ -30,7 +30,7 @@ class ChangesRegistryPaceTest {
         // Harm: a GitHub project's changes reach the window only after the long Git interval, a
         // store holding off GitHub is asked at every poll anyway, or the person's reload is
         // answered from the board kept without asking.
-        final Projects projects = new Projects((project, repository, branch) -> probed(), 8);
+        final Projects projects = new Projects((project, repository, branch) -> probed());
         try (ChangesRegistry registry =
                 new ChangesRegistry(
                         projects,
@@ -56,7 +56,7 @@ class ChangesRegistryPaceTest {
     @Test
     void aFetchedStoreKeepsTheUsualInterval() throws Exception {
         // Harm: every Git project fetched every few seconds, as often as a GitHub one is probed.
-        final Projects projects = new Projects((project, repository, branch) -> fetching(), 8);
+        final Projects projects = new Projects((project, repository, branch) -> fetching());
         try (ChangesRegistry registry =
                 new ChangesRegistry(
                         projects,
@@ -110,7 +110,7 @@ class ChangesRegistryPaceTest {
                         return true;
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> alone, 8);
+        final Projects projects = new Projects((project, repository, branch) -> alone);
         try (ChangesRegistry registry =
                 new ChangesRegistry(
                         projects,
@@ -175,7 +175,7 @@ class ChangesRegistryPaceTest {
                         return java.util.Optional.empty();
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> first, 8);
+        final Projects projects = new Projects((project, repository, branch) -> first);
         try (ChangesRegistry registry =
                 new ChangesRegistry(
                         projects,
@@ -276,7 +276,7 @@ class ChangesRegistryPaceTest {
                         return probed;
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> failingOnce, 8);
+        final Projects projects = new Projects((project, repository, branch) -> failingOnce);
         try (ChangesRegistry registry =
                 new ChangesRegistry(
                         projects,
@@ -319,7 +319,7 @@ class ChangesRegistryPaceTest {
                         return Duration.ofHours(1);
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         try (ChangesRegistry registry =
                 new StoreConfiguration()
                         .changesRegistry(
@@ -340,7 +340,7 @@ class ChangesRegistryPaceTest {
     @Test
     void anIntervalOfZeroIsRefusedAtStart() {
         // Harm: a property of zero polling every project without a pause.
-        final Projects projects = new Projects((project, repository, branch) -> fetching(), 8);
+        final Projects projects = new Projects((project, repository, branch) -> fetching());
 
         assertThatThrownBy(
                         () ->

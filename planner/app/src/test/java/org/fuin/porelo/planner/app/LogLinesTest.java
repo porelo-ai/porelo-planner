@@ -104,7 +104,7 @@ class LogLinesTest {
                         return states.isEmpty() ? null : states.get(0);
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        final Projects projects = new Projects((project, repository, branch) -> store);
         changes =
                 new ChangesRegistry(
                         projects,

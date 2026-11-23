@@ -1,11 +1,15 @@
 package org.fuin.porelo.planner.store.cache;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
+import java.nio.channels.Channels;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -27,14 +31,13 @@ import org.slf4j.LoggerFactory;
 /**
  * The copies of the boards the planner held, one file per project in a directory only its account
  * may read. A copy that cannot be used is ignored and named in the log, never fatal: the board is
- * then read whole from its tracker.
+ * then read whole from its tracker. A copy has no size bound: it is read through a stream, never
+ * held whole beside what it decodes to, and what its decoding may take is bounded by its file's own
+ * size.
  */
 public final class BoardCopies {
 
     private static final Logger LOG = LoggerFactory.getLogger(BoardCopies.class);
-
-    /** The largest copy read; a board of several thousand items with their texts stays below it. */
-    static final int MOST_BYTES = 64 * 1024 * 1024;
 
     /** What every copy's file begins with, before its encoding's name and the records' format. */
     static final String HEAD = "porelo-board-copy";
@@ -90,21 +93,18 @@ public final class BoardCopies {
         final BoardCopy copy;
         try {
             files.requireOwnFile(file, true);
-            final byte[] bytes;
-            try (InputStream in =
-                    Files.newInputStream(
-                            file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-                bytes = in.readNBytes(MOST_BYTES + 1);
+            try (SeekableByteChannel channel =
+                    Files.newByteChannel(
+                            file, Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS))) {
+                // The size of the file opened, which bounds what its decoding may take.
+                final long size = channel.size();
+                final InputStream in = Channels.newInputStream(channel);
+                final byte[] head = head();
+                if (size < head.length || !Arrays.equals(in.readNBytes(head.length), head)) {
+                    return ignored(file, "it was written in another format or encoding");
+                }
+                copy = encoding.decode(in, size - head.length);
             }
-            if (bytes.length > MOST_BYTES) {
-                return ignored(file, "it is larger than " + MOST_BYTES + " bytes");
-            }
-            final byte[] head = head();
-            if (bytes.length < head.length
-                    || !Arrays.equals(bytes, 0, head.length, head, 0, head.length)) {
-                return ignored(file, "it was written in another format or encoding");
-            }
-            copy = encoding.decode(Arrays.copyOfRange(bytes, head.length, bytes.length));
         } catch (final IOException | IllegalStateException | UncheckedIOException e) {
             return ignored(file, "it could not be read as the account's own file");
         } catch (final IllegalArgumentException | NullPointerException e) {
@@ -138,27 +138,33 @@ public final class BoardCopies {
     public void write(final BoardCopy copy) {
         final Path file = directory.resolve(copy.project().file());
         final Path written = file.resolveSibling(file.getFileName() + ".new");
+        boolean moved = false;
         try {
-            final byte[] head = head();
-            final byte[] body = encoding.encode(copy);
-            final byte[] bytes = Arrays.copyOf(head, head.length + body.length);
-            System.arraycopy(body, 0, bytes, head.length, body.length);
             Files.deleteIfExists(written);
             Files.createFile(written, files.ownerOnlyFile());
             files.requireOwnFile(written, true);
-            Files.write(
-                    written,
-                    bytes,
-                    StandardOpenOption.WRITE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    LinkOption.NOFOLLOW_LINKS);
+            try (OutputStream out =
+                    new BufferedOutputStream(
+                            Files.newOutputStream(
+                                    written,
+                                    StandardOpenOption.WRITE,
+                                    StandardOpenOption.TRUNCATE_EXISTING,
+                                    LinkOption.NOFOLLOW_LINKS))) {
+                out.write(head());
+                encoding.encode(copy, out);
+            }
             Files.move(
                     written,
                     file,
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
+            moved = true;
         } catch (final IOException e) {
             throw new UncheckedIOException("the board's copy could not be written", e);
+        } finally {
+            if (!moved) {
+                removeQuietly(written);
+            }
         }
     }
 
@@ -175,6 +181,15 @@ public final class BoardCopies {
                     "The board's copy of {} could not be removed: {}",
                     project.file(),
                     e.getClass().getSimpleName());
+        }
+    }
+
+    /** Removes a copy half written, so no part of it is left beside the copies. */
+    private static void removeQuietly(final Path written) {
+        try {
+            Files.deleteIfExists(written);
+        } catch (final IOException e) {
+            LOG.warn("A half written copy {} could not be removed", written.getFileName());
         }
     }
 

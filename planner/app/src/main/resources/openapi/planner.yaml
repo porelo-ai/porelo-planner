@@ -6,9 +6,10 @@ info:
     Serves a project's planning board - its workflow, stories and issues kept in Git - to the Porelo window on the
     same computer. No call carries the planner's token. Every call but the proof is signed in its Porelo-Signature
     header with an HMAC-SHA256 under the token's UTF-8 bytes; a request without one valid signature, with two, or with
-    an Authorization header answers 401 with an empty body, and so does one whose body is larger than 131072 bytes,
-    1048576 bytes for POST /projects/{project}/ideas, /projects/{project}/stories and /projects/{project}/issues,
-    or 1052672 bytes for POST /projects/{project}/tasks/{task}/result.
+    an Authorization header answers 401 with an empty body, and so does one whose body is larger than 267264 bytes,
+    the longest title and body GitHub takes with their JSON, 1048576 bytes for POST /projects/{project}/ideas,
+    /projects/{project}/stories and /projects/{project}/issues, or 1052672 bytes for POST
+    /projects/{project}/tasks/{task}/result.
     The signature is `porelo-planner-request-1;t=<time>;n=<nonce>;s=<hmac>`: the UTC time in seconds in decimal, no
     leading zero, at most 60 s off the planner's clock; 16 random bytes as nonce, each taken once; the HMAC over the
     ASCII label porelo-planner-request-1 and one zero byte, then each of these fields as its length in four bytes,
@@ -156,8 +157,6 @@ paths:
           $ref: '#/components/responses/ProjectRefused'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/TooManyProjects'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -508,7 +507,7 @@ paths:
         blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
         that would grow the body past the 65536 characters GitHub takes, is refused (EditNotAllowed) before anything
         is written; so is a body whose sections cannot be told apart for certain, with the first thing to repair. The
-        JSON body is at most 131072 bytes. The changes stream announces the new board as it does after any save.
+        JSON body is at most 267264 bytes. The changes stream announces the new board as it does after any save.
       tags: [board]
       requestBody:
         required: true
@@ -951,7 +950,7 @@ paths:
         blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
         that would grow the body past the 65536 characters GitHub takes, is refused (EditNotAllowed) before anything
         is written; so is a body whose sections cannot be told apart for certain, with the first thing to repair. The
-        JSON body is at most 131072 bytes. The changes stream announces the new board as it does after any save.
+        JSON body is at most 267264 bytes. The changes stream announces the new board as it does after any save.
       tags: [board]
       requestBody:
         required: true
@@ -996,7 +995,7 @@ paths:
         Writes one comment of the person's text on the issue, with the person's own access. The board shows no
         comment, so the call carries no revision, the board is not read again and the changes stream announces
         nothing. A comment opening with the planner's own marker `<!-- porelo:` is refused, since the planner reads
-        its own records from such comments. The JSON body is at most 131072 bytes. A comment the tracker took without
+        its own records from such comments. The JSON body is at most 267264 bytes. A comment the tracker took without
         answering is answered PartlySaved, so it is not written twice.
       tags: [board]
       requestBody:
@@ -1709,7 +1708,7 @@ components:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: >-
-        The request carries no one valid signature, carries an Authorization header, or has a body larger than 131072
+        The request carries no one valid signature, carries an Authorization header, or has a body larger than 267264
         bytes (1048576 bytes for POST on ideas, new stories and new issues, 1052672 bytes for a stage's result); the
         body is empty, and the answer carries no Porelo-Answer header.
       headers:
@@ -1769,19 +1768,6 @@ components:
                 detail: The repository is not a clone URL.
                 parameters:
                   project: example
-    TooManyProjects:
-      description: The planner already serves as many projects as it may (TooManyProjects).
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-          example:
-            type: urn:porelo-planner:TooManyProjects
-            title: TooManyProjects
-            status: 409
-            detail: The planner serves at most 8 projects.
-            parameters:
-              project: example
     NoSuchProject:
       description: The project was never made known with a PUT (NoSuchProject).
       content:

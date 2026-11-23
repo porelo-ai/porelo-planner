@@ -54,15 +54,15 @@ class ProjectsTest {
         };
     }
 
-    private Projects projects(final int most) {
+    private Projects projects() {
         return new Projects(
-                (project, repository, branch) -> open(project, repository, "" + branch), most);
+                (project, repository, branch) -> open(project, repository, "" + branch));
     }
 
     @Test
     void theSameSourceAgainOpensNothingAndAnotherReplacesTheStore() {
         // The window sends its PUT on every choice; opening again would fetch the project anew.
-        final Projects projects = projects(8);
+        final Projects projects = projects();
         projects.put("alpha", "git@example.org:a/p.git", null);
         final PlanningStore first = projects.store("alpha");
         projects.put("alpha", "git@example.org:a/p.git", null);
@@ -73,9 +73,26 @@ class ProjectsTest {
     }
 
     @Test
+    void aStoreWhoseWorkRecordCannotBeOpenedIsRetired() {
+        // Harm: a store opened for a project whose work record is refused stays live, kept
+        // nowhere, beside the store the next try opens for the same project.
+        final Projects projects = projects();
+        // A name the work record refuses before it opens anything, which the opener here takes.
+        assertThatThrownBy(() -> projects.put("a..b", "git@example.org:a/p.git", null))
+                .as("a project whose work record is refused")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(opened)
+                .as("the store opened")
+                .containsExactly("a..b git@example.org:a/p.git null");
+        assertThat(retired)
+                .as("the store retired on the failure")
+                .containsExactly("a..b git@example.org:a/p.git");
+    }
+
+    @Test
     void aFailedReplacementLeavesTheProjectUnknownNeverTheOldOne() {
         // The old store would answer for a source the window no longer means.
-        final Projects projects = projects(8);
+        final Projects projects = projects();
         projects.put("alpha", "git@example.org:a/p.git", null);
         failing = true;
         assertThatThrownBy(() -> projects.put("alpha", "git@example.org:a/q.git", null))
@@ -94,28 +111,9 @@ class ProjectsTest {
     }
 
     @Test
-    void oneProjectMoreThanTheBoundIsRefusedBeforeAnythingIsOpened() {
-        // Every project keeps clones on disk and a board in memory.
-        final Projects projects = projects(2);
-        projects.put("alpha", "git@example.org:a/a.git", null);
-        projects.put("beta", "git@example.org:a/b.git", null);
-        assertThatThrownBy(() -> projects.put("gamma", "git@example.org:a/c.git", null))
-                .as("a third project")
-                .isInstanceOfSatisfying(
-                        Refusal.class,
-                        refusal ->
-                                assertThat(refusal.name())
-                                        .as("its name")
-                                        .isEqualTo("TooManyProjects"));
-        assertThat(opened).as("the third never opened").hasSize(2);
-        projects.put("beta", "git@example.org:a/b2.git", null);
-        assertThat(opened).as("replacing a kept project is no new project").hasSize(3);
-    }
-
-    @Test
     void aReplacedStoreIsRetiredBeforeTheNewOneOpens() {
         // The old store would go on fetching its source into the clones the new one reads.
-        final Projects projects = projects(8);
+        final Projects projects = projects();
         projects.put("alpha", "git@example.org:a/p.git", null);
         projects.put("alpha", "git@example.org:a/q.git", null);
         assertThat(retired)
@@ -126,7 +124,7 @@ class ProjectsTest {
     @Test
     void aSlowProjectDoesNotHoldUpAnother() throws Exception {
         // One unreachable remote would leave every other project unreadable for a minute.
-        final Projects projects = projects(8);
+        final Projects projects = projects();
         slow = new CountDownLatch(1);
         final CompletableFuture<Void> waiting =
                 CompletableFuture.runAsync(

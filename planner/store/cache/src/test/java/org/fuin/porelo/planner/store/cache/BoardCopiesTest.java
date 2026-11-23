@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -19,6 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.fory.Fory;
 import org.apache.fory.config.Language;
@@ -261,8 +267,17 @@ class BoardCopiesTest {
         assertThat(copies().read(PROJECT, "c0ffee0")).as("a copy with a byte after it").isEmpty();
     }
 
-    /** Huge lengths as Fory reads them, 2^31 among them. */
-    private static final long[] HUGE = {1L << 31, (1L << 31) - 1, 1L << 30, 1L << 33, 1L << 35};
+    /**
+     * Lengths no small copy can hold, as Fory reads them: some below what Fory reserves by its own
+     * default, so only a bound by the file's size refuses them before they are allocated, and some
+     * of 2^30 and more.
+     */
+    private static final long[] HUGE = {
+        1L << 16, 1L << 20, 1L << 24, 1L << 31, (1L << 31) - 1, 1L << 30, 1L << 33, 1L << 35
+    };
+
+    /** The most bytes reading a small copy may allocate, far below any length in {@link #HUGE}. */
+    private static final long MOST_ALLOCATED = 2L * 1024 * 1024;
 
     /**
      * The bytes with a huge length written over {@code cut} of them at {@code at}, as a tampered
@@ -277,34 +292,50 @@ class BoardCopiesTest {
         return tampered;
     }
 
+    /** The bytes the thread allocated so far, as the JVM counts them. */
+    private static long allocated() {
+        return ((com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean())
+                .getCurrentThreadAllocatedBytes();
+    }
+
     @Test
-    void aLengthOfTwoToTheThirtyFirstAnywhereInACopyIsRefusedNeverAnError() throws IOException {
-        // Harm: a small tampered copy whose one length asks for gigabytes, and a planner that
-        // stops at start with OutOfMemoryError rather than reading the board from its tracker.
+    void aLengthNoCopyCanHoldAnywhereInACopyIsRefusedBeforeItIsAllocated() throws IOException {
+        // Harm: a small tampered copy whose one length asks for megabytes or gigabytes, and a
+        // planner that allocates them, or stops at start with OutOfMemoryError, rather than
+        // reading the board from its tracker.
         copies().write(copy(PROJECT, "c0ffee0"));
         final Path file = directory.resolve(PROJECT.file());
         final byte[] whole = Files.readAllBytes(file);
         final int head = head("fory").length();
-        int refused = 0;
-        int tried = 0;
+        // Fory's first read of the JVM makes what it keeps; a tampered read is measured after.
+        assertThat(copies().read(PROJECT, "c0ffee0")).as("the copy untouched").isPresent();
         for (final long value : HUGE) {
             for (int at = head; at < whole.length; at++) {
                 for (int cut = 0; cut <= 5 && at + cut <= whole.length; cut++) {
-                    Files.write(file, tampered(whole, at, cut, varint(value)));
+                    final byte[] bytes = tampered(whole, at, cut, varint(value));
+                    Files.write(file, bytes);
                     final AtomicReference<Optional<BoardCopy>> read = new AtomicReference<>();
+                    final long before = allocated();
 
                     assertThatCode(() -> read.set(copies().read(PROJECT, "c0ffee0")))
                             .as("the copy with a length of %d at byte %d", value, at)
                             .doesNotThrowAnyException();
-                    tried++;
-                    refused += read.get().isEmpty() ? 1 : 0;
+                    assertThat(allocated() - before)
+                            .as("the bytes allocated for a length of %d at byte %d", value, at)
+                            .isLessThan(MOST_ALLOCATED);
+                    // Where the bytes stand for a number, not a length, they are a copy with
+                    // another number. Such a copy is taken only when it holds no more than its
+                    // bytes do, so no length of it was taken: every tampered length is refused.
+                    if (read.get().isPresent()) {
+                        final ByteArrayOutputStream again = new ByteArrayOutputStream();
+                        new ForyEncoding().encode(read.get().get(), again);
+                        assertThat(again.size())
+                                .as("the copy taken with %d at byte %d, written again", value, at)
+                                .isLessThanOrEqualTo(whole.length + 16);
+                    }
                 }
             }
         }
-        // A few places hold no length but a number, which a copy with another number takes.
-        assertThat(refused)
-                .as("the tampered copies refused of %d", tried)
-                .isGreaterThan(tried * 9 / 10);
         copies().write(copy(PROJECT, "c0ffee0"));
         assertThat(copies().read(PROJECT, "c0ffee0"))
                 .as("a copy read after the tampered ones, in the same JVM")
@@ -312,9 +343,65 @@ class BoardCopiesTest {
     }
 
     @Test
-    void aFileOfAnotherTypeWithAHugeLengthIsRefusedNeverAnError() throws IOException {
+    void aCopyWrittenToASlowDiskHoldsNoOtherCopysReading() throws Exception {
+        // Harm: one project's copy written to a slow or stuck disk holds the shared encoding, so
+        // every other project's start waits on that disk.
+        final CountDownLatch writing = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final OutputStream stuck =
+                new OutputStream() {
+                    @Override
+                    public void write(final int b) throws IOException {
+                        write(new byte[] {(byte) b}, 0, 1);
+                    }
+
+                    @Override
+                    public void write(final byte[] b, final int off, final int len)
+                            throws IOException {
+                        writing.countDown();
+                        try {
+                            release.await(30, TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("interrupted", e);
+                        }
+                    }
+                };
+        final ForyEncoding encoding = new ForyEncoding();
+        final CompletableFuture<Void> slow =
+                CompletableFuture.runAsync(
+                        () -> {
+                            try {
+                                encoding.encode(copy(OTHER, "c0ffee0"), stuck);
+                            } catch (final IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                        });
+        try {
+            assertThat(writing.await(30, TimeUnit.SECONDS))
+                    .as("the other copy's write under way")
+                    .isTrue();
+            final CompletableFuture<Optional<BoardCopy>> read =
+                    CompletableFuture.supplyAsync(
+                            () -> {
+                                copies().write(copy(PROJECT, "c0ffee0"));
+                                return copies().read(PROJECT, "c0ffee0");
+                            });
+
+            assertThat(read.get(10, TimeUnit.SECONDS))
+                    .as("a copy written and read while another one's write waits on its disk")
+                    .contains(copy(PROJECT, "c0ffee0"));
+        } finally {
+            release.countDown();
+        }
+        slow.get(30, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aFileOfAnotherTypeWithALengthItCannotHoldIsRefusedBeforeItIsAllocated()
+            throws IOException {
         // Harm: a file that names an array or a collection of the JDK in place of the copy, its
-        // length set so the planner allocates gigabytes for it.
+        // length set so the planner allocates megabytes or gigabytes for it.
         final Fory other =
                 Fory.builder()
                         .withLanguage(Language.JAVA)
@@ -335,30 +422,117 @@ class BoardCopiesTest {
                         new HashMap<>(Map.of("a", "b")),
                         "a")) {
             final byte[] whole = joined(head, other.serialize(sample));
-            for (int at = head.length; at < whole.length; at++) {
-                for (int cut = 0; cut <= 5 && at + cut <= whole.length; cut++) {
-                    Files.write(file, tampered(whole, at, cut, varint(1L << 31)));
+            // Below and above what Fory reserves by its own default: an array of 2^23 longs
+            // takes 64 MiB, which only a bound by the file's size refuses before it is made.
+            for (final long length : List.of(1L << 20, 1L << 23, 1L << 31)) {
+                for (int at = head.length; at < whole.length; at++) {
+                    for (int cut = 0; cut <= 5 && at + cut <= whole.length; cut++) {
+                        Files.write(file, tampered(whole, at, cut, varint(length)));
+                        final long before = allocated();
 
-                    assertThat(copies().read(PROJECT, "c0ffee0"))
-                            .as("a %s with a length of 2^31 at byte %d", sample.getClass(), at)
-                            .isEmpty();
+                        assertThat(copies().read(PROJECT, "c0ffee0"))
+                                .as(
+                                        "a %s with a length of %d at byte %d",
+                                        sample.getClass().getSimpleName(), length, at)
+                                .isEmpty();
+                        assertThat(allocated() - before)
+                                .as(
+                                        "the bytes allocated for a %s, %d at byte %d",
+                                        sample.getClass().getSimpleName(), length, at)
+                                .isLessThan(MOST_ALLOCATED);
+                    }
                 }
             }
         }
     }
 
     @Test
-    void aCopyLargerThanTheBoundIsRefusedBeforeForyReadsIt() throws Exception {
-        // Harm: a file of tens of megabytes decoded whole before it is found to be no copy.
-        copies().write(copy(PROJECT, "c0ffee0"));
-        final Path file = directory.resolve(PROJECT.file());
-        final byte[] whole = Files.readAllBytes(file);
-        final byte[] over = java.util.Arrays.copyOf(whole, BoardCopies.MOST_BYTES + 1);
-        Files.write(file, over);
+    void aListLongerThanItsFileCouldFillIsRefusedBeforeItIsMade() {
+        // Harm: a few tampered bytes make the planner allocate a list of thousands of entries,
+        // which a file of their size could never fill, before it finds the bytes missing.
+        final Fory other =
+                Fory.builder()
+                        .withLanguage(Language.JAVA)
+                        .requireClassRegistration(true)
+                        .withRefTracking(false)
+                        .withStringCompressed(true)
+                        .build();
+        final byte[] one = other.serialize(new ArrayList<>(List.of("a")));
+        final byte[] two = other.serialize(new ArrayList<>(List.of("a", "a")));
+        // The first byte the two differ in is the list's size.
+        int at = 0;
+        while (one[at] == two[at]) {
+            at++;
+        }
+        // Below what Fory takes unbacked by its own default, far above what the bytes hold.
+        final byte[] bytes = tampered(one, at, 1, varint(8000));
 
-        assertThat(copies().read(PROJECT, "c0ffee0"))
-                .as("a copy one byte over the bound")
-                .isEmpty();
+        assertThatThrownBy(
+                        () ->
+                                new ForyEncoding()
+                                        .decode(new ByteArrayInputStream(bytes), bytes.length))
+                .as("a list of 8000 entries in %d bytes", bytes.length)
+                .isInstanceOf(IllegalArgumentException.class)
+                .rootCause()
+                .hasMessageContaining("maxGraphMemoryBytes");
+    }
+
+    @Test
+    void aCopyOfAProjectOfThousandsOfFullIssuesIsReadBackAsItWas() throws Exception {
+        // Harm: a large project of legal items, its copy written but never read, so every start
+        // reads its whole board from the tracker again.
+        final BoardCopy small = copy(PROJECT, "c0ffee0");
+        final TrackedItem.Issue one =
+                java.util.Objects.requireNonNull(small.items().getFirst().issue(), "issue");
+        final String title = "T".repeat(256);
+        final String body = "x".repeat(65536);
+        final List<TrackedItem> items = new ArrayList<>();
+        for (int number = 1; number <= 1100; number++) {
+            items.add(
+                    new TrackedItem(
+                            "PVTI_" + number,
+                            false,
+                            new TrackedItem.Issue(
+                                    "I_" + number,
+                                    number,
+                                    number,
+                                    title,
+                                    body,
+                                    one.state(),
+                                    null,
+                                    one.updatedAt(),
+                                    one.repository(),
+                                    one.labels(),
+                                    null,
+                                    one.subIssues(),
+                                    one.blockedBy(),
+                                    one.type(),
+                                    one.choices()),
+                            List.of(),
+                            one.updatedAt(),
+                            false));
+        }
+        final BoardCopy large =
+                new BoardCopy(
+                        small.project(),
+                        small.filesCommit(),
+                        small.repositories(),
+                        small.takenAt(),
+                        small.board(),
+                        items,
+                        small.cursor(),
+                        small.held(),
+                        small.waits(),
+                        small.unlisted());
+        copies().write(large);
+        assertThat(Files.size(directory.resolve(PROJECT.file())))
+                .as("the copy's size, above the bound a copy once had")
+                .isGreaterThan(64L * 1024 * 1024);
+
+        // Compared whole, never printed: a failure would render tens of megabytes.
+        final Optional<BoardCopy> read = copies().read(PROJECT, "c0ffee0");
+        assertThat(read.isPresent()).as("a copy read back").isTrue();
+        assertThat(read.get().equals(large)).as("the copy read back as it was").isTrue();
     }
 
     /** A number as Fory writes a length: seven bits a byte, the lowest first. */

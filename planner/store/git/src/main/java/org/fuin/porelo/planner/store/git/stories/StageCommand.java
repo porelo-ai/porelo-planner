@@ -83,9 +83,6 @@ public final class StageCommand {
                     + " [--status-after STATE] [--wait operator|build|agent|vm] | stage median|p80"
                     + " <size>";
 
-    /** The largest session file read; a larger one, or one that keeps growing, is refused. */
-    static final long SESSION_LIMIT = 64L * 1024 * 1024;
-
     /** How long {@code git rev-parse} may run, before the factor {@code machines}. */
     private static final Duration GIT_LIMIT = Duration.ofSeconds(10);
 
@@ -333,21 +330,15 @@ public final class StageCommand {
     }
 
     /**
-     * Refuses a session that is no plain file the reader can bound: a symbolic link, a FIFO that
-     * would hold the read, or one over {@link #SESSION_LIMIT}.
+     * Refuses by its name a session that is no plain readable file: a symbolic link, or a FIFO that
+     * would hold the read. The file it then opens is held to the same once it is open, and read
+     * only up to the size it had then.
      */
-    private static void readable(final Path session) {
-        final long size;
-        try {
-            size = Files.size(session);
-        } catch (IOException ex) {
-            throw new IllegalArgumentException("session is not a readable regular file");
-        }
+    static void readable(final Path session) {
         require(
                 Files.isRegularFile(session, LinkOption.NOFOLLOW_LINKS)
                         && Files.isReadable(session),
-                "session is not a readable regular file");
-        require(size <= SESSION_LIMIT, "session is larger than 64 MB");
+                SessionFile.NOT_REGULAR);
     }
 
     private void begin(
