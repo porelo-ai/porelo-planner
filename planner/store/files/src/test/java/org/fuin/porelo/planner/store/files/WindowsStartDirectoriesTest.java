@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,8 +14,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.fuin.porelo.planner.store.git.PrivateFiles.Kind;
-import org.fuin.porelo.planner.store.git.PrivateFiles.Request;
+import org.fuin.porelo.planner.store.files.PrivateFiles.Kind;
+import org.fuin.porelo.planner.store.files.PrivateFiles.Request;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

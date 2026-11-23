@@ -1,0 +1,2 @@
+title: A project whose project.yml names a tracker of the kind local keeps its stories and issues as Markdown files in a private directory on the person's computer, outside every repository, with the same fields, stage entries and velocity figures as a GitHub item.
+type: added

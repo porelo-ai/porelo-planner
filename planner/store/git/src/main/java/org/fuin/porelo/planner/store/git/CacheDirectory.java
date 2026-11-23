@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
 
 /**
  * The planner's clones of a project, under {@code $XDG_CACHE_HOME/porelo-planner/<project>/} on

@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  * not checked one by one: no other account can make, link or replace an entry in a directory that
  * is the account's alone.
  */
-final class WindowsPrivateFiles implements PrivateFiles {
+public final class WindowsPrivateFiles implements PrivateFiles {
 
     /** A drive's absolute path, never a UNC, device or {@code \\?\} path. */
     private static final Pattern DRIVE_PATH = Pattern.compile("[A-Za-z]:\\\\[^\\x00-\\x1f]*");
@@ -93,7 +93,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
             """;
 
     /** Runs the script with the two lists and answers what it printed. */
-    interface Shell {
+    public interface Shell {
 
         /**
          * Runs it.
@@ -123,7 +123,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
      * @param environment the planner's environment
      * @return the files
      */
-    static WindowsPrivateFiles of(final Map<String, String> environment) {
+    public static WindowsPrivateFiles of(final Map<String, String> environment) {
         return new WindowsPrivateFiles(
                 environment, (protect, paths) -> powershell(environment, protect, paths));
     }
@@ -141,6 +141,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
     @Override
     public List<String> steps(final Kind kind) {
         return switch (kind) {
+            case DATA -> List.of("porelo-planner");
             case RUNTIME -> List.of("porelo-planner");
             case STATE -> List.of("porelo-planner", "state");
             case CACHE -> List.of("porelo-planner", "cache");
@@ -359,6 +360,35 @@ final class WindowsPrivateFiles implements PrivateFiles {
     }
 
     @Override
+    public void requireExistingDirectory(final Path directory) {
+        if (!DRIVE_PATH.matcher(directory.toString()).matches()
+                || !directory.isAbsolute()
+                || !directory.equals(directory.normalize())) {
+            throw new IllegalStateException(directory + " is not an absolute plain drive path");
+        }
+        final List<Path> paths = new ArrayList<>();
+        for (Path path = directory; path != null; path = path.getParent()) {
+            paths.addFirst(path);
+        }
+        final WindowsAccess access =
+                WindowsAccess.parse(
+                        timed("the items directory", () -> shell.run("", lines(paths))),
+                        paths.size());
+        for (int at = 0; at < paths.size(); at++) {
+            access.requireSafeAncestor(paths.get(at), at);
+        }
+        access.requireOwnersAlone(directory, paths.size() - 1, true, true);
+    }
+
+    @Override
+    public void requireItemFile(final Path file) {
+        // The directory is checked as the account's alone, passing its control to every entry
+        // made in it, so a file in it is checked only for being a plain file, never a reparse
+        // point; asking its owner here would start one PowerShell per item at every read.
+        requireOwnFile(file, false);
+    }
+
+    @Override
     public FileAttribute<?>[] ownerOnlyFile() {
         // The directory's one inherited entry is the file's.
         return new FileAttribute<?>[0];
@@ -387,7 +417,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
      * @throws IllegalStateException when it is unset, relative, a UNC or device path, or names
      *     {@code ..}
      */
-    static String drivePath(final Map<String, String> environment, final String name) {
+    public static String drivePath(final Map<String, String> environment, final String name) {
         String value = environment.getOrDefault(name, "");
         // Windows reads a variable's name in any case; a copied environment may not.
         for (final Map.Entry<String, String> variable : environment.entrySet()) {
@@ -420,7 +450,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
      * @param call the call
      * @return what it printed
      */
-    static String timed(final String what, final Supplier<String> call) {
+    public static String timed(final String what, final Supplier<String> call) {
         LOG.info("PowerShell checks {}", what);
         final long start = System.nanoTime();
         try {
@@ -489,7 +519,7 @@ final class WindowsPrivateFiles implements PrivateFiles {
      * @param paths the paths to check
      * @return the call, not yet started
      */
-    static ProcessBuilder powershellCall(
+    public static ProcessBuilder powershellCall(
             final Map<String, String> environment, final String protect, final String paths) {
         final String system =
                 drivePath(environment, "SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0";
@@ -523,7 +553,8 @@ final class WindowsPrivateFiles implements PrivateFiles {
      * @param limit how long it may take
      * @return its standard output
      */
-    static String answer(final ProcessBuilder builder, final String program, final Duration limit) {
+    public static String answer(
+            final ProcessBuilder builder, final String program, final Duration limit) {
         final Process process;
         try {
             process = builder.start();

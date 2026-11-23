@@ -694,7 +694,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 edit.kind() == TextEdit.Kind.STORY
                         ? storyItem(current, id)
                         : issueItem(current, id);
-        final String body = body(id, item.body(), edit);
+        final String body = BodySections.edited(id, item.body(), edit);
         final String title = edit.title();
         final boolean retitled = title != null && !title.equals(item.title());
         final boolean rewritten = !body.equals(item.body());
@@ -705,28 +705,6 @@ public final class FieldsBoardWriter implements BoardWriter {
         plan.text(id, item, retitled ? title : null, rewritten ? body : null);
         plan.write(tokens.token(current.config().forge()));
         return true;
-    }
-
-    /** The body with the edit's parts removed and written, or the refusal in fixed words. */
-    private static String body(final String id, final String held, final TextEdit edit) {
-        try {
-            BodySections body = BodySections.read(held);
-            for (final TextEdit.Part part : TextEdit.Part.values()) {
-                if (edit.removed().contains(part)) {
-                    body = body.without(BodySections.Part.of(part));
-                }
-            }
-            for (final TextEdit.Part part : TextEdit.Part.values()) {
-                final String text = edit.written().get(part);
-                if (text != null) {
-                    body = body.withEdited(BodySections.Part.of(part), text);
-                }
-            }
-            return body.text();
-        } catch (final IllegalArgumentException e) {
-            // BodySections' words, an ambiguous body's repair too, are fixed and never repeat it.
-            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
-        }
     }
 
     @Override

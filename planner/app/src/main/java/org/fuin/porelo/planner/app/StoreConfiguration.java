@@ -44,16 +44,17 @@ import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
-import org.fuin.porelo.planner.store.git.PrivateFiles;
 import org.fuin.porelo.planner.store.github.ConditionalReads;
 import org.fuin.porelo.planner.store.github.GitHubChanges;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
 import org.fuin.porelo.planner.store.github.RepositoryIssues;
+import org.fuin.porelo.planner.store.local.LocalDirectoryStores;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -162,7 +163,8 @@ public class StoreConfiguration {
     private static final URI GITHUB_API = URI.create("https://api.github.com");
 
     /**
-     * Opens a project a GitHub project keeps, with the token Porelo's vault lends for its forge.
+     * Opens a project by its tracker's kind: one a GitHub project keeps, with the token Porelo's
+     * vault lends for its forge, or one whose items lie in a directory on this computer.
      */
     private static TrackedStores tracked(
             final Map<String, String> environment, final Duration readSilence) {
@@ -175,21 +177,30 @@ public class StoreConfiguration {
                         .build();
         final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
         final GitHubClient rest = new GitHubClient(GITHUB_API, http);
-        return new GitHubStoreOpener(
-                        origin -> tokens.token(origin, origin.getHost()),
-                        ProjectQueries.over(graphQl),
-                        ProjectWrites.over(graphQl, rest),
-                        ConditionalReads.over(rest),
-                        RepositoryIssues.Pages.over(rest),
-                        task -> Thread.ofVirtual().name("github-probe").start(task),
-                        Clock.systemUTC(),
-                        // A save waits for a whole read under way rather than being refused as
-                        // busy.
-                        Duration.ofMinutes(2),
-                        readSilence)
-                .keepingCopies(() -> boardCopies(environment))
-                .lookingForChanges(
-                        GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));
+        final TrackedStores github =
+                new GitHubStoreOpener(
+                                origin -> tokens.token(origin, origin.getHost()),
+                                ProjectQueries.over(graphQl),
+                                ProjectWrites.over(graphQl, rest),
+                                ConditionalReads.over(rest),
+                                RepositoryIssues.Pages.over(rest),
+                                task -> Thread.ofVirtual().name("github-probe").start(task),
+                                Clock.systemUTC(),
+                                // A save waits for a whole read under way rather than being refused
+                                // as
+                                // busy.
+                                Duration.ofMinutes(2),
+                                readSilence)
+                        .keepingCopies(() -> boardCopies(environment))
+                        .lookingForChanges(
+                                GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));
+        return TrackedStores.byKind(
+                Map.of(
+                        GitHubStoreOpener.KIND,
+                        github,
+                        LocalDirectoryStores.KIND,
+                        new LocalDirectoryStores(
+                                PrivateFiles.of(environment), environment, Clock.systemUTC())));
     }
 
     /**

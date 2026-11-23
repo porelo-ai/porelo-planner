@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,6 +12,20 @@ import org.junit.jupiter.api.io.TempDir;
 class FileProjectLockTest {
 
     @TempDir Path dir;
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.LINUX)
+    void theLockFileIsTheAccountsAlone() throws Exception {
+        // Harm: the lock file takes the account's umask and is readable or writable by others.
+        try (ProjectLock.Held held = new FileProjectLock(dir).acquire()) {
+            assertThat(
+                            java.nio.file.attribute.PosixFilePermissions.toString(
+                                    java.nio.file.Files.getPosixFilePermissions(
+                                            dir.resolve("lock"))))
+                    .as("owner-only, whatever the umask")
+                    .isEqualTo("rw-------");
+        }
+    }
 
     @Test
     void aSecondLockOnTheSameProjectWaitsInsteadOfFailingAndTheProjectStaysUsable()

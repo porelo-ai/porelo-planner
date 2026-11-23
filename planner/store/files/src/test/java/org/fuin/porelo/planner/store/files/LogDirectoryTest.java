@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

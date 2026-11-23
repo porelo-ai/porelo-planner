@@ -15,7 +15,9 @@
     <modules>
         <module>api</module>
         <module>cache</module>
+        <module>files</module>
         <module>git</module>
         <module>github</module>
+        <module>local</module>
     </modules>
 </project>

@@ -128,6 +128,52 @@ public final class IssueMapping {
             final ProjectConfig config,
             final StoryStates states,
             final Map<String, Snapshot.Waited> waits) {
+        return read(
+                items,
+                pastPage,
+                new Mapping(
+                        config.workflow(),
+                        config.repositories(),
+                        config.forge(),
+                        config.project().owner()),
+                states,
+                waits);
+    }
+
+    /**
+     * Maps local items with the same fields and link warnings, without a forge or external waits.
+     *
+     * @param items the local items
+     * @param workflow the workflow
+     * @param repositories the project's repositories, its own first
+     * @param states derives a story's state
+     * @return the mapped items and faults
+     */
+    public static Mapped local(
+            final Collection<ItemView> items,
+            final Workflow workflow,
+            final List<String> repositories,
+            final StoryStates states) {
+        return read(
+                items, Set.of(), new Mapping(workflow, repositories, null, null), states, Map.of());
+    }
+
+    private record Mapping(
+            Workflow workflow,
+            List<String> repositories,
+            @Nullable URI forge,
+            @Nullable String owner) {
+        String own() {
+            return repositories.getFirst();
+        }
+    }
+
+    private static Mapped read(
+            final Collection<ItemView> items,
+            final Set<String> pastPage,
+            final Mapping config,
+            final StoryStates states,
+            final Map<String, Snapshot.Waited> waits) {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
         // Only an item that cannot be named, or one of a repository the project does not plan,
@@ -304,7 +350,7 @@ public final class IssueMapping {
      * page.
      */
     private static final class Context {
-        private final ProjectConfig config;
+        private final Mapping config;
         private final Set<String> pastPage;
         private final Map<String, Snapshot.Waited> waits;
         private final Map<String, ItemView> byIssueId = new HashMap<>();
@@ -312,7 +358,7 @@ public final class IssueMapping {
         private final Set<String> twice = new HashSet<>();
 
         private Context(
-                final ProjectConfig config,
+                final Mapping config,
                 final Set<String> pastPage,
                 final Map<String, Snapshot.Waited> waits) {
             this.config = config;
@@ -445,7 +491,12 @@ public final class IssueMapping {
             final ItemView blocking = context.byIssueId.get(blocker);
             if (blocking == null) {
                 // No item of the project: the issue stays on the board and waits on it.
-                waitsOn.add(wait(item, blocker, context.waits, context.config.forge()));
+                final URI forge = context.config.forge();
+                if (forge == null) {
+                    warnings = withAdded(warnings, Warning.blockerOutsideProject());
+                } else {
+                    waitsOn.add(wait(item, blocker, context.waits, forge));
+                }
             } else if (context.storyOf(blocking)) {
                 warnings = withAdded(warnings, Warning.blockedByStory());
             } else if (blocking.archived()) {
@@ -457,7 +508,7 @@ public final class IssueMapping {
                     // wait, as a closed blocker outside the project is.
                     waitsOn.add(
                             new Wait(
-                                    context.config.project().owner()
+                                    context.config.owner()
                                             + "/"
                                             + blocking.repository()
                                             + "#"
@@ -607,7 +658,7 @@ public final class IssueMapping {
      * @param given the field's value as GitHub holds it, not empty
      * @return the value, or null when it is none in range
      */
-    static @Nullable Double bounded(final String field, final String given) {
+    public static @Nullable Double bounded(final String field, final String given) {
         try {
             final double value = Double.parseDouble(given);
             return inBounds(field, value) ? value : null;
@@ -624,7 +675,7 @@ public final class IssueMapping {
      * @param value the value
      * @return true when the board reads it
      */
-    static boolean inBounds(final String field, final double value) {
+    public static boolean inBounds(final String field, final double value) {
         return switch (field) {
             case FieldNames.ESTIMATE -> value >= 1 && value <= Fields.MOST_ESTIMATE;
             case FieldNames.MINUTES, FieldNames.VM_MINUTES -> value >= 0 && value <= MOST_TAKEN;

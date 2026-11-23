@@ -19,6 +19,8 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
+import org.fuin.porelo.planner.store.files.FileProjectLock;
+import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.jspecify.annotations.Nullable;
 
 /** Opens a project's store from its own repository, over the project's cache directory. */
@@ -126,6 +128,7 @@ public final class GitProjects {
         final TrackedProject trackedProject = opened.tracked();
         if (trackedProject != null) {
             return tracked.open(
+                    project,
                     trackedProject,
                     new ProjectFile.Again(
                             remote,

@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import java.nio.file.Path;
 

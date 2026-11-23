@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-item-1.json",
+  "title": "local-item-1",
+  "description": "The JSON head of one item file <repository>-<number>.md in a project's local items directory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "kind", "title", "repository", "number"],
+  "properties": {
+    "format": {"const": "local-item-1"},
+    "kind": {"enum": ["story", "issue"]},
+    "title": {"type": "string"},
+    "repository": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$"},
+    "number": {"type": "integer", "minimum": 1, "maximum": 999999999},
+    "parent": {"type": ["string", "null"], "description": "The story or issue it stands under, <repository>#<number>."},
+    "issues": {"type": "array", "items": {"type": "string"}, "description": "A story's issues, in their order."},
+    "blockedBy": {"type": "array", "items": {"type": "string"}, "description": "The issues it waits on."},
+    "Status": {"type": "string", "description": "A state of the project's workflow; none lets a story follow its issues."},
+    "Priority": {"enum": ["Highest", "High", "Medium", "Low", "Lowest"]},
+    "Size": {"enum": ["XS", "S", "M", "L", "XL"]},
+    "Risk": {"type": "string"},
+    "Worker": {"enum": ["Agent", "Manual"]},
+    "Rank": {"type": "number"},
+    "Estimate": {"type": "number", "description": "Minutes."},
+    "Minutes": {"type": "number"},
+    "VM minutes": {"type": "number"},
+    "Tokens": {"type": "number"},
+    "Stages": {"type": "number"}
+  }
+}

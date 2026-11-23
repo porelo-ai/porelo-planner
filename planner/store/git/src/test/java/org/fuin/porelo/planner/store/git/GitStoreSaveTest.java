@@ -25,6 +25,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.files.FileProjectLock;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueSource;
 import org.fuin.porelo.planner.store.git.stories.IssuesIndex;

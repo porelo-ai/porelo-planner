@@ -171,11 +171,15 @@ public record Project(
      * The tracker a project names under {@code tracker}, which keeps its stories and issues instead
      * of files.
      *
-     * @param kind the tracker's kind, such as {@code github}
-     * @param owner the owner the tracker's project belongs to
-     * @param project the tracker's project within the owner
+     * @param kind the tracker's kind, such as {@code github}, or {@code local} for a directory on
+     *     the person's computer
+     * @param owner the owner the tracker's project belongs to; empty for a local tracker
+     * @param project the tracker's project within the owner; empty for a local tracker
      */
     public record Tracker(String kind, String owner, String project) {
+
+        /** The kind of a tracker that is a directory on the person's computer. */
+        public static final String LOCAL = "local";
 
         private static final java.util.regex.Pattern KIND =
                 java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,19}");
@@ -189,7 +193,12 @@ public record Project(
                 throw new IllegalArgumentException(
                         "project.yml tracker: kind must be a lower-case name");
             }
-            if (!REFERENCE.matcher(owner + "/" + project).matches()) {
+            if (LOCAL.equals(kind)) {
+                if (!owner.isEmpty() || !project.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "project.yml tracker: a local tracker names its kind alone");
+                }
+            } else if (!REFERENCE.matcher(owner + "/" + project).matches()) {
                 throw new IllegalArgumentException(
                         "project.yml tracker: project must be <owner>/<number>, the number from 1");
             }
@@ -198,7 +207,7 @@ public record Project(
 
     /**
      * Reads the tracker a {@code project.yml} names: a mapping of exactly {@code kind} and {@code
-     * project}, the latter {@code <owner>/<number>}.
+     * project}, the latter {@code <owner>/<number>}, or of {@code kind: local} alone.
      *
      * @param text the file's text
      * @return the tracker, or empty when the file names none
@@ -208,6 +217,14 @@ public record Project(
         final JsonNode tracker = yaml(text, FILE).get("tracker");
         if (tracker == null) {
             return java.util.Optional.empty();
+        }
+        if (tracker.isObject() && Tracker.LOCAL.equals(tracker.path("kind").asText())) {
+            // A local tracker names no path, so no machine's place enters the signed file.
+            if (tracker.size() != 1) {
+                throw new IllegalArgumentException(
+                        "project.yml tracker: a local tracker names its kind alone");
+            }
+            return java.util.Optional.of(new Tracker(Tracker.LOCAL, "", ""));
         }
         if (!tracker.isObject()
                 || tracker.size() != 2

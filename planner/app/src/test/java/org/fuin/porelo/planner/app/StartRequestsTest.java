@@ -8,9 +8,9 @@ import java.nio.file.attribute.FileAttribute;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.fuin.porelo.planner.store.git.PrivateFiles;
-import org.fuin.porelo.planner.store.git.PrivateFiles.Kind;
-import org.fuin.porelo.planner.store.git.PrivateFiles.Request;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
+import org.fuin.porelo.planner.store.files.PrivateFiles.Kind;
+import org.fuin.porelo.planner.store.files.PrivateFiles.Request;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.logging.LoggingSystem;
 
@@ -80,6 +80,7 @@ class StartRequestsTest {
         public List<String> steps(final Kind kind) {
             return switch (kind) {
                 case RUNTIME -> List.of("porelo-planner");
+                case DATA -> List.of("porelo-planner");
                 case STATE -> List.of("porelo-planner", "state");
                 case CACHE -> List.of("porelo-planner", "cache");
                 case LOGS -> List.of("porelo", "logs");

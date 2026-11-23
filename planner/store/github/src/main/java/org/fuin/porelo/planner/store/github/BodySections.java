@@ -179,6 +179,38 @@ public final class BodySections {
     }
 
     /**
+     * Applies a person's edit to a body: the parts it removes, then the parts it writes; every byte
+     * outside them stays.
+     *
+     * @param id the item's id, named in a refusal
+     * @param held the body as the store holds it
+     * @param edit the parts to remove and write
+     * @return the new body
+     * @throws TextEdit.Refused in fixed words, which never repeat the body, when it cannot be
+     *     written as asked
+     */
+    public static String edited(final String id, final String held, final TextEdit edit) {
+        try {
+            BodySections body = read(held);
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                if (edit.removed().contains(part)) {
+                    body = body.without(Part.of(part));
+                }
+            }
+            for (final TextEdit.Part part : TextEdit.Part.values()) {
+                final String text = edit.written().get(part);
+                if (text != null) {
+                    body = body.withEdited(Part.of(part), text);
+                }
+            }
+            return body.text();
+        } catch (final IllegalArgumentException e) {
+            // The words here, an ambiguous body's repair too, are fixed and never repeat it.
+            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
+        }
+    }
+
+    /**
      * Answers the body as it now stands.
      *
      * @return the body's text

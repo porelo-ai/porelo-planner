@@ -29,7 +29,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.WorkRule;
-import org.fuin.porelo.planner.store.git.PrivateFiles;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

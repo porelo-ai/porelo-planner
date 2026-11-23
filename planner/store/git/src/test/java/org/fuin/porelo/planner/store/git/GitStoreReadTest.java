@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.files.FileProjectLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

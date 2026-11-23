@@ -1,14 +1,18 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.file.FileSystems;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -25,6 +29,18 @@ public final class FileProjectLock implements ProjectLock {
             new ConcurrentHashMap<>();
 
     private static final Duration POLL = Duration.ofMillis(50);
+
+    /**
+     * A new lock file's mode where the file system has modes, so it is the account's alone whatever
+     * the umask; elsewhere it inherits the private directory's access list.
+     */
+    private static final FileAttribute<?>[] OWNER_ONLY =
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+                    ? new FileAttribute<?>[] {
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rw-------"))
+                    }
+                    : new FileAttribute<?>[0];
 
     private final ReentrantLock inProcess;
 
@@ -50,9 +66,11 @@ public final class FileProjectLock implements ProjectLock {
             channel =
                     FileChannel.open(
                             file,
-                            StandardOpenOption.CREATE,
-                            StandardOpenOption.WRITE,
-                            LinkOption.NOFOLLOW_LINKS);
+                            Set.of(
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.WRITE,
+                                    LinkOption.NOFOLLOW_LINKS),
+                            OWNER_ONLY);
             final FileLock lock = channel.lock();
             final FileChannel open = channel;
             return () -> {
@@ -91,9 +109,11 @@ public final class FileProjectLock implements ProjectLock {
             channel =
                     FileChannel.open(
                             file,
-                            StandardOpenOption.CREATE,
-                            StandardOpenOption.WRITE,
-                            LinkOption.NOFOLLOW_LINKS);
+                            Set.of(
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.WRITE,
+                                    LinkOption.NOFOLLOW_LINKS),
+                            OWNER_ONLY);
             // A file lock has no wait with a bound, so it is tried until the deadline.
             FileLock lock = channel.tryLock();
             while (lock == null && System.nanoTime() < deadline) {

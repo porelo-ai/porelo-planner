@@ -11,6 +11,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.files.PosixPrivateFiles;
+import org.fuin.porelo.planner.store.files.WindowsAccess;
+import org.fuin.porelo.planner.store.files.WindowsPrivateFiles;
 
 /**
  * Checks the program {@code PORELO_EXECUTABLE} names before Git may run it with a login: an

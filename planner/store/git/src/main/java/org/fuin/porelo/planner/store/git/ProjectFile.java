@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.Project;
 import org.jspecify.annotations.Nullable;
 
@@ -145,30 +146,34 @@ public final class ProjectFile {
             final List<Repository> repositories,
             final Repository central,
             final Project.Tracker tracker) {
-        final URI home = home(name, repositories.get(0).url());
-        // The file's own central names where the stories live for every other reader of it.
-        if (!home.equals(home(name, central.url()))) {
-            throw new StoreException.Unreadable(
-                    name,
-                    FILE
-                            + ": the own repository's central stands elsewhere than the own"
-                            + " repository, which a tracker needs");
-        }
-        for (final Repository repository : repositories) {
-            if (!home.equals(home(name, repository.url()))) {
+        URI home = null;
+        if (!Project.Tracker.LOCAL.equals(tracker.kind())) {
+            // A local tracker asks no forge, so its repositories may stand anywhere.
+            home = home(name, repositories.get(0).url());
+            // The file's own central names where the stories live for every other reader of it.
+            if (!home.equals(home(name, central.url()))) {
                 throw new StoreException.Unreadable(
                         name,
                         FILE
-                                + ": repository "
-                                + repository.name()
-                                + " stands elsewhere than the own repository, which a tracker"
-                                + " needs");
+                                + ": the own repository's central stands elsewhere than the own"
+                                + " repository, which a tracker needs");
             }
-        }
-        final String owner = home.getPath().substring(1);
-        if (!tracker.owner().equalsIgnoreCase(owner)) {
-            throw new StoreException.Unreadable(
-                    name, FILE + ": the tracker's project belongs to another owner");
+            for (final Repository repository : repositories) {
+                if (!home.equals(home(name, repository.url()))) {
+                    throw new StoreException.Unreadable(
+                            name,
+                            FILE
+                                    + ": repository "
+                                    + repository.name()
+                                    + " stands elsewhere than the own repository, which a tracker"
+                                    + " needs");
+                }
+            }
+            final String owner = home.getPath().substring(1);
+            if (!tracker.owner().equalsIgnoreCase(owner)) {
+                throw new StoreException.Unreadable(
+                        name, FILE + ": the tracker's project belongs to another owner");
+            }
         }
         final org.fuin.porelo.planner.store.git.stories.Workflow workflow;
         final String work;
@@ -182,7 +187,7 @@ public final class ProjectFile {
             throw GitStore.refusal(name, e);
         }
         return new TrackedProject(
-                URI.create("https://" + home.getHost()),
+                home == null ? null : URI.create("https://" + home.getHost()),
                 tracker.owner(),
                 tracker.kind(),
                 tracker.project(),

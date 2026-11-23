@@ -21,6 +21,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;

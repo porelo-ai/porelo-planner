@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -19,7 +19,7 @@ import java.util.Set;
  * {@code rw-------}, owned by the account, under directories only root or the account can change
  * or, when others may write them, sticky ones.
  */
-final class PosixPrivateFiles implements PrivateFiles {
+public final class PosixPrivateFiles implements PrivateFiles {
 
     private static final Set<PosixFilePermission> OWNER_ONLY_DIRECTORY =
             PosixFilePermissions.fromString("rwx------");
@@ -31,7 +31,7 @@ final class PosixPrivateFiles implements PrivateFiles {
     static final int GROUP_OR_OTHERS_WRITE = 0022;
 
     /** Others may write: refused above the clones, whose directories a group may share. */
-    static final int OTHERS_WRITE = 0002;
+    public static final int OTHERS_WRITE = 0002;
 
     private static final int STICKY = 01000;
 
@@ -47,6 +47,7 @@ final class PosixPrivateFiles implements PrivateFiles {
         return switch (kind) {
             case RUNTIME -> runtime(environment);
             case STATE, LOGS -> under(environment, "XDG_STATE_HOME", ".local/state");
+            case DATA -> under(environment, "XDG_DATA_HOME", ".local/share");
             case CACHE -> under(environment, "XDG_CACHE_HOME", ".cache");
         };
     }
@@ -86,6 +87,50 @@ final class PosixPrivateFiles implements PrivateFiles {
             return directory;
         } catch (final IOException e) {
             throw new UncheckedIOException(base + " cannot be used: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void requireExistingDirectory(final Path directory) {
+        try {
+            if (!directory.isAbsolute() || !directory.equals(directory.normalize())) {
+                throw new IllegalStateException(directory + " is not an absolute plain path");
+            }
+            final int uid = ownUid();
+            requireOwnersAlone(directory, uid);
+            requireNoWayRound(directory, uid, GROUP_OR_OTHERS_WRITE);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(directory + " cannot be checked: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Refuses an item file that is no regular file, a link, another account's, or one with a second
+     * name; its mode is not asked, since its directory is the account's alone and a file a person
+     * writes by hand takes the mode of their editor.
+     */
+    @Override
+    public void requireItemFile(final Path file) {
+        try {
+            final BasicFileAttributes attributes =
+                    Files.readAttributes(
+                            file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile()) {
+                throw new IllegalStateException(file + " is not a file, or is a link");
+            }
+            final int owner =
+                    (Integer) Files.getAttribute(file, "unix:uid", LinkOption.NOFOLLOW_LINKS);
+            if (owner != ownUid()) {
+                throw new IllegalStateException(file + " belongs to another account");
+            }
+            final int names =
+                    ((Number) Files.getAttribute(file, "unix:nlink", LinkOption.NOFOLLOW_LINKS))
+                            .intValue();
+            if (names != 1) {
+                throw new IllegalStateException(file + " has a second name");
+            }
+        } catch (final IOException e) {
+            throw new UncheckedIOException(file + " cannot be checked: " + e.getMessage(), e);
         }
     }
 
@@ -132,7 +177,7 @@ final class PosixPrivateFiles implements PrivateFiles {
      * @return the uid the process runs as
      * @throws IOException when it cannot be read
      */
-    static int ownUid() throws IOException {
+    public static int ownUid() throws IOException {
         return (Integer) Files.getAttribute(Path.of("/proc/self"), "unix:uid");
     }
 

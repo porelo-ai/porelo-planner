@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 /** Lets one refresh or save of a project touch its clones at a time, across processes too. */
 @FunctionalInterface

@@ -47,6 +47,7 @@ import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.git.stories.StoryHead;
 import org.jspecify.annotations.Nullable;

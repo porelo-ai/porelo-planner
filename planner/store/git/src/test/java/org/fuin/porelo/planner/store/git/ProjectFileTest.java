@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -248,6 +249,27 @@ class ProjectFileTest {
         assertThat(ProjectFile.read(with(PROJECT), OWN, null, 10).tracked())
                 .as("a project without a tracker stays the Git store's")
                 .isNull();
+    }
+
+    @Test
+    void aLocalTrackerIsHandedOnWithoutForgeOrOwner() throws Exception {
+        // Harm: a project kept in a local directory cannot open, or is asked of a forge.
+        final String text =
+                TRACKED.replace("kind: github\n    project: porelo-ai/7", "kind: local")
+                        .replace(
+                                "https://github.com/porelo-ai/porelo-frontend",
+                                "https://forge.example.org/team/porelo-frontend");
+        final org.fuin.porelo.planner.store.TrackedProject project =
+                ProjectFile.read(tracked(text), HTTPS_OWN, "main", 10).tracked();
+
+        assertThat(project).as("a tracker named").isNotNull();
+        assertThat(project.forge()).as("no forge is asked").isNull();
+        assertThat(List.of(project.kind(), project.owner(), project.project()))
+                .as("the kind alone")
+                .containsExactly("local", "", "");
+        assertThat(project.repositories())
+                .as("repositories on any host")
+                .containsExactly("porelo-project", "porelo-frontend");
     }
 
     @Test

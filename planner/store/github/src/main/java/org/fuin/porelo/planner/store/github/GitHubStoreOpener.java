@@ -389,7 +389,7 @@ public final class GitHubStoreOpener implements TrackedStores {
             throw new StoreException.Unreadable(own, "project.yml names no GitHub project");
         }
         return new ProjectConfig(
-                project.forge(),
+                Objects.requireNonNull(project.forge()),
                 ref,
                 project.filesCommit(),
                 project.workflow(),

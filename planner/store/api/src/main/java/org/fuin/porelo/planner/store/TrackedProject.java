@@ -19,7 +19,7 @@ import java.util.List;
  * @param storyStates derives a story's state from its issues' under the workflow
  */
 public record TrackedProject(
-        URI forge,
+        @org.jspecify.annotations.Nullable URI forge,
         String owner,
         String kind,
         String project,
@@ -45,7 +45,13 @@ public record TrackedProject(
 
     /** Checks the origin and copies the list. */
     public TrackedProject {
-        TokenSource.checkedOrigin(forge);
+        if (kind.equals("local")) {
+            if (forge != null || !owner.isEmpty() || !project.isEmpty()) {
+                throw new IllegalArgumentException("A local tracker names no forge or project");
+            }
+        } else {
+            TokenSource.checkedOrigin(java.util.Objects.requireNonNull(forge));
+        }
         repositories = List.copyOf(repositories);
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project holds its own repository");

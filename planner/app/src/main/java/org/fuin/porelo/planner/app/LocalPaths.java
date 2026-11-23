@@ -12,7 +12,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Writes the local paths in a refusal's words relative to the base they were resolved from - the
- * home directory as {@code ~}, the state directory as {@code $XDG_STATE_HOME} or {@code
+ * home directory as {@code ~}, the state directory as {@code $XDG_STATE_HOME}, the data directory
+ * that holds local projects' items as {@code $XDG_DATA_HOME}, either on Windows as {@code
  * %LOCALAPPDATA%} - so no absolute path, and with it no account name, reaches an answer.
  */
 final class LocalPaths {
@@ -57,7 +58,13 @@ final class LocalPaths {
         final Map<String, String> named =
                 windows
                         ? Map.of("LOCALAPPDATA", "%LOCALAPPDATA%", "USERPROFILE", "~")
-                        : Map.of("XDG_STATE_HOME", "$XDG_STATE_HOME", "HOME", "~");
+                        : Map.of(
+                                "XDG_STATE_HOME",
+                                "$XDG_STATE_HOME",
+                                "XDG_DATA_HOME",
+                                "$XDG_DATA_HOME",
+                                "HOME",
+                                "~");
         final List<Map.Entry<String, String>> found = new ArrayList<>();
         named.forEach(
                 (variable, name) -> {

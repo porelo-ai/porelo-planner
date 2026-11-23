@@ -15,6 +15,25 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ProjectTest {
+    // Harm: A local project cannot open when tracker parsing demands a forge project.
+    @Test
+    void aLocalTrackerNamesNoForgeProject() {
+        assertThat(Project.tracker(PROJECT + "tracker: {kind: local}\n"))
+                .as("a directory tracker needs neither owner nor project")
+                .hasValue(new Project.Tracker("local", "", ""));
+    }
+
+    // Harm: Machine paths could enter signed project configuration as tracker settings.
+    @Test
+    void aLocalTrackerRefusesAdditionalSettings() {
+        assertThatThrownBy(
+                        () ->
+                                Project.tracker(
+                                        PROJECT + "tracker: {kind: local, project: acme/1}\n"))
+                .as("local trackers take only their kind")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @TempDir Path work;
 
     private static final String PROJECT =

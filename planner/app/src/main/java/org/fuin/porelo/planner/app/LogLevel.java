@@ -15,7 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.fuin.porelo.planner.store.git.PrivateFiles;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

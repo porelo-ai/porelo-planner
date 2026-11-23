@@ -12,7 +12,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-import org.fuin.porelo.planner.store.git.PrivateFiles;
+import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

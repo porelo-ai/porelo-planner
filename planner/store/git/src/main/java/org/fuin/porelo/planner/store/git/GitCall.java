@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import org.fuin.porelo.planner.store.files.WindowsPrivateFiles;
 
 /**
  * The command line and environment of one {@code git} call that can never prompt, run a hook, a

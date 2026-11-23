@@ -1,4 +1,4 @@
-package org.fuin.porelo.planner.store.git;
+package org.fuin.porelo.planner.store.files;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -117,6 +117,25 @@ public interface PrivateFiles {
      */
     void requireOwnFile(Path file, boolean alone);
 
+    /**
+     * Checks an existing absolute directory and its ancestors without creating anything.
+     *
+     * @param directory the account's private directory, reached through no link
+     * @throws IllegalStateException when it is missing, shared or reached through a link
+     */
+    default void requireExistingDirectory(final Path directory) {
+        throw new IllegalStateException("Existing directory checks are not available");
+    }
+
+    /**
+     * Checks an item placed by a person, including its owner and private access rights.
+     *
+     * @param file the regular file in a checked private directory
+     */
+    default void requireItemFile(final Path file) {
+        requireOwnFile(file, true);
+    }
+
     /** The planner's kinds of private directories. */
     enum Kind {
         /** The address file and its lock, which the window reads. */
@@ -125,6 +144,8 @@ public interface PrivateFiles {
         STATE,
         /** The clones. */
         CACHE,
+        /** The local planning items. */
+        DATA,
         /** The log, in the directory the window keeps its own log in. */
         LOGS
     }

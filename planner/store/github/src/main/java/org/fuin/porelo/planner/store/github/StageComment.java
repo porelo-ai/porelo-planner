@@ -229,13 +229,21 @@ public final class StageComment {
     /**
      * Whether a stage adds to an issue's number fields: an agent's, of a measured kind; every stage
      * comment is closed.
+     *
+     * @param entry the stage
+     * @return true when its figures are added
      */
-    static boolean summed(final StageEntry entry) {
+    public static boolean summed(final StageEntry entry) {
         return AGENT.equals(entry.actor()) && StageEntry.MEASURED.contains(entry.stage());
     }
 
-    /** The new tokens a stage spent: input, output and cache write. */
-    static long newTokens(final StageEntry entry) {
+    /**
+     * The new tokens a stage spent: input, output and cache write.
+     *
+     * @param entry the stage
+     * @return their sum
+     */
+    public static long newTokens(final StageEntry entry) {
         long sum = 0;
         for (final Map.Entry<String, Long> kind : entry.tokens().entrySet()) {
             if (NEW_TOKENS.contains(kind.getKey())) {

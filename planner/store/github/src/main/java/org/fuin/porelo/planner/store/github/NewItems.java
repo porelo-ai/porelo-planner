@@ -11,7 +11,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
@@ -19,7 +18,6 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
-import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 
@@ -62,8 +60,6 @@ final class NewItems {
     static final String ADDED_PRIORITY = "Medium";
 
     /** Anything that would break a title's or a line's one line. */
-    private static final Pattern BREAKS = Pattern.compile("[\\p{Cntrl}\\u0085\\u2028\\u2029]");
-
     private final ProjectWrites github;
 
     private final AccessRefusals refusals;
@@ -187,8 +183,7 @@ final class NewItems {
             throw new StoreException.NotSavable(
                     "", repository + " is no repository of the project");
         }
-        line(issue.title(), "the title of a new issue");
-        final String body = issueBody(issue);
+        final String body = NewItemTexts.issueBody(issue);
         final List<Value> values = new ArrayList<>();
         final String asked = issue.state();
         final String state = asked == null ? current.config().workflow().states().get(0) : asked;
@@ -203,7 +198,7 @@ final class NewItems {
             values.add(option(FieldNames.SIZE, size));
         }
         values.add(worker(issue.worker()));
-        values.add(option(FieldNames.PRIORITY, priority(priority)));
+        values.add(option(FieldNames.PRIORITY, NewItemTexts.priority(priority)));
         values.add(rank(false, priority));
         return planned(repository, issue.title().strip(), body, false, values);
     }
@@ -283,17 +278,7 @@ final class NewItems {
      * @throws StoreException.NotSavable when the project cannot hold it
      */
     Planned story(final NewIdea idea, final String marker) {
-        line(idea.title(), "the title of a new story");
-        line(idea.gain(), "what a user gains");
-        line(idea.test(), "the test of a new story");
-        priority(idea.priority());
-        final String body =
-                "**What a user gains.** "
-                        + idea.gain().strip()
-                        + "\n\n**The test.** "
-                        + idea.test().strip()
-                        + "\n"
-                        + (marker.isEmpty() ? "" : "\n" + marker + "\n");
+        final String body = NewItemTexts.storyBody(idea, marker);
         final List<Value> values = new ArrayList<>();
         values.add(option(FieldNames.PRIORITY, idea.priority()));
         values.add(rank(true, idea.priority()));
@@ -1043,68 +1028,6 @@ final class NewItems {
         return new Planned(repository, title, body, story, values);
     }
 
-    /**
-     * A new issue's body: what must be true as its lead's paragraph followed by the task that
-     * proposed it, or, for a text the lead cannot hold, the task's paragraph followed by a section
-     * of its own; refused in fixed words when even a section cannot hold the text.
-     */
-    private static String issueBody(final NewIssue issue) {
-        final String what;
-        try {
-            what = BodySections.read("").withWhatMustBeTrue(issue.mustBeTrue()).text();
-        } catch (final BodySections.TooLong e) {
-            throw tooLong();
-        } catch (final IllegalArgumentException e) {
-            throw new StoreException.NotSavable(
-                    "",
-                    "what must be true holds a heading of the first or second level or leaves a"
-                            + " code block open");
-        }
-        final String task = issue.task();
-        final String proposed = "Proposed by Porelo task `" + task + "`.";
-        final String body;
-        if (task == null) {
-            body = what;
-        } else if (BodySections.read(what)
-                .section(BodySections.WHAT_MUST_BE_TRUE_SECTION)
-                .isPresent()) {
-            body = proposed + "\n\n" + what;
-        } else {
-            body = what.strip() + "\n\n" + proposed + "\n";
-        }
-        if (body.length() > BodySections.LONGEST) {
-            throw tooLong();
-        }
-        if (BodySections.read(body).ambiguity().isPresent()) {
-            throw new StoreException.NotSavable(
-                    "", "what must be true would leave the new issue's sections unclear");
-        }
-        return body;
-    }
-
-    private static StoreException.NotSavable tooLong() {
-        return new StoreException.NotSavable(
-                "",
-                "what must be true and the new issue's other text are longer than the "
-                        + BodySections.LONGEST
-                        + " characters a GitHub issue's body takes",
-                "mustBeTrue");
-    }
-
-    private static String priority(final String priority) {
-        if (!Story.PRIORITIES.contains(priority)) {
-            throw new StoreException.NotSavable("", "a priority is Highest to Lowest");
-        }
-        return priority;
-    }
-
-    private static void line(final String text, final String what) {
-        if (text.isBlank() || BREAKS.matcher(text).find()) {
-            throw new StoreException.NotSavable(
-                    "", what + " is blank or holds a line break or a control character");
-        }
-    }
-
     private Value option(final String field, final String name) {
         final String fieldId = fieldId(field);
         final String optionId =
@@ -1143,34 +1066,14 @@ final class NewItems {
         final String key = story + "\n" + priority;
         final int next =
                 Math.min(
-                        ranks.computeIfAbsent(key, k -> highest(story, priority)) + 1,
+                        ranks.computeIfAbsent(
+                                        key,
+                                        k ->
+                                                NewItemTexts.highestRank(
+                                                        current.items().values(), story, priority))
+                                + 1,
                         IssueMapping.MOST_RANK);
         ranks.put(key, next);
         return next;
-    }
-
-    /** The highest rank an item of a kind and priority holds, 0 when none holds one. */
-    private int highest(final boolean story, final String priority) {
-        int most = 0;
-        for (final ItemView item : current.items().values()) {
-            if (IssueMapping.isStory(item) != story) {
-                continue;
-            }
-            final String given = item.fields().getOrDefault(FieldNames.PRIORITY, "");
-            final String its = Story.PRIORITIES.contains(given) ? given : "Medium";
-            if (!its.equals(priority)) {
-                continue;
-            }
-            try {
-                final double rank =
-                        Double.parseDouble(item.fields().getOrDefault(FieldNames.RANK, ""));
-                if (Double.isFinite(rank) && rank >= 1 && rank <= IssueMapping.MOST_RANK) {
-                    most = Math.max(most, (int) rank);
-                }
-            } catch (final NumberFormatException e) {
-                // A rank no number sorts last and gives none to follow.
-            }
-        }
-        return most;
     }
 }

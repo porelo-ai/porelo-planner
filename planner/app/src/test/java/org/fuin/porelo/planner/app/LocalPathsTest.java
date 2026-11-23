@@ -34,6 +34,18 @@ class LocalPathsTest {
     }
 
     @Test
+    void aPathUnderTheDataDirectoryIsNamedFromItsVariable() {
+        // Harm: a local project's items directory, refused, names the account in the answer.
+        final String shown =
+                LocalPaths.of(Map.of("HOME", "/home/alice", "XDG_DATA_HOME", "/data/alice"), false)
+                        .relative("/data/alice/porelo-planner/items/p has mode rwxr-x---");
+        assertThat(shown)
+                .as("the data directory names the path")
+                .contains("$XDG_DATA_HOME/porelo-planner/items/p")
+                .doesNotContain("alice");
+    }
+
+    @Test
     void aSiblingWhoseNameStartsLikeTheHomeIsNotTakenForIt() {
         // Prevents another account's path from passing as the home's while keeping its name.
         final String shown =
