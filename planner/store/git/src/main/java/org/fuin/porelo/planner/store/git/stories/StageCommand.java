@@ -334,7 +334,7 @@ public final class StageCommand {
             // A begin that broke off between its private state and its record left only the state.
             Files.delete(state);
         }
-        final CommitRules.Issue metadata = issue(issue);
+        final Issue metadata = issue(issue);
         require(
                 metadata.size() != null || Set.of("analyze", "estimate").contains(stage),
                 "this stage needs an issue size");
@@ -532,7 +532,7 @@ public final class StageCommand {
         return StageRecords.statistic(seedText, files, size, p80, workflow());
     }
 
-    private CommitRules.Issue issue(final String issue) throws IOException {
+    private Issue issue(final String issue) throws IOException {
         final Path directory = root.resolve("issues");
         safe(directory);
         final List<Path> matches;
@@ -548,7 +548,54 @@ public final class StageCommand {
         require(matches.size() == 1, "expected exactly one issue file");
         final Path file = matches.getFirst();
         safe(file);
-        return CommitRules.issue(Files.readString(file), workflow());
+        return issue(Files.readString(file), workflow());
+    }
+
+    /** An issue's state and its size, none where it has none. */
+    record Issue(@Nullable String size, String status) {}
+
+    /**
+     * Reads an issue's state and size: from its head where it has one, else from its {@code
+     * **Status:**} and {@code **Size:**} lines.
+     *
+     * @throws IllegalArgumentException when neither can be read, or a measured or closed state has
+     *     no size, naming why
+     */
+    static Issue issue(final String text, final Workflow workflow) {
+        // A converted issue's state stands in its head; a line below it is only prose.
+        final IssueHead head = IssueHead.read(text, workflow);
+        if (head != null) {
+            final String size = head.size().equals("-") ? null : head.size();
+            require(
+                    size != null
+                            || (!workflow.measured(head.state()) && !workflow.closed(head.state())),
+                    "issue has no valid Size");
+            return new Issue(size, head.state());
+        }
+        final String allowed =
+                workflow.states().stream()
+                        .sorted(java.util.Comparator.comparingInt(String::length).reversed())
+                        .map(Pattern::quote)
+                        .collect(java.util.stream.Collectors.joining("|"));
+        final String status =
+                field(text, "Status", "(?:" + allowed + ")(?=\\s*(?:[.;](?:\\s|$)|$))");
+        final String size =
+                !workflow.measured(status)
+                                && !workflow.closed(status)
+                                && !Pattern.compile("(?m)^\\*\\*Size:").matcher(text).find()
+                        ? null
+                        : field(text, "Size", "XS|S|M|L|XL");
+        return new Issue(size, status);
+    }
+
+    private static String field(final String text, final String name, final String allowed) {
+        final java.util.regex.Matcher matcher =
+                Pattern.compile("(?m)^\\*\\*" + name + ":\\*\\*\\s+(" + allowed + ")(?=[.;\\s]|$)")
+                        .matcher(text);
+        require(matcher.find(), "issue has no valid " + name);
+        final String value = matcher.group(1);
+        require(!matcher.find(), "issue has duplicate " + name);
+        return value;
     }
 
     private Path stats(final String issue) throws IOException {

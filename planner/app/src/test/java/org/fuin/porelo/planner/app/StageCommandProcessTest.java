@@ -16,9 +16,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * The planner's {@code stage} and {@code check-pushes}, run as an agent and a build run them: as
- * their own process at a repository's root, beside the build tools' commands they replace while
- * those still carry them.
+ * The planner's {@code check-pushes}, run as a build runs it: as its own process at a repository's
+ * root, beside the build tools' command it replaces while they still carry it. The build tools
+ * carry no {@code stage}, so the planner's {@code stage} is held to its own unit tests alone.
  */
 class StageCommandProcessTest {
 
@@ -26,68 +26,38 @@ class StageCommandProcessTest {
 
     private static final String BUILD_TOOLS = "org.fuin.porelo.release.Main";
 
-    /**
-     * An instant as a record writes it, which differs between two runs a moment apart, as do the
-     * minutes measured between two.
-     */
-    private static final String INSTANT = "\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?Z";
-
     @TempDir Path dir;
 
-    // Prevents an agent's stage, recorded by the planner, from reading other than the build tools'
-    // record, or a refusal from being answered with another exit code.
+    // Prevents a build that moves to the planner's check from reading other than the build tools
+    // read, or a refusal from being answered with another exit code.
     @ParameterizedTest
-    @ValueSource(
-            strings = {
-                "stage begin EX12 implement",
-                "stage begin EX12 implement ; stage end EX12 implement --status-after Review",
-                "stage begin EX12 implement ; stage begin EX12 plan",
-                "stage end EX12 implement",
-                "stage begin EX12 move",
-                "stage begin EX12 implement --actor person",
-                "stage begin EX99 implement",
-                "stage median M",
-                "stage p80 S",
-                "stage median XXL",
-                "stage",
-                "check-pushes",
-                "check-pushes --since 0",
-                "check-pushes --since 24"
-            })
+    @ValueSource(strings = {"check-pushes", "check-pushes --since 0", "check-pushes --since 24"})
     void thePlannerAnswersAsTheBuildToolsDo(final String scenario) throws Exception {
-        final Path tools = repository(dir.resolve("tools"));
-        final Path planner = repository(dir.resolve("planner"));
+        final List<String> args = List.of(scenario.split(" "));
+        final Answer expected = run(BUILD_TOOLS, repository(dir.resolve("tools")), args);
+        final Answer answer = run(PLANNER, repository(dir.resolve("planner")), args);
 
-        for (final String step : scenario.split(" ; ")) {
-            final List<String> args = List.of(step.split(" "));
-            final Answer expected = run(BUILD_TOOLS, tools, args);
-            final Answer answer = run(PLANNER, planner, args);
-
-            assertThat(expected.code() + expected.out() + expected.err())
-                    .as("the build tools answered %s at all", step)
-                    .isNotBlank();
-            assertThat(answer.code())
-                    .as("the exit code of %s, %s", step, answer.err())
-                    .isEqualTo(expected.code());
-            assertThat(answer.out()).as("what %s says", step).isEqualTo(expected.out());
-            assertThat(answer.err())
-                    .as("what %s says on standard error", step)
-                    .isEqualTo(expected.err());
-        }
-        assertThat(records(planner)).as("the records written").isEqualTo(records(tools));
+        assertThat(expected.code() + expected.out() + expected.err())
+                .as("the build tools answered %s at all", scenario)
+                .isNotBlank();
+        assertThat(answer.code())
+                .as("the exit code of %s, %s", scenario, answer.err())
+                .isEqualTo(expected.code());
+        assertThat(answer.out()).as("what %s says", scenario).isEqualTo(expected.out());
+        assertThat(answer.err())
+                .as("what %s says on standard error", scenario)
+                .isEqualTo(expected.err());
     }
 
-    /** A repository with one issue, EX12, a workflow and a seed, as an agent's checkout holds. */
+    /** A repository with one issue, EX12, and a workflow, as a build's checkout holds. */
     private static Path repository(final Path root) throws Exception {
         Files.createDirectories(root.resolve("issues"));
-        Files.createDirectories(root.resolve("stats"));
         Files.writeString(
                 root.resolve("issues/EX12-Sample.md"),
                 "# Sample\n\n**Status:** Implementing.\n**Size:** M - sample.\n");
         Files.copy(
                 Path.of("../store/git/src/test/resources/workflow.yml"),
                 root.resolve("issues/workflow.yml"));
-        Files.writeString(root.resolve("stats/seed.csv"), "size,minutes\nXS,8\nS,27\nM,53\nL,80\n");
         final Process git =
                 isolated(
                                 new ProcessBuilder(
@@ -99,20 +69,10 @@ class StageCommandProcessTest {
         return root;
     }
 
-    private static String records(final Path root) throws IOException {
-        final Path file = root.resolve("stats/EX12.jsonl");
-        return Files.exists(file)
-                ? Files.readString(file)
-                        .replaceAll(INSTANT, "<instant>")
-                        .replaceAll("\"wall_min\":[0-9.E-]+", "\"wall_min\":<minutes>")
-                : "(none)";
-    }
-
     private static ProcessBuilder isolated(final ProcessBuilder builder) {
         final Map<String, String> env = builder.environment();
         env.put("GIT_CONFIG_GLOBAL", "/dev/null");
         env.put("GIT_CONFIG_NOSYSTEM", "1");
-        env.remove("PORELO_STAGE_CLAUDE_LOG");
         env.remove("GITHUB_TOKEN");
         env.remove("GITHUB_API_URL");
         env.remove("GITHUB_SERVER_URL");

@@ -138,7 +138,7 @@ public record IssueHead(
      * Reads the head of an issue's text as the board shows it: a state the workflow does not know,
      * and a worker or a risk the schema does not name, are read as they stand, for the board to
      * warn about, while every other fault refuses the head as {@link #read(String, Workflow)} does.
-     * The commit check and the index commands never read this way.
+     * The index commands never read this way.
      *
      * @param text the issue file's text
      * @param workflow the project's states

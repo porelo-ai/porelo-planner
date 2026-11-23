@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
-/** Complete stage records for the commit rules' tests, independent of the reader's field list. */
+/** Complete stage records for the stage command's tests, independent of the reader's field list. */
 final class CommitFixtures {
 
     private static final ObjectMapper JSON = new ObjectMapper();

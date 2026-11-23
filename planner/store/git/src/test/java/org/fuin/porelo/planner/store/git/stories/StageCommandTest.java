@@ -602,7 +602,7 @@ class StageCommandTest {
     @Test
     void publishesOpenRecordsAndReplacesOnlyTheMatchingRecord() throws Exception {
         assertThat(run("begin", "EX12", "plan")).as(errors()).isZero();
-        assertThat(record().get("end")).as("commit checks can see unfinished work").isNull();
+        assertThat(record().get("end")).as("begin publishes the stage open").isNull();
         assertThat(run("end", "EX12", "plan")).as(errors()).isZero();
         final String closed = records().getFirst();
         write("stats/EX12.jsonl", closed + "\r\n");
@@ -616,42 +616,6 @@ class StageCommandTest {
                 .as("neighboring line endings are preserved")
                 .startsWith(closed + "\r\n");
         assertThat(record().get("end")).as("the matching stage closes").isEqualTo(time);
-    }
-
-    @Test
-    void commitChecksRefuseWorkOpenedAfterAnEarlierClosedStage() throws Exception {
-        assertThat(run("begin", "EX12", "plan")).as(errors()).isZero();
-        assertThat(run("end", "EX12", "plan")).as(errors()).isZero();
-        assertThat(run("begin", "EX12", "implement")).as(errors()).isZero();
-        git("add", "issues", "stats");
-        git(
-                "-c",
-                "user.name=Example",
-                "-c",
-                "user.email=example@example.org",
-                "commit",
-                "-q",
-                "-m",
-                "Record work");
-        final int result =
-                new CommitRules(
-                                new PrintStream(out),
-                                new PrintStream(err),
-                                CommitRules.Git.in(
-                                        directory,
-                                        Map.of(
-                                                "GIT_CONFIG_GLOBAL",
-                                                "/dev/null",
-                                                "GIT_CONFIG_NOSYSTEM",
-                                                "1")),
-                                () -> java.util.Set.of("EX"))
-                        .check("HEAD", false);
-        assertThat(result)
-                .as("the commit's public open record blocks handover")
-                .isEqualTo(CommitRules.REFUSED);
-        assertThat(errors())
-                .as("the refusal identifies the missing end")
-                .contains("stats/EX12.jsonl", "end");
     }
 
     @Test

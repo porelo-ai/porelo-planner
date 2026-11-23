@@ -1,27 +1,22 @@
 package org.fuin.porelo.planner.store.git.stories;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.jspecify.annotations.Nullable;
 
 /**
- * Holds each commit of a range to the shared rules on commit messages and stage records, with the
- * fault lines and exit codes the build tools' {@code check-commits} gives.
+ * Holds each commit of a range to the shared rules on commit messages, with the fault lines and
+ * exit codes the build tools' {@code check-commits} gives.
  *
  * <p>A subject of one line of at most 72 characters, {@code [skip ci]} counted; below it only a
  * blank line and trailers; no requirement number, since the issue is deleted once it is done; and
@@ -29,13 +24,8 @@ import org.jspecify.annotations.Nullable;
  * subject, the body and every trailer's value. A commit Dependabot or GitHub's Actions bot
  * authored, or GitHub committed in its web interface, is exempt from these checks on a push or a
  * pull request from the repository itself, whose writer may push anyway; a pull request from
- * outside sets the names it records itself, so there no commit is exempt. Other trees' stage
- * records must be closed, and a tree with a seed must hold stats for each issue it adds in a
- * workflow state marked measured, and for each whose state or size it changes while that issue ends
- * in such a state; both are read as {@link #issue} reads them, in the commit and in its first
- * parent, and a parent's version that cannot be read is refused, never taken as unchanged. A commit
- * that deletes the seed or a stage record its first parent held is refused, so the rule cannot be
- * switched off and brought back.
+ * outside sets the names it records itself, so there no commit is exempt. No measurement is read
+ * from a commit's tree.
  */
 public final class CommitRules {
 
@@ -112,34 +102,6 @@ public final class CommitRules {
          */
         String log(String range) throws IOException;
 
-        /** Lists the paths in a commit's tree. */
-        default List<String> files(String hash) throws IOException {
-            return List.of();
-        }
-
-        /** Lists paths changed against the first parent, or the empty tree for a root. */
-        default List<String> changed(String hash) throws IOException {
-            return List.of();
-        }
-
-        /**
-         * Names the parent {@link #changed} compares against: a merge's first, none for a root.
-         * Without one, every issue file of the commit counts as new.
-         */
-        default Optional<String> parent(String hash) throws IOException {
-            return Optional.empty();
-        }
-
-        /** Names every parent of a commit, the first first; none for a root. */
-        default List<String> parents(String hash) throws IOException {
-            return parent(hash).map(List::of).orElse(List.of());
-        }
-
-        /** Reads a file from that commit, never from the working tree. */
-        default String read(String hash, String path) throws IOException {
-            throw new IOException("commit tree contents are unavailable");
-        }
-
         /**
          * Runs git in a directory.
          *
@@ -183,72 +145,7 @@ public final class CommitRules {
                     }
                     return log;
                 }
-
-                /** Lists that commit's files. */
-                @Override
-                public List<String> files(String hash) throws IOException {
-                    return paths(
-                            execute(
-                                    directory,
-                                    environment,
-                                    List.of("ls-tree", "-rz", "--name-only", hash, "--")));
-                }
-
-                /** Lists that commit's changed paths. */
-                @Override
-                public List<String> changed(String hash) throws IOException {
-                    final Optional<String> parent = parent(hash);
-                    final List<String> arguments =
-                            new ArrayList<>(
-                                    List.of(
-                                            "diff-tree",
-                                            "--root",
-                                            "--no-commit-id",
-                                            "--name-only",
-                                            "-r",
-                                            "-z"));
-                    parent.ifPresent(arguments::add);
-                    arguments.add(hash);
-                    arguments.add("--");
-                    return paths(execute(directory, environment, arguments));
-                }
-
-                /** Names that commit's first parent. */
-                @Override
-                public Optional<String> parent(String hash) throws IOException {
-                    final String[] ancestry =
-                            execute(
-                                            directory,
-                                            environment,
-                                            List.of("rev-list", "--parents", "-n", "1", hash, "--"))
-                                    .strip()
-                                    .split("\\s+");
-                    return ancestry.length > 1 ? Optional.of(ancestry[1]) : Optional.empty();
-                }
-
-                /** Names every parent of that commit. */
-                @Override
-                public List<String> parents(String hash) throws IOException {
-                    final String[] ancestry =
-                            execute(
-                                            directory,
-                                            environment,
-                                            List.of("rev-list", "--parents", "-n", "1", hash, "--"))
-                                    .strip()
-                                    .split("\\s+");
-                    return List.of(ancestry).subList(1, ancestry.length);
-                }
-
-                /** Reads a file from that commit's tree. */
-                @Override
-                public String read(String hash, String path) throws IOException {
-                    return execute(directory, environment, List.of("show", hash + ":" + path));
-                }
             };
-        }
-
-        private static List<String> paths(String output) {
-            return output.isEmpty() ? List.of() : List.of(output.split("\u0000"));
         }
 
         private static String run(Path directory, Map<String, String> environment, String range)
@@ -493,26 +390,10 @@ public final class CommitRules {
         Set<String> known = null;
         int exempt = 0;
         int breaking = 0;
-        boolean rolloutNote = false;
         for (final Commit commit : commits) {
             if (!outside && commit.exempt()) {
                 exempt++;
                 continue;
-            }
-            final List<String> broken;
-            try {
-                final Set<String> files = Set.copyOf(git.files(commit.hash()));
-                if (!files.contains("stats/seed.csv") && !rolloutNote) {
-                    out.println(
-                            "NOTE  no stats/seed.csv in a commit tree; the issue stats rule is not"
-                                    + " rolled out there");
-                    rolloutNote = true;
-                }
-                broken = deleted(commit.hash(), files);
-                broken.addAll(stageFaults(commit.hash(), files));
-            } catch (IOException | IllegalArgumentException ex) {
-                err.println(commit.hash() + "  could not check stage records: " + ex.getMessage());
-                return UNANSWERED;
             }
             if (known == null) {
                 try {
@@ -529,7 +410,7 @@ public final class CommitRules {
                     return UNANSWERED;
                 }
             }
-            broken.addAll(faults(commit, known, outside));
+            final List<String> broken = faults(commit, known, outside);
             if (!broken.isEmpty()) {
                 breaking++;
             }
@@ -555,144 +436,8 @@ public final class CommitRules {
                         + commits.size()
                         + " commit(s) in "
                         + range
-                        + ": commit messages and stage records must follow the shared rules");
+                        + ": commit messages must follow the shared rules");
         return REFUSED;
-    }
-
-    /** Names each stage file a parent of the commit held and the commit's own tree lacks. */
-    private List<String> deleted(String hash, Set<String> files) throws IOException {
-        final Set<String> gone = new java.util.TreeSet<>();
-        for (final String path : git.changed(hash)) {
-            if (stage(path) && !files.contains(path)) {
-                gone.add(path);
-            }
-        }
-        // A merge's tree may drop what only a later parent held, which the first-parent diff
-        // misses.
-        final List<String> parents = git.parents(hash);
-        for (final String parent : parents.subList(Math.min(1, parents.size()), parents.size())) {
-            for (final String path : git.files(parent)) {
-                if (stage(path) && !files.contains(path)) {
-                    gone.add(path);
-                }
-            }
-        }
-        final List<String> faults = new ArrayList<>();
-        gone.forEach(path -> faults.add("deletes " + path + ", which the stage rule reads"));
-        return faults;
-    }
-
-    private static boolean stage(String path) {
-        return path.equals("stats/seed.csv") || path.matches("stats/[^/]+\\.jsonl");
-    }
-
-    private List<String> stageFaults(String hash, Set<String> files) throws IOException {
-        final List<String> faults = new ArrayList<>();
-        if (!files.contains("stats/seed.csv")
-                && files.stream().noneMatch(path -> path.matches("stats/[^/]+\\.jsonl")))
-            return faults;
-        final Workflow workflow;
-        if (!files.contains("issues/workflow.yml")) {
-            faults.add("issues/workflow.yml is missing from the commit tree");
-            return faults;
-        }
-        final String workflowText = git.read(hash, "issues/workflow.yml");
-        try {
-            workflow = Workflow.read(workflowText);
-        } catch (IllegalArgumentException ex) {
-            // The planner names the file workflow.yml; the fault line names it by its path.
-            faults.add(
-                    "issues/workflow.yml: "
-                            + String.valueOf(ex.getMessage())
-                                    .replaceFirst("^workflow\\.yml", "issues/workflow.yml"));
-            return faults;
-        }
-        for (final String path : files) {
-            if (!path.matches("stats/[^/]+\\.jsonl")) {
-                continue;
-            }
-            try {
-                StageRecords.read(
-                        git.read(hash, path), path.substring("stats/".length()), true, workflow);
-            } catch (IllegalArgumentException ex) {
-                faults.add(recordFault(path, ex));
-            }
-        }
-        if (files.contains("stats/seed.csv")) {
-            final Pattern issue =
-                    Pattern.compile("issues/(?:[^/]+/)*([A-Z]{1,3}\\d{2,3})-[^/]+\\.md");
-            Optional<String> parent = null;
-            Set<String> before = Set.of();
-            for (final String path : git.changed(hash)) {
-                final Matcher match = issue.matcher(path);
-                if (!match.matches() || !files.contains(path)) {
-                    continue;
-                }
-                final String text = git.read(hash, path);
-                final String status = status(text, workflow);
-                final String stats = "stats/" + match.group(1) + ".jsonl";
-                if (!workflow.measured(status) || files.contains(stats)) {
-                    continue;
-                }
-                if (parent == null) {
-                    parent = git.parent(hash);
-                    if (parent.isPresent()) {
-                        before = Set.copyOf(git.files(parent.get()));
-                    }
-                }
-                if (parent.isEmpty() || !before.contains(path)) {
-                    faults.add(
-                            path + " is new in " + status + " without " + stats + " in its tree");
-                    continue;
-                }
-                final String change = change(parent.get(), path, text, workflow);
-                if (change != null) {
-                    faults.add(path + " " + change + " without " + stats + " in its tree");
-                }
-            }
-        }
-        return faults;
-    }
-
-    /**
-     * Compares an issue's state and size with its first parent's, as {@link #issue} reads both.
-     *
-     * @return null when both are the same, else what changed or why it cannot be told
-     */
-    private @Nullable String change(String parent, String path, String text, Workflow workflow) {
-        final String before;
-        try {
-            before = git.read(parent, path);
-        } catch (IOException ex) {
-            return "cannot be compared with its parent's version, which cannot be read: "
-                    + ex.getMessage();
-        }
-        final Issue earlier;
-        try {
-            earlier = issue(before, workflow);
-        } catch (IllegalArgumentException ex) {
-            return "cannot be compared with its parent's version, which is no valid issue under"
-                    + " this commit's workflow: "
-                    + ex.getMessage();
-        }
-        final Issue now;
-        try {
-            now = issue(text, workflow);
-        } catch (IllegalArgumentException ex) {
-            return "cannot be compared with its parent's version: " + ex.getMessage();
-        }
-        final List<String> changes = new ArrayList<>();
-        if (!earlier.status().equals(now.status())) {
-            changes.add("its state from " + earlier.status() + " to " + now.status());
-        }
-        if (!Objects.equals(earlier.size(), now.size())) {
-            changes.add(
-                    "its size from "
-                            + Objects.requireNonNullElse(earlier.size(), "none")
-                            + " to "
-                            + Objects.requireNonNullElse(now.size(), "none"));
-        }
-        return changes.isEmpty() ? null : "changes " + String.join(" and ", changes);
     }
 
     private static List<String> faults(Commit commit, Set<String> known, boolean outside) {
@@ -765,76 +510,6 @@ public final class CommitRules {
             }
         }
         return false;
-    }
-
-    /** The fault line of a stage record file, as the build tools word each kind. */
-    private static String recordFault(String path, IllegalArgumentException ex) {
-        if (ex.getCause() instanceof JsonProcessingException) {
-            return path + " contains invalid JSON";
-        }
-        if (ex.getCause() instanceof DateTimeException) {
-            return path + " contains an invalid stage timestamp";
-        }
-        return path + ": " + ex.getMessage();
-    }
-
-    /** An issue's state and its size, none where it has none. */
-    record Issue(@Nullable String size, String status) {}
-
-    /**
-     * Reads an issue's state and size: from its head where it has one, else from its {@code
-     * **Status:**} and {@code **Size:**} lines.
-     *
-     * @throws IllegalArgumentException when neither can be read, or a measured or closed state has
-     *     no size, naming why
-     */
-    static Issue issue(String text, Workflow workflow) {
-        final IssueHead head = IssueHead.read(text, workflow);
-        if (head != null) {
-            final String size = head.size().equals("-") ? null : head.size();
-            require(
-                    size != null
-                            || (!workflow.measured(head.state()) && !workflow.closed(head.state())),
-                    "issue has no valid Size");
-            return new Issue(size, head.state());
-        }
-        final String status = status(text, workflow);
-        final String size =
-                !workflow.measured(status)
-                                && !workflow.closed(status)
-                                && !Pattern.compile("(?m)^\\*\\*Size:").matcher(text).find()
-                        ? null
-                        : field(text, "Size", "XS|S|M|L|XL");
-        return new Issue(size, status);
-    }
-
-    /** Reads an issue's state from its head, else from its {@code **Status:**} line. */
-    static String status(String text, Workflow workflow) {
-        // A converted issue's state stands in its head; a line below it is only prose.
-        final IssueHead head = IssueHead.read(text, workflow);
-        if (head != null) return head.state();
-        final String allowed =
-                workflow.states().stream()
-                        .sorted(java.util.Comparator.comparingInt(String::length).reversed())
-                        .map(Pattern::quote)
-                        .collect(java.util.stream.Collectors.joining("|"));
-        return field(text, "Status", "(?:" + allowed + ")(?=\\s*(?:[.;](?:\\s|$)|$))");
-    }
-
-    private static String field(String text, String name, String allowed) {
-        final Matcher matcher =
-                Pattern.compile("(?m)^\\*\\*" + name + ":\\*\\*\\s+(" + allowed + ")(?=[.;\\s]|$)")
-                        .matcher(text);
-        require(matcher.find(), "issue has no valid " + name);
-        final String value = matcher.group(1);
-        require(!matcher.find(), "issue has duplicate " + name);
-        return value;
-    }
-
-    private static void require(boolean condition, String reason) {
-        if (!condition) {
-            throw new IllegalArgumentException(reason);
-        }
     }
 
     private static List<Commit> parse(String log) throws IOException {
