@@ -281,6 +281,37 @@ class EditsEndpointTest {
     }
 
     @Test
+    void aNewStoryWithItsIdeaTakesOneMiBAndRefusesOneByteMore() throws Exception {
+        // Harm: a new story's idea is refused although a forge accepts its size.
+        final String body =
+                "{\"idea\":{\"story\":{\"title\":\""
+                        + "T".repeat(256)
+                        + "\",\"gain\":\"G\",\"test\":\"T\",\"priority\":\"High\"},"
+                        + "\"issues\":[{\"repository\":\"porelo-store\",\"title\":\"I\","
+                        + "\"mustBeTrue\":\"W\",\"worker\":\"Agent\"}]},\"revision\":\"r1\"}";
+        final String bounded = body + " ".repeat(1048576 - body.length());
+        send("POST", "/stories", bounded + " ")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("IdeaRefused"));
+        assertThat(written).as("the oversized request writes nothing").isEmpty();
+        send("POST", "/stories", bounded).andExpect(status().isCreated());
+        assertThat(written)
+                .as("the full story title reaches the store")
+                .containsExactly("T".repeat(256));
+    }
+
+    @Test
+    void aStoryFromExistingIssuesKeepsItsBodyBound() throws Exception {
+        // Harm: raising the idea limit also admits larger bodies to another kind of request.
+        final String body = "{" + HEAD + ",\"existing\":[\"AB2\"],\"revision\":\"r1\"}";
+        final String bounded = body + " ".repeat(65536 - body.length());
+        send("POST", "/stories", bounded + " ").andExpect(status().isUnprocessableContent());
+        assertThat(written).as("the oversized request writes nothing").isEmpty();
+        send("POST", "/stories", bounded).andExpect(status().isCreated());
+        assertThat(written).as("the original bound still saves").containsExactly("A story [AB2]");
+    }
+
+    @Test
     void aCommentIsAnsweredWithNoContentAndAStoryAsCreated() throws Exception {
         // A comment answered with a revision, or a story without its ids, leaves the window
         // waiting for a board change that never comes or unable to show what it made.

@@ -140,7 +140,7 @@ final class IssueSchema {
 
     private static int maximum(String field) {
         return switch (field) {
-            case "title" -> 120;
+            case "title" -> 256;
             case "covers" -> 1000;
             default -> Integer.MAX_VALUE;
         };

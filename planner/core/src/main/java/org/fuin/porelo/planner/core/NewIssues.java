@@ -19,13 +19,11 @@ public final class NewIssues {
     /** The refusal's name the window reads. */
     public static final String REFUSED = "IssueNotAllowed";
 
-    /**
-     * The most characters a title may have, as an issue's head in {@code issue-1.json} holds it.
-     */
-    public static final int MOST_TITLE = 120;
+    /** The most code points an issue's title may have. */
+    public static final int MOST_TITLE = 256;
 
-    /** The most characters what must be true may have. */
-    public static final int MOST_TEXT = 4000;
+    /** The most code points what must be true may have. */
+    public static final int MOST_TEXT = 65536;
 
     /** The sizes an issue may be given. */
     public static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL");
@@ -85,10 +83,12 @@ public final class NewIssues {
             throw refused("title", "The title must be one line without control characters.");
         }
         final String line = title.strip();
-        if (line.isEmpty() || line.length() > MOST_TITLE) {
+        if (line.isEmpty() || line.codePointCount(0, line.length()) > MOST_TITLE) {
             throw refused("title", "The title must have 1 to " + MOST_TITLE + " characters.");
         }
-        if (mustBeTrue == null || mustBeTrue.isBlank() || mustBeTrue.length() > MOST_TEXT) {
+        if (mustBeTrue == null
+                || mustBeTrue.isBlank()
+                || mustBeTrue.codePointCount(0, mustBeTrue.length()) > MOST_TEXT) {
             throw refused(
                     "mustBeTrue", "What must be true must have 1 to " + MOST_TEXT + " characters.");
         }

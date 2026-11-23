@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.Collections;
@@ -340,8 +341,18 @@ class EditsTest {
     void aTitleWithALineBreakOrOutOfBoundsAndABlankOrTooLongPartAreRefused() {
         // A line break in a title breaks the tracker's one-line head; a blank part would leave a
         // lead or a heading with nothing under it, a part past the tracker's limit is cut off.
+        // Harm: an item made with a title a forge takes cannot be given another as long.
+        assertThatCode(
+                        () ->
+                                Edits.text(
+                                        board,
+                                        "r1",
+                                        "AB1",
+                                        title(TextEdit.Kind.ISSUE, "😀".repeat(256))))
+                .as("a title of 256 characters")
+                .doesNotThrowAnyException();
         for (final String title :
-                List.of("One\nTwo", "One\rTwo", "One\u2028Two", "  ", "x".repeat(121))) {
+                List.of("One\nTwo", "One\rTwo", "One\u2028Two", "  ", "x".repeat(257))) {
             final Moves.Refused refused =
                     refusal(
                             () ->

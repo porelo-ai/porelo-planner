@@ -42,30 +42,36 @@ class NewIdeasTest {
 
     @Test
     void anIdeaWithinEveryBoundIsTakenWithItsLinesStrippedAndItsWorkersKept() {
-        // A bound refused one character early would refuse what the discussion was told to write.
+        // Harm: a task's idea is refused although a forge accepts its titles and text.
         final String astral = "𝔸";
         final NewIdea checked =
                 NewIdeas.check(
                         BOARD,
                         new NewIdeas.Idea(
                                 new NewIdeas.Story(
-                                        " " + astral.repeat(120) + " ",
+                                        " " + astral.repeat(256) + " ",
                                         "G".repeat(400),
                                         "T".repeat(400),
                                         "Lowest"),
                                 List.of(
                                         new NewIdeas.Issue(
                                                 "porelo-other",
-                                                "I".repeat(120),
-                                                "W".repeat(4000),
+                                                astral.repeat(256),
+                                                astral.repeat(65536),
                                                 null,
                                                 "Manual"),
                                         issue("porelo-project"))),
                         List.of());
 
         assertThat(checked.title())
-                .as("120 code points are taken, without the spaces around them")
-                .isEqualTo(astral.repeat(120));
+                .as("256 code points are taken, without the spaces around them")
+                .isEqualTo(astral.repeat(256));
+        assertThat(checked.issues().getFirst().title())
+                .as("the issue's full title")
+                .isEqualTo(astral.repeat(256));
+        assertThat(checked.issues().getFirst().mustBeTrue())
+                .as("the issue's full text")
+                .isEqualTo(astral.repeat(65536));
         assertThat(checked.priority()).as("the story's priority").isEqualTo("Lowest");
         assertThat(checked.issues())
                 .as("each issue in the idea's order, its worker as the person chose")
@@ -76,8 +82,20 @@ class NewIdeasTest {
     @Test
     void eachFieldOutOfBoundsIsRefusedNamingThatFieldAlone() {
         // A field let through would reach a file the store writes, or a story nobody can read.
-        assertThat(fault(i -> story(new NewIdeas.Story("T".repeat(121), "G", "T", "High"))))
+        assertThat(fault(i -> story(new NewIdeas.Story("T".repeat(257), "G", "T", "High"))))
                 .isEqualTo("story.title");
+        assertThat(
+                        fault(
+                                i ->
+                                        issues(
+                                                new NewIdeas.Issue(
+                                                        "porelo-other",
+                                                        "𝔸".repeat(257),
+                                                        "W",
+                                                        null,
+                                                        "Agent"))))
+                .as("one code point beyond an idea issue's title bound")
+                .isEqualTo("issues[0].title");
         assertThat(fault(i -> story(new NewIdeas.Story("A\u0085B", "G", "T", "High"))))
                 .isEqualTo("story.title");
         assertThat(fault(i -> story(new NewIdeas.Story("A\u0090B", "G", "T", "High"))))
@@ -131,7 +149,7 @@ class NewIdeasTest {
                                                 new NewIdeas.Issue(
                                                         "porelo-other",
                                                         "T",
-                                                        "W".repeat(4001),
+                                                        "W".repeat(65537),
                                                         null,
                                                         "Agent"))))
                 .isEqualTo("issues[0].mustBeTrue");

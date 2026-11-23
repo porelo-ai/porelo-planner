@@ -28,6 +28,7 @@ class IssueSchemaTest {
     // Prevents a head the published schema refuses from passing the library's own check, and back.
     @Test
     void agreesWithTheSchemaOnValidAndFaultyHeads() throws Exception {
+        // Harm: the Git store refuses a new issue title that a forge accepts.
         final JsonSchema schema;
         try (var in =
                 getClass()
@@ -64,7 +65,7 @@ class IssueSchemaTest {
                         "{\"risk\": \"ordinary\"}",
                         "{\"risk\": \"small\", \"worker\": \"Agent\"}",
                         "{\"state\": \"Not in the workflow\"}",
-                        "{\"title\": \"" + "x".repeat(120) + "\"}")) {
+                        "{\"title\": \"" + "x".repeat(256) + "\"}")) {
             final ObjectNode head = valid.deepCopy();
             head.setAll((ObjectNode) JSON.readTree(patch));
             good.add(head);
@@ -119,7 +120,7 @@ class IssueSchemaTest {
                         "{\"risk\": \"Harm\"}",
                         "{\"risk\": \"high\"}",
                         "{\"risk\": null}",
-                        "{\"title\": \"" + "x".repeat(121) + "\"}",
+                        "{\"title\": \"" + "x".repeat(257) + "\"}",
                         "{\"covers\": \"line\\nline\"}")) {
             final ObjectNode head = valid.deepCopy();
             head.setAll((ObjectNode) JSON.readTree(patch));

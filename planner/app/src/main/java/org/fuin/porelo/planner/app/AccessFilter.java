@@ -45,15 +45,22 @@ public final class AccessFilter implements Filter {
     /** The seconds a signature's time may be off the planner's clock. */
     static final long WINDOW = 60;
 
-    /** The largest body any operation of the description takes but a stage's result. */
+    /** The largest body checked for operations without a larger allowance. */
     static final int MOST_BODY = 131072;
 
-    /** The largest body of a stage's result: a result file of 262144 bytes and its envelope. */
-    static final int MOST_RESULT = 266240;
+    /** The largest body of a new idea, story or issue. */
+    static final int MOST_LARGE_BODY = 1048576;
+
+    /** The largest body of a stage's result: a result file of 1048576 bytes and its envelope. */
+    static final int MOST_RESULT = 1052672;
 
     /** The raw path a stage's result is handed in on. */
     private static final Pattern RESULT_PATH =
             Pattern.compile("/projects/[^/?#;%]+/tasks/[^/?#;%]+/result");
+
+    /** The raw paths that create an idea, a story or an issue. */
+    private static final Pattern CREATION_PATH =
+            Pattern.compile("/projects/[^/?#;%]+/(ideas|stories|issues)");
 
     /** The largest body a proof's request may have. */
     static final int MOST_PROOF = 128;
@@ -166,9 +173,14 @@ public final class AccessFilter implements Filter {
 
     /** The most bytes the request's operation takes, by its method and raw path. */
     static int most(final HttpServletRequest request) {
-        return "POST".equals(request.getMethod())
-                        && RESULT_PATH.matcher(request.getRequestURI()).matches()
-                ? MOST_RESULT
+        if (!"POST".equals(request.getMethod())) {
+            return MOST_BODY;
+        }
+        if (RESULT_PATH.matcher(request.getRequestURI()).matches()) {
+            return MOST_RESULT;
+        }
+        return CREATION_PATH.matcher(request.getRequestURI()).matches()
+                ? MOST_LARGE_BODY
                 : MOST_BODY;
     }
 

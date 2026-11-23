@@ -61,6 +61,27 @@ class StageResultHttpTest {
     }
 
     @Test
+    void aStageResultAtOneMiBIsSavedAndOneByteMoreIsRefused() throws Exception {
+        // Harm: a task's stage result is refused although a forge accepts its size.
+        final String offer = started();
+        final String body = handIn(offer, "M");
+        // A result file of 1 MiB with its envelope.
+        final String bounded = body + " ".repeat(1048576 + 4096 - body.length());
+        final JsonNode refused = call("/tasks/analyze/result", bounded + " ", 422);
+        assertThat(refused.path("type").asString())
+                .as("a size refusal")
+                .isEqualTo("urn:porelo-planner:ResultRefused");
+        assertThat(store.results).as("the oversized request saves nothing").isEmpty();
+        assertThat(call("/tasks/analyze/result", bounded, 200).path("outcome").asString())
+                .as("a result at the bound is saved")
+                .isEqualTo("SAVED");
+        assertThat(store.results).as("one saved result").hasSize(1);
+        assertThat(store.results.getFirst().issues().getFirst().plan())
+                .as("the result reaches the store unchanged")
+                .isEqualTo("Read it.\nChange it.");
+    }
+
+    @Test
     void aHandedInResultIsSavedOnceAndAnsweredWithTheIssueInItsDoneState() throws Exception {
         // Prevents an issue counted analyzed whose store holds no plan, and a result saved twice
         // when the window hands it in again.

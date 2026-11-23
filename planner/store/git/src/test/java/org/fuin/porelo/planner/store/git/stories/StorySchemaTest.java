@@ -24,6 +24,7 @@ class StorySchemaTest {
     // Prevents malformed heads passing a library check that the documented schema refuses.
     @Test
     void agreesWithTheSchemaOnEveryFixtureHeadAndFaultyHeads() throws Exception {
+        // Harm: the Git store refuses an idea story title that a forge accepts.
         final JsonSchema schema;
         try (var in =
                 getClass()
@@ -100,7 +101,7 @@ class StorySchemaTest {
             }
         }
         for (final String field : List.of("title", "gain", "test")) {
-            final int max = field.equals("title") ? 120 : 400;
+            final int max = field.equals("title") ? 256 : 400;
             for (final String value :
                     List.of(
                             "x".repeat(max),
@@ -119,6 +120,10 @@ class StorySchemaTest {
                     faultyHeads.add(head);
             }
         }
+        // Harm: a story the planner made with a title a forge takes refused by the Git store.
+        final ObjectNode longest = valid.deepCopy();
+        longest.put("title", "😀".repeat(256));
+        assertThat(StorySchema.faults(longest)).as("a title of 256 characters").isEmpty();
         final ObjectNode tooMany = valid.deepCopy();
         final var issues = tooMany.putArray("issues");
         for (int i = 0; i < 201; i++) issues.add("porelo#AB" + (100 + i));

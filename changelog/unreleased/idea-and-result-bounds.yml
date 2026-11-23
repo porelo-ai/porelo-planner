@@ -1,0 +1,2 @@
+title: The planner accepts idea and new issue titles up to 256 characters, requirements up to 65,536 characters, and idea, new story, new issue and stage result hand-ins up to 1 MiB.
+type: fixed

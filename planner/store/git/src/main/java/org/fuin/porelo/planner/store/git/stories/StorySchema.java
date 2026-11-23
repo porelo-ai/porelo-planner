@@ -50,7 +50,7 @@ final class StorySchema {
                         if (value.asText().isEmpty())
                             faults.add(at + ": must be at least 1 characters long");
                         pattern(value, LINE, at, faults);
-                        final int max = field.equals("title") ? 120 : 400;
+                        final int max = field.equals("title") ? 256 : 400;
                         if (value.asText().codePointCount(0, value.asText().length()) > max)
                             faults.add(at + ": must be at most " + max + " characters long");
                     }

@@ -122,6 +122,29 @@ class IdeasEndpointTest {
     }
 
     @Test
+    void anIdeaBodyAtOneMiBIsSavedAndOneByteMoreIsRefused() throws Exception {
+        // Harm: a task's idea is refused although a forge accepts the hand-in's size.
+        final String body =
+                "{\"offer\":\""
+                        + OFFER
+                        + "\",\"idea\":"
+                        + IDEA.replace("A story can be tagged.", "é".repeat(65536))
+                        + "}";
+        final String bounded =
+                body + " ".repeat(1048576 - body.getBytes(StandardCharsets.UTF_8).length);
+
+        handIn(bounded + " ")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("IdeaRefused"));
+        assertThat(added).as("the oversized hand-in saves nothing").isEmpty();
+        handIn(bounded).andExpect(status().isCreated());
+        assertThat(added).as("the hand-in at the bound saves once").hasSize(1);
+        assertThat(added.getFirst().issues().getFirst().mustBeTrue())
+                .as("the full multibyte text reaches the store")
+                .isEqualTo("é".repeat(65536));
+    }
+
+    @Test
     void anIdeaIsSavedOnceAnsweredAsCreatedAndToldToEveryWindow() throws Exception {
         // A repeated hand-in that saved again would put a second story and its issues on the board.
         final Changes.Subscription window = changes.subscribe("alpha");

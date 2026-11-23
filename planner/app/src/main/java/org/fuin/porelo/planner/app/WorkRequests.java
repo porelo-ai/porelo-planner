@@ -284,7 +284,7 @@ public final class WorkRequests {
     private static final String NO_HAND_IN = "The body is no hand-in of an idea.";
 
     /**
-     * Reads a hand-in strictly: at most 65536 bytes, one JSON object with exactly an offer and an
+     * Reads a hand-in strictly: at most 1048576 bytes, one JSON object with exactly an offer and an
      * idea object; a refusal never repeats what was sent.
      *
      * @param request the request
@@ -294,7 +294,7 @@ public final class WorkRequests {
     static HandIn handIn(final HttpServletRequest request) {
         final JsonNode body;
         try {
-            body = read(request);
+            body = read(request, AccessFilter.MOST_LARGE_BODY);
         } catch (final WorkRefusal invalid) {
             throw noHandIn("body: " + NO_HAND_IN);
         }
@@ -393,7 +393,7 @@ public final class WorkRequests {
      */
     record ResultHandIn(String offer, HandedResults.HandIn handIn) {}
 
-    /** The most bytes of a stage's hand-in: a result file of 262144 bytes and its envelope. */
+    /** The most bytes of a stage's hand-in: a result file of 1048576 bytes and its envelope. */
     static final int MOST_RESULT = AccessFilter.MOST_RESULT;
 
     private static final String NO_RESULT = "body: The body is no hand-in of a stage's result.";
@@ -558,7 +558,7 @@ public final class WorkRequests {
     private static final Set<String> PRIORITY_MEMBERS = Set.of("priority", "revision");
 
     /**
-     * Reads a new issue's body strictly: at most 65536 bytes, one JSON object, no other member,
+     * Reads a new issue's body strictly: at most 1048576 bytes, one JSON object, no other member,
      * each member a text; a refusal never repeats what was sent.
      *
      * @param request the request
@@ -568,7 +568,7 @@ public final class WorkRequests {
     static IssueRequest issue(final HttpServletRequest request) {
         final JsonNode body;
         try {
-            body = read(request);
+            body = read(request, AccessFilter.MOST_LARGE_BODY);
         } catch (final WorkRefusal invalid) {
             throw NewIssues.refused("", "The body is no new issue.");
         }
@@ -670,6 +670,10 @@ public final class WorkRequests {
     }
 
     static JsonNode read(final HttpServletRequest request, final int most) {
+        return object(readBytes(request, most));
+    }
+
+    static byte[] readBytes(final HttpServletRequest request, final int most) {
         try {
             if (request.getContentLengthLong() > most) {
                 throw WorkRefusal.invalidSettings();
@@ -678,12 +682,20 @@ public final class WorkRequests {
             if (bytes.length > most) {
                 throw WorkRefusal.invalidSettings();
             }
+            return bytes;
+        } catch (final IOException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+    }
+
+    static JsonNode object(final byte[] bytes) {
+        try {
             final JsonNode body = JSON.readTree(bytes);
             if (body == null || !body.isObject()) {
                 throw WorkRefusal.invalidSettings();
             }
             return body;
-        } catch (final IOException | JacksonException invalid) {
+        } catch (final JacksonException invalid) {
             throw WorkRefusal.invalidSettings();
         }
     }

@@ -100,6 +100,47 @@ Future<void> _fill(WidgetTester tester) async {
 }
 
 void main() {
+  // Harm: an issue a forge accepts is shortened by the form before it is sent.
+  testWidgets('the full title and text at their bounds reach the planner', (tester) async {
+    final source = _Source();
+    await _show(tester, source);
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    final title = List.filled(256, 'T').join();
+    final text = List.filled(65536, 'W').join();
+    await tester.enterText(find.byKey(const Key('new-issue-title')), title);
+    await tester.enterText(find.byKey(const Key('new-issue-must-be-true')), text);
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')));
+    await settle(tester);
+    expect(source.added.single.$3, title, reason: 'the entire 256-character title is sent');
+    expect(source.added.single.$4, text, reason: 'the entire 65536-character text is sent');
+  });
+
+  // Harm: the form sends a title or text above the planner's bounds and loses the person's submission.
+  testWidgets('the form refuses one extra character in the title and text', (tester) async {
+    final source = _Source();
+    await _show(tester, source);
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    final title = List.filled(256, 'T').join();
+    final text = List.filled(65536, 'W').join();
+    await tester.enterText(find.byKey(const Key('new-issue-title')), '${title}X');
+    await tester.enterText(find.byKey(const Key('new-issue-must-be-true')), '${text}X');
+    await settle(tester);
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('new-issue-title'))).controller!.text,
+      title,
+      reason: 'the extra title character is refused',
+    );
+    expect(
+      tester.widget<TextField>(find.byKey(const Key('new-issue-must-be-true'))).controller!.text,
+      text,
+      reason: 'the extra text character is refused',
+    );
+    expect(source.added, isEmpty, reason: 'editing alone submits nothing');
+  });
+
   // Harm: an idea sent against another board than the one shown could take a number someone took since.
   testWidgets('the form sends the new issue with the revision of the board it was written on', (tester) async {
     final source = _Source();

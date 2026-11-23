@@ -43,7 +43,7 @@ public final class Edits {
     public static final int MOST_COMMENT = 65536;
 
     /** The most code points a title may have. */
-    public static final int MOST_TITLE = 120;
+    public static final int MOST_TITLE = 256;
 
     /** The most code points one part of a text may have, as the longest body GitHub takes. */
     public static final int MOST_PART = 65536;

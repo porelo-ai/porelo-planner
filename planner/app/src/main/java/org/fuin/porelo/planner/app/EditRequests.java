@@ -125,8 +125,8 @@ final class EditRequests {
     private static final Pattern REVISION = Pattern.compile("[!-~]{1,200}");
 
     /**
-     * Reads a new story: at most 65536 bytes, one JSON object with exactly an idea object and a
-     * revision, or exactly a story, a list of existing issues' ids and a revision.
+     * Reads a new story: at most 1048576 bytes with exactly an idea object and a revision, or at
+     * most 65536 bytes with exactly a story, a list of existing issues' ids and a revision.
      *
      * @param request the request
      * @param fromIssuesOffered refuses a body naming existing issues when the store makes no story
@@ -137,7 +137,11 @@ final class EditRequests {
     static StoryBody story(final HttpServletRequest request, final Runnable fromIssuesOffered) {
         final JsonNode body;
         try {
-            body = WorkRequests.read(request);
+            final byte[] bytes = WorkRequests.readBytes(request, AccessFilter.MOST_LARGE_BODY);
+            body = WorkRequests.object(bytes);
+            if (body.has("existing") && bytes.length > 65536) {
+                throw WorkRefusal.invalidSettings();
+            }
         } catch (final WorkRefusal invalid) {
             throw noStory("body: " + NO_STORY);
         }

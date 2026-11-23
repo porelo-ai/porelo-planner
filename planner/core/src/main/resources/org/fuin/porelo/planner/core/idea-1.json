@@ -11,7 +11,7 @@
       "additionalProperties": false,
       "required": ["title", "gain", "test", "priority"],
       "properties": {
-        "title": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "One line." },
+        "title": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "One line." },
         "gain": { "type": "string", "minLength": 1, "maxLength": 400, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "What a user gains, one line." },
         "test": { "type": "string", "minLength": 1, "maxLength": 400, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "How a person sees it work, one line." },
         "priority": { "enum": ["Highest", "High", "Medium", "Low", "Lowest"] }
@@ -26,8 +26,8 @@
         "required": ["repository", "title", "mustBeTrue", "worker"],
         "properties": {
           "repository": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$", "description": "One of the project's repositories, named by no other issue." },
-          "title": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "One line." },
-          "mustBeTrue": { "type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S", "description": "What must be true, from the point of view of whoever uses it; not blank." },
+          "title": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+$", "description": "One line." },
+          "mustBeTrue": { "type": "string", "minLength": 1, "maxLength": 65536, "pattern": "\\S", "description": "What must be true, from the point of view of whoever uses it; not blank." },
           "size": { "enum": ["XS", "S", "M", "L", "XL"], "description": "Only when it is known." },
           "worker": { "enum": ["Agent", "Manual"], "description": "Who works the issue, as the person chose it." }
         }

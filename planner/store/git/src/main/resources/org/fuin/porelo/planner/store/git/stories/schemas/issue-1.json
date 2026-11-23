@@ -28,7 +28,7 @@
     "title": {
       "description": "The issue's name, as its heading repeats it: one line, no leading or trailing space.",
       "$ref": "#/$defs/line",
-      "maxLength": 120
+      "maxLength": 256
     },
     "state": {
       "description": "A state of the repository's workflow.yml, checked against that file.",

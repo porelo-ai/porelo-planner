@@ -11,6 +11,7 @@ import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -180,7 +181,7 @@ class AccessFilterTest {
         final Chain chain = new Chain();
         filter.doFilter(
                 withBody(
-                        signed("POST", "/projects/p/ideas", BODY, null),
+                        signed("POST", "/projects/p/tasks/analyze/events", BODY, null),
                         declared,
                         AccessFilter.MOST_BODY + 1L),
                 response,
@@ -193,7 +194,10 @@ class AccessFilterTest {
         final MockHttpServletResponse chunked = new MockHttpServletResponse();
         final Chain chunkedChain = new Chain();
         filter.doFilter(
-                withBody(signed("POST", "/projects/p/ideas", BODY, null), endless, -1),
+                withBody(
+                        signed("POST", "/projects/p/tasks/analyze/events", BODY, null),
+                        endless,
+                        -1),
                 chunked,
                 chunkedChain);
         assertRefused(chunked, chunkedChain, "an endless body without a length");
@@ -202,29 +206,84 @@ class AccessFilterTest {
                 .isEqualTo(AccessFilter.MOST_BODY + 1L);
     }
 
-    @Test
-    void onlyAStagesResultTakesALargerBodyThanAnyOtherOperation() {
-        // Harm: a result file within its agreed bound refused as unsigned, or a stranger's larger
-        // body held for any other path.
-        final MockHttpServletRequest result =
-                new MockHttpServletRequest("POST", "/projects/p/tasks/analyze/result");
-        final MockHttpServletRequest event =
-                new MockHttpServletRequest("POST", "/projects/p/tasks/analyze/events");
-        final MockHttpServletRequest read =
-                new MockHttpServletRequest("GET", "/projects/p/tasks/analyze/result");
-        final MockHttpServletRequest nested =
-                new MockHttpServletRequest("POST", "/projects/p/tasks/a/b/result");
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "/projects/p/ideas",
+                "/projects/p/stories",
+                "/projects/p/issues",
+                "/projects/p/tasks/analyze/result"
+            })
+    void theFourLargePostBodiesPassAtOneMiBAndRefuseOneByteMore(final String path)
+            throws Exception {
+        // Harm: the signing filter refuses a hand-in a forge accepts before the parser sees it.
+        // Two bytes each, filling the operation's bound exactly.
+        final String body =
+                "é".repeat(AccessFilter.most(new MockHttpServletRequest("POST", path)) / 2);
+        for (final boolean declared : List.of(true, false)) {
+            final Chain accepted = new Chain();
+            filter.doFilter(
+                    length(signed("POST", path, body, null), declared),
+                    new MockHttpServletResponse(),
+                    accepted);
+            assertThat(accepted.bodies)
+                    .as("the full body, declared length %s", declared)
+                    .containsExactly(body);
+            final Chain rejected = new Chain();
+            final MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(
+                    length(signed("POST", path, body + " ", null), declared), response, rejected);
+            assertRefused(response, rejected, "one byte beyond the operation's bound");
+            lines.list.clear();
+        }
+    }
 
-        assertThat(AccessFilter.most(result))
-                .as("a result file of 262144 bytes and its envelope")
-                .isEqualTo(266240);
-        assertThat(
-                        List.of(
-                                AccessFilter.most(event),
-                                AccessFilter.most(read),
-                                AccessFilter.most(nested)))
-                .as("every other operation's bound")
-                .containsOnly(AccessFilter.MOST_BODY);
+    @Test
+    void onlyTheFourNamedPostOperationsTakeOneMiB() {
+        // Harm: a larger allowance also weakens the bound on other calls or malformed paths.
+        for (final String path :
+                List.of(
+                        "/projects/p/ideas",
+                        "/projects/p/stories",
+                        "/projects/p/issues",
+                        "/projects/p/tasks/analyze/result")) {
+            assertThat(AccessFilter.most(new MockHttpServletRequest("POST", path)))
+                    .as("the raised POST limit on %s", path)
+                    .isEqualTo(path.endsWith("/result") ? 1048576 + 4096 : 1048576);
+            for (final String method : List.of("GET", "PUT", "DELETE")) {
+                assertThat(AccessFilter.most(new MockHttpServletRequest(method, path)))
+                        .as("the original filter limit on %s %s", method, path)
+                        .isEqualTo(AccessFilter.MOST_BODY);
+            }
+        }
+        for (final String path :
+                List.of(
+                        "/projects/p/tasks/analyze/events",
+                        "/projects/p/tasks/a/b/result",
+                        "/projects/p/ideas/discussion",
+                        "/projects/p/ideas/",
+                        "/projects/p/issues/I1/comments",
+                        "/projects/p%2fother/issues",
+                        "/projects/p/stories/ST1/work/stop")) {
+            assertThat(AccessFilter.most(new MockHttpServletRequest("POST", path)))
+                    .as("the original filter limit on %s", path)
+                    .isEqualTo(AccessFilter.MOST_BODY);
+        }
+    }
+
+    private static HttpServletRequestWrapper length(
+            final MockHttpServletRequest request, final boolean declared) {
+        return new HttpServletRequestWrapper(request) {
+            @Override
+            public long getContentLengthLong() {
+                return declared ? super.getContentLengthLong() : -1;
+            }
+
+            @Override
+            public int getContentLength() {
+                return declared ? super.getContentLength() : -1;
+            }
+        };
     }
 
     @Test

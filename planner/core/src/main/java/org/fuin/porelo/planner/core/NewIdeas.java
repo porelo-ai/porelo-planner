@@ -25,13 +25,13 @@ public final class NewIdeas {
     public static final String REFUSED = "IdeaRefused";
 
     /** The most code points a story's or an issue's title may have. */
-    public static final int MOST_TITLE = 120;
+    public static final int MOST_TITLE = 256;
 
     /** The most code points a story's gain or test may have. */
     public static final int MOST_LINE = 400;
 
     /** The most code points what must be true may have. */
-    public static final int MOST_TEXT = 4000;
+    public static final int MOST_TEXT = 65536;
 
     /** The most faults a refusal lists. */
     public static final int MOST_FAULTS = 100;

@@ -28,22 +28,38 @@ class NewIssuesTest {
 
     @Test
     void anIssueWithinEveryBoundIsTakenWithItsTitleTrimmed() {
-        // A bound refused one character early would refuse what the window allows.
+        // Harm: a new issue a forge accepts is refused before it reaches the store.
         final NewIssue issue =
                 NewIssues.check(
                         board,
                         "porelo-other",
-                        " " + "T".repeat(120) + " ",
-                        "W".repeat(4000),
+                        " " + "T".repeat(256) + " ",
+                        "W".repeat(65536),
                         "XL",
                         null);
 
         assertThat(issue)
                 .as("the title without the spaces around it")
-                .isEqualTo(new NewIssue("porelo-other", "T".repeat(120), "W".repeat(4000), "XL"));
+                .isEqualTo(new NewIssue("porelo-other", "T".repeat(256), "W".repeat(65536), "XL"));
         assertThat(NewIssues.check(board, "porelo-store", "T", "W", null, null).size())
                 .as("a size is optional")
                 .isNull();
+    }
+
+    @Test
+    void supplementaryCharactersCountOnceInANewIssuesTitleAndText() {
+        // Harm: an issue a forge accepts is refused because UTF-16 units count twice.
+        final String title = "𝔸".repeat(256);
+        final String text = "𝔸".repeat(65536);
+        final NewIssue issue = NewIssues.check(board, "porelo-other", title, text, null, null);
+        assertThat(issue.title()).as("256 code points are kept").isEqualTo(title);
+        assertThat(issue.mustBeTrue()).as("65536 code points are kept").isEqualTo(text);
+        assertThat(field("porelo-other", title + "𝔸", "W", null))
+                .as("one code point beyond the title bound")
+                .isEqualTo("title");
+        assertThat(field("porelo-other", "T", text + "𝔸", null))
+                .as("one code point beyond the text bound")
+                .isEqualTo("mustBeTrue");
     }
 
     @Test
@@ -54,10 +70,10 @@ class NewIssuesTest {
         assertThat(field("porelo-store", "A\nB", "W", null)).isEqualTo("title");
         assertThat(field("porelo-store", "A\u0007", "W", null)).isEqualTo("title");
         assertThat(field("porelo-store", "   ", "W", null)).isEqualTo("title");
-        assertThat(field("porelo-store", "T".repeat(121), "W", null)).isEqualTo("title");
+        assertThat(field("porelo-store", "T".repeat(257), "W", null)).isEqualTo("title");
         assertThat(field("porelo-store", "T", "", null)).isEqualTo("mustBeTrue");
         assertThat(field("porelo-store", "T", " \n ", null)).isEqualTo("mustBeTrue");
-        assertThat(field("porelo-store", "T", "W".repeat(4001), null)).isEqualTo("mustBeTrue");
+        assertThat(field("porelo-store", "T", "W".repeat(65537), null)).isEqualTo("mustBeTrue");
         assertThat(field("porelo-store", "T", "W", "XXL")).isEqualTo("size");
     }
 

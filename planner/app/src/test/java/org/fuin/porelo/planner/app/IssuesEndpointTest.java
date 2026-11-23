@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -162,6 +163,36 @@ class IssuesEndpointTest {
                                 Risk.ORDINARY)),
                 empty.work(),
                 empty.repositories());
+    }
+
+    @Test
+    void aNewIssueBodyAtOneMiBIsSavedAndOneByteMoreIsRefused() throws Exception {
+        // Harm: a task's new issue is refused although a forge accepts its size.
+        final String body =
+                "{\"repository\":\"porelo-other\",\"title\":\""
+                        + "T".repeat(256)
+                        + "\",\"mustBeTrue\":\""
+                        + "é".repeat(65536)
+                        + "\",\"revision\":\"r1\"}";
+        final String bounded =
+                body + " ".repeat(1048576 - body.getBytes(StandardCharsets.UTF_8).length);
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(bounded + " "))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("IssueNotAllowed"));
+        assertThat(added).as("the oversized request saves nothing").isEmpty();
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(bounded))
+                .andExpect(status().isCreated());
+        assertThat(added).as("one new issue").hasSize(1);
+        assertThat(added.getFirst().title()).as("the full title").isEqualTo("T".repeat(256));
+        assertThat(added.getFirst().mustBeTrue())
+                .as("the full multibyte text")
+                .isEqualTo("é".repeat(65536));
     }
 
     @Test
@@ -458,7 +489,7 @@ class IssuesEndpointTest {
                 "repository");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \""
-                        + "T".repeat(121)
+                        + "T".repeat(257)
                         + "\", \"mustBeTrue\": \"W\", \"revision\": \"r1\"}",
                 "title");
         refused(
@@ -503,7 +534,7 @@ class IssuesEndpointTest {
         refused("{\"revision\": token123secret}", "");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \""
-                        + "W".repeat(65536)
+                        + "W".repeat(1048576)
                         + "\", \"revision\": \"r1\"}",
                 "");
         assertThat(added).as("nothing added").isEmpty();

@@ -24,7 +24,7 @@
     "title": {
       "description": "The story's name, as its heading repeats it: one line, no leading or trailing space.",
       "$ref": "#/$defs/line",
-      "maxLength": 120
+      "maxLength": 256
     },
     "priority": {
       "description": "How soon it is wanted, as Jira says it; within a state, the index lists the higher first.",
