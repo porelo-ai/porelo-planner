@@ -8,6 +8,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import org.assertj.core.api.Assertions;
 import org.fuin.porelo.planner.store.Board;
@@ -139,17 +140,12 @@ class GitHubUnlistedStreamTest {
             final MockHttpServletResponse events =
                     mvc.perform(get("/projects/alpha/events")).andReturn().getResponse();
             final long end = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-            while (!events.getContentAsString().contains("event:board")
-                    && System.nanoTime() < end) {
+            while (firstBoard(events.getContentAsString()).isEmpty() && System.nanoTime() < end) {
                 Thread.sleep(50);
             }
 
             final String board =
-                    events.getContentAsString()
-                            .lines()
-                            .dropWhile(line -> !line.equals("event:board"))
-                            .filter(line -> line.startsWith("data:"))
-                            .findFirst()
+                    firstBoard(events.getContentAsString())
                             .orElseThrow(() -> new AssertionError("no board was streamed"));
             Assertions.assertThat(board)
                     .as("the board streamed")
@@ -159,5 +155,36 @@ class GitHubUnlistedStreamTest {
                                     + "\"title\":\"Made by hand\",\"kind\":\"issue\",\"link\":"
                                     + "\"https://github.com/example-org/porelo-other/issues/3\"}]");
         }
+    }
+
+    @Test
+    void aBoardEventIsReadOnlyOnceItsDataEnded() {
+        // Harm: the stream is read while the event is still being written, and a board that holds
+        // every word is taken for one that lacks them.
+        Assertions.assertThat(firstBoard(": open\n\nevent:board\ndata:"))
+                .as("an event whose data is still being written")
+                .isEmpty();
+        Assertions.assertThat(firstBoard("event:board\ndata:{\"a\":1}\n\nevent:load\n"))
+                .as("an event its blank line ended")
+                .contains("data:{\"a\":1}");
+    }
+
+    /**
+     * The data line of the first board event on the stream, once the blank line that ends an event
+     * follows it; Spring writes an event's name, its data and its end apart.
+     */
+    private static Optional<String> firstBoard(final String stream) {
+        final int start = stream.indexOf("event:board\n");
+        if (start < 0) {
+            return Optional.empty();
+        }
+        final int end = stream.indexOf("\n\n", start);
+        if (end < 0) {
+            return Optional.empty();
+        }
+        return stream.substring(start, end)
+                .lines()
+                .filter(line -> line.startsWith("data:"))
+                .findFirst();
     }
 }
