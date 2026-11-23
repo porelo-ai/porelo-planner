@@ -133,6 +133,60 @@ public interface PlanningStore {
     }
 
     /**
+     * Whether the store keeps items' labels and sets their topic labels, on a text edit and a new
+     * issue; a store that keeps none refuses either carrying labels before anything is written.
+     *
+     * @return true when {@link TextEdit#labels()} and {@link NewIssue#labels()} are written
+     */
+    default boolean setsLabels() {
+        return false;
+    }
+
+    /**
+     * Whether the store keeps its repositories' labels: it reads them at the project's first read
+     * and at each {@link #refresh()}, names each repository whose labels are not the topic labels
+     * in {@link Board#repositoryWarnings()}, and makes a correction's calls on them.
+     *
+     * @return true when {@link #correctLabels} is carried out
+     */
+    default boolean keepsRepositoryLabels() {
+        return false;
+    }
+
+    /**
+     * Reads one repository's labels anew from its forge, bounded as every read of them is, and
+     * keeps them, so a correction's calls are computed from the labels as they stand now; a
+     * repository that is none of the project's is read nothing for.
+     *
+     * @param repository the repository's name
+     * @return the board with the repository's warning as its labels stand now
+     * @throws StoreException.NotSavable when the forge refuses the read, named by its status alone,
+     *     or the repository has more labels than a read takes
+     * @throws StoreException for a read the forge did not answer, or refused for the login or its
+     *     rate limit
+     * @throws UnsupportedOperationException when the store keeps no repository's labels
+     */
+    default Board rereadLabels(final String repository) {
+        throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /**
+     * Makes the calls on one repository's labels in their order, with the person's own login on the
+     * repository's forge, and keeps the labels as they stand afterwards; a call the forge refuses
+     * stops the calls after it.
+     *
+     * @param repository the repository's name
+     * @param calls the calls, as {@link RepositoryWarning#calls()} gives them
+     * @return the board after the calls
+     * @throws StoreException.NotSavable for a call the forge refused, named by its status alone
+     * @throws UnsupportedOperationException when the store keeps no repository's labels
+     */
+    default Board correctLabels(
+            final String repository, final java.util.List<RepositoryWarning.Call> calls) {
+        throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /**
      * Adds a new issue against the revision the window shows, in its requested state when {@link
      * #createsInState()} is true and otherwise the first state, saved as a move is saved: written,
      * indexed and pushed, or not at all.
@@ -591,6 +645,15 @@ public interface PlanningStore {
      */
     default TextFormat textFormat() {
         return TextFormat.PLAIN;
+    }
+
+    /**
+     * Answers where the store keeps the project's stories and issues, without reading them.
+     *
+     * @return the tracker; GitHub's unless the store names its own
+     */
+    default Tracker tracker() {
+        return Tracker.GITHUB;
     }
 
     /**

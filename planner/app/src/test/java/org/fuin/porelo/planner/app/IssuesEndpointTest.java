@@ -49,6 +49,8 @@ class IssuesEndpointTest {
 
     private boolean createsInState;
 
+    private boolean setsLabels = true;
+
     private final List<Writes> moves = new ArrayList<>();
 
     private MockMvc mvc;
@@ -98,6 +100,11 @@ class IssuesEndpointTest {
                     @Override
                     public boolean createsInState() {
                         return createsInState;
+                    }
+
+                    @Override
+                    public boolean setsLabels() {
+                        return setsLabels;
                     }
 
                     @Override
@@ -196,6 +203,45 @@ class IssuesEndpointTest {
         assertThat(added.getFirst().mustBeTrue())
                 .as("the full multibyte text")
                 .isEqualTo("é".repeat(65536));
+    }
+
+    @Test
+    void aNewIssuesTopicLabelsReachTheStoreAndAnyOtherOrAStoreWithoutLabelsMakesNothing()
+            throws Exception {
+        // Harm: a new issue made without the labels asked, with a label the planner never sets,
+        // or made on a store that drops them.
+        final String base =
+                "{\"repository\":\"porelo-other\",\"title\":\"T\",\"mustBeTrue\":\"W\","
+                        + "\"seen\": "
+                        + Seens.of(current)
+                        + ",\"labels\": ";
+        for (final String labels : List.of("[\"bug\"]", "[\"tests\",\"tests\"]", "\"tests\"")) {
+            mvc.perform(
+                            post("/projects/alpha/issues")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(base + labels + "}"))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("IssueNotAllowed"))
+                    .andExpect(jsonPath("$.parameters.field").value("labels"));
+        }
+        setsLabels = false;
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(base + "[\"tests\"]}"))
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.title").value("NotOffered"));
+        assertThat(added).as("nothing made").isEmpty();
+        setsLabels = true;
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(base + "[\"usability\",\"tests\"]}"))
+                .andExpect(status().isCreated());
+        assertThat(added)
+                .as("the labels handed to the store in their fixed order")
+                .extracting(NewIssue::labels)
+                .containsExactly(List.of("tests", "usability"));
     }
 
     @Test

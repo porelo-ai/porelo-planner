@@ -29,6 +29,8 @@ import org.jspecify.annotations.Nullable;
  *     of them holds the story back
  * @param version its own stored edit basis, as its store keeps it; a state its issues give is not
  *     part of it
+ * @param labels its labels on the tracker, in the store's order, each once: the topic labels and
+ *     any label of the person's own; empty for a store that holds none
  */
 public record Story(
         String id,
@@ -42,7 +44,8 @@ public record Story(
         boolean issuesWhole,
         @Nullable Instant closedAt,
         List<Warning> warnings,
-        Version version) {
+        Version version,
+        List<String> labels) {
 
     /** The priorities a story may have, the highest first. */
     public static final List<String> PRIORITIES =
@@ -51,6 +54,7 @@ public record Story(
     /** Checks the ids and copies the list. */
     public Story {
         Ids.story(id);
+        labels = TopicLabels.checked(id, labels);
         issues = List.copyOf(issues);
         issues.forEach(Ids::issue);
         warnings = Warning.offerable(warnings);
@@ -91,6 +95,7 @@ public record Story(
                 id,
                 title,
                 state,
+                stateStored,
                 priority,
                 size,
                 issues,
@@ -99,16 +104,122 @@ public record Story(
                 issuesWhole,
                 closedAt,
                 warnings,
-                Version.of(
-                        "story",
-                        id,
-                        title,
-                        stateStored ? state : null,
-                        priority,
-                        size,
-                        issues,
-                        description,
-                        link));
+                List.of());
+    }
+
+    /**
+     * A story whose version is taken over its own stored values, its labels among them, for a store
+     * that keeps no edit basis of its own; a story without labels has the version it had before
+     * labels were kept.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state its state
+     * @param stateStored whether its store keeps the state as the story's own
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     * @param closedAt when it was closed as completed, or null
+     * @param warnings what the store could not read in it
+     * @param labels its labels, in the store's order
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final boolean stateStored,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole,
+            final @Nullable Instant closedAt,
+            final List<Warning> warnings,
+            final List<String> labels) {
+        this(
+                id,
+                title,
+                state,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                closedAt,
+                warnings,
+                labels.isEmpty()
+                        ? Version.of(
+                                "story",
+                                id,
+                                title,
+                                stateStored ? state : null,
+                                priority,
+                                size,
+                                issues,
+                                description,
+                                link)
+                        : Version.of(
+                                "story",
+                                id,
+                                title,
+                                stateStored ? state : null,
+                                priority,
+                                size,
+                                issues,
+                                description,
+                                link,
+                                labels),
+                labels);
+    }
+
+    /**
+     * A story without labels with the version its store gives.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state its state
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     * @param closedAt when it was closed as completed, or null
+     * @param warnings what the store could not read in it
+     * @param version its own stored edit basis
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole,
+            final @Nullable Instant closedAt,
+            final List<Warning> warnings,
+            final Version version) {
+        this(
+                id,
+                title,
+                state,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                closedAt,
+                warnings,
+                version,
+                List.of());
     }
 
     /**
@@ -221,7 +332,8 @@ public record Story(
                 issuesWhole,
                 closedAt,
                 warnings,
-                version);
+                version,
+                labels);
     }
 
     /**
@@ -243,6 +355,30 @@ public record Story(
                 issuesWhole,
                 closedAt,
                 warnings,
-                version);
+                version,
+                labels);
+    }
+
+    /**
+     * This story carrying other labels, its version as it was.
+     *
+     * @param labels its labels, in the store's order
+     * @return the story
+     */
+    public Story withLabels(final List<String> labels) {
+        return new Story(
+                id,
+                title,
+                state,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                closedAt,
+                warnings,
+                version,
+                labels);
     }
 }

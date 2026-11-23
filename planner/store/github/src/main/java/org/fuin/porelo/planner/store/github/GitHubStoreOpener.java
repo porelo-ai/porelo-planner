@@ -57,6 +57,9 @@ public final class GitHubStoreOpener implements TrackedStores {
     /** The pace of the person's token the reads are held by, or null when none is kept. */
     private final @Nullable GitHubPace pace;
 
+    /** The calls on a repository's labels, or null for an opener whose stores keep none. */
+    private final RepositoryLabels.@Nullable Forge labels;
+
     /** Runs a look after a read or save on a thread of its own, so the caller does not wait. */
     private static final Executor SETTLE_LOOKS =
             task -> Thread.ofVirtual().name("github-settle").start(task);
@@ -78,7 +81,16 @@ public final class GitHubStoreOpener implements TrackedStores {
                 tokens,
                 states ->
                         new ItemsBoardReader(
-                                queries, tokens, new ForgeAccessRefusals(GITHUB), states),
+                                queries,
+                                tokens,
+                                new ForgeAccessRefusals(GITHUB),
+                                states,
+                                InstantSource.system(),
+                                ItemsBoardReader.DEADLINE,
+                                Thread::sleep,
+                                null,
+                                LimitFactors.DEFAULT,
+                                writes::issueFields),
                 touched ->
                         new FieldsBoardWriter(
                                 touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
@@ -183,6 +195,7 @@ public final class GitHubStoreOpener implements TrackedStores {
                         new ItemsBoardReader(
                                 pace.watching(queries),
                                 pace.watching(issuePages),
+                                pace.watching(writes::issueFields),
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 states,
@@ -199,7 +212,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                 executor,
                 null,
                 () -> TrackerChanges.NONE,
-                pace);
+                pace,
+                null);
     }
 
     /**
@@ -262,6 +276,7 @@ public final class GitHubStoreOpener implements TrackedStores {
                 looks,
                 null,
                 () -> TrackerChanges.NONE,
+                null,
                 null);
     }
 
@@ -274,7 +289,9 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Executor looks,
             final @Nullable Supplier<BoardCopies> copies,
             final Supplier<TrackerChanges> changes,
-            final @Nullable GitHubPace pace) {
+            final @Nullable GitHubPace pace,
+            final RepositoryLabels.@Nullable Forge labels) {
+        this.labels = labels;
         this.pace = pace;
         this.copies = copies;
         this.changes = changes;
@@ -304,7 +321,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                 looks,
                 Objects.requireNonNull(copies),
                 changes,
-                pace);
+                pace,
+                labels);
     }
 
     /**
@@ -332,7 +350,30 @@ public final class GitHubStoreOpener implements TrackedStores {
                 looks,
                 copies,
                 () -> new GitHubChanges(paced, watched),
-                pace);
+                pace,
+                labels);
+    }
+
+    /**
+     * The same opener, keeping each project's repositories' labels: read at the project's first
+     * read and at each refresh, compared with the topic labels, and set right by a confirmed
+     * correction.
+     *
+     * @param forge the calls on a repository's labels
+     * @return the opener
+     */
+    public GitHubStoreOpener keepingLabels(final RepositoryLabels.Forge forge) {
+        return new GitHubStoreOpener(
+                tokens,
+                readers,
+                writers,
+                probes,
+                lockWait,
+                looks,
+                copies,
+                changes,
+                pace,
+                Objects.requireNonNull(forge, "forge"));
     }
 
     @Override
@@ -356,7 +397,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                         .refusals(new ForgeAccessRefusals(GITHUB))
                         .probe(probes.get())
                         .copies(copies())
-                        .changes(changes.get()),
+                        .changes(changes.get())
+                        .labels(new RepositoryLabels(labels)),
                 tokens,
                 lockWait,
                 touched,

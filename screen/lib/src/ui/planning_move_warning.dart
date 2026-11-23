@@ -7,8 +7,9 @@ import '../planning_board.dart';
 import 'planning_detail_widgets.dart';
 import 'style.dart';
 
-/// The warnings of the move [PlanningBoard.question] holds, with Confirm and Cancel; nothing when no move is asked
-/// about. Nothing is saved before Confirm, and Cancel sends nothing.
+/// The warnings of the move [PlanningBoard.question] holds, or the preview of the correction
+/// [PlanningBoard.correctionQuestion] holds, with Confirm and Cancel; nothing when neither is asked about. Nothing is
+/// saved before Confirm, and Cancel sends nothing.
 class PlanningMoveWarningPanel extends StatelessWidget {
   /// Shows [board]'s question, with Confirm and Cancel unless [buttons] is false and they stand apart.
   const PlanningMoveWarningPanel({required this.board, this.buttons = true, super.key});
@@ -22,8 +23,9 @@ class PlanningMoveWarningPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final asked = board.question;
-    if (asked == null) return const SizedBox.shrink();
+    if (asked == null) return _correction(context);
     final theme = Theme.of(context);
+    final corrects = asked.corrects;
     return Card(
       key: const Key('planning-move-warning'),
       color: theme.colorScheme.errorContainer,
@@ -33,9 +35,19 @@ class PlanningMoveWarningPanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              planningShown('Move ${asked.move.id} to ${asked.move.to}?', multiline: false),
+              planningShown(
+                corrects == null
+                    ? 'Move ${asked.move.id} to ${asked.move.to}?'
+                    : 'Set ${asked.move.id} right: move it to ${asked.move.to}?',
+                multiline: false,
+              ),
               style: theme.textTheme.titleMedium,
             ),
+            if (corrects != null)
+              ..._corrects(corrects, [
+                for (final issue in asked.preview.issues)
+                  '${issue.id} (${planningValue(issue.repository)}): ${planningValue(issue.from)} → ${planningValue(issue.to)}',
+              ]),
             if (asked.again)
               const Text(
                 'Planning changed since you confirmed this move; check it again.',
@@ -52,6 +64,58 @@ class PlanningMoveWarningPanel extends StatelessWidget {
       ),
     );
   }
+
+  /// The preview of the correction [PlanningBoard.correctionQuestion] holds; nothing when none is asked about.
+  Widget _correction(BuildContext context) {
+    final asked = board.correctionQuestion;
+    if (asked == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final preview = asked.preview;
+    final what = asked.warning.correction?.kind == PlanCorrection.priority ? 'priority' : 'value';
+    final repository = asked.correction.repository;
+    return Card(
+      key: const Key('planning-correction'),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(Space.normal),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              planningShown(
+                repository != null
+                    ? 'Set the labels of $repository right?'
+                    : 'Set ${asked.correction.id} right: its $what to ${preview.to}?',
+                multiline: false,
+              ),
+              style: theme.textTheme.titleMedium,
+            ),
+            ..._corrects(
+              asked.warning,
+              repository != null
+                  // Each call it makes on the forge, so nothing is written there that the person was not shown.
+                  ? [for (final call in preview.calls) call.words]
+                  : ['${asked.correction.id}: ${preview.from.isEmpty ? 'none' : preview.from} → ${preview.to}'],
+            ),
+            if (buttons) ...[const SizedBox(height: Space.small), PlanningMoveButtons(board: board)],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// What a correction sets right and what it changes, one line each, as its preview answered.
+  static List<Widget> _corrects(PlanWarning warning, List<String> changes) => [
+    Text(
+      planningShown('It sets right: ${warning.text.isEmpty ? warning.kind : warning.text}', multiline: false),
+      key: const Key('planning-correction-warning'),
+    ),
+    for (final change in changes)
+      Padding(
+        padding: const EdgeInsets.only(left: Space.normal),
+        child: Text(planningShown(change, multiline: false), key: const Key('planning-correction-change')),
+      ),
+  ];
 
   /// The board's closed states, into which a moved issue is settled and its file deleted.
   static Set<String> _closed(PlanningBoard board) => {
@@ -144,7 +208,25 @@ class PlanningMoveButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final asked = board.question;
-    if (asked == null) return const SizedBox.shrink();
+    if (asked == null) {
+      final correction = board.correctionQuestion;
+      if (correction == null) return const SizedBox.shrink();
+      return Wrap(
+        spacing: Space.small,
+        children: [
+          FilledButton(
+            key: const Key('planning-correction-confirm'),
+            onPressed: () => unawaited(board.confirmCorrection()),
+            child: const Text('Set it right'),
+          ),
+          TextButton(
+            key: const Key('planning-correction-cancel'),
+            onPressed: board.cancelCorrection,
+            child: const Text('Cancel'),
+          ),
+        ],
+      );
+    }
     final stops = asked.warnings.any((warning) => warning.kind == PlanningMoveWarning.runningWork);
     return Wrap(
       spacing: Space.small,
@@ -154,7 +236,15 @@ class PlanningMoveButtons extends StatelessWidget {
           builder: (context, _, _) => FilledButton(
             key: const Key('planning-move-confirm'),
             onPressed: asked.reasonRefused != null ? null : () => unawaited(board.confirmMove()),
-            child: Text(stops ? 'Stop the tasks and move' : 'Move'),
+            child: Text(
+              asked.corrects != null
+                  ? stops
+                        ? 'Stop the tasks and set it right'
+                        : 'Set it right'
+                  : stops
+                  ? 'Stop the tasks and move'
+                  : 'Move',
+            ),
           ),
         ),
         TextButton(key: const Key('planning-move-cancel'), onPressed: board.cancelMove, child: const Text('Cancel')),

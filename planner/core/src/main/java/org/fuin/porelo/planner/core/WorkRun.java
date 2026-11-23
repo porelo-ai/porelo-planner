@@ -838,6 +838,7 @@ public final class WorkRun {
                 judged.writes(),
                 judged.offer(),
                 board,
+                null,
                 null);
     }
 
@@ -1141,7 +1142,15 @@ public final class WorkRun {
                                     known.rework()));
                     draft.compact(known.id());
                     final Run saved =
-                            save(session, snapshot, draft, NOTHING, known.id(), board, null);
+                            save(
+                                    session,
+                                    snapshot,
+                                    draft,
+                                    NOTHING,
+                                    known.id(),
+                                    board,
+                                    null,
+                                    Basis.none());
                     return answer(saved, readers);
                 });
     }
@@ -1461,7 +1470,15 @@ public final class WorkRun {
                     targets.add(issueId);
                     Edits.unchanged(board, seen, targets);
                     final Run saved =
-                            save(session, snapshot, draft, writes, reading.id(), board, issueId);
+                            save(
+                                    session,
+                                    snapshot,
+                                    draft,
+                                    writes,
+                                    reading.id(),
+                                    board,
+                                    issueId,
+                                    seen);
                     return answer(saved, following);
                 });
     }
@@ -1722,7 +1739,7 @@ public final class WorkRun {
                                 draft.unavailable(id, p, "its result was refused: " + said.get(0));
                             }
                         }
-                        save(session, refused, draft, NOTHING, offer, board, null);
+                        save(session, refused, draft, NOTHING, offer, board, null, Basis.none());
                         throw HandedResults.refused(said);
                     }
                     return saved(session, snapshot, offer, task, binding, kind, handIn);
@@ -2033,8 +2050,8 @@ public final class WorkRun {
     }
 
     /**
-     * Answers what the correction of one warning would write and what it can do harm by, read with
-     * the work under the writer lock, writing nothing.
+     * Answers what the correction of one warning would write, read under the writer lock, writing
+     * nothing.
      *
      * @param asked the correction
      * @return the preview, its targets with the versions the board holds
@@ -2042,69 +2059,106 @@ public final class WorkRun {
      * @throws UnsupportedOperationException when the store offers no correction of the warning
      */
     public Corrections.Preview correctionPreview(final Corrections.Asked asked) {
-        return record.locked(
-                session -> {
-                    final Board board = store.board();
-                    return Corrections.check(board, asked, owners(read(session)));
-                });
+        return record.locked(session -> Corrections.check(store.board(), asked));
     }
 
     /**
-     * Saves a correction whose preview the person confirmed, as a move is saved: checked again on
-     * the board and the work as they stand, before anything is stopped or written, its digest must
-     * be the one sent, so a stale, changed or repeated confirm writes nothing. A confirmed save
-     * stops each run with tasks at work on the story, which the preview named and the digest
-     * covers, and records the stop with the save; an unconfirmed one is refused while such a run
-     * stands.
+     * Saves a correction whose preview the person confirmed: checked again on the board as it
+     * stands, before anything is written, its digest must be the one sent, so a stale, changed or
+     * repeated confirm writes nothing. A correction never writes a state, so it neither waits on
+     * nor stops a run at work.
      *
      * @param asked the correction
      * @param basis the versions the person saw, its preview's targets among them
      * @param digest the preview's digest the window sends back
-     * @param confirm whether the person confirmed the preview's warnings
      * @param repository the project's own repository, which the digest covers
      * @param branch its branch, or null
-     * @return the board after the save and the runs it stopped
+     * @return the board after the save
      * @throws StoreException.BasisIncomplete for a target the basis names no version for
      * @throws StoreException.Changed for a target changed since the person saw it
-     * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now, or
-     *     {@code WorkRunning} while a run has tasks at work on the story and the save is not
-     *     confirmed
+     * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now
      * @throws Moves.Refused as {@link #correctionPreview} refuses it
      * @throws UnsupportedOperationException when the store offers no correction of the warning
      */
-    public MoveSaved<Board> correction(
+    public Board correction(
             final Corrections.Asked asked,
             final Basis basis,
             final String digest,
-            final boolean confirm,
             final String repository,
             final @Nullable String branch) {
         return record.locked(
                 session -> {
-                    final Snapshot snapshot = read(session);
                     final Board board = store.board();
                     // The item corrected is the target, so one changed since it was seen is
                     // refused as changed before its warning is judged on what it stands at now.
                     Edits.unchanged(board, basis, Set.of(asked.id()));
-                    final Corrections.Preview preview =
-                            Corrections.check(board, asked, owners(snapshot));
+                    final Corrections.Preview preview = Corrections.check(board, asked);
                     Edits.unchanged(board, basis, preview.targets().keySet());
                     if (!MessageDigest.isEqual(
                             preview.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
                             digest.getBytes(StandardCharsets.UTF_8))) {
                         throw WorkRefusal.correctionChanged();
                     }
-                    final Set<String> stories = Set.of(asked.id());
-                    if (!confirm) {
-                        refuseOwned(snapshot, Set.of(), stories);
+                    return store.save(basis, preview.writes(), Recheck.none());
+                });
+    }
+
+    /**
+     * Answers the calls a repository's correction would make, read under the writer lock, writing
+     * nothing: the repository's labels are read anew from its forge first, so no call is shown for
+     * a label someone else deleted or created since they were last read.
+     *
+     * @param asked the correction
+     * @return the calls with the revision they were read at
+     * @throws Moves.Refused when the correction is refused, as {@link Corrections} checks it
+     * @throws UnsupportedOperationException when the store keeps no repository's labels or offers
+     *     no correction of the warning
+     */
+    public Corrections.Labels labelsPreview(final Corrections.Repository asked) {
+        if (!store.keepsRepositoryLabels()) {
+            throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+        }
+        return record.locked(
+                session ->
+                        Corrections.checkRepository(store.rereadLabels(asked.repository()), asked));
+    }
+
+    /**
+     * Makes the calls of a repository's correction whose preview the person confirmed: checked
+     * again under the writer lock on the repository's labels read anew from its forge, its digest
+     * must be the one sent, so a stale or repeated confirm, once the warning is gone or the labels
+     * changed since the preview, makes no call. It touches no item, so no run waits on it or is
+     * stopped.
+     *
+     * @param asked the correction
+     * @param digest the preview's digest the window sends back
+     * @param repository the project's own repository, which the digest covers
+     * @param branch its branch, or null
+     * @return the board after the calls
+     * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now
+     * @throws Moves.Refused as {@link #labelsPreview} refuses it
+     * @throws UnsupportedOperationException when the store keeps no repository's labels or offers
+     *     no correction of the warning
+     */
+    public Board labels(
+            final Corrections.Repository asked,
+            final String digest,
+            final String repository,
+            final @Nullable String branch) {
+        if (!store.keepsRepositoryLabels()) {
+            throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+        }
+        return record.locked(
+                session -> {
+                    final Corrections.Labels preview =
+                            Corrections.checkRepository(
+                                    store.rereadLabels(asked.repository()), asked);
+                    if (!MessageDigest.isEqual(
+                            preview.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
+                            digest.getBytes(StandardCharsets.UTF_8))) {
+                        throw WorkRefusal.correctionChanged();
                     }
-                    final List<StoppedRun> stopped = new ArrayList<>();
-                    final Snapshot stopping = stopOwners(snapshot, Set.of(), stories, stopped);
-                    final Board saved = store.save(basis, preview.writes(), Recheck.none());
-                    if (stopping != snapshot) {
-                        session.write(stopping);
-                    }
-                    return new MoveSaved<>(saved, stopped);
+                    return store.correctLabels(asked.repository(), preview.calls());
                 });
     }
 
@@ -2286,6 +2340,12 @@ public final class WorkRun {
         }
     }
 
+    /**
+     * Saves a run's writes, pending first, and the run after them; a refused save halts the run.
+     * Writes given the versions a person saw are checked by their targets alone, and a target
+     * changed since is refused as such with the run left as it stood; writes without them, a task's
+     * start or end, go against the revision of {@code base}.
+     */
     private Run save(
             final Session session,
             final Snapshot snapshot,
@@ -2293,7 +2353,8 @@ public final class WorkRun {
             final Writes writes,
             final String eventOffer,
             final Board base,
-            final @Nullable String issue) {
+            final @Nullable String issue,
+            final @Nullable Basis seen) {
         final Run finalRun = draft.freeze();
         final Board planned = issue == null ? base : staged(base, writes.issues());
         try {
@@ -2322,7 +2383,20 @@ public final class WorkRun {
         preflight(session, pending, planned, issue);
         session.write(pending);
         try {
-            store.save(base.revision(), writes);
+            if (seen == null) {
+                store.save(base.revision(), writes);
+            } else {
+                store.save(seen, writes, Recheck.none());
+            }
+        } catch (final StoreException.Changed | StoreException.BasisIncomplete stale) {
+            // Nothing was written: the person looks again, and the run stands as it was.
+            session.write(
+                    new Snapshot(
+                            pending.generation() + 1,
+                            snapshot.runs(),
+                            snapshot.ideas(),
+                            snapshot.results()));
+            throw stale;
         } catch (final StoreException | UnsupportedOperationException refused) {
             draft.pending = false;
             draft.halted = true;

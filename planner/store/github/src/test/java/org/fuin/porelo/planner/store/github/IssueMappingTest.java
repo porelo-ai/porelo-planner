@@ -52,6 +52,154 @@ class IssueMappingTest {
                 .contains(Warning.unknownPriority());
     }
 
+    /** The priorities GitHub's issue field holds, which a priority correction offers. */
+    private static final org.fuin.porelo.planner.store.Correction PRIORITIES =
+            new org.fuin.porelo.planner.store.Correction(
+                    org.fuin.porelo.planner.store.Correction.PRIORITY,
+                    List.of("Highest", "High", "Medium", "Low"));
+
+    /**
+     * The move offered on an issue outside the workflow under {@link #CONFIG}, which has no rules.
+     */
+    private static final Warning OFFERED_MOVE =
+            Warning.stateOutsideWorkflow()
+                    .offering(
+                            new org.fuin.porelo.planner.store.Correction(
+                                    org.fuin.porelo.planner.store.Correction.MOVE,
+                                    List.of("Idea", "Backlog", "Implementing")));
+
+    /** A work rule that enters Implementing alone, from Backlog. */
+    private static final Work BUILDING =
+            new Work(
+                    Map.of(
+                            "Implementing",
+                            new org.fuin.porelo.planner.store.WorkRule(
+                                    List.of("Backlog"),
+                                    "Finished",
+                                    null,
+                                    null,
+                                    org.fuin.porelo.planner.store.WorkRule.Per.STORY,
+                                    List.of("AGENT"),
+                                    "Build it.",
+                                    Map.of("claude", "claude-opus-5-5"))),
+                    List.of());
+
+    /**
+     * The project's config with the work rules given, its organization's field holding every
+     * priority GitHub can.
+     */
+    private static ProjectConfig working(final Work work) {
+        return new ProjectConfig(
+                        CONFIG.forge(),
+                        CONFIG.project(),
+                        CONFIG.commit(),
+                        WORKFLOW,
+                        work,
+                        CONFIG.repositories(),
+                        Map.of(),
+                        Map.of())
+                .withPriorities(PRIORITIES.choices());
+    }
+
+    private static IssueMapping.Mapped read(final Work work, final Item... items) {
+        return read(working(work), items);
+    }
+
+    private static IssueMapping.Mapped read(final ProjectConfig config, final Item... items) {
+        return IssueMapping.read(
+                java.util.Arrays.stream(items).map(Item::view).toList(), config, FIRST_OPEN);
+    }
+
+    @Test
+    void aStorysPriorityIsOfferedOnlyThePrioritiesTheOrganizationsFieldHolds() {
+        // Harm: a priority offered that the organization's field cannot hold, so its save is
+        // refused only after the person confirmed it.
+        final Item story = new Item("example-project", 1).story().field(FieldNames.PRIORITY, "");
+
+        final IssueMapping.Mapped lacking =
+                read(working(BUILDING).withPriorities(List.of("High", "Medium", "Low")), story);
+        final IssueMapping.Mapped none = read(working(BUILDING).withPriorities(List.of()), story);
+
+        assertThat(lacking.stories().getFirst().warnings())
+                .as("a field without Urgent offers no Highest")
+                .containsExactly(
+                        Warning.noPriority()
+                                .offering(
+                                        new org.fuin.porelo.planner.store.Correction(
+                                                org.fuin.porelo.planner.store.Correction.PRIORITY,
+                                                List.of("High", "Medium", "Low"))));
+        assertThat(none.stories().getFirst().warnings())
+                .as("no field, no correction")
+                .containsExactly(Warning.noPriority());
+    }
+
+    @Test
+    void aStoryWithoutOrWithAnUnknownPriorityIsOfferedThePrioritiesGitHubCanHoldAnIssueNone() {
+        // Harm: a priority offered that GitHub's field cannot hold, so the save half happens, or
+        // an issue's priority offered, which no write of the planner holds.
+        final IssueMapping.Mapped mapped =
+                read(
+                        BUILDING,
+                        new Item("example-project", 1).story().field(FieldNames.PRIORITY, ""),
+                        new Item("example-project", 2)
+                                .story()
+                                .field(FieldNames.PRIORITY, "Someday"),
+                        new Item("example-lib", 3).field(FieldNames.PRIORITY, "Someday"));
+
+        assertThat(mapped.stories())
+                .as("each story offered GitHub's priorities, Lowest not among them")
+                .extracting(Story::id, Story::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple(
+                                "example-project#1",
+                                List.of(Warning.noPriority().offering(PRIORITIES))),
+                        Tuple.tuple(
+                                "example-project#2",
+                                List.of(Warning.unknownPriority().offering(PRIORITIES))));
+        assertThat(mapped.issues().getFirst().warnings())
+                .as("the issue's priority offered no correction")
+                .containsExactly(Warning.unknownPriority());
+    }
+
+    @Test
+    void anIssueOutsideTheWorkflowIsOfferedAMoveIntoAnOpenStateNoWorkAloneEnters() {
+        // Harm: a correction that closes an issue or starts work on it past the work rules.
+        final Item somewhere = new Item("example-lib", 6).field(FieldNames.STATUS, "Somewhere");
+        final Item reopened = new Item("example-lib", 7).field(FieldNames.STATUS, "Finished");
+
+        final IssueMapping.Mapped mapped = read(BUILDING, somewhere, reopened);
+
+        final Warning offered =
+                Warning.stateOutsideWorkflow()
+                        .offering(
+                                new org.fuin.porelo.planner.store.Correction(
+                                        org.fuin.porelo.planner.store.Correction.MOVE,
+                                        List.of("Idea", "Backlog")));
+        assertThat(mapped.issues())
+                .as("each offered a move into Idea or Backlog alone")
+                .extracting(Issue::id, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#6", List.of(offered)),
+                        Tuple.tuple("example-lib#7", List.of(offered)));
+    }
+
+    @Test
+    void whileTheWorkRulesHaveFaultsNoCorrectionIsOffered() {
+        // Harm: a working state whose rule could not be read offered as an open one.
+        final IssueMapping.Mapped mapped =
+                read(
+                        new Work(BUILDING.rules(), List.of("work.yml: Review is no rule")),
+                        new Item("example-project", 1).story().field(FieldNames.PRIORITY, ""),
+                        new Item("example-lib", 6).field(FieldNames.STATUS, "Somewhere"));
+
+        assertThat(mapped.stories().getFirst().warnings())
+                .as("the story's priority offered none")
+                .containsExactly(Warning.noPriority());
+        assertThat(mapped.issues().getFirst().warnings())
+                .as("the issue's state offered none")
+                .containsExactly(Warning.stateOutsideWorkflow());
+    }
+
     private static final Workflow WORKFLOW =
             new Workflow(
                     List.of("Idea", "Backlog", "Implementing", "Finished", "Rejected"),
@@ -410,7 +558,7 @@ class IssueMappingTest {
                                     .as("the issue left behind is named")
                                     .extracting(Warning::kind, Warning::text)
                                     .containsExactly(
-                                            org.assertj.core.groups.Tuple.tuple(
+                                            Tuple.tuple(
                                                     Warning.ISSUE_BEHIND_STORY,
                                                     "Its issue example-lib#3 stands before its"
                                                             + " state Implementing."));
@@ -485,6 +633,37 @@ class IssueMappingTest {
                 .as("the story warned on its card and not whole")
                 .extracting(Story::warnings, Story::issuesWhole)
                 .containsExactly(Tuple.tuple(List.of(Warning.issueOutsideProject()), false));
+    }
+
+    @Test
+    void anItemsLabelsAreReadInGitHubsOrderAndOneNoBoardCanShowIsLeftOut() {
+        // Harm: a person's own label vanished from the board, or one that hides or turns text
+        // reached the window, which shows labels as they are.
+        final Item story =
+                new Item("example-project", 1)
+                        .story()
+                        .labeled("needs-design")
+                        .labeled("a\u202Eb")
+                        .labeled("usability");
+        final Item issue =
+                new Item("example-lib", 2)
+                        .field(FieldNames.STATUS, "Idea")
+                        .labeled("x".repeat(51))
+                        .labeled("tests")
+                        .labeled("a\u0085b");
+        final Item bare = new Item("example-lib", 3).field(FieldNames.STATUS, "Idea");
+
+        final IssueMapping.Mapped mapped = read(story, issue, bare);
+
+        assertThat(mapped.stories())
+                .singleElement()
+                .extracting(Story::labels)
+                .isEqualTo(List.of("needs-design", "usability"));
+        assertThat(mapped.issues())
+                .extracting(Issue::id, Issue::labels)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#2", List.of("tests")),
+                        Tuple.tuple("example-lib#3", List.of()));
     }
 
     @Test
@@ -595,7 +774,7 @@ class IssueMappingTest {
                                 "Somewhere",
                                 null,
                                 List.of(),
-                                List.of(Warning.stateOutsideWorkflow())),
+                                List.of(OFFERED_MOVE)),
                         Tuple.tuple(
                                 "example-lib#7", "Idea", null, List.of("example-lib#6"), List.of()),
                         Tuple.tuple(
@@ -639,14 +818,8 @@ class IssueMappingTest {
                 .as("each open one outside the workflow, warned, its Status still shown")
                 .extracting(Issue::id, Issue::state, Issue::warnings)
                 .containsExactlyInAnyOrder(
-                        Tuple.tuple(
-                                "example-lib#2",
-                                "Finished (open)",
-                                List.of(Warning.stateOutsideWorkflow())),
-                        Tuple.tuple(
-                                "example-lib#3",
-                                "Rejected (open)",
-                                List.of(Warning.stateOutsideWorkflow())),
+                        Tuple.tuple("example-lib#2", "Finished (open)", List.of(OFFERED_MOVE)),
+                        Tuple.tuple("example-lib#3", "Rejected (open)", List.of(OFFERED_MOVE)),
                         Tuple.tuple("example-lib#4", "Backlog", List.of()));
         assertThat(mapped.stories())
                 .as("its story stays open, its state told by no issue it knows")
@@ -780,7 +953,15 @@ class IssueMappingTest {
                 .noneMatch(fault -> fault.contains("Status"));
         assertThat(mapped.issues())
                 .as("each issue whose Status is outside the workflow warned instead")
-                .filteredOn(issue -> issue.warnings().contains(Warning.stateOutsideWorkflow()))
+                .filteredOn(
+                        issue ->
+                                issue.warnings().stream()
+                                        .anyMatch(
+                                                w ->
+                                                        w.kind()
+                                                                .equals(
+                                                                        Warning
+                                                                                .STATE_OUTSIDE_WORKFLOW)))
                 .extracting(Issue::id)
                 .containsExactlyInAnyOrder("example-lib#1", "example-lib#3", "example-lib#5");
     }
@@ -1318,10 +1499,7 @@ class IssueMappingTest {
                 .extracting(Issue::id, Issue::state, Issue::worker, Issue::warnings)
                 .containsExactlyInAnyOrder(
                         Tuple.tuple(
-                                "example-lib#2",
-                                "Accepted",
-                                Worker.MANUAL,
-                                List.of(Warning.stateOutsideWorkflow())),
+                                "example-lib#2", "Accepted", Worker.MANUAL, List.of(OFFERED_MOVE)),
                         Tuple.tuple("example-lib#3", "Idea", Worker.AGENT, List.of()),
                         Tuple.tuple("example-lib#4", "Idea", Worker.AGENT, List.of()));
         assertThat(mapped.stories())
@@ -1468,7 +1646,7 @@ class IssueMappingTest {
                         Tuple.tuple(
                                 "example-lib#6", List.of(Warning.subIssueOfSubIssue(), outside)),
                         Tuple.tuple("example-lib#7", List.of(Warning.blockedByStory())),
-                        Tuple.tuple("example-lib#8", List.of(outside)),
+                        Tuple.tuple("example-lib#8", List.of(OFFERED_MOVE)),
                         Tuple.tuple(
                                 "example-lib#9", List.of(Warning.parentOutsideProject(), outside)));
         assertThat(mapped.faults()).as("nothing left out").isEmpty();
@@ -1528,9 +1706,9 @@ class IssueMappingTest {
                 .as("each issue's estimate and minutes")
                 .extracting(Issue::id, Issue::estimate, Issue::minutes)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("example-project#2", 32.5, 12.0),
-                        org.assertj.core.groups.Tuple.tuple("example-project#3", null, null),
-                        org.assertj.core.groups.Tuple.tuple("example-project#4", null, null));
+                        Tuple.tuple("example-project#2", 32.5, 12.0),
+                        Tuple.tuple("example-project#3", null, null),
+                        Tuple.tuple("example-project#4", null, null));
         assertThat(mapped.issues())
                 .as("the unreadable estimate warned in fixed words, never its value")
                 .extracting(Issue::id, Issue::warnings)
@@ -1563,7 +1741,7 @@ class IssueMappingTest {
         assertThat(mapped.issues())
                 .as("no figure out of its range is taken")
                 .extracting(Issue::estimate, Issue::minutes)
-                .containsOnly(org.assertj.core.groups.Tuple.tuple(null, null));
+                .containsOnly(Tuple.tuple(null, null));
         assertThat(mapped.issues())
                 .as("each field warned on its card, by its name")
                 .extracting(Issue::warnings)

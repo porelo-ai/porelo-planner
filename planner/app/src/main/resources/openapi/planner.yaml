@@ -170,7 +170,9 @@ paths:
     get:
       operationId: getWorkflow
       summary: Read the workflow
-      description: Answers the project's states, phases, sound work rules and the faults found reading its workflow and board.
+      description: >-
+        Answers the project's states, phases, sound work rules, the faults found reading its workflow and board, and
+        where its stories and issues are kept.
       tags: [board]
       responses:
         '200':
@@ -185,6 +187,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '504':
@@ -213,7 +217,10 @@ paths:
         an unknown `kind` counts as `whole`, an unknown `waitsFor` as absent. A read ends with its `board`, with
         `load` `{"state": "done"}` when it
         changed nothing, or with `load` `{"state": "failed", "problem", "failure", "parameters"}`: before the first
-        board this ends the stream, after it the stream stays and the board held stands.
+        board this ends the stream, after it the stream stays and the board held stands. A local project's kept
+        directory the planner can no longer use fails its read with problem ItemsDirectoryRefused, `failure` its
+        phrase and `parameters` naming the directory as that refusal does, only when it is an ItemsDirectory; no
+        board is read meanwhile, from the default directory neither.
       tags: [board]
       parameters:
         - name: Last-Event-ID
@@ -235,6 +242,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -270,6 +279,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -309,6 +320,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -407,6 +420,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -436,6 +451,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchStory'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -502,8 +519,17 @@ paths:
         was. A member left out stays as it is; null removes the part with its lead, and the title is never removed.
         Also needs (the story's issues, set through its issues), a person's own headings and the fields are not
         written by this call; a member naming them is
-        refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
-        answers the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
+        refused (EditNotAllowed), and a body naming nothing is refused. The member labels sets the item's topic
+        labels (TopicLabels): a label outside them that the item carries stays, and a name outside them is refused
+        (LabelNotAllowed) before anything is written. The Git store sets no labels (NotOffered). On GitHub the item is
+        read back after the write, since GitHub drops labels without an error for an account that may not set them;
+        labels it carries other than every label sent - the topic labels asked and those of the person's own it
+        carried - are refused (LabelsNotKept, naming the repository and the item), never answered as saved, while
+        what else the edit wrote stands and the changes stream announces it. GitHub matches a label's name in any
+        case, so a label it carries as Tests is the topic label tests: it counts as carried, is taken off when left
+        out, and is never sent beside tests. A topic label the repository lacks is created by GitHub for the write in
+        its own grey without a description and stays so: the next Refresh shows it as differing in the repository's
+        warning, whose Labels correction sets it right. A text and labels equal to the item's save nothing and answer the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
         the item is read again right before the write and the edit refused (ItemChanged, naming the item) when a
         person changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
         between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
@@ -579,6 +605,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '504':
@@ -619,6 +647,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '422':
           $ref: '#/components/responses/IdeaRefused'
         '501':
@@ -783,6 +813,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -946,8 +978,17 @@ paths:
         issue covers and What must be true, whose null is refused, and the title, which is never removed. Also
         needs, a person's own headings, the fields and the stage comments are not written by this call; a member
         naming them is
-        refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
-        answers the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
+        refused (EditNotAllowed), and a body naming nothing is refused. The member labels sets the item's topic
+        labels (TopicLabels): a label outside them that the item carries stays, and a name outside them is refused
+        (LabelNotAllowed) before anything is written. The Git store sets no labels (NotOffered). On GitHub the item is
+        read back after the write, since GitHub drops labels without an error for an account that may not set them;
+        labels it carries other than every label sent - the topic labels asked and those of the person's own it
+        carried - are refused (LabelsNotKept, naming the repository and the item), never answered as saved, while
+        what else the edit wrote stands and the changes stream announces it. GitHub matches a label's name in any
+        case, so a label it carries as Tests is the topic label tests: it counts as carried, is taken off when left
+        out, and is never sent beside tests. A topic label the repository lacks is created by GitHub for the write in
+        its own grey without a description and stays so: the next Refresh shows it as differing in the repository's
+        warning, whose Labels correction sets it right. A text and labels equal to the item's save nothing and answer the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
         the item is read again right before the write and the edit refused (ItemChanged, naming the item) when a
         person changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
         between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
@@ -1018,6 +1059,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '422':
           $ref: '#/components/responses/EditRefused'
         '501':
@@ -1194,14 +1237,20 @@ paths:
       summary: Answer what the correction of one warning would write, writing nothing
       description: >-
         Checks the correction a warning's `correction` offers, other than a Move, against the board as the planner
-        reads it and the work at hand, with the state the person picked among its `states`, and answers what it
-        would write, what it can do harm by, its targets with their versions and the digest the save sends back; the
-        request carries no revision and no versions. No store offers a kind other than Move, so one asked for is
-        answered NotOffered. Nothing is written or pushed. The digest covers the project's repository and branch, the
-        item, every target with its version, the warning's kind, its state now, the state picked and every warning,
-        never the board's revision. While the work
-        rules have faults no correction is offered and one asked for is refused (CorrectionRefused). A Move is
-        previewed and saved through /moves/preview and /moves, as any move of the issue.
+        reads it, with what the person picked among its `choices`, and answers what it would write, its targets with
+        their versions and the digest the save sends back; the request carries no revision and no versions. A
+        Priority of a story and the Labels of a repository are the kinds carried out here; any other is answered
+        NotOffered, and so is a Labels by a store that holds no repository's labels. Nothing is written or pushed.
+        The digest covers the project's repository and branch, the item or the repository corrected, every target
+        with its version, the warning's kind, what the item holds now (`from`), the choice and every call, never the
+        board's revision. While the work rules have faults no correction of an item is offered and one asked for is
+        refused (CorrectionRefused); a repository's correction touches no item and is judged without them. A
+        repository's labels are read anew from its forge, to their last page as every read of them, before its
+        calls are computed, so no call names a label someone deleted or created since they were last read; a read
+        the forge refuses, or of more labels than the planner reads, is refused as a call that cannot be saved
+        (MoveNotAllowed), named by the forge's status alone, and a read the forge does not answer, or refuses for the
+        login, as the store's refusals answer it. A Move is previewed and saved through
+        /moves/preview and /moves, as any move of the issue.
       tags: [board]
       requestBody:
         required: true
@@ -1228,8 +1277,12 @@ paths:
           $ref: '#/components/responses/CorrectionRefused'
         '501':
           $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
         '503':
           $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
 
   /projects/{project}/corrections:
     parameters:
@@ -1243,11 +1296,19 @@ paths:
         is written, the correction is checked again on the board as it stands: each of the preview's targets must
         stand at the version `seen` holds for it (ItemChanged; BasisIncomplete for one `seen` lacks), the warning must
         still stand on the item, no other warning may hold the item
-        back and the work rules may have no faults (CorrectionRefused), and the preview, computed again with the
-        work at hand, must answer the digest sent (PreviewChanged). A stale, changed or repeated confirm so writes
-        nothing. While a run has tasks at work on the story, a save not confirmed is refused (WorkRunning) and a
-        confirmed one stops the run with the save and answers its tasks the window must end, as a move's does. Only
-        the warning corrected is lifted, only for this write; any other warning holds the item as before.
+        back and the work rules may have no faults (CorrectionRefused), and the preview, computed again, must answer
+        the digest sent (PreviewChanged). A stale, changed or repeated confirm so writes nothing. Only the warning
+        corrected is lifted, only for this write; any other warning holds the item as before. A correction never
+        writes a state: a Priority writes the story's priority alone, touches no issue and so neither waits on nor
+        stops a run. A Labels makes exactly the calls its preview listed on the repository's forge, with the
+        person's own login there and in the preview's order, and no commit; it has no targets, so `seen` is exactly
+        `{}`, since a repository has no item version, and any other is refused (MoveNotAllowed, "A repository's
+        correction sends its versions seen as {}."). The repository's labels are read anew from its forge, as for
+        the preview; its warning must still stand, so a second run, once the warning is gone, writes nothing
+        (CorrectionRefused), and the calls computed again from them must answer the digest sent, so labels changed
+        since the preview write nothing (PreviewChanged). A call the forge refuses stops the calls after it and is refused as
+        a call that cannot be saved (MoveNotAllowed), named by the forge's status alone, never its words; the calls
+        made before it stay made, and the repository's labels are read again at the next Refresh.
       tags: [board]
       requestBody:
         required: true
@@ -1315,6 +1376,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -1339,7 +1402,9 @@ paths:
         move's refusal, never PartlySaved; the item parameter is empty because no issue exists yet. A store without
         creation in a state keeps the create followed by a move, whose failure is PartlySaved. The JSON body is at
         most 1048576 bytes. A composed GitHub issue body over 65536 characters is refused by the store, never cut.
-        The changes stream
+        The new issue's topic labels, when named, are set as an edit sets them: the Git store sets none (NotOffered,
+        before anything is created), and on GitHub a label the issue read back does not carry is refused
+        (LabelsNotKept, naming the repository and the new issue, which stands without it). The changes stream
         announces the new board as it does after any save.
       tags: [board]
       requestBody:
@@ -1429,6 +1494,58 @@ paths:
           $ref: '#/components/responses/Busy'
         '504':
           $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/tracker/items:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    put:
+      operationId: setItemsDirectory
+      summary: Choose where a local project's stories and issues are kept
+      description: >-
+        Keeps the directory the planner reads and writes a local project's stories and issues in, for this project, in
+        the planner's own state on this computer and never in the project's files, and reopens the project's store on
+        it; `null` goes back to the default directory. The call is checked in this order: the project's name
+        (InvalidName), the project is known (NoSuchProject), its tracker is `local` (else NotOffered), then the body
+        and the directory (ItemsDirectoryRefused, 400). The body is one JSON object of at most 8192 bytes with exactly
+        the members `directory`, a string or an explicit `null`, and `seen`, an object, and no member twice; it has no
+        target, so its `seen` is not checked against any version. The directory must be an ItemsDirectory that
+        exists, is a directory, is reached through no symbolic link, neither itself nor any directory above it, and
+        is the account's alone, and it is checked again at every read and write; it is never made. A directory
+        refused is answered naming it when it is an ItemsDirectory, and nothing is kept. Choosing the directory in use
+        again keeps nothing anew, reopens nothing and answers the tracker as it stands. Otherwise the project's store
+        is opened anew on the directory, which ends the project's changes streams; a window opens its stream again
+        and is answered the board read from the directory now kept. A write the old store took before the swap ends
+        first; one based on the old store's board that reaches the store after it is refused as Busy, as a save
+        that lost to another, and the window reads the board again. A choice that cannot be written to the
+        planner's state directory is refused as WorkRecordUnavailable, and the project stays as it was. When the
+        directory kept is taken but the project's reads stay refused, as for a default directory outside the rule
+        an ItemsDirectory follows, the choice is kept and the call answers ItemsDirectoryRefused with 409.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemsDirectoryRequest'
+      responses:
+        '200':
+          description: The directory is kept, and the project's tracker as it stands now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tracker'
+        '400':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
 
   /projects/{project}/tasks/{task}/events:
     parameters:
@@ -1536,6 +1653,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchItem'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
         '422':
           $ref: '#/components/responses/ResultRefused'
         '501':
@@ -1684,7 +1803,9 @@ components:
       description: >-
         ItemChanged(changed[],items[]), BasisIncomplete(missing[]), WorkRunning(story,tasks[]),
         ReadingNotStopped(issue), ReadingRoundChanged(issue,rounds), ReworkNeedsFindings(issue),
-        TaskEventConflict(task,event,reason) or RunChanged(story,reason). Subjects are checked before echoing.
+        TaskEventConflict(task,event,reason) or RunChanged(story,reason). Subjects are checked before echoing. On a
+        local project, also ItemsDirectoryRefused(directory) while the directory kept for its stories and issues, or its
+        default directory, can no longer be used, as that response says.
       content:
         application/problem+json:
           schema:
@@ -1713,12 +1834,13 @@ components:
             $ref: '#/components/schemas/Problem'
     WorkConflict:
       description: >-
-        ItemChanged names the story when it changed since the version `seen` holds for it, with the story as it
-        stands; BasisIncomplete names it when `seen` holds no version for it. WorkRunning names the checked story and
-        an array of recorded active task names. RunChanged(story,reason) says in fixed words that the run a Start
-        names in `replaces` or `passOver`, or the reason it passes over, is not the one standing, or that the run
-        holds a reason a Start must pass over. The story's version is checked first; a story's state alone never
-        means work is running.
+        ItemChanged names the story when it changed since the version `seen` holds for it, with the story as it stands;
+        BasisIncomplete names it when `seen` holds no version for it. WorkRunning names the checked story and an array
+        of recorded active task names. RunChanged(story,reason) says in fixed words that the run a Start names in
+        `replaces` or `passOver`, or the reason it passes over, is not the one standing, or that the run holds a reason
+        a Start must pass over. The story's version is checked first; a story's state alone never means work is running.
+        On a local project, also ItemsDirectoryRefused(directory) while the directory kept for its stories and issues,
+        or its default directory, can no longer be used, as that response says.
       content:
         application/problem+json:
           schema:
@@ -1957,7 +2079,9 @@ components:
         story whose run has a task at work. A target changed since the version `seen` holds for it (ItemChanged), a
         target has no version in `seen` (BasisIncomplete), or the batch's preview, computed again, answers another
         digest than the one sent (PreviewChanged, naming nothing the window could send back). A preview, which carries
-        no versions, answers none of these.
+        no versions, answers none of these. On a local project, also ItemsDirectoryRefused(directory) while the
+        directory kept for its stories and issues, or its default directory, can no longer be used, as that response
+        says.
       content:
         application/problem+json:
           schema:
@@ -1992,9 +2116,10 @@ components:
     CorrectionConflict:
       description: >-
         A target changed since the version `seen` holds for it (ItemChanged), a target has no version in `seen`
-        (BasisIncomplete), the correction's preview, computed again, answers another digest than the one sent
-        (PreviewChanged), or a run has tasks at work on the story and the save was not confirmed
-        (WorkRunning(story,tasks[])). A preview, which carries no versions, answers none of these.
+        (BasisIncomplete), or the correction's preview, computed again, answers another digest than the one sent
+        (PreviewChanged). A preview, which carries no versions, answers none of these. On a local project, also
+        ItemsDirectoryRefused(directory) while the directory kept for its stories and issues, or its default
+        directory, can no longer be used, as that response says.
       content:
         application/problem+json:
           schema:
@@ -2026,23 +2151,17 @@ components:
                 status: 409
                 detail: What the correction would do changed since its preview; preview it again.
                 parameters: {}
-            WorkRunning:
-              value:
-                type: urn:porelo-planner:WorkRunning
-                title: WorkRunning
-                status: 409
-                detail: The story already has active work.
-                parameters:
-                  story: ST1
-                  tasks: [porelo-st1-main]
     CorrectionRefused:
       description: >-
-        A correction is refused (CorrectionRefused): the warning no longer stands on the item, another warning holds
-        the item back (its words), the item's id names two items, the work rules have faults (their words), the
-        state is none of those the correction offers, or the correction is a Move, which /moves carries out. A body
-        that cannot be read is refused as a move's is (MoveNotAllowed, "The body is no correction."), and so is an
-        item that cannot be saved in its repository: an offered correction is still refused so when its head
-        cannot be edited, and nothing is written.
+        A correction is refused (CorrectionRefused): the warning no longer stands on the item or the repository,
+        another warning holds the item back (its words), the item's id names two items, the work rules have faults
+        (their words), the choice is none of those the correction offers - a Labels takes none -, the repository is
+        none of the project's, or the correction is a Move, which /moves carries out. Its `item` names the story,
+        the issue or the repository. A body that cannot be read is refused as a move's is (MoveNotAllowed, "The
+        body is no correction."), and so is an item that cannot be saved in its repository: an offered correction
+        is still refused so when its head cannot be edited, and nothing is written; a repository's label call its
+        forge refuses, and a read of its labels anew the forge refuses, is refused so too, named by the forge's
+        status alone.
       content:
         application/problem+json:
           schema:
@@ -2109,6 +2228,9 @@ components:
         Unreadable, with words that say so). The Git store answers once its commits stand in its own clones and pushes afterwards, so a push
         a repository refuses becomes a fault on the board, never this answer; the mock mode answers PartlySaved, naming
         the repositories pushed and the one that failed, for a move of its fixed story over two repositories.
+        LabelsNotKept (repository, item) when the tracker, read back after a write of labels, does not carry exactly
+        the labels sent, in any case - the topic labels asked and the person's own -, as GitHub drops them without an
+        error for an account that may not set them; what else the write saved stands.
       content:
         application/problem+json:
           schema:
@@ -2139,10 +2261,21 @@ components:
                 detail: The person's access to https://github.com is missing or refused
                 parameters:
                   address: https://github.com
+            LabelsNotKept:
+              value:
+                type: urn:porelo-planner:LabelsNotKept
+                title: LabelsNotKept
+                status: 502
+                detail: The tracker did not keep the labels asked.
+                parameters:
+                  repository: porelo-lib
+                  item: porelo-lib#12
     IssueConflict:
       description: >-
         A target of the write changed since the version `seen` holds for it (ItemChanged, naming each such target and
-        answering it as it stands, or gone), or `seen` holds no version for a target (BasisIncomplete, naming each).
+        answering it as it stands, or gone), or `seen` holds no version for a target (BasisIncomplete, naming each). On
+        a local project, also ItemsDirectoryRefused(directory) while the directory kept for its stories and issues, or
+        its default directory, can no longer be used, as that response says.
       content:
         application/problem+json:
           schema:
@@ -2170,14 +2303,15 @@ components:
     EditConflict:
       description: >-
         A target of the write changed since the version `seen` holds for it, on the tracker too where the store keeps
-        one (ItemChanged, naming each such target and answering it as it stands, or gone), `seen` holds no version for
-        a target (BasisIncomplete, naming each), or a started task of a run
-        works an issue the change takes out of its story or an issue a new story would take, or a run whose story is
-        gone still has a task at work (WorkRunning, naming the story and its tasks, and for a new story over issues
-        that stand the issue named that the run works, itself or through a sub-issue), or an issue a new story would
-        take belongs to another story (IssueInStory, naming the issue, the story holding it - by its id on the board,
-        by its tracker reference when the board does not hold it, or empty when neither is known - and the field of
-        the request that named the issue).
+        one (ItemChanged, naming each such target and answering it as it stands, or gone), `seen` holds no version for a
+        target (BasisIncomplete, naming each), or a started task of a run works an issue the change takes out of its
+        story or an issue a new story would take, or a run whose story is gone still has a task at work (WorkRunning,
+        naming the story and its tasks, and for a new story over issues that stand the issue named that the run works,
+        itself or through a sub-issue), or an issue a new story would take belongs to another story (IssueInStory,
+        naming the issue, the story holding it - by its id on the board, by its tracker reference when the board does
+        not hold it, or empty when neither is known - and the field of the request that named the issue). On a local
+        project, also ItemsDirectoryRefused(directory) while the directory kept for its stories and issues, or its
+        default directory, can no longer be used, as that response says.
       content:
         application/problem+json:
           schema:
@@ -2225,7 +2359,7 @@ components:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 1048576 bytes (field
         empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, seen, task,
-        priority, story or confirm), or the store cannot write it in its repository, such as a repository whose
+        priority, story, confirm or labels, a name outside the topic labels among them), or the store cannot write it in its repository, such as a repository whose
         issues give no prefix (field empty) or a body longer than GitHub takes (field mustBeTrue, final: the same
         text is refused again). A GitHub create's initial placement is refused before creation with
         StateNotAllowed for an unknown or closed state, EnteredOnlyByWork for an agent's issue entering a working
@@ -2247,7 +2381,8 @@ components:
     IdeaRefused:
       description: >-
         An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated, but for a refused
-        issue's repository: its fault always names the project's repositories allowed, and the value sent only when it
+        issue's repository: the first such fault names the project's repositories allowed and each later one refers to
+        them, and each names the value sent only when it
         is a well-formed repository name (at most 100 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit).
         The body is no hand-in or
         no new story - larger than 1048576 bytes (65536 for a story from existing issues), not JSON, not an object, a member missing or unknown, offer no
@@ -2290,7 +2425,9 @@ components:
         list, an issue blocking itself, blockers that lead back to the issue, a comment opening with the planner's own
         marker `<!-- porelo:`, a title of more than one line, a part that would open a part of its own or leave a
         block open, a body grown past what the tracker takes, a body whose sections cannot be told apart, or an issue
-        made outside the project the board could not show once added, with what to repair. MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
+        made outside the project the board could not show once added, with what to repair. LabelNotAllowed (item,
+        label) when labels names a name outside the topic labels; label is the name got when it is a well-formed
+        LabelName, the one thing sent that a refusal repeats, and empty otherwise. MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
         issue a story holds only under Also needs in its body taken out, an issue that has a parent on the tracker
         hung in, or a call the tracker refused, named by its status alone.
       content:
@@ -2308,6 +2445,15 @@ components:
                   item: PL3
                   field: blockedBy
                   reason: The blockers lead back to the issue through PL4.
+            LabelNotAllowed:
+              value:
+                type: urn:porelo-planner:LabelNotAllowed
+                title: LabelNotAllowed
+                status: 422
+                detail: The planner sets only the topic labels.
+                parameters:
+                  item: PL3
+                  label: bug
             MoveNotAllowed:
               value:
                 type: urn:porelo-planner:MoveNotAllowed
@@ -2371,13 +2517,41 @@ components:
                 detail: The priority must be Highest, High, Medium, Low or Lowest.
                 parameters:
                   story: ST7
+    ItemsDirectoryRefused:
+      description: >-
+        A local project's directory for its stories and issues was refused (ItemsDirectoryRefused): on PUT
+        /projects/{project}/tracker/items with 400, the directory chosen or the body; with 409 on every call that
+        reads or writes the project's stories and issues, among them GET /projects/{project}/events when the first
+        read is refused before the stream starts, while the directory kept, or the default directory, can no longer
+        be used. The planner never reads or writes the default directory in place of a kept one meanwhile. `detail`
+        is exactly one of these phrases, never words of the system or a link's target: "The directory does not
+        exist.", "The path is not a directory.", "The path is or passes through a symbolic link.", "The directory is
+        not this account's alone.", "The path is not an absolute path in normal form.", "The path is longer than 4095
+        bytes in UTF-8.", "The body is not one JSON object of at most 8192 bytes with exactly the members directory
+        and seen.", or "The kept choice of directory is not one the planner wrote.". `parameters.directory` names
+        the directory only when it is an ItemsDirectory; a body refused, or a directory that is no ItemsDirectory, is
+        refused without it. On the PUT, `parameters.project` names the project.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:ItemsDirectoryRefused
+            title: ItemsDirectoryRefused
+            status: 400
+            detail: The directory does not exist.
+            parameters:
+              project: example
+              directory: /home/person/planning
     NotOffered:
       description: >-
         This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
         stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment,
-        adds no issue made outside the project, saves no stage's result or offers no correction of the warning named;
-        the mock mode previews and saves moves, saves workers, adds ideas and stories and takes the edits by hand into
-        its in-memory board, but adds no issues, adds no issue made outside the project and saves no priorities
+        adds no issue made outside the project, saves no stage's result or offers no correction of the warning named,
+        a repository's Labels by a store that holds no repository's labels among them; the Git store sets no item's
+        labels, on an edit or a new issue; the mock mode previews and saves moves, saves workers, adds ideas and
+        stories and takes the edits by hand, labels among them, into its in-memory board, but adds no issues, adds no
+        issue made outside the project and saves no priorities
         (NotOffered).
       content:
         application/problem+json:
@@ -2462,14 +2636,54 @@ components:
         whose version here differs from the one it stands at is refused (ItemChanged), and a target without an entry
         is refused (BasisIncomplete), never taken as one not to check. An entry for an item that is no target is not
         checked, so a window may send the version of every item it showed. Always present; `{}` for a write without
-        targets.
+        targets. At most 2000 entries, so the check of one write never holds an unbounded map: the most targets a write
+        can name, a full batch of moves each carrying its story's issues, is far larger, while a window sends the
+        versions of the items it acts on; an object of more entries is refused like one that names no versions.
       type: object
+      maxProperties: 2000
       propertyNames:
         anyOf:
           - $ref: '#/components/schemas/IssueId'
           - $ref: '#/components/schemas/StoryId'
       additionalProperties:
         $ref: '#/components/schemas/Version'
+
+    LabelName:
+      description: >-
+        A label's name as the tracker holds it: 1 to 50 characters, GitHub's own limit, without a control character, a
+        character that hides or turns text - a format, zero-width or bidi character, a soft hyphen (U+00AD), a
+        combining grapheme joiner (U+034F), the Mongolian vowel separator (U+180E) or a tag character (U+E0000 to
+        U+E007F) -, or a line or paragraph separator. The pattern is read without the u flag, so a tag character
+        stands in it as its UTF-16 surrogate pair.
+      type: string
+      minLength: 1
+      maxLength: 50
+      pattern: '^(?:(?!\uDB40[\uDC00-\uDC7F])[^\x00-\x1f\x7f-\x9f\xad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\u2028\u2029]){1,50}$'
+    Labels:
+      description: >-
+        An item's labels on its tracker, in the store's order, each at most once: the topic labels and any label of
+        the person's own, which the planner shows and keeps but never sets. A label the tracker holds whose name is
+        no LabelName is left out here and stays on the tracker, never written. Empty where the store holds none, as
+        the Git store.
+      type: array
+      maxItems: 100
+      items:
+        $ref: '#/components/schemas/LabelName'
+    TopicLabel:
+      description: One of the seven topic labels every repository of a project carries, the labels the planner sets.
+      type: string
+      enum: [documentation, security, tests, build, dependencies, performance, usability]
+    TopicLabels:
+      description: >-
+        The topic labels an item carries after the write, each at most once: a topic label named is put on, one left
+        out is taken off, and a label outside the topic labels that the item carries already stays as it is. A name
+        outside the topic labels is refused, as LabelNotAllowed on an edit and as IssueNotAllowed (field labels) on a
+        new issue, and so is a name given twice (EditNotAllowed or IssueNotAllowed, field labels).
+      type: array
+      maxItems: 7
+      uniqueItems: true
+      items:
+        $ref: '#/components/schemas/TopicLabel'
 
     Target:
       description: An item a write changes, with the version it stands at.
@@ -2563,10 +2777,12 @@ components:
     Workflow:
       description: A project's workflow.
       type: object
-      required: [revision, states, phases, work, faults, reasons]
+      required: [revision, states, phases, work, faults, reasons, tracker]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        tracker:
+          $ref: '#/components/schemas/Tracker'
         states:
           type: array
           description: The states in workflow order.
@@ -2670,10 +2886,12 @@ components:
         The whole board at one revision, as an event of the stream carries it - the workflow, the project's
         repositories and the stories.
       type: object
-      required: [revision, states, phases, work, faults, reasons, repositories, stories, open]
+      required: [revision, states, phases, work, faults, reasons, repositories, repositoryWarnings, stories, open, tracker]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        tracker:
+          $ref: '#/components/schemas/Tracker'
         repositories:
           type: array
           description: >-
@@ -2681,6 +2899,18 @@ components:
             may be added in each of them, whether or not a story names an issue of it.
           items:
             $ref: '#/components/schemas/Name'
+        repositoryWarnings:
+          type: array
+          maxItems: 100
+          description: >-
+            What the store found wrong in the project's repositories themselves, at most one warning of a kind per
+            repository, in the order of `repositories`; empty when nothing. The GitHub store compares each
+            repository's labels with the topic labels at the project's first read and at each Refresh, and one
+            repository's again at the preview and the confirm of its correction, and keeps what it found between
+            them, so a plain read of the board reads no repository's labels; a store that
+            holds no repository's labels, the Git and the local store, answers it empty.
+          items:
+            $ref: '#/components/schemas/RepositoryWarning'
         states:
           type: array
           description: The states in workflow order.
@@ -3013,6 +3243,63 @@ components:
         containerId:
           type: string
 
+    Tracker:
+      description: Where the planner keeps a project's stories and issues.
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [github, git, local]
+          description: >-
+            `local` when the planner keeps them in a directory of this computer, which the person may choose;
+            `github` when GitHub's tracker keeps them, as the mock mode answers too; `git` when the Git store keeps
+            them as Markdown files in the project's repository.
+        items:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/ItemsDirectory'
+          description: >-
+            Present only for `local`: the directory the planner uses, the default included. It is named absolute,
+            unlike a path in a refusal's reason, since it is the person's own choice, shown to them and offered as
+            where a folder dialog opens, and the answer goes only over loopback to a signed request. A kept or
+            default directory that is no ItemsDirectory is never answered here: the project's reads are refused as
+            ItemsDirectoryRefused instead.
+        default:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/ItemsDirectory'
+          description: >-
+            Present only for `local`: the project's default directory, which `items` equals while no other directory
+            is kept and which a PUT of `null` goes back to; a window offers going back to it only while `items`
+            differs.
+    ItemsDirectoryRequest:
+      description: >-
+        The directory a local project's stories and issues are kept in, with the versions seen; it has no target. No
+        other member is taken, and no member twice.
+      type: object
+      additionalProperties: false
+      required: [directory, seen]
+      properties:
+        directory:
+          oneOf:
+            - $ref: '#/components/schemas/ItemsDirectory'
+            - type: 'null'
+          description: The directory, or an explicit null for the default directory.
+        seen:
+          $ref: '#/components/schemas/Seen'
+    ItemsDirectory:
+      description: >-
+        A directory of this computer as an absolute path in normal form, the same rule for the planner and the
+        window: at most 4095 bytes in UTF-8; no `.` or `..` segment, no empty segment such as `//`, and no trailing
+        separator, the root alone excepted; no C0 or C1 control character (U+0000 to U+001F, U+007F to U+009F, U+0085
+        among them), no U+2028 or U+2029, no bidirectional control (U+202A to U+202E, U+2066 to U+2069), and no
+        unpaired surrogate; no white space at its start or end, which is refused, never trimmed. On Linux it starts
+        with `/`. On Windows it is a drive path, a letter, `:` and `\`, with `\` as its only separator; a UNC or
+        device path (`\\server\...`, `\\.\...`, `\\?\...`) is refused.
+      type: string
+      minLength: 1
+      maxLength: 4095
     Worker:
       description: Who works an issue, an agent through the tasks the planner starts or a person by hand.
       type: string
@@ -3110,6 +3397,12 @@ components:
           type: boolean
           default: false
           description: Whether the warnings of the move to state are confirmed, as a batch of moves confirms them.
+        labels:
+          description: >-
+            The new issue's topic labels; none when left out. On GitHub they are written in the create's single save
+            and the issue read back, as an edit's labels are.
+          allOf:
+            - $ref: '#/components/schemas/TopicLabels'
     IssueAdded:
       description: The new issue's id and the board's revision after the save.
       type: object
@@ -3382,6 +3675,8 @@ components:
           description: The section Findings; null removes it.
           minLength: 1
           maxLength: 65536
+        labels:
+          $ref: '#/components/schemas/TopicLabels'
         seen:
           $ref: '#/components/schemas/Seen'
     StoryTextRequest:
@@ -3409,6 +3704,8 @@ components:
           description: The paragraph after the lead The test; one paragraph; null removes it.
           minLength: 1
           maxLength: 65536
+        labels:
+          $ref: '#/components/schemas/TopicLabels'
         seen:
           $ref: '#/components/schemas/Seen'
     EditSaved:
@@ -3533,7 +3830,7 @@ components:
         One story as the board shows it. Two stories share an id only when each carries the warning IdTwice; neither
         is then worked, moved or edited, and a read of the story by that id answers NoSuchStory.
       type: object
-      required: [id, title, state, closedAt, priority, size, link, issues, work, open, warnings, version]
+      required: [id, title, state, closedAt, priority, size, link, issues, work, open, warnings, version, labels]
       properties:
         version:
           $ref: '#/components/schemas/Version'
@@ -3560,6 +3857,8 @@ components:
           description: >-
             The story's size, XS to XL, given when it was estimated, or null when it has none. It is the story's
             own, never added up from its issues' sizes.
+        labels:
+          $ref: '#/components/schemas/Labels'
         link:
           type: [string, 'null']
           format: uri
@@ -3626,7 +3925,7 @@ components:
         One issue on the board. Two issues share an id only when each carries the warning IdTwice; neither is then
         worked, moved or edited, and a read of the issue by that id answers NoSuchIssue.
       type: object
-      required: [id, repository, title, state, size, blockedBy, waitsOn, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings, version]
+      required: [id, repository, title, state, size, blockedBy, waitsOn, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings, version, labels]
       properties:
         version:
           $ref: '#/components/schemas/Version'
@@ -3650,6 +3949,8 @@ components:
           description: >-
             The issue's priority, Highest to Lowest; absent when the store holds none, or one outside them, which the
             issue's warnings then name.
+        labels:
+          $ref: '#/components/schemas/Labels'
         minutesLeft:
           type: [number, 'null']
           minimum: 0
@@ -3738,6 +4039,75 @@ components:
             issue is never left out for it.
           items:
             $ref: '#/components/schemas/ItemWarning'
+    RepositoryWarning:
+      description: >-
+        What is wrong in one of the project's repositories itself, rather than in a story or an issue: for
+        TopicLabels, its labels differ from the topic labels every repository of a project carries - documentation,
+        security, tests, build, dependencies, performance and usability, each with its color and description - or
+        it still carries one of GitHub's eight default labels. Its own labels, those of neither list, are no part
+        of it. It holds back no item and no work.
+      type: object
+      required: [repository, kind, missing, defaults, differing, correction]
+      properties:
+        repository:
+          $ref: '#/components/schemas/Name'
+        kind:
+          type: string
+          pattern: '^[A-Z][A-Za-z]{0,63}$'
+          description: >-
+            An open name of what is wrong; a window shows a kind it does not know with its repository alone. The
+            known kind is TopicLabels.
+        missing:
+          type: array
+          maxItems: 7
+          description: The topic labels the repository lacks, in the topic labels' order.
+          items:
+            $ref: '#/components/schemas/LabelName'
+        defaults:
+          type: array
+          maxItems: 8
+          description: GitHub's default labels the repository still carries, in GitHub's order.
+          items:
+            $ref: '#/components/schemas/LabelName'
+        differing:
+          type: array
+          maxItems: 7
+          description: >-
+            The topic labels the repository carries with another color or description, in the topic labels' order.
+          items:
+            $ref: '#/components/schemas/LabelName'
+        correction:
+          description: >-
+            The change the store offers to set the repository right, a Labels with no choices, or null when it
+            offers none.
+          oneOf:
+            - $ref: '#/components/schemas/Correction'
+            - type: 'null'
+    LabelCall:
+      description: >-
+        One call a repository's Labels correction makes on its forge: Delete a default label, which also takes it off
+        every issue of the repository that carries it, Create a missing topic label, or Update a topic label's color
+        and description to the topic labels'.
+      type: object
+      required: [action, label, color, description]
+      properties:
+        action:
+          type: string
+          enum: [Delete, Create, Update]
+        label:
+          $ref: '#/components/schemas/LabelName'
+        color:
+          description: The color it is written with, six lower-case hexadecimal digits; null for a Delete.
+          oneOf:
+            - type: string
+              pattern: '^[0-9a-f]{6}$'
+            - type: 'null'
+        description:
+          description: The description it is written with, at most 100 characters; null for a Delete.
+          oneOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
     ItemWarning:
       description: >-
         What a store could not read in a story or an issue it still shows. A warning about the item's state, parent,
@@ -3757,9 +4127,10 @@ components:
             IssueOutsideProject, WrongParent, BodyNotSectioned, StoryOutsideOwnRepository, ParentInOtherRepository,
             BlockedByStory, ParentCircle, SubIssueOfSubIssue, PastOnePage, DependsOnUnplaced, UnknownWorker,
             UnknownRisk, StoryUnderIssue, AlsoNeedsNotOnBoard, BodyTooLong, UnknownSize, UnknownPriority,
-            UnreadableNumber, IssueBehindStory. IssueBehindStory is a story's: its words name each of its issues that
-            stands before the state its issues give it, such as an issue in Idea in a story being implemented; it
-            holds nothing back.
+            UnreadableNumber, IssueBehindStory, UnknownLabel. IssueBehindStory is a story's: its words name each of
+            its issues that stands before the state its issues give it, such as an issue in Idea in a story being
+            implemented; it holds nothing back. UnknownLabel is a local item's whose file names a label outside the
+            topic labels, as a hand edit of the file may; the label is shown and kept, and it holds nothing back.
         text:
           type: string
           description: >-
@@ -3779,7 +4150,9 @@ components:
           description: >-
             The one change the store offers to set the warning right, or null when it offers none: the store decides
             it when it reads the board, and offers none while another warning holds the item back or the work rules
-            have faults. The Git store offers one for an issue's StateOutsideWorkflow alone.
+            have faults. The Git store offers a Move for an issue's StateOutsideWorkflow alone; the GitHub store
+            offers the same Move, and a Priority for a story's NoPriority and UnknownPriority with the priorities the
+            organization's issue field Priority holds; none when the owner has no such field or it could not be read.
           oneOf:
             - $ref: '#/components/schemas/Correction'
             - type: 'null'
@@ -3787,7 +4160,7 @@ components:
       description: >-
         The one change that sets a warning right, which the person picks and confirms on the board.
       type: object
-      required: [kind, states]
+      required: [kind, choices]
       properties:
         kind:
           type: string
@@ -3795,42 +4168,55 @@ components:
           description: >-
             An open name of the change; a window offers a kind it does not know as none. Known kinds are Move - the
             issue moved into the state picked, previewed and saved through /moves/preview and /moves as any move of
-            it.
-        states:
+            it -, Priority - the story's priority set to the one picked, previewed and saved through
+            /corrections/preview and /corrections - and Labels - a repository's labels brought to the topic labels,
+            previewed and saved through /corrections/preview and /corrections.
+        choices:
           type: array
-          minItems: 1
+          maxItems: 64
           description: >-
-            The states the person picks from, in the workflow's order: its open states that no work alone enters, so
-            a correction neither closes the item nor starts work on it. They are what the window offers: a Move is
-            judged as any move by /moves, which may move the issue into any state of the workflow, a closed one
-            too.
+            What the person picks from, each a name a request sends back as its `choice`; a state whose name is
+            none such is not offered. At least one for every kind but a Labels, which offers none and has it empty.
+            For a Move, the states in the workflow's order: its open states that no work alone enters, so a
+            correction neither closes the item nor starts work on it. They are what the window offers: a Move is
+            judged as any move by /moves, which may move the issue into any state of the workflow, a closed one too.
+            For a Priority, the priorities the store can hold, the highest first, each one of Highest, High, Medium,
+            Low and Lowest.
           items:
             type: string
+            pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
     CorrectionRequest:
       description: >-
-        The correction of one warning on one story or issue, with the state the person picked, previewed against the
-        board as the planner reads it; it names exactly one story or one issue and carries no versions.
+        The correction of one warning on one story, issue or repository, with what the person picked, previewed
+        against the board as the planner reads it; it names exactly one story, one issue or one repository and
+        carries no versions.
       type: object
-      required: [warning, state]
+      required: [warning]
       properties:
         story:
           $ref: '#/components/schemas/StoryId'
         issue:
           $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
         warning:
           type: string
           pattern: '^[A-Z][A-Za-z]{0,63}$'
           description: The kind of the warning it sets right.
-        state:
+        choice:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
-          description: The state picked among the correction's `states`.
+          description: >-
+            What the person picked among the correction's `choices`: a state's name for a Move, a priority for a
+            Priority; left out for a Labels, which offers none. The planner checks it against the choices it offers
+            and refuses any other, and a missing one, (CorrectionRefused).
     CorrectionConfirm:
       description: >-
         A correction the person confirmed, with the digest of its preview and the versions seen, its preview's
-        targets; it names exactly one story or one issue.
+        targets; it names exactly one story, one issue or one repository. A repository's has no targets and sends
+        `seen` as exactly `{}`.
       type: object
-      required: [seen, warning, state, digest]
+      required: [seen, warning, digest]
       properties:
         seen:
           $ref: '#/components/schemas/Seen'
@@ -3838,24 +4224,21 @@ components:
           $ref: '#/components/schemas/StoryId'
         issue:
           $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
         warning:
           type: string
           pattern: '^[A-Z][A-Za-z]{0,63}$'
-        state:
+        choice:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
+          description: What the person picked, as its preview was asked with; left out for a Labels.
         digest:
           $ref: '#/components/schemas/PreviewDigest'
-        confirm:
-          type: boolean
-          default: false
-          description: >-
-            Whether the person confirmed the preview's warnings: each run its RUNNING_WORK warning named is stopped
-            with the save.
     CorrectionPreview:
       description: What a correction would write, and the digest its save sends back.
       type: object
-      required: [revision, digest, story, issue, warning, from, to, warnings, targets]
+      required: [revision, digest, story, issue, repository, warning, from, to, calls, targets]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -3865,7 +4248,7 @@ components:
           type: array
           description: >-
             Every item the correction changes, each once with the version it stands at. The save sends them back in
-            `seen`.
+            `seen`. Empty for a Labels, which changes no item.
           items:
             $ref: '#/components/schemas/Target'
         story:
@@ -3878,34 +4261,39 @@ components:
           oneOf:
             - $ref: '#/components/schemas/IssueId'
             - type: 'null'
+        repository:
+          description: The repository whose labels it writes, or null.
+          oneOf:
+            - $ref: '#/components/schemas/Name'
+            - type: 'null'
         warning:
           type: string
           description: The kind of the warning it sets right.
         from:
           type: string
-          description: The item's state now, empty when none is told.
+          description: >-
+            What the item holds now of what the correction changes, empty when none is told; a Priority's warning
+            tells none, so it is empty for one, and so is a Labels', whose calls say what changes.
         to:
           type: string
-          description: The state it is written with.
-        warnings:
+          description: What it is written with, the choice picked; empty for a Labels, which its calls say.
+        calls:
           type: array
+          maxItems: 15
           description: >-
-            What the correction can do harm by, as a move's preview names it: RUNNING_WORK for each run with tasks at
-            work on the story. Empty when it is saved without asking.
+            For a Labels, every call it makes on the repository's forge, in the order it makes them: each default
+            label deleted, then each missing topic label created, then each differing one updated, each in its
+            list's order; the repository's own labels are never named. Empty for every other kind.
           items:
-            $ref: '#/components/schemas/MoveWarning'
+            $ref: '#/components/schemas/LabelCall'
     CorrectionSaved:
-      description: The board's revision after a correction was saved, and every run a confirmed save stopped.
+      description: >-
+        The board's revision after a correction was saved; a correction never writes a state, so it stops no run.
       type: object
-      required: [revision, stopped]
+      required: [revision]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
-        stopped:
-          type: array
-          description: Each run the save stopped; empty when it stopped none.
-          items:
-            $ref: '#/components/schemas/StoppedRun'
     HeldIssue:
       description: An open issue of the story no task of the proposal names, since the board holds it back.
       type: object
@@ -4794,6 +5182,12 @@ components:
             right:
               type: string
               description: The right a forge names as missing, for NoForgeAccess, when it names one.
+            directory:
+              allOf:
+                - $ref: '#/components/schemas/ItemsDirectory'
+              description: >-
+                The directory an ItemsDirectoryRefused refusal names, absolute: the person's own choice, named to
+                them over loopback to a signed request, unlike a path in a refusal's reason.
             item:
               type: string
             changed:

@@ -31,6 +31,9 @@ import org.jspecify.annotations.Nullable;
  *     for the project; null for a board the project's own files hold
  * @param unlisted the open issues of the project's repositories that are no items of the project,
  *     none on the board; empty for a store without a tracker
+ * @param repositoryWarnings what is wrong in the project's repositories themselves, at most one of
+ *     a kind per repository, in the repositories' order; empty for a store that keeps no
+ *     repository's labels
  */
 public record Board(
         Revision revision,
@@ -41,9 +44,69 @@ public record Board(
         List<ProjectRepository> repositories,
         List<String> faults,
         @Nullable String owner,
-        List<UnlistedIssue> unlisted) {
+        List<UnlistedIssue> unlisted,
+        List<RepositoryWarning> repositoryWarnings) {
 
     private static final Pattern OWNER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
+
+    /**
+     * A board without a warning about a repository itself.
+     *
+     * @param revision the commits it was read from
+     * @param workflow the states and phases
+     * @param stories every story
+     * @param issues every issue of every repository
+     * @param work the work rules and what could not be read of them
+     * @param repositories the project's repositories, its own first
+     * @param faults what has no place on the board at all
+     * @param owner the owner of the tracker that keeps the stories and issues, or null
+     * @param unlisted the open issues of the project's repositories that are no items of it
+     */
+    public Board(
+            final Revision revision,
+            final Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final Work work,
+            final List<ProjectRepository> repositories,
+            final List<String> faults,
+            final @Nullable String owner,
+            final List<UnlistedIssue> unlisted) {
+        this(
+                revision,
+                workflow,
+                stories,
+                issues,
+                work,
+                repositories,
+                faults,
+                owner,
+                unlisted,
+                List.of());
+    }
+
+    /**
+     * The same board with the warnings about its repositories given and the faults added.
+     *
+     * @param warnings what is wrong in the repositories themselves, in their order
+     * @param more faults to add after those it has
+     * @return the board
+     */
+    public Board withRepositories(final List<RepositoryWarning> warnings, final List<String> more) {
+        final List<String> all = new java.util.ArrayList<>(faults);
+        all.addAll(more);
+        return new Board(
+                revision,
+                workflow,
+                stories,
+                issues,
+                work,
+                repositories,
+                all,
+                owner,
+                unlisted,
+                warnings);
+    }
 
     /**
      * A board that knows no open issue outside the project.
@@ -144,6 +207,7 @@ public record Board(
         repositories = List.copyOf(repositories);
         faults = List.copyOf(faults);
         unlisted = List.copyOf(unlisted);
+        repositoryWarnings = List.copyOf(repositoryWarnings);
         final List<String> names = ProjectRepository.names(repositories);
         if (new HashSet<>(names).size() != names.size()) {
             throw new IllegalArgumentException("A board names a repository twice");
@@ -188,6 +252,29 @@ public record Board(
                         "An issue names a repository outside the project");
             }
         }
+        final Set<String> warned = new HashSet<>();
+        for (final RepositoryWarning warning : repositoryWarnings) {
+            // A correction names its repository and kind alone, so they name one warning.
+            if (!names.contains(warning.repository())
+                    || !warned.add(warning.repository() + "/" + warning.kind())) {
+                throw new IllegalArgumentException(
+                        "A repository's warning names one outside the project, or twice");
+            }
+        }
+    }
+
+    /**
+     * Finds the warning of a kind about one of the project's repositories.
+     *
+     * @param repository the repository's name
+     * @param kind the warning's kind
+     * @return the warning, or empty when the board holds none
+     */
+    public Optional<RepositoryWarning> repositoryWarning(
+            final String repository, final String kind) {
+        return repositoryWarnings.stream()
+                .filter(w -> w.repository().equals(repository) && w.kind().equals(kind))
+                .findFirst();
     }
 
     /**

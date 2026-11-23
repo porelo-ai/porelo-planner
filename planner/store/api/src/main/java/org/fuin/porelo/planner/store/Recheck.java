@@ -22,7 +22,7 @@ public record Recheck(Set<Need> needs, Set<String> from, Consumer<Dependencies> 
         /** The blocker graph, walked from each id named until no further blocker is held. */
         BLOCKERS,
 
-        /** Each story named and every issue it holds. */
+        /** Each story named and every issue it holds; each issue named and its sub-issues. */
         STORY_ISSUES,
 
         /** The parent of each issue named. */

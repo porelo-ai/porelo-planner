@@ -43,8 +43,10 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
+import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
@@ -88,6 +90,8 @@ public final class LocalDirectoryStore implements PlanningStore {
 
     private final Path directory;
 
+    private final Path standard;
+
     private final PrivateFiles files;
 
     private final TrackedStores.Source again;
@@ -105,6 +109,8 @@ public final class LocalDirectoryStore implements PlanningStore {
     private volatile TrackedProject project;
 
     private volatile LocalReader.@Nullable Snapshot held;
+
+    private volatile boolean retired;
 
     /**
      * Makes the store; nothing is read until the board is asked for.
@@ -145,7 +151,32 @@ public final class LocalDirectoryStore implements PlanningStore {
             final StageMetrics metrics,
             final Clock clock,
             final Duration lockWait) {
+        this(directory, directory, files, project, again, metrics, clock, lockWait);
+    }
+
+    /**
+     * Makes the store over a directory beside the project's default one, which the window is told.
+     *
+     * @param directory the project's items directory, which must exist
+     * @param standard the project's default items directory
+     * @param files the account's checks of the directory and its files
+     * @param project the project as its files name it at opening
+     * @param again gives the project as its files name it now, asked at each read
+     * @param metrics gives a stage's numbers
+     * @param clock tells when a stage's result is saved, which its entry keeps as its end
+     * @param lockWait how long a call waits for the lock before it is refused as busy
+     */
+    LocalDirectoryStore(
+            final Path directory,
+            final Path standard,
+            final PrivateFiles files,
+            final TrackedProject project,
+            final TrackedStores.Source again,
+            final StageMetrics metrics,
+            final Clock clock,
+            final Duration lockWait) {
         this.directory = directory;
+        this.standard = standard;
         this.files = files;
         this.project = checked(project);
         this.again = again;
@@ -156,10 +187,20 @@ public final class LocalDirectoryStore implements PlanningStore {
         this.own = project.repositories().getFirst().name();
     }
 
+    /** The board held, its directory checked again, so a directory moved away is never shown. */
     @Override
     public Board board() {
         final LocalReader.Snapshot current = held;
-        return current != null ? current.board() : refresh();
+        if (current == null) {
+            return refresh();
+        }
+        ItemsDirectories.check(files, directory);
+        return current.board();
+    }
+
+    @Override
+    public Tracker tracker() {
+        return Tracker.local(directory.toString(), standard.toString());
     }
 
     @Override
@@ -227,6 +268,12 @@ public final class LocalDirectoryStore implements PlanningStore {
                             return "";
                         })
                 .board();
+    }
+
+    /** Sets the topic labels of an issue or a story and keeps every other label it carries. */
+    @Override
+    public boolean setsLabels() {
+        return true;
     }
 
     /** A new issue is written in its requested state at once. */
@@ -499,6 +546,11 @@ public final class LocalDirectoryStore implements PlanningStore {
                             if (!body.equals(item.body())) {
                                 plan.edit(item).body(body);
                             }
+                            final List<String> labels = edit.labels();
+                            if (labels != null
+                                    && !TopicLabels.topicOf(item.labels()).equals(labels)) {
+                                plan.edit(item).labels(TopicLabels.after(item.labels(), labels));
+                            }
                             return "";
                         })
                 .board();
@@ -639,6 +691,7 @@ public final class LocalDirectoryStore implements PlanningStore {
                     "", "a new issue starts in an open state of the workflow");
         }
         final LocalItem item = plan.make(issue.repository(), false, issue.title().strip(), body);
+        item.labels(issue.labels());
         item.choice(FieldNames.STATUS, state);
         item.choice(FieldNames.SIZE, issue.size());
         item.choice(FieldNames.WORKER, worker(issue.worker()));
@@ -737,15 +790,7 @@ public final class LocalDirectoryStore implements PlanningStore {
      * Runs a call under the directory's lock, the directory checked once before the lock is taken.
      */
     private <T> T locked(final Supplier<T> call) {
-        try {
-            files.requireExistingDirectory(directory);
-        } catch (final IllegalStateException | UncheckedIOException e) {
-            // The checks' words name paths, which may name the person's account.
-            throw new StoreException.Unreadable(
-                    own,
-                    "the project's items directory is missing, is not this account's alone or is"
-                            + " reached through a link");
-        }
+        ItemsDirectories.check(files, directory);
         final Optional<ProjectLock.Held> taken;
         try {
             taken = lock.acquire(lockWait);
@@ -753,7 +798,27 @@ public final class LocalDirectoryStore implements PlanningStore {
             throw new StoreException.Unreadable(own, "the items directory's lock cannot be taken");
         }
         try (ProjectLock.Held hold = taken.orElseThrow(() -> new StoreException.Busy(own))) {
+            if (retired) {
+                // The project's store was opened anew, on another directory perhaps: a call
+                // based on this store's board is answered as one that lost to another save.
+                throw new StoreException.StaleRevision("");
+            }
             return call.get();
+        }
+    }
+
+    /**
+     * Retires the store: a call that takes the lock after this is refused, and one that holds it
+     * now ends before this returns.
+     */
+    @Override
+    public void retire() {
+        retired = true;
+        try {
+            ItemsDirectories.check(files, directory);
+            lock.acquire(lockWait).ifPresent(ProjectLock.Held::close);
+        } catch (final StoreException.ItemsDirectoryRefused | UncheckedIOException e) {
+            // The directory is gone or refused: no call gets past its check to hold the lock.
         }
     }
 

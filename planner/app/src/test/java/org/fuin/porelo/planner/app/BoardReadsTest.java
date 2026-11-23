@@ -605,6 +605,42 @@ class BoardReadsTest {
     }
 
     @Test
+    void everyItemIsServedWithItsLabelsThePersonsOwnAmongThemAndNoneAsEmpty() throws Exception {
+        // Harm: the window shows an item without the labels it carries, so the person chooses
+        // topic labels over labels the item does not show.
+        final Board base = board();
+        supplied =
+                new Board(
+                        base.revision(),
+                        base.workflow(),
+                        List.of(
+                                base.stories().get(0).withLabels(List.of("usability")),
+                                base.stories().get(1)),
+                        List.of(
+                                base.issues().get(0).withLabels(List.of("needs-design", "tests")),
+                                base.issues().get(1)),
+                        base.work(),
+                        base.repositories());
+        given();
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[?(@.id == 'ST1')].labels[0]").value("usability"))
+                .andExpect(jsonPath("$.stories[?(@.id == 'ST2')].labels[0]").doesNotExist());
+        mvc.perform(get("/projects/alpha/stories/ST1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.story.labels[0]").value("usability"))
+                .andExpect(jsonPath("$.story.issues[0].labels[0]").value("needs-design"))
+                .andExpect(jsonPath("$.story.issues[0].labels[1]").value("tests"));
+        mvc.perform(get("/projects/alpha/issues/AB01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issue.labels[1]").value("tests"));
+        mvc.perform(get("/projects/alpha/issues/AB01.1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issue.labels").isArray())
+                .andExpect(jsonPath("$.issue.labels").isEmpty());
+    }
+
+    @Test
     void aStoryNamedTwiceIsListedTwiceAndReadAsNoSuchStory() throws Exception {
         // Harm: a read by an id two stories share answers one of them as if it were the one.
         final Board base = warnedBoard();

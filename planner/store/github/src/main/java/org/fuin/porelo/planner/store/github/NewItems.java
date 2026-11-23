@@ -20,6 +20,7 @@ import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInn
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -141,6 +142,7 @@ final class NewItems {
         private final boolean story;
         private final List<Value> values;
         private final String priority;
+        private List<String> labels = List.of();
         private boolean existing;
         private @Nullable String existingPriority;
         private ProjectWrites.@Nullable Created created;
@@ -217,7 +219,10 @@ final class NewItems {
         values.add(worker(issue.worker()));
         IssuePriority.option("", priority);
         values.add(rank(false, priority));
-        return planned(repository, issue.title().strip(), body, false, values, priority);
+        final Planned planned =
+                planned(repository, issue.title().strip(), body, false, values, priority);
+        planned.labels = issue.labels();
+        return planned;
     }
 
     /**
@@ -563,6 +568,11 @@ final class NewItems {
         }
         writePriority(token, planned, preserved);
         setValues(token, projectId, planned, standing);
+        if (taken == null && !TopicLabels.topicOf(planned.made().labels()).equals(planned.labels)) {
+            // Placed with every value, so only its labels are missing; GitHub drops them in
+            // silence for an account that may not set them.
+            throw new StoreException.LabelsNotKept(planned.repository, planned.reference());
+        }
     }
 
     /** Makes an issue the last sub-issue of its story, at the pace of this write's calls. */
@@ -963,7 +973,8 @@ final class NewItems {
                                         planned.story ? IssueMapping.STORY_TYPE : null,
                                         IssuePriority.create(
                                                 Objects.requireNonNull(priorityField),
-                                                planned.priority)));
+                                                planned.priority),
+                                        planned.labels));
     }
 
     private @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> priorityValues(

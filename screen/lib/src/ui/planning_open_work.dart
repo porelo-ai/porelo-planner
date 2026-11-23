@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../hooks.dart';
+import '../items_directory.dart';
 import '../models.dart';
 import '../open_work_filter.dart';
 import '../planning_board.dart';
@@ -36,8 +37,12 @@ class PlanningOpenWorkView extends StatefulWidget {
     this.pageButton,
     this.pageNote,
     this.limits,
+    this.chooseDirectory,
     super.key,
   });
+
+  /// The window's folder dialog for a local project's planning directory, or null to take a typed path.
+  final PlanningChooseDirectory? chooseDirectory;
 
   /// The factors the view's own limits follow, the board's when null: a description's read follows `services`.
   final PlanningLimits? limits;
@@ -264,6 +269,7 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
             ?widget.pageNote,
             Text('The stories of project ${board.project} by what is left to build, the most first.'),
             Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
+            ItemsDirectoryHeader(board: board, choose: widget.chooseDirectory),
             for (final problem in widget.providerProblems) _failure(problem, theme),
             if (!board.live && (snapshot != null || board.problem != null))
               const Text(

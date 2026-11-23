@@ -100,7 +100,8 @@ class BoardCopiesTest {
                         Map.of("PVTSSF_status", "Status", "PVTF_estimate", "Estimate"),
                         Map.of("Status", Map.of("Backlog", "opt-1")),
                         List.of("The field Size is missing"),
-                        Map.of("PVTSSF_status", 11L, "PVTF_estimate", 12L)),
+                        Map.of("PVTSSF_status", 11L, "PVTF_estimate", 12L),
+                        List.of("High", "Medium", "Low")),
                 List.of(
                         new TrackedItem(
                                 "PVTI_one",
@@ -203,6 +204,26 @@ class BoardCopiesTest {
 
         assertThat(copies().read(PROJECT, "c0ffee0"))
                 .as("a copy of the format before waits were kept")
+                .isEmpty();
+    }
+
+    @Test
+    void aCopyWrittenBeforeTheHeldPrioritiesWereKeptIsNotRead() throws IOException {
+        // Harm: an older copy read as holding no priority, so no story's priority is offered to
+        // set until the next whole read, or one taken as the organization having no field.
+        copies().write(copy(PROJECT, "c0ffee0"));
+        final Path file = directory.resolve(PROJECT.file());
+        final byte[] bytes = Files.readAllBytes(file);
+        final byte[] head = head("fory").getBytes(StandardCharsets.US_ASCII);
+        final byte[] older =
+                head("fory")
+                        .replace(BoardCopies.FORMAT, "f94e6ce39df2088d")
+                        .getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(older, 0, bytes, 0, head.length);
+        Files.write(file, bytes);
+
+        assertThat(copies().read(PROJECT, "c0ffee0"))
+                .as("a copy of the format before the held priorities were kept")
                 .isEmpty();
     }
 

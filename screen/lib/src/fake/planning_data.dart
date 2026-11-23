@@ -157,6 +157,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "state": "In analysis",
       "priority": "High",
       "link": "https://example.org/stories/ST294",
+      "labels": ["usability"],
       "issues": [],
       "work": {
         "run": "00000000-0000-4000-a000-000000000001",
@@ -187,6 +188,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "waitsOn": [],
           "link": "https://example.org/issues/PJ74",
           "title": "Planning work",
+          "labels": ["documentation", "needs-design"],
           "size": "M",
           "priority": "Medium",
           "rounds": 0,
@@ -2320,7 +2322,11 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             {
               "kind": "StateOutsideWorkflow",
               "text": "Its state is none of the workflow's states, so no work starts on it.",
-              "holds": true
+              "holds": true,
+              "correction": {
+                "kind": "Move",
+                "choices": ["New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework"]
+              }
             }
           ]
         },
@@ -2988,11 +2994,15 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         },
         {
           "kind": "NoPriority",
-          "text": "It has no priority, so it is sorted as Medium."
+          "text": "It has no priority, so it is sorted as Medium.",
+          "correction": {"kind": "Priority", "choices": ["Highest", "High", "Medium", "Low"]}
         }
       ]
     }
   ],
+  "tracker": {
+    "kind": "github"
+  },
   "revision": "design-1",
   "repositories": [
     "porelo-project",
@@ -3009,6 +3019,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     "porelo-claude-code",
     "porelo-message-sluice",
     "porelo-adapters"
+  ],
+  "repositoryWarnings": [
+    {
+      "repository": "porelo-host",
+      "kind": "TopicLabels",
+      "missing": ["documentation", "usability"],
+      "defaults": ["bug", "enhancement", "question"],
+      "differing": ["tests"],
+      "correction": {"kind": "Labels", "choices": []}
+    }
   ],
   "work": [
     {
@@ -3301,7 +3321,7 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   if (board['open'] case final Map<String, dynamic> open) 'open': open,
   if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
   // A planner's event is a whole board, so the screen takes changed rules from it.
-  for (final part in const ['states', 'phases', 'work', 'faults', 'rules'])
+  for (final part in const ['states', 'phases', 'work', 'faults', 'rules', 'repositoryWarnings'])
     if (board[part] case final List<dynamic> value) part: value,
   if (board['unlisted'] case final List<dynamic> unlisted)
     'unlisted': [
@@ -3309,4 +3329,5 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
         if (item is Map<String, dynamic>) {...item, 'version': mockItemVersion(item)} else item,
     ],
   if (board['reasons'] case final bool reasons) 'reasons': reasons,
+  if (board['tracker'] case final Map<String, dynamic> tracker) 'tracker': tracker,
 };

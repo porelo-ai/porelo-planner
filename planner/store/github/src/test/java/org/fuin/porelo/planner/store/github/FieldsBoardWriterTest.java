@@ -449,8 +449,10 @@ class FieldsBoardWriterTest {
                 final String title,
                 final String body,
                 final @Nullable String type,
-                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+                final List<String> labels) {
             calls.add("createIssue");
+            sentLabels.add(labels);
             assertThat(token).as("the issue made with the person's token").isEqualTo(TOKEN);
             assertThat(owner).as("the owner of the repository").isEqualTo(OWNER);
             final String answer = creating.isEmpty() ? "answer" : creating.poll();
@@ -482,7 +484,9 @@ class FieldsBoardWriterTest {
                             created.databaseId(),
                             created.number(),
                             created.type(),
-                            fields);
+                            fields,
+                            // An account without the right to label has them dropped in silence.
+                            answer.equals("unlabelled") ? List.of() : labels);
             final List<Found> issues = Objects.requireNonNull(made.get(repository));
             issues.set(issues.size() - 1, new Found(answered, title.strip(), body));
             if (answer.endsWith("unanswered")) {
@@ -574,7 +578,7 @@ class FieldsBoardWriterTest {
         }
 
         @Override
-        public void updateIssue(
+        public List<String> updateIssue(
                 final String token,
                 final String owner,
                 final String repository,
@@ -582,8 +586,10 @@ class FieldsBoardWriterTest {
                 final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening,
-                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+                final @Nullable List<String> labels) {
             assertThat(title).as("only an edit of the text sends a title").isNull();
+            assertThat(labels).as("only an edit of the text sends labels").isNull();
             if (issueFieldValues != null) {
                 priorityUpdates.add(issueFieldValues);
                 organizationValues.put(
@@ -605,7 +611,10 @@ class FieldsBoardWriterTest {
             if (body != null) {
                 bodies.put(number, body);
             }
+            return List.of();
         }
+
+        private final List<List<String>> sentLabels = new ArrayList<>();
 
         private final Map<Integer, List<IssueFieldValue>> organizationValues =
                 new LinkedHashMap<>();
@@ -805,6 +814,32 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void aStorysMissingOrUnknownPriorityIsSetRightInTheIssueFieldByASave() {
+        // Harm: the correction of a story's priority saved as written while GitHub keeps none,
+        // or one it does not know, so the warning never goes.
+        final ItemView none = storyItem("ST1", 2);
+        final ItemView unknown =
+                item("ST2", "example-project", 3, true, "", Map.of(FieldNames.PRIORITY, "Someday"))
+                        .typed(IssueMapping.STORY_TYPE);
+        final GitHub github = new GitHub().holding(none, unknown);
+
+        github.writer()
+                .save(
+                        snapshot(none, unknown),
+                        SHOWN,
+                        new Writes(
+                                Map.of(),
+                                Map.of(),
+                                Map.of(),
+                                ordered("ST1", "Highest", "ST2", "Low")));
+
+        assertThat(github.organizationValues)
+                .as("each story's Priority now one GitHub holds")
+                .containsEntry(2, List.of(OrganizationFields.priority("Urgent")))
+                .containsEntry(3, List.of(OrganizationFields.priority("Low")));
+    }
+
+    @Test
     void anIssueFieldThatCannotBePreservedRefusesTheWholeSave() {
         // Harm: replacing the priority discards an issue field the store cannot send back.
         final ItemView one =
@@ -877,6 +912,43 @@ class FieldsBoardWriterTest {
         assertThat(github.values.get("PVTI_I_example-lib_100"))
                 .as("the rank follows translated Highest")
                 .containsEntry("F_Rank", FieldValue.number("PVTI_I_example-lib_100", "F_Rank", 9));
+    }
+
+    @Test
+    void aNewIssuesTopicLabelsAreSentWithItAndLabelsGitHubDroppedAreNotKeptOnceItIsPlaced() {
+        // Harm: an account without the right to label sees labels saved that GitHub left out, or
+        // the issue made without them is never placed on the board.
+        final NewIssue labelled =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of("usability", "tests"));
+        final GitHub github = new GitHub();
+
+        github.writer().createIssue(snapshot(), SHOWN, labelled);
+
+        assertThat(github.sentLabels)
+                .as("the topic labels, sent with the issue")
+                .containsExactly(List.of("tests", "usability"));
+
+        final GitHub dropping = new GitHub().creating("unlabelled");
+        assertThatThrownBy(() -> dropping.writer().createIssue(snapshot(), SHOWN, labelled))
+                .isInstanceOfSatisfying(
+                        StoreException.LabelsNotKept.class,
+                        refused -> {
+                            assertThat(refused.subject()).isEqualTo("example-lib");
+                            assertThat(held(dropping))
+                                    .as("the issue made, named")
+                                    .containsExactly(refused.item());
+                        });
+        assertThat(dropping.added).as("the issue made is placed all the same").hasSize(1);
     }
 
     @Test
@@ -4555,5 +4627,144 @@ class FieldsBoardWriterTest {
                                 assertThat(partly.pushed())
                                         .as("the repository saved")
                                         .containsExactly("example-project"));
+    }
+
+    /** One write that changes its target's open state or priority, without a reason. */
+    private record OpenOrPriority(ItemView before, ItemView edited, String target, Writes writes) {}
+
+    /** The item as a person left it on GitHub: the same issue, its body edited. */
+    private static ItemView edited(final ItemView item) {
+        return new ItemView(
+                        item.itemId(),
+                        item.issueId(),
+                        item.repository(),
+                        item.number(),
+                        item.title(),
+                        "Edited on GitHub.",
+                        item.open(),
+                        item.stateReason(),
+                        item.fields(),
+                        item.labels(),
+                        item.parentIssueId(),
+                        item.subIssueIds(),
+                        item.blockedByIds(),
+                        item.link(),
+                        item.updatedAt(),
+                        item.archived())
+                .typed(item.issueType());
+    }
+
+    private static OpenOrPriority openOrPriority(final String write) {
+        final ItemView issue = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final ItemView story = storyItem("ST1", 2);
+        final ItemView closedStory = closedAs(story, "completed").typed(IssueMapping.STORY_TYPE);
+        return switch (write) {
+            case "issue close" ->
+                    new OpenOrPriority(
+                            issue,
+                            edited(issue),
+                            "PL1",
+                            new Writes(Map.of("PL1", "Finished"), Map.of()));
+            case "story close" ->
+                    new OpenOrPriority(
+                            story,
+                            edited(story),
+                            "ST1",
+                            new Writes(Map.of(), Map.of("ST1", "Finished")));
+            case "story reopen" ->
+                    new OpenOrPriority(
+                            closedStory,
+                            edited(closedStory),
+                            "ST1",
+                            new Writes(Map.of(), Map.of("ST1", "Backlog")));
+            case "story priority" ->
+                    new OpenOrPriority(
+                            story,
+                            edited(story),
+                            "ST1",
+                            new Writes(Map.of(), Map.of(), Map.of(), Map.of("ST1", "Medium")));
+            default -> throw new IllegalArgumentException(write);
+        };
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"issue close", "story close", "story reopen", "story priority"})
+    void aCloseReopenOrPriorityOverATargetChangedSinceTheCallersReadIsRefused(final String write) {
+        // Harm: a close, a reopen or a priority is written over an item a person changed after
+        // the caller read it, as only the Status and the other fields were compared.
+        final OpenOrPriority given = openOrPriority(write);
+        final GitHub github = new GitHub().holding(given.edited());
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(given.before()),
+                                                seen(given.before()),
+                                                given.writes()))
+                .as("the %s over a changed item", write)
+                .isInstanceOfSatisfying(
+                        StoreException.Changed.class,
+                        e -> assertThat(e.ids()).as("the changed").containsExactly(given.target()));
+        assertThat(github.mutations).as("the field values written").isEmpty();
+        assertThat(github.updates).as("the issues closed or reopened").isEmpty();
+        assertThat(github.priorityUpdates).as("the priorities written").isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"issue close", "story close", "story reopen", "story priority"})
+    void aCloseReopenOrPriorityWithoutItsTargetsVersionIsRefusedBeforeGitHubIsAsked(
+            final String write) {
+        // Harm: a close, a reopen or a priority goes out unchecked when the caller sent no version
+        // of the item it changes.
+        final OpenOrPriority given = openOrPriority(write);
+        final ItemView other = item("LB2", "example-lib", 2, true, "", state("Idea"));
+        final GitHub github = new GitHub().holding(given.before(), other);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(given.before(), other),
+                                                seen(other),
+                                                given.writes()))
+                .as("the %s without its target's version", write)
+                .isInstanceOfSatisfying(
+                        StoreException.BasisIncomplete.class,
+                        e ->
+                                assertThat(e.missing())
+                                        .as("the missing")
+                                        .containsExactly(given.target()));
+        assertThat(github.calls).as("the calls made").isEmpty();
+    }
+
+    @Test
+    void anIssuesPriorityOverAnIssueChangedSinceTheCallersReadIsRefused() {
+        // Harm: an issue's priority is written over an issue a person changed after the caller
+        // read it.
+        final ItemView before =
+                item("PL1", "example-project", 1, true, "", Map.of(FieldNames.PRIORITY, "High"));
+        final GitHub github = new GitHub().holding(edited(before));
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .setFields(
+                                                snapshot(before),
+                                                seen(before),
+                                                "PL1",
+                                                new org.fuin.porelo.planner.store.Fields(
+                                                        Set.of(
+                                                                org.fuin.porelo.planner.store.Fields
+                                                                        .Field.PRIORITY),
+                                                        null,
+                                                        null,
+                                                        "Medium",
+                                                        null)))
+                .as("the priority over a changed issue")
+                .isInstanceOfSatisfying(
+                        StoreException.Changed.class,
+                        e -> assertThat(e.ids()).as("the changed").containsExactly("PL1"));
+        assertThat(github.priorityUpdates).as("the priorities written").isEmpty();
     }
 }

@@ -331,7 +331,8 @@ final class LocalReader {
                             issue.minutes(),
                             issue.priority(),
                             warnings,
-                            issue.waitsOn()));
+                            issue.waitsOn(),
+                            issue.labels()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : mapped.stories()) {
@@ -352,7 +353,8 @@ final class LocalReader {
                             null,
                             story.issuesWhole(),
                             story.closedAt(),
-                            warnings));
+                            warnings,
+                            story.labels()));
         }
         // No tracker's owner: a local id must never reach a forge as an issue's reference.
         return new Snapshot(

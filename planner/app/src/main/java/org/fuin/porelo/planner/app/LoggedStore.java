@@ -45,6 +45,11 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public org.fuin.porelo.planner.store.Tracker tracker() {
+        return store.tracker();
+    }
+
+    @Override
     public Story story(final String id) {
         return store.story(id);
     }
@@ -98,8 +103,30 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public boolean setsLabels() {
+        return store.setsLabels();
+    }
+
+    @Override
     public boolean keepsReasons() {
         return store.keepsReasons();
+    }
+
+    @Override
+    public boolean keepsRepositoryLabels() {
+        return store.keepsRepositoryLabels();
+    }
+
+    @Override
+    public Board rereadLabels(final String repository) {
+        return store.rereadLabels(repository);
+    }
+
+    @Override
+    public Board correctLabels(
+            final String repository,
+            final java.util.List<org.fuin.porelo.planner.store.RepositoryWarning.Call> calls) {
+        return store.correctLabels(repository, calls);
     }
 
     @Override

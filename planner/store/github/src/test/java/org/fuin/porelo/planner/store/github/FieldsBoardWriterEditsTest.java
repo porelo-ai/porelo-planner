@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.github;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.net.URI;
@@ -210,7 +211,7 @@ class FieldsBoardWriterEditsTest {
 
         GitHub holding(final ItemView... items) {
             for (final ItemView each : items) {
-                held.put(each.issueId(), onBoard(each));
+                held.put(each.issueId(), onBoard(each, labelsPastPage));
             }
             return this;
         }
@@ -222,7 +223,7 @@ class FieldsBoardWriterEditsTest {
                     new ForgeAccessRefusals(URI.create("https://github.com")));
         }
 
-        private static IssueOnBoard onBoard(final ItemView item) {
+        private static IssueOnBoard onBoard(final ItemView item, final boolean labelsPastPage) {
             final List<ItemValue> values = new ArrayList<>();
             item.fields()
                     .forEach(
@@ -261,7 +262,7 @@ class FieldsBoardWriterEditsTest {
                             item.parentIssueId(),
                             refs(item.subIssueIds()),
                             refs(item.blockedByIds()),
-                            new GitHubGraphQl.PageInfo(false, null),
+                            new GitHubGraphQl.PageInfo(labelsPastPage, null),
                             item.issueType(),
                             null,
                             item.fields().containsKey(FieldNames.PRIORITY)
@@ -324,7 +325,8 @@ class FieldsBoardWriterEditsTest {
                 final String title,
                 final String body,
                 final @Nullable String type,
-                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+                final List<String> labels) {
             throw new AssertionError("an edit made an issue");
         }
 
@@ -401,7 +403,7 @@ class FieldsBoardWriterEditsTest {
         }
 
         @Override
-        public void updateIssue(
+        public List<String> updateIssue(
                 final String token,
                 final String owner,
                 final String repository,
@@ -409,7 +411,8 @@ class FieldsBoardWriterEditsTest {
                 final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening,
-                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+                final @Nullable List<String> labels) {
             assertThat(opening).as("an edit by hand leaves the open state").isNull();
             final RuntimeException failure = updateFailure;
             if (failure != null) {
@@ -419,8 +422,30 @@ class FieldsBoardWriterEditsTest {
                 priorityUpdates.add(issueFieldValues);
             }
             calls.add("updateIssue " + repository + "#" + number);
-            updates.add(new Update(title, body));
+            updates.add(new Update(title, body, labels));
+            final IssueOnBoard now =
+                    held.values().stream()
+                            .filter(
+                                    each ->
+                                            each.issue().number() == number
+                                                    && each.issue()
+                                                            .repository()
+                                                            .endsWith("/" + repository))
+                            .findFirst()
+                            .orElseThrow();
+            if (labels == null) {
+                return now.issue().labels();
+            }
+            // An account without the right to label has the labels left as they were.
+            return labelsDropped ? now.issue().labels() : answers.apply(labels);
         }
+
+        private boolean labelsDropped;
+
+        /** The labels GitHub answers for those sent: those sent, unless a test says otherwise. */
+        private java.util.function.UnaryOperator<List<String>> answers = sent -> sent;
+
+        private boolean labelsPastPage;
 
         private final List<List<IssuesUpdateRequestIssueFieldValuesInner>> priorityUpdates =
                 new ArrayList<>();
@@ -468,8 +493,35 @@ class FieldsBoardWriterEditsTest {
      *
      * @param title the title sent, or null
      * @param body the body sent, or null
+     * @param labels the labels sent, or null
      */
-    private record Update(@Nullable String title, @Nullable String body) {}
+    private record Update(
+            @Nullable String title, @Nullable String body, @Nullable List<String> labels) {
+        Update(final @Nullable String title, final @Nullable String body) {
+            this(title, body, null);
+        }
+    }
+
+    /** An item with other labels, everything else as it was. */
+    private static ItemView labelled(final ItemView item, final List<String> labels) {
+        return new ItemView(
+                item.itemId(),
+                item.issueId(),
+                item.repository(),
+                item.number(),
+                item.title(),
+                item.body(),
+                item.open(),
+                item.stateReason(),
+                item.fields(),
+                labels,
+                item.parentIssueId(),
+                item.subIssueIds(),
+                item.blockedByIds(),
+                item.link(),
+                item.updatedAt(),
+                item.archived());
+    }
 
     /** An item with another title and body, everything else as it was. */
     private static ItemView text(final ItemView item, final String title, final String body) {
@@ -828,6 +880,194 @@ class FieldsBoardWriterEditsTest {
                                 "A new title",
                                 BODY.replace("It works.", "It works well.")
                                         .replace("- Old plan.", "- New plan.")));
+    }
+
+    @Test
+    void topicLabelsGoWithTheTitleInOneUpdateAndThePersonsOwnLabelStays() {
+        // Harm: a label of the person's own lost by a write of the topic labels, or a write sent
+        // for labels the issue already carries.
+        final ItemView read = labelled(one, List.of("needs-design", "usability"));
+        final GitHub github = github().holding(read);
+
+        final boolean wrote =
+                github.writer()
+                        .setText(
+                                texts(read),
+                                SHOWN,
+                                ONE,
+                                new TextEdit(
+                                        TextEdit.Kind.ISSUE,
+                                        "A new title",
+                                        Map.of(),
+                                        Set.of(),
+                                        List.of("tests", "security")));
+
+        assertThat(wrote).as("something was written").isTrue();
+        assertThat(github.calls)
+                .as("the read, then one update")
+                .containsExactly("issueBoard", "updateIssue example-lib#1");
+        assertThat(github.updates)
+                .as("the title and every label the issue is to carry, its own first")
+                .containsExactly(
+                        new Update(
+                                "A new title", null, List.of("needs-design", "security", "tests")));
+
+        final GitHub same = github().holding(read);
+        assertThat(
+                        same.writer()
+                                .setText(
+                                        texts(read),
+                                        SHOWN,
+                                        ONE,
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(),
+                                                Set.of(),
+                                                List.of("usability"))))
+                .as("the topic labels it carries")
+                .isFalse();
+        assertThat(same.calls).as("no call").isEmpty();
+    }
+
+    @Test
+    void labelsGitHubDroppedInSilenceAreNotKeptAndTheTitleWrittenWithThemStands() {
+        // Harm: an account without the right to label sees its labels saved that GitHub left out.
+        final ItemView read = labelled(one, List.of("needs-design"));
+        final GitHub github = github().holding(read);
+        github.labelsDropped = true;
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .setText(
+                                                texts(read),
+                                                SHOWN,
+                                                ONE,
+                                                new TextEdit(
+                                                        TextEdit.Kind.ISSUE,
+                                                        "A new title",
+                                                        Map.of(),
+                                                        Set.of(),
+                                                        List.of("tests"))))
+                .isInstanceOfSatisfying(
+                        StoreException.LabelsNotKept.class,
+                        refused -> {
+                            assertThat(refused.subject()).isEqualTo("example-lib");
+                            assertThat(refused.item()).isEqualTo(ONE);
+                        });
+        assertThat(github.updates)
+                .as("the title was sent with the labels")
+                .containsExactly(new Update("A new title", null, List.of("needs-design", "tests")));
+    }
+
+    /** A labels edit of issue ONE setting the topic labels given, nothing else. */
+    private static TextEdit topics(final String... labels) {
+        return new TextEdit(TextEdit.Kind.ISSUE, null, Map.of(), Set.of(), List.of(labels));
+    }
+
+    @Test
+    void aLabelGitHubAnswersInAnotherCaseIsSaved() {
+        // Harm: labels GitHub kept, matching a repository's label named in another case, were
+        // answered as not kept.
+        final ItemView read = labelled(one, List.of("needs-design"));
+        final GitHub github = github().holding(read);
+        github.answers =
+                sent ->
+                        sent.stream()
+                                .map(label -> label.equals("tests") ? "Tests" : label)
+                                .toList();
+
+        assertThat(github.writer().setText(texts(read), SHOWN, ONE, topics("tests")))
+                .as("saved")
+                .isTrue();
+        assertThat(github.updates)
+                .containsExactly(new Update(null, null, List.of("needs-design", "tests")));
+    }
+
+    @Test
+    void aTopicLabelCarriedInAnotherCaseCountsAsTheTopicLabelAndIsNeverSentTwice() {
+        // Harm: a topic label carried as Tests could not be taken off, or a write sent Tests
+        // and tests together, which GitHub takes as one label named twice.
+        final ItemView read = labelled(one, List.of("Tests", "needs-design"));
+
+        final GitHub same = github().holding(read);
+        assertThat(same.writer().setText(texts(read), SHOWN, ONE, topics("tests")))
+                .as("the topic label it carries, in another case")
+                .isFalse();
+        assertThat(same.calls).as("no call").isEmpty();
+
+        final GitHub off = github().holding(read);
+        assertThat(off.writer().setText(texts(read), SHOWN, ONE, topics())).isTrue();
+        assertThat(off.updates)
+                .as("the topic label taken off, the person's own kept")
+                .containsExactly(new Update(null, null, List.of("needs-design")));
+
+        final GitHub other = github().holding(read);
+        assertThat(other.writer().setText(texts(read), SHOWN, ONE, topics("tests", "build")))
+                .isTrue();
+        assertThat(other.updates)
+                .as("each topic label once")
+                .containsExactly(new Update(null, null, List.of("needs-design", "tests", "build")));
+    }
+
+    @Test
+    void aLabelOfThePersonsOwnGitHubDroppedIsNotKeptThoughTheTopicLabelsStand() {
+        // Harm: a write that lost a label of the person's own was answered as saved.
+        final ItemView read = labelled(one, List.of("needs-design", "customer"));
+        final GitHub github = github().holding(read);
+        github.answers = sent -> sent.stream().filter(label -> !label.equals("customer")).toList();
+
+        assertThatThrownBy(() -> github.writer().setText(texts(read), SHOWN, ONE, topics("tests")))
+                .isInstanceOf(StoreException.LabelsNotKept.class);
+    }
+
+    @Test
+    void aLabelAddedOnGitHubSinceTheBoardWasReadStaysThroughAWriteOfTheTopicLabels() {
+        // Harm: a label someone added on GitHub after the store's board was read, which the
+        // window saw at the version it sends, was taken off by the next write of the topic
+        // labels.
+        final ItemView shown = labelled(one, List.of("usability"));
+        final ItemView now = labelled(one, List.of("usability", "added-later"));
+        final GitHub github = github().holding(now);
+
+        assertThat(
+                        github.writer()
+                                .setText(
+                                        texts(shown),
+                                        org.fuin.porelo.planner.store.Basis.none()
+                                                .with(ONE, ItemVersions.of(now)),
+                                        ONE,
+                                        topics("tests")))
+                .isTrue();
+        assertThat(github.updates)
+                .as("every label GitHub holds now but the topic labels, then those asked")
+                .containsExactly(new Update(null, null, List.of("added-later", "tests")));
+    }
+
+    @Test
+    void anIssueWithMoreLabelsThanOneReadGivesIsNotRelabelledAndNothingIsWritten() {
+        // Harm: the labels past the read's page are lost by a write of every label it carries.
+        final ItemView read = labelled(one, List.of("needs-design"));
+        final GitHub github = new GitHub();
+        github.labelsPastPage = true;
+        github.holding(story, read, two, three);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .setText(
+                                                texts(read),
+                                                SHOWN,
+                                                ONE,
+                                                new TextEdit(
+                                                        TextEdit.Kind.ISSUE,
+                                                        "A new title",
+                                                        Map.of(),
+                                                        Set.of(),
+                                                        List.of("tests"))))
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.calls).as("only the read").containsExactly("issueBoard");
     }
 
     @Test

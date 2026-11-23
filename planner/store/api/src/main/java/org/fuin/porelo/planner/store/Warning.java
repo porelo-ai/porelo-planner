@@ -51,7 +51,9 @@ public record Warning(
         /** Its size. */
         SIZE,
         /** Its number fields. */
-        FIGURES
+        FIGURES,
+        /** Its labels. */
+        LABELS
     }
 
     /**

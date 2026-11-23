@@ -1,3 +1,4 @@
+import '../client.dart' show planningTopicLabelOf, planningTopicLabels;
 import '../models.dart';
 
 import 'package:flutter/material.dart';
@@ -194,3 +195,155 @@ Widget? planningRuleMark(List<String> words, {Key? key}) => words.isEmpty
         message: planningShown(words.join('\n')),
         child: Icon(Icons.rule, key: key, size: PlanningStyle.rowIcon),
       );
+
+/// An item's labels as small chips, in the planner's order, each once; null when it carries none.
+Widget? planningLabels(String item, List<String> labels) => labels.isEmpty
+    ? null
+    : Wrap(
+        key: Key('planning-labels $item'),
+        spacing: Space.tight,
+        runSpacing: Space.tight,
+        children: [
+          for (final label in labels.toSet())
+            Chip(
+              key: Key('planning-label $item $label'),
+              label: Text(planningShown(label, multiline: false)),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+        ],
+      );
+
+/// The button that chooses the topic labels an item carries, in a dialog showing what the save leaves on it; a label
+/// of the person's own stays and is shown as kept.
+class PlanningLabelsEdit extends StatelessWidget {
+  /// Takes the item, its labels, why it cannot be changed now and what saves the choice.
+  const PlanningLabelsEdit({
+    required this.item,
+    required this.labels,
+    required this.unavailable,
+    required this.onSave,
+    super.key,
+  });
+
+  /// The item's id.
+  final String item;
+
+  /// The labels it carries as shown.
+  final List<String> labels;
+
+  /// Why its labels cannot be changed now, or null when they can.
+  final String? unavailable;
+
+  /// Saves the topic labels chosen, in the order of [planningTopicLabels].
+  final ValueChanged<List<String>> onSave;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: Space.small,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      TextButton.icon(
+        key: Key('planning-labels-edit $item'),
+        onPressed: unavailable == null
+            ? () async {
+                final chosen = await showDialog<List<String>>(
+                  context: context,
+                  builder: (_) => _LabelsDialog(item: item, labels: labels),
+                );
+                if (chosen != null) onSave(chosen);
+              }
+            : null,
+        icon: const Icon(Icons.label_outline, size: PlanningStyle.rowIcon),
+        label: Tooltip(
+          message: unavailable ?? 'Choose the topic labels of ${planningShown(item, multiline: false)}',
+          child: const Text('Labels'),
+        ),
+      ),
+      // A greyed button says why in text, never on hover alone.
+      if (unavailable case final reason?) Text(planningShown(reason, multiline: false)),
+    ],
+  );
+}
+
+class _LabelsDialog extends StatefulWidget {
+  const _LabelsDialog({required this.item, required this.labels});
+
+  final String item;
+
+  final List<String> labels;
+
+  @override
+  State<_LabelsDialog> createState() => _LabelsDialogState();
+}
+
+class _LabelsDialogState extends State<_LabelsDialog> {
+  // A label carried in another case is the topic label, so it is chosen and taken off as one.
+  late final Set<String> _before = {for (final label in widget.labels) ?planningTopicLabelOf(label)};
+
+  late final Set<String> _chosen = {..._before};
+
+  late final List<String> _kept = [
+    for (final label in widget.labels.toSet())
+      if (planningTopicLabelOf(label) == null) label,
+  ];
+
+  List<String> get _ordered => [
+    for (final label in planningTopicLabels)
+      if (_chosen.contains(label)) label,
+  ];
+
+  bool get _changed => _chosen.length != _before.length || !_chosen.containsAll(_before);
+
+  @override
+  Widget build(BuildContext context) {
+    final after = [..._kept, ..._ordered];
+    return AlertDialog(
+      title: Text('Labels of ${planningShown(widget.item, multiline: false)}'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: PlanningStyle.dialog),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: Space.normal,
+          children: [
+            Wrap(
+              spacing: Space.small,
+              runSpacing: Space.small,
+              children: [
+                for (final label in planningTopicLabels)
+                  FilterChip(
+                    key: Key('planning-label-choice $label'),
+                    label: Text(label),
+                    selected: _chosen.contains(label),
+                    onSelected: (selected) => setState(() => selected ? _chosen.add(label) : _chosen.remove(label)),
+                  ),
+              ],
+            ),
+            if (_kept.isNotEmpty)
+              Text(
+                planningShown('Kept as they are: ${_kept.join(', ')}', multiline: false),
+                key: const Key('planning-labels-kept'),
+              ),
+            Text(
+              planningShown('After saving: ${after.isEmpty ? 'no labels' : after.join(', ')}', multiline: false),
+              key: const Key('planning-labels-preview'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('planning-labels-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('planning-labels-save'),
+          onPressed: _changed ? () => Navigator.of(context).pop(_ordered) : null,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}

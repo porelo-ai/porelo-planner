@@ -13,8 +13,12 @@ class PlanningIssueRow extends StatelessWidget {
     this.sizeBadge,
     this.menu,
     this.refusal,
+    this.correction,
     super.key,
   });
+
+  /// What the board offers beside the warning's mark to set it right, or null.
+  final Widget? correction;
 
   /// The issue as reported at the board's revision.
   final PlanIssue issue;
@@ -59,8 +63,10 @@ class PlanningIssueRow extends StatelessWidget {
           if (issue.state.isNotEmpty) Text(planningShown(issue.state, multiline: false)),
           ?sizeBadge,
           ?planningWarningMark(issue.warnings, key: Key('planning-warned-issue ${issue.id}')),
+          ?correction,
           if (issue.worker case final worker?) Text(planningWorker(worker)),
           if (issue.noRunHere) Text('worked outside this planner', key: Key('planning-no-run ${issue.id}')),
+          ?planningLabels(issue.id, issue.labels),
         ],
       ),
       if (!issue.blockedByReported)

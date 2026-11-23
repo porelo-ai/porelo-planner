@@ -619,6 +619,94 @@ class MockStoreTest {
     }
 
     @Test
+    void theMockBoardSetsTopicLabelsKeepsThePersonsOwnAndKeepsThemThroughAMove() {
+        // Harm: the window's planning tests read no labels, or a labels edit on the mock takes the
+        // person's own label off, saves nothing new, or a later save loses the labels.
+        final Board board = store.board();
+        final Issue issue = board.issue("PJ74").orElseThrow();
+        assertThat(issue.labels())
+                .as("the mock issue's labels, a label of the person's own among them")
+                .containsExactly("documentation", "needs-design");
+        assertThat(board.story("ST294").orElseThrow().labels())
+                .as("the mock story's labels")
+                .containsExactly("usability");
+
+        final Board labelled =
+                store.setText(
+                        FIRST,
+                        issue.id(),
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                null,
+                                Map.of(),
+                                java.util.Set.of(),
+                                List.of("tests")));
+        final Issue after = labelled.issue("PJ74").orElseThrow();
+        assertThat(after.labels())
+                .as("the topic label set, the person's own kept")
+                .containsExactly("needs-design", "tests");
+        assertThat(after.version()).as("a new version").isNotEqualTo(issue.version());
+        assertThat(labelled.revision()).as("a new revision").isNotEqualTo(FIRST);
+        assertThat(
+                        store.setText(
+                                        labelled.revision(),
+                                        issue.id(),
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(),
+                                                java.util.Set.of(),
+                                                List.of("tests")))
+                                .revision())
+                .as("the labels it carries save nothing")
+                .isEqualTo(labelled.revision());
+
+        final Board story =
+                store.setText(
+                        labelled.revision(),
+                        "ST294",
+                        new TextEdit(
+                                TextEdit.Kind.STORY,
+                                null,
+                                Map.of(),
+                                java.util.Set.of(),
+                                List.of()));
+        assertThat(story.story("ST294").orElseThrow().labels())
+                .as("every topic label taken off the story")
+                .isEmpty();
+
+        final Board moved =
+                store.save(story.revision(), new Writes(Map.of("PJ74", "Implementing"), Map.of()));
+        assertThat(moved.issue("PJ74").orElseThrow().labels())
+                .as("a move keeps the labels")
+                .containsExactly("needs-design", "tests");
+    }
+
+    @Test
+    void theTopicLabelsAnItemCarriesAskedAgainInAnotherOrderSaveNothing() {
+        // Harm: the mock answered a new revision where GitHub and a local project save nothing,
+        // so the window's tests pass on a change the planner never makes.
+        final Issue issue = store.board().issue("PJ74").orElseThrow();
+        assertThat(issue.labels()).containsExactly("documentation", "needs-design");
+
+        assertThat(
+                        store.setText(
+                                        FIRST,
+                                        issue.id(),
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(),
+                                                java.util.Set.of(),
+                                                List.of("documentation")))
+                                .revision())
+                .as("the topic label it carries, its own label first in the write")
+                .isEqualTo(FIRST);
+        assertThat(store.board().issue("PJ74").orElseThrow().labels())
+                .containsExactly("documentation", "needs-design");
+    }
+
+    @Test
     void aStoryMadeFromAnIdeaHasItsGainReplacedByATextEdit() {
         // A gain added beside the old one, which stays as what the story covers, would show a
         // window's tests two gains where the real store holds one.

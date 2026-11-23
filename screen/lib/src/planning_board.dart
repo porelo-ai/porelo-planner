@@ -87,7 +87,18 @@ class PlanningPreferences {
 /// card stands at its target until the answer.
 class PendingPlanningMove {
   /// Records the state the person saw and the target.
-  PendingPlanningMove(this.from, this.to, {this.isIssue = false, this.inNoStory = false});
+  PendingPlanningMove(
+    this.from,
+    this.to, {
+    this.isIssue = false,
+    this.inNoStory = false,
+    this.corrects,
+    this.version = '',
+  });
+
+  /// The warning this move sets right as its correction offers, whose preview is always asked about; null for a move
+  /// the person made on the board.
+  final PlanWarning? corrects;
 
   /// Whether this destination belongs to an issue rather than a story.
   final bool isIssue;
@@ -97,6 +108,9 @@ class PendingPlanningMove {
 
   /// The state the person saw when the move began.
   String from;
+
+  /// The version of the moved item the move was judged on, as the person saw it; empty when none was shown.
+  final String version;
 
   /// The requested destination.
   final String to;
@@ -115,8 +129,18 @@ class _StoryStart {
 class PlanningMoveQuestion {
   /// Takes the move, its preview and the revision the preview was answered for; [asksReason] offers the reason, which
   /// starts as the one the move carries, so a move asked about again keeps what was typed.
-  PlanningMoveQuestion(this.key, this.move, this.preview, this.revision, {this.again = false, this.asksReason = false})
-    : reason = ValueNotifier(move.reason ?? '');
+  PlanningMoveQuestion(
+    this.key,
+    this.move,
+    this.preview,
+    this.revision, {
+    this.again = false,
+    this.asksReason = false,
+    this.corrects,
+  }) : reason = ValueNotifier(move.reason ?? '');
+
+  /// The warning the move sets right as its correction offers, or null for a move the person made on the board.
+  final PlanWarning? corrects;
 
   /// Whether the person may give a reason why the item is closed, which may stay empty.
   final bool asksReason;
@@ -144,6 +168,21 @@ class PlanningMoveQuestion {
 
   /// What the person confirms.
   List<PlanningMoveWarning> get warnings => preview.warnings;
+}
+
+/// A correction other than a move whose preview waits for the person's Confirm or Cancel; nothing is saved before.
+class PlanningCorrectionQuestion {
+  /// Takes the correction, its preview and the warning it sets right.
+  const PlanningCorrectionQuestion(this.correction, this.preview, this.warning);
+
+  /// The correction as it is saved.
+  final PlanningCorrection correction;
+
+  /// What the planner answered it would write.
+  final PlanningCorrectionPreview preview;
+
+  /// The warning it sets right, as the board showed it.
+  final PlanWarning warning;
 }
 
 /// A project's board, replaced only by whole replies from its machine.
@@ -234,6 +273,9 @@ class PlanningBoard extends ChangeNotifier {
   /// Why the planner's last read of the whole board failed, in words, while the board it had stands; null once a
   /// board came.
   String? readProblem;
+
+  /// The refusal behind [readProblem], kept whole so a part of the screen can answer it; null with it.
+  PlanningRefusal? readRefusal;
 
   /// Whether a Reload's read of the whole board runs at the planner; a change made meanwhile is saved at once.
   bool fetching = false;
@@ -379,6 +421,7 @@ class PlanningBoard extends ChangeNotifier {
       _changed();
       return _drainQueue();
     }
+    _dropCorrection();
     unawaited(_startMove(next.key, next.move, snapshot!.revision, drained: true));
   }
 
@@ -440,7 +483,10 @@ class PlanningBoard extends ChangeNotifier {
     }
     if (_reloadProblem != null && moveProblem == _reloadProblem) moveProblem = null;
     _reloadProblem = null;
-    if (began) readProblem = null;
+    if (began) {
+      readProblem = null;
+      readRefusal = null;
+    }
   }
 
   void _beginAction() {
@@ -593,6 +639,7 @@ class PlanningBoard extends ChangeNotifier {
       void readFailed() {
         if (!current()) return;
         final refusal = failed?.value;
+        readRefusal = refusal;
         readProblem = refusal == null
             ? null
             : planningShown('The planner could not read the board again: ${planningFailureWords(refusal)}');
@@ -1057,6 +1104,12 @@ class PlanningBoard extends ChangeNotifier {
   // Kept apart from the snapshot: a board read again by its workflow and stories names no repositories.
   List<String> _repositories = const [];
 
+  /// What the last whole board found wrong in the project's repositories themselves; empty before one named it.
+  List<PlanRepositoryWarning> get repositoryWarnings => _repositoryWarnings;
+
+  // Kept apart from the snapshot as the repositories are, which a story list does not name either.
+  List<PlanRepositoryWarning> _repositoryWarnings = const [];
+
   /// Why a new issue cannot be added now, or null when it can.
   String? get newIssueUnavailable =>
       unavailableActions['CreateIssue'] ??
@@ -1250,6 +1303,98 @@ class PlanningBoard extends ChangeNotifier {
     });
   }
 
+  /// Why the labels of [item], a story when [story] holds and an issue otherwise, cannot be changed now, or null when
+  /// they can.
+  String? labelsUnavailable(String item, {required bool story}) =>
+      unavailableActions['SetLabels'] ??
+      (_disposed || !live
+          ? 'the planning board is not live'
+          : snapshot?.complete != true
+          ? 'the planning board is not complete'
+          : snapshot!.revision.trim().isEmpty
+          ? 'the planning revision was not reported'
+          : actionBusy || saving
+          ? 'waiting for the planner'
+          : switch (_labelled(snapshot!, item, story: story)) {
+              null => story ? 'the story is not on the board' : 'the issue is not on the board',
+              final found => heldBy(found.warnings),
+            });
+
+  /// The labels and warnings of [item] on [board], a story's when [story] holds; null when the board does not show it.
+  ({List<String> labels, List<PlanWarning> warnings})? _labelled(
+    PlanningSnapshot board,
+    String item, {
+    required bool story,
+  }) {
+    if (story) {
+      final found = board.stories.where((each) => each.id == item).firstOrNull;
+      return found == null ? null : (labels: found.labels, warnings: found.warnings);
+    }
+    final found = [
+      ...board.stories.expand((each) => each.issues),
+      ...noStory,
+    ].where((each) => each.id == item).firstOrNull;
+    return found == null ? null : (labels: found.labels, warnings: found.warnings);
+  }
+
+  /// The topic labels among [labels], in any case, in the order of [planningTopicLabels], as one value to compare.
+  static String _topicOf(List<String> labels) {
+    final carried = {for (final label in labels) ?planningTopicLabelOf(label)};
+    return [
+      for (final label in planningTopicLabels)
+        if (carried.contains(label)) label,
+    ].join(',');
+  }
+
+  /// Sets the topic labels [item] carries after the save, a story's when [story] holds, against the revision the board
+  /// shows; a label of the person's own on it stays. Answers the planner's words for a refusal, which also stand in
+  /// [actionProblem], or null once it is saved.
+  Future<String?> setLabels(String item, List<String> labels, {required bool story}) async {
+    if (labelsUnavailable(item, story: story) case final reason?) {
+      actionProblem = 'No labels change: $reason.';
+      _changed();
+      return actionProblem;
+    }
+    _beginAction();
+    final source = backend;
+    final name = project;
+    final revision = snapshot!.revision;
+    final chosen = [
+      for (final label in planningTopicLabels)
+        if (labels.contains(label)) label,
+    ];
+    actionBusy = true;
+    _changed();
+    try {
+      final saved = await _saveChoice(
+        id: item,
+        seen: _topicOf(_labelled(snapshot!, item, story: story)!.labels),
+        revision: revision,
+        source: source,
+        name: name,
+        valueOn: (board) => switch (_labelled(board, item, story: story)) {
+          final found? => (value: _topicOf(found.labels)),
+          null => null,
+        },
+        save: (seen) async {
+          await source.setLabels(name, item, chosen, seen, story: story);
+        },
+      );
+      if (!saved) return actionProblem ?? 'The board changed before the labels could be saved.';
+      return null;
+    } catch (error) {
+      if (_sameBoard(source, name)) {
+        reportActionProblem(error);
+        if (planningUnsupported(error) || planningRefused(error, 'NotYetBuilt')) {
+          unavailableActions['SetLabels'] = planningFailureWords(error);
+        }
+      }
+      return planningFailureWords(error);
+    } finally {
+      if (_sameBoard(source, name)) _endAction();
+    }
+  }
+
   /// Why who works [issue] cannot be changed now, or null when it can.
   String? workerUnavailable(PlanIssue issue) =>
       unavailableActions['SetWorker'] ??
@@ -1384,6 +1529,7 @@ class PlanningBoard extends ChangeNotifier {
     if (!sameProject) {
       snapshot = null;
       _repositories = const [];
+      _repositoryWarnings = const [];
       _pending.clear();
       _priorities.clear();
       moveProblem = null;
@@ -1408,6 +1554,31 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Restarts this project's watch after a failure, retaining its last snapshot and view choices.
   Future<void> retry() => changeProject(backend, project);
+
+  /// Reads the board again from the planner's store, without a fetch, once a save under way has ended: the project's
+  /// store was opened anew on another directory, whose board stands in for the one shown. A watch that ended, as on a
+  /// directory refused, is opened anew; a live one is read beside. Nothing is read once another board is shown.
+  Future<void> readAgain() async {
+    final source = backend;
+    final name = project;
+    while (saving && !_disposed && _sameBoard(source, name)) {
+      await _nextChange();
+    }
+    if (_disposed || !_sameBoard(source, name)) return;
+    if (live) return reload();
+    return retry();
+  }
+
+  Future<void> _nextChange() {
+    final changed = Completer<void>();
+    void once() {
+      removeListener(once);
+      if (!changed.isCompleted) changed.complete();
+    }
+
+    addListener(once);
+    return changed.future;
+  }
 
   /// Brings the board to what the repositories hold now, whatever its state: the planner fetches them, and a stream
   /// that is down or a board whose watch failed has its watch opened anew, whose first answer is the board read anew.
@@ -1498,6 +1669,7 @@ class PlanningBoard extends ChangeNotifier {
   /// since the person chose on items that may stand otherwise now.
   Future<void> move(String id, String to, {String? revision}) async {
     if (_disposed || !takesMoves) return;
+    _dropCorrection();
     final story = stories.where((story) => story.id == id).firstOrNull;
     final target = state(to);
     if (story == null || target == null) return;
@@ -1597,7 +1769,9 @@ class PlanningBoard extends ChangeNotifier {
   /// [shown] is the state the person saw when choosing, or [reported]'s; [revision] is the board's when the choice was
   /// offered.
   Future<void> moveIssue(String id, String to, {PlanIssue? reported, String? shown, String? revision}) async {
-    if (_disposed || _oneAtATime(id, queues: true)) return;
+    if (_disposed) return;
+    _dropCorrection();
+    if (_oneAtATime(id, queues: true)) return;
     if (!takesMoves || snapshot!.revision.isEmpty) {
       return refuseMove(id, 'the board is not live and complete.');
     }
@@ -1625,9 +1799,212 @@ class PlanningBoard extends ChangeNotifier {
     await _moveNow(
       'issue $id',
       PlanningIssueMove(id, to),
-      PendingPlanningMove(issue.state, to, isIssue: true, inNoStory: noStory.any((each) => each.id == id)),
+      PendingPlanningMove(
+        issue.state,
+        to,
+        isIssue: true,
+        inNoStory: noStory.any((each) => each.id == id),
+        version: issue.version,
+      ),
       revision: revision,
     );
+  }
+
+  /// The correction [warnings] offer that the window knows, with the warning offering it; null when none does.
+  static (PlanWarning, PlanCorrection)? offeredCorrection(List<PlanWarning> warnings, {required bool story}) {
+    for (final warning in warnings) {
+      final correction = warning.correction;
+      if (correction == null) continue;
+      // A Move sets an issue's state, a Priority a story's; any other is offered as none.
+      if (correction.kind == (story ? PlanCorrection.priority : PlanCorrection.move)) return (warning, correction);
+    }
+    return null;
+  }
+
+  /// Why no correction can be asked for now, or null when one can: one change is asked about or saved at a time.
+  String? get correctionUnavailable => _disposed || !takesMoves || snapshot!.revision.isEmpty
+      ? 'the board is not live and complete'
+      : holdsMoves ||
+            _queue.isNotEmpty ||
+            _anyUnanswered ||
+            actionBusy ||
+            question != null ||
+            correctionQuestion != null
+      ? 'another change is being saved; set it right once it is saved'
+      : null;
+
+  /// Moves issue [id] into [to] to set its warning of kind [warning] right, as that warning's correction offers on the
+  /// board shown: its preview is always asked about, and nothing is saved before the person confirms. [shown] is the
+  /// state the person saw when choosing, [revision] the board's then.
+  Future<void> correctIssue(String id, String warning, String to, {String? shown, String? revision}) async {
+    if (_disposed) return;
+    if (correctionUnavailable case final why?) return refuseMove(id, '$why.');
+    final found = [...stories.expand((story) => story.issues), ...noStory].where((issue) => issue.id == id).toList();
+    if (found.length != 1) return refuseMove(id, 'it is not on the board once.');
+    final issue = found.single;
+    if (shown != null && shown != issue.state) return refuseMove(id, 'it now stands in ${issue.state}; choose again.');
+    final offered = offeredCorrection(issue.warnings, story: false);
+    if (offered == null || offered.$1.kind != warning || !offered.$2.choices.contains(to)) {
+      return refuseMove(id, 'the board no longer offers that correction; choose again.');
+    }
+    if (state(to) == null) return refuseMove(id, 'the workflow has no state $to.');
+    await _moveNow(
+      'issue $id',
+      PlanningIssueMove(id, to),
+      PendingPlanningMove(
+        issue.state,
+        to,
+        isIssue: true,
+        inNoStory: noStory.any((each) => each.id == id),
+        corrects: offered.$1,
+      ),
+      revision: revision,
+    );
+  }
+
+  /// The correction other than a move whose preview waits for the person's Confirm or Cancel; null when none does.
+  PlanningCorrectionQuestion? correctionQuestion;
+
+  /// Sets story [id]'s warning of kind [warning] right with [choice], as that warning's correction offers on the board
+  /// shown: the planner previews it, and the preview waits in [correctionQuestion] for the person's confirm. [revision]
+  /// is the board's when the choice was offered; a board changed since is refused. A refusal is said in
+  /// [actionProblem], and the board is read again.
+  Future<void> correctStory(String id, String warning, String choice, {String? revision}) async {
+    if (_disposed) return;
+    if (unavailableActions['SaveCorrection'] ?? correctionUnavailable case final why?) {
+      return _correctionRefused(id, why);
+    }
+    if (revision != null && revision != snapshot!.revision) {
+      return _correctionRefused(id, 'the board changed since it was offered; choose again');
+    }
+    final found = stories.where((story) => story.id == id).toList();
+    if (found.length != 1) return _correctionRefused(id, 'it is not on the board once');
+    final offered = offeredCorrection(found.single.warnings, story: true);
+    if (offered == null || offered.$1.kind != warning || !offered.$2.choices.contains(choice)) {
+      return _correctionRefused(id, 'the board no longer offers that correction; choose again');
+    }
+    await _askCorrection(PlanningCorrection(story: id, warning: warning, choice: choice), offered.$1);
+  }
+
+  /// Sets repository [repository]'s warning of kind [warning] right, as its Labels correction offers on the board
+  /// shown: the planner previews every call it would make on the forge, and the preview waits in
+  /// [correctionQuestion] for the person's confirm. A refusal is said in [actionProblem], and the board is read again.
+  Future<void> correctRepository(String repository, String warning) async {
+    if (_disposed) return;
+    if (unavailableActions['SaveCorrection'] ?? correctionUnavailable case final why?) {
+      return _correctionRefused(repository, why);
+    }
+    final found = repositoryWarnings.where((each) => each.repository == repository && each.kind == warning).toList();
+    final offered = found.length == 1 ? found.single.correction : null;
+    if (offered == null || offered.kind != PlanCorrection.labels) {
+      return _correctionRefused(repository, 'the board no longer offers that correction; choose again');
+    }
+    await _askCorrection(
+      PlanningCorrection(repository: repository, warning: warning),
+      PlanWarning(warning, found.single.words, correction: offered),
+    );
+  }
+
+  /// Asks the planner to preview [correction], which sets [warning] right, and keeps the preview in
+  /// [correctionQuestion] for the person's confirm; nothing is saved.
+  Future<void> _askCorrection(PlanningCorrection correction, PlanWarning warning) async {
+    final id = correction.id;
+    _beginAction();
+    actionBusy = true;
+    _changed();
+    final source = backend;
+    final name = project;
+    final asked = snapshot!.revision;
+    try {
+      final preview = await source.previewCorrection(name, correction);
+      if (!_sameBoard(source, name)) return;
+      // A preview of another change than the one asked must never be confirmed as this one.
+      if (!preview.answers(correction)) {
+        throw const PlanningRefusal('BadAnswer', {}, 'The planner did not answer a preview of the correction asked.');
+      }
+      // The planner previews the items as it holds them; one the board shows at another version changed meanwhile.
+      final shown = seenOf(preview.targets.keys);
+      final changed = [
+        for (final target in preview.targets.entries)
+          if (shown[target.key] != target.value) target.key,
+      ];
+      if (changed.isNotEmpty || snapshot?.revision != asked) {
+        throw PlanningRefusal('ItemChanged', {
+          'changed': changed.isEmpty ? [id] : changed,
+        });
+      }
+      correctionQuestion = PlanningCorrectionQuestion(correction, preview, warning);
+    } catch (error) {
+      if (_sameBoard(source, name)) await _correctionFailed(source, name, id, error);
+    } finally {
+      if (_sameBoard(source, name)) _endAction();
+    }
+  }
+
+  /// Saves the correction [correctionQuestion] holds, sending its preview's targets back as seen with its digest. A
+  /// refusal is said in [actionProblem], and the board is read again.
+  Future<void> confirmCorrection() async {
+    final asked = correctionQuestion;
+    if (_disposed || asked == null) return;
+    correctionQuestion = null;
+    _beginAction();
+    actionBusy = true;
+    _changed();
+    final source = backend;
+    final name = project;
+    final id = asked.correction.id;
+    try {
+      await source.saveCorrection(name, asked.correction, asked.preview.targets, digest: asked.preview.digest);
+      if (!_sameBoard(source, name)) return;
+      _addNotice(planningShown('$id was set right.'));
+      _savesLanded++;
+      await _readAfterSave(source, name);
+    } catch (error) {
+      if (_sameBoard(source, name)) await _correctionFailed(source, name, id, error);
+    } finally {
+      if (_sameBoard(source, name)) _endAction();
+    }
+  }
+
+  /// Drops the correction asked about; nothing was sent.
+  void cancelCorrection() {
+    if (_disposed || correctionQuestion == null) return;
+    correctionQuestion = null;
+    _changed();
+  }
+
+  /// Drops the correction asked about, unsaved, before another change goes out: its preview was of the board before.
+  void _dropCorrection() {
+    if (correctionQuestion == null) return;
+    correctionQuestion = null;
+    _changed();
+  }
+
+  void _correctionRefused(String id, String why) {
+    _beginAction();
+    actionProblem = planningShown('$id was not set right: $why.');
+    _changed();
+  }
+
+  /// Says why a correction of [id] was refused, in the screen's words, and reads the board again, since the warning
+  /// it set right may have changed or gone.
+  Future<void> _correctionFailed(PlanningSource source, String name, String id, Object error) async {
+    _keepRefusal(error, action: true);
+    final words = planningShown('$id was not set right: ${planningFailureWords(error)}');
+    if (planningUnsupported(error)) unavailableActions['SaveCorrection'] = planningFailureWords(error);
+    try {
+      final reply = await _read();
+      if (_sameBoard(source, name)) _acceptNewest(reply.$1, reply.$2);
+    } catch (readError) {
+      if (_sameBoard(source, name)) {
+        actionProblem = '$words\n${planningFailureWords(readError)}';
+        _changed();
+      }
+      return;
+    }
+    if (!_sameBoard(source, name)) return;
+    actionProblem = words;
+    _changed();
   }
 
   PlanIssueList? _noStory;
@@ -1724,7 +2101,9 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Appends an issue in no story to the story's complete list at the revision currently shown.
   Future<void> hangIssue(String issue, String story, {String? revision}) async {
-    if (_disposed || _oneAtATime(issue) || _oneAtATime(story)) return;
+    if (_disposed) return;
+    _dropCorrection();
+    if (_oneAtATime(issue) || _oneAtATime(story)) return;
     if (actionBusy) {
       moveProblem = 'Waiting for the planner before changing the story list.';
       _changed();
@@ -1799,7 +2178,9 @@ class PlanningBoard extends ChangeNotifier {
 
   /// Adds an issue the board offers as made outside the project to the project, at the revision currently shown.
   Future<void> addUnlistedIssue(String issue, {String? revision}) async {
-    if (_disposed || _oneAtATime(issue)) return;
+    if (_disposed) return;
+    _dropCorrection();
+    if (_oneAtATime(issue)) return;
     if (actionBusy || listing != null) {
       moveProblem = 'Waiting for the planner before adding an issue.';
       _changed();
@@ -1945,7 +2326,14 @@ class PlanningBoard extends ChangeNotifier {
     final queued = (
       key: key,
       move: move,
-      shown: PendingPlanningMove(from, shown.to, isIssue: shown.isIssue, inNoStory: shown.inNoStory),
+      shown: PendingPlanningMove(
+        from,
+        shown.to,
+        isIssue: shown.isIssue,
+        inNoStory: shown.inNoStory,
+        corrects: shown.corrects,
+        version: shown.version,
+      ),
       source: backend,
       name: project,
     );
@@ -1989,6 +2377,7 @@ class PlanningBoard extends ChangeNotifier {
     String name, {
     bool again = false,
   }) async {
+    final corrects = _pending[key]?.corrects;
     final PlanningMovePreview preview;
     try {
       // The gesture began on another board than the one shown: what the person chose on may have changed meanwhile.
@@ -1998,12 +2387,15 @@ class PlanningBoard extends ChangeNotifier {
         });
       }
       preview = await source.previewMoves(name, [move]);
-      // The planner previews the items as it holds them; one the board shows at another version changed while it was
-      // moved, so the move is made again on the board read now rather than saved over what the person did not see.
+      // The planner previews the items as it holds them; one the board shows at another version, or does not show,
+      // changed while it was moved, so the move is made again on the board read now rather than saved over what the
+      // person did not see.
       final shown = seenOf(preview.targets.keys);
+      // A move from an issue's page is judged on the page's copy while the board's part holding it is still unread.
+      if (_pending[key]?.version case final version? when version.isNotEmpty) shown.putIfAbsent(move.id, () => version);
       final changed = [
         for (final target in preview.targets.entries)
-          if (shown[target.key] case final version? when version != target.value) target.key,
+          if (shown[target.key] != target.value) target.key,
       ];
       if (changed.isNotEmpty) throw PlanningRefusal('ItemChanged', {'changed': changed});
     } catch (error) {
@@ -2011,15 +2403,19 @@ class PlanningBoard extends ChangeNotifier {
       final stale = error is PlanningRefusal && {'ItemChanged', 'BasisIncomplete'}.contains(error.name);
       final words = _refuseCard(
         key,
-        stale
+        corrects != null
+            ? planningShown('${move.id} was not set right: ${planningFailureWords(error)}')
+            : stale
             ? planningShown('Planning changed while ${move.id} was moved; nothing was moved. Move it again.')
             : planningShown('${move.id} was not moved: ${planningFailureWords(error)}'),
       );
       final before = moveProblem;
       // A queued move goes on only after the board is read again, so it is not refused as stale in turn.
-      _finishOperation(drain: !stale);
-      // The board the gesture began on is gone; the person moves again on the one read now.
-      if (stale) {
+      final readAgain = stale || corrects != null;
+      _finishOperation(drain: !readAgain);
+      // The board the gesture began on is gone; the person moves again on the one read now. A refused correction
+      // reads the board too, since the warning it set right may have changed or gone.
+      if (readAgain) {
         await reload();
         // The words stand on the board read again, where the refusal left the card.
         if (_cardRefusals[key] case final said? when snapshot != null) {
@@ -2040,11 +2436,20 @@ class PlanningBoard extends ChangeNotifier {
     if (!_sameBoard(source, name)) return;
     final shown = preview.withWarnings(_localWarnings(move, preview));
     final asksReason = _asksReason(move);
-    if (shown.warnings.isEmpty && !again && !asksReason) {
+    // A correction's preview is always shown: the person confirms what it would change.
+    if (shown.warnings.isEmpty && !again && !asksReason && corrects == null) {
       await _save(key, move, shown, revision, source, name);
       return;
     }
-    question = PlanningMoveQuestion(key, move, shown, revision, again: again, asksReason: asksReason);
+    question = PlanningMoveQuestion(
+      key,
+      move,
+      shown,
+      revision,
+      again: again,
+      asksReason: asksReason,
+      corrects: corrects,
+    );
     _changed();
   }
 
@@ -2205,8 +2610,11 @@ class PlanningBoard extends ChangeNotifier {
         ? PlanningSnapshot.ruledBy(accepted, prior)
         : accepted;
     snapshot = reply;
+    // A correction previewed on the board before is confirmed on none: the person asks again on this one.
+    if (prior?.revision != reply.revision) correctionQuestion = null;
     _readingNoStory = _readNoStory(reply, _generation, reconcile: reconcile);
     if (reply.repositoriesReported) _repositories = List.unmodifiable(reply.repositories);
+    if (reply.repositoryWarningsReported) _repositoryWarnings = reply.repositoryWarnings;
     for (final story in reply.stories) {
       runOf(story.id).observe(story.work);
     }
@@ -2495,9 +2903,16 @@ class PlanningBoard extends ChangeNotifier {
       }
       moveRefusal = error;
       _keepRefusal(error, action: true);
-      _addProblem(_refuseCard(key, planningShown('${move.id} was not moved: $detail')));
+      final corrects = shown?.corrects != null;
+      _addProblem(
+        _refuseCard(
+          key,
+          planningShown(corrects ? '${move.id} was not set right: $detail' : '${move.id} was not moved: $detail'),
+        ),
+      );
       if (error.name == 'NotYetBuilt' || error.name == 'NotOffered') unavailableActions['SaveMoves'] = detail;
-      if (error.name == 'PartlySaved') {
+      // A refused correction reads the board again, since the warning it set right may have changed or gone.
+      if (error.name == 'PartlySaved' || corrects) {
         try {
           final reply = await _read();
           if (_sameBoard(source, name)) _acceptNewest(reply.$1, reply.$2, reconcile: false);
@@ -3079,6 +3494,21 @@ String planningFailureWords(Object error) {
 String _failureWords(Object error) {
   if (error is PlanningRefusal) {
     if (error.name == 'NotYetBuilt') return 'The planner does not offer ${error.parameters['method']} yet.';
+    // The labels' refusals name what they need in the screen's words, whatever words the planner sent.
+    if (error.name == 'LabelNotAllowed') {
+      final label = error.parameters['label'];
+      return 'The planner sets only the topic labels ${planningTopicLabels.join(', ')}'
+          '${label is String && label.isNotEmpty ? '; $label is none of them' : ''}.';
+    }
+    if (error.name == 'LabelsNotKept') {
+      final repository = error.parameters['repository'];
+      final item = error.parameters['item'];
+      return 'The tracker did not keep the labels of ${item is String && item.isNotEmpty ? item : 'the item'}'
+          '${repository is String && repository.isNotEmpty ? ' in $repository' : ''}: the account may not set labels '
+          'there.';
+    }
+    // The planning header names the directory and the planner's words; the board says only what it means for it.
+    if (error.name == 'ItemsDirectoryRefused') return 'The board is not read while its planning directory is refused.';
     final words = [
       for (final key in ['detail', 'message', 'reason'])
         if (error.parameters[key] is String && (error.parameters[key] as String).trim().isNotEmpty)

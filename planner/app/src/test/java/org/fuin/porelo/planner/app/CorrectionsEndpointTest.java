@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Correction;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.RepositoryWarning;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Warning;
@@ -42,6 +43,12 @@ class CorrectionsEndpointTest {
     private org.fuin.porelo.planner.store.@org.jspecify.annotations.Nullable StoreException refusal;
 
     private Board current = board("r1", "Parked", Warning.stateOutsideWorkflow());
+
+    /** Whether the store keeps its repositories' labels. */
+    private boolean keepsLabels;
+
+    /** The label calls the store made, one list per correction. */
+    private final List<List<RepositoryWarning.Call>> labelCalls = new ArrayList<>();
 
     private MockMvc mvc;
 
@@ -117,15 +124,48 @@ class CorrectionsEndpointTest {
                     }
 
                     @Override
+                    public boolean keepsRepositoryLabels() {
+                        return keepsLabels;
+                    }
+
+                    @Override
+                    public Board rereadLabels(final String repository) {
+                        return current;
+                    }
+
+                    @Override
+                    public Board correctLabels(
+                            final String repository, final List<RepositoryWarning.Call> calls) {
+                        final var refused = refusal;
+                        if (refused != null) {
+                            throw refused;
+                        }
+                        labelCalls.add(calls);
+                        current = current.withRepositories(List.of(), List.of());
+                        current =
+                                new Board(
+                                        new Revision("r2"),
+                                        current.workflow(),
+                                        current.stories(),
+                                        current.issues(),
+                                        current.work(),
+                                        current.repositories());
+                        return current;
+                    }
+
+                    @Override
                     public Board save(final Revision revision, final Writes writes) {
                         final var refused = refusal;
                         if (refused != null) {
                             throw refused;
                         }
                         saved.add(writes);
+                        // The story keeps its state unless the save writes one.
+                        final String state =
+                                current.story("ST1").map(Story::state).orElse("Parked");
                         current =
                                 CorrectionsEndpointTest.board(
-                                        "r2", writes.stories().getOrDefault("ST1", "Parked"));
+                                        "r2", writes.stories().getOrDefault("ST1", state));
                         return current;
                     }
                 };
@@ -157,7 +197,7 @@ class CorrectionsEndpointTest {
     }
 
     private static String asked(final String state) {
-        return "{\"story\": \"ST1\", \"warning\": \"StateOutsideWorkflow\", \"state\": \""
+        return "{\"story\": \"ST1\", \"warning\": \"StateOutsideWorkflow\", \"choice\": \""
                 + state
                 + "\"";
     }
@@ -221,10 +261,10 @@ class CorrectionsEndpointTest {
         post(
                         "corrections/preview",
                         "{\"story\": \"ST2\", \"warning\":"
-                                + " \"IssueOutsideProject\", \"state\": \"Backlog\"}")
+                                + " \"IssueOutsideProject\", \"choice\": \"Backlog\"}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
-        post("corrections/preview", "{\"warning\": \"NoState\", \"state\": \"Backlog\"}")
+        post("corrections/preview", "{\"warning\": \"NoState\", \"choice\": \"Backlog\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
         post("corrections", asked("Review") + ", \"seen\": " + Seens.of(current) + "}")
@@ -235,7 +275,7 @@ class CorrectionsEndpointTest {
         post(
                         "corrections/preview",
                         "{\"story\": \"ST1\", \"warning\":"
-                                + " \"StateOutsideWorkflow\", \"state\": \"/home/x:pw\"}")
+                                + " \"StateOutsideWorkflow\", \"choice\": \"/home/x:pw\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.parameters.to").value(""));
         assertThat(saved).as("nothing written").isEmpty();
@@ -280,7 +320,7 @@ class CorrectionsEndpointTest {
         post(
                         "corrections/preview",
                         "{\"issue\": \"AB01\", \"warning\":" // not-a-citation
-                                + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
+                                + " \"StateOutsideWorkflow\", \"choice\": \"Review\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
                 .andExpect(
@@ -292,10 +332,57 @@ class CorrectionsEndpointTest {
         post(
                         "corrections/preview",
                         "{\"story\": \"ST9\", \"warning\":"
-                                + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
+                                + " \"StateOutsideWorkflow\", \"choice\": \"Review\"}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"));
         assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aStorysMissingPriorityIsPreviewedAndSavedAsTheChoiceAndAChoiceNotOfferedIsRefused()
+            throws Exception {
+        // Harm: a priority written that the person never picked or the store does not know, or
+        // one written over a story changed since its preview.
+        current =
+                board(
+                        "r1",
+                        "Backlog",
+                        Warning.noPriority()
+                                .offering(new Correction("Priority", Story.PRIORITIES)));
+        mvc.perform(get("/projects/alpha/stories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stories[0].warnings[0].correction.kind").value("Priority"))
+                .andExpect(
+                        jsonPath("$.stories[0].warnings[0].correction.choices")
+                                .value(org.hamcrest.Matchers.contains(Story.PRIORITIES.toArray())));
+        final String ask = "{\"story\": \"ST1\", \"warning\": \"NoPriority\", \"choice\": ";
+        post("corrections/preview", ask + "\"Urgent\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"));
+
+        final String preview =
+                post("corrections/preview", ask + "\"Low\"}")
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.story").value("ST1"))
+                        .andExpect(jsonPath("$.from").value(""))
+                        .andExpect(jsonPath("$.to").value("Low"))
+                        .andExpect(jsonPath("$.targets[0].id").value("ST1"))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(saved).as("a preview writes nothing").isEmpty();
+        post(
+                        "corrections",
+                        ask
+                                + "\"Low\", \"seen\": "
+                                + Seens.ofAnswer(preview)
+                                + ", \"digest\": \""
+                                + JsonPath.read(preview, "$.digest")
+                                + "\"}")
+                .andExpect(status().isOk());
+        assertThat(saved)
+                .as("the story's priority alone, written once")
+                .containsExactly(new Writes(Map.of(), Map.of(), Map.of(), Map.of("ST1", "Low")));
     }
 
     @Test
@@ -318,5 +405,153 @@ class CorrectionsEndpointTest {
                         jsonPath("$.detail")
                                 .value("The work rules have faults: work.yml: Review is no rule"));
         assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aRepositorysLabelsAreNotOfferedByAStoreWithoutThemAndABodyNamingTwoIsRefused()
+            throws Exception {
+        // Harm: a repository's labels written by a store that holds none, or a correction
+        // naming a repository and an item at once carried out on either of them.
+        final String labels = "{\"repository\": \"porelo-store\", \"warning\": \"TopicLabels\"";
+        post("corrections/preview", labels + "}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
+        post("corrections", labels + ", \"seen\": {}, \"digest\": \"" + "0".repeat(64) + "\"}")
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
+        post("corrections/preview", labels + ", \"story\": \"ST1\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        "A correction must name exactly one story, one issue or"
+                                                + " one repository."));
+        post(
+                        "corrections/preview",
+                        "{\"repository\": \"/home/x:pw\", \"warning\": \"TopicLabels\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        org.hamcrest.Matchers.not(
+                                                org.hamcrest.Matchers.containsString("pw"))));
+        assertThat(saved).as("nothing written").isEmpty();
+    }
+
+    /** The store keeps the labels, and porelo-store lacks security, holds bug and tests differs. */
+    private void labelsWrong() {
+        keepsLabels = true;
+        current =
+                current.withRepositories(
+                        List.of(
+                                new RepositoryWarning(
+                                                "porelo-store",
+                                                RepositoryWarning.TOPIC_LABELS,
+                                                List.of("security"),
+                                                List.of("bug"),
+                                                List.of("tests"),
+                                                null)
+                                        .offered()),
+                        List.of());
+    }
+
+    private static final String LABELS =
+            "{\"repository\": \"porelo-store\", \"warning\": \"TopicLabels\"";
+
+    private String labelsDigest() throws Exception {
+        return JsonPath.read(
+                post("corrections/preview", LABELS + "}")
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(),
+                "$.digest");
+    }
+
+    private ResultActions labelsConfirm(final String digest) throws Exception {
+        return post("corrections", LABELS + ", \"seen\": {}, \"digest\": \"" + digest + "\"}");
+    }
+
+    @Test
+    void aRepositorysLabelsAreWarnedOfPreviewedAsTheirCallsAndSetRightOnce() throws Exception {
+        // Harm: the calls made were not the ones the preview listed, or a confirm sent twice
+        // made them twice.
+        labelsWrong();
+        post("corrections/preview", LABELS + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.repository").value("porelo-store"))
+                .andExpect(jsonPath("$.targets").isEmpty())
+                .andExpect(jsonPath("$.calls[0].action").value("Delete"))
+                .andExpect(jsonPath("$.calls[0].label").value("bug"))
+                .andExpect(jsonPath("$.calls[1].action").value("Create"))
+                .andExpect(jsonPath("$.calls[1].color").value("b60205"))
+                .andExpect(jsonPath("$.calls[2].action").value("Update"))
+                .andExpect(jsonPath("$.calls[2].label").value("tests"))
+                .andExpect(jsonPath("$.calls.length()").value(3));
+        assertThat(labelCalls).as("a preview calls nothing").isEmpty();
+
+        final String digest = labelsDigest();
+        labelsConfirm(digest)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+        assertThat(labelCalls).as("the calls, once").hasSize(1);
+        assertThat(labelCalls.getFirst()).hasSize(3);
+
+        labelsConfirm(digest)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"));
+        assertThat(labelCalls).as("no call by the second confirm").hasSize(1);
+        assertThat(saved).as("no item written").isEmpty();
+    }
+
+    @Test
+    void aLabelsConfirmSendingVersionsSeenIsRefusedInFixedWordsWithoutACall() throws Exception {
+        // Harm: a body the contract does not allow is taken, so a window binding a repository's
+        // correction to versions it believes checked has them ignored in silence.
+        labelsWrong();
+        final String digest = labelsDigest();
+
+        post(
+                        "corrections",
+                        LABELS
+                                + ", \"seen\": "
+                                + Seens.of(current)
+                                + ", \"digest\": \""
+                                + digest
+                                + "\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("porelo-store"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value("A repository's correction sends its versions seen as {}."));
+        assertThat(labelCalls).as("no call").isEmpty();
+    }
+
+    @Test
+    void aLabelsConfirmOfAnotherPreviewOrRefusedByGitHubAnswersWithoutGitHubsWords()
+            throws Exception {
+        // Harm: calls the person never saw were made, or GitHub's own words reached the window.
+        labelsWrong();
+        labelsConfirm("0".repeat(64))
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
+        assertThat(labelCalls).as("no call for another digest").isEmpty();
+
+        refusal =
+                new org.fuin.porelo.planner.store.StoreException.NotSavable(
+                        "porelo-store", "GitHub refused the call with status 422");
+        labelsConfirm(labelsDigest())
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        org.hamcrest.Matchers.containsString(
+                                                "GitHub refused the call with status 422")));
+        post("corrections", LABELS + ", \"seen\": {}, \"digest\": \"x\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
     }
 }

@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
@@ -119,7 +120,7 @@ final class EditRequests {
     private static final String NO_STORY = "The body is no new story.";
 
     private static final String SEEN =
-            "seen: The versions seen must be an object of versions by item id.";
+            "seen: The versions seen must be an object of at most 2000 versions by item id.";
 
     /** The members of a new story over issues that stand. */
     private static final Set<String> FROM_ISSUES = Set.of("story", "existing", "seen");
@@ -329,6 +330,7 @@ final class EditRequests {
         final Set<String> known = new java.util.HashSet<>(parts.keySet());
         known.add("title");
         known.add("seen");
+        known.add("labels");
         members(body, id, known);
         final Basis seen = seen(body, id);
         @Nullable String title = null;
@@ -358,7 +360,42 @@ final class EditRequests {
                 throw Edits.refused(id, name, "The member " + name + " must be a text or null.");
             }
         }
-        return new TextRequest(new TextEdit(kind, title, written, removed), seen);
+        return new TextRequest(new TextEdit(kind, title, written, removed, labels(body, id)), seen);
+    }
+
+    /**
+     * The topic labels a text edit sets, or null when it names none: an array of texts, each a
+     * topic label named once. A name outside them is refused as {@code LabelNotAllowed}, naming it
+     * only when it is a well-formed label name.
+     */
+    private static @Nullable List<String> labels(final JsonNode body, final String id) {
+        if (!body.has("labels")) {
+            return null;
+        }
+        final JsonNode value = body.get("labels");
+        if (!value.isArray()) {
+            throw Edits.refused(id, "labels", "The labels must be a list of topic labels.");
+        }
+        final List<String> labels = new ArrayList<>();
+        for (final JsonNode label : value) {
+            if (!label.isString()) {
+                throw Edits.refused(id, "labels", "Each label must be a text.");
+            }
+            final String name = label.asString();
+            if (!TopicLabels.NAMES.contains(name)) {
+                final Map<String, String> parameters = new java.util.LinkedHashMap<>();
+                parameters.put("item", id);
+                // The name is repeated only when it is one a tracker could hold.
+                parameters.put("label", TopicLabels.wellFormed(name) ? name : "");
+                throw new org.fuin.porelo.planner.core.Moves.Refused(
+                        "LabelNotAllowed", "The planner sets only the topic labels.", parameters);
+            }
+            if (labels.contains(name)) {
+                throw Edits.refused(id, "labels", "A label is named twice.");
+            }
+            labels.add(name);
+        }
+        return TopicLabels.topic(labels);
     }
 
     private static Map<String, TextEdit.Part> parts(final TextEdit.Kind kind) {
@@ -403,7 +440,8 @@ final class EditRequests {
     private static Basis seen(final JsonNode body, final String item) {
         final Basis seen = WorkRequests.seen(body.get("seen"));
         if (seen == null) {
-            throw Edits.refused(item, "seen", "The body names no versions seen by item id.");
+            throw Edits.refused(
+                    item, "seen", "The body names no versions seen by item id, or more than 2000.");
         }
         return seen;
     }

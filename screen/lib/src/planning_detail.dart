@@ -118,6 +118,26 @@ class PlanningDetail extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The planner's words for the last refused labels change, until the next one is asked.
+  String? labelsProblem;
+
+  /// Whether a labels change waits for the planner's answer.
+  bool labelsSaving = false;
+
+  /// Has the planner set the topic labels [item] carries, a story's when [story] holds; a refusal stays in
+  /// [labelsProblem].
+  Future<void> setLabels(String item, List<String> labels, {required bool story}) async {
+    if (_disposed || board.disposed || labelsSaving) return;
+    labelsSaving = true;
+    labelsProblem = null;
+    notifyListeners();
+    final problem = await board.setLabels(item, labels, story: story);
+    if (_disposed) return;
+    labelsSaving = false;
+    labelsProblem = problem;
+    notifyListeners();
+  }
+
   PlanningSnapshot? _snapshot;
   int _generation = 0;
   bool _disposed = false;

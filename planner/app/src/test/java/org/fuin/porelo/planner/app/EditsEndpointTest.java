@@ -383,6 +383,31 @@ class EditsEndpointTest {
     }
 
     @Test
+    void aTextWhoseSeenNamesMoreThan2000ItemsIsRefusedWithFixedWordsAndWritesNothing()
+            throws Exception {
+        // Harm: a caller makes the planner hold and walk an unbounded map of versions per write.
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"title\": \"A title\", \"seen\": " + Seens.padded(current, 2001) + "}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("EditNotAllowed"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        "The body names no versions seen by item id, or more"
+                                                + " than 2000."));
+        assertThat(written).as("nothing written").isEmpty();
+
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"title\": \"A title\", \"seen\": " + Seens.padded(current, 2000) + "}")
+                .andExpect(status().isOk());
+        assertThat(written).as("2000 versions are taken").hasSize(1);
+    }
+
+    @Test
     void aTextNamingWhatItMayNotWriteOrRemoveIsRefusedBeforeTheStore() throws Exception {
         // Also needs written through the text would change a story's issues unchecked; a removed
         // goal or a title broken over lines would leave an item nobody can read.
@@ -419,6 +444,71 @@ class EditsEndpointTest {
                     .andExpect(jsonPath("$.title").value("EditNotAllowed"));
         }
         assertThat(written).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void labelsAreReadAsTopicLabelsAndOneOutsideThemIsRefusedNamingItOnlyWhenWellFormed()
+            throws Exception {
+        // Harm: a label the planner never sets written to the tracker, a refusal that repeats a
+        // malformed name back, or labels GitHub dropped answered as saved.
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"labels\": [\"usability\", \"tests\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
+                .andExpect(status().isOk());
+        assertThat(written)
+                .as("the topic labels in their fixed order, nothing else of the text")
+                .containsExactly(
+                        new TextEdit(
+                                TextEdit.Kind.ISSUE,
+                                null,
+                                Map.of(),
+                                java.util.Set.of(),
+                                List.of("tests", "usability")));
+        written.clear();
+        send(
+                        "PUT",
+                        "/stories/ST1/text",
+                        "{\"labels\": [\"bug\"], \"seen\": " + Seens.of(current) + "}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("LabelNotAllowed"))
+                .andExpect(jsonPath("$.parameters.item").value("ST1"))
+                .andExpect(jsonPath("$.parameters.label").value("bug"));
+        for (final String hidden : List.of("a\\u0007b", "a\\u0085b", "a\\u202Eb", "a\\u2028b")) {
+            send(
+                            "PUT",
+                            "/issues/AB1/text",
+                            "{\"labels\": [\""
+                                    + hidden
+                                    + "\"], \"seen\": "
+                                    + Seens.of(current)
+                                    + "}")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("LabelNotAllowed"))
+                    .andExpect(jsonPath("$.parameters.label").value(""));
+        }
+        for (final String labels : List.of("[\"tests\", \"tests\"]", "\"tests\"", "[3]")) {
+            send(
+                            "PUT",
+                            "/issues/AB1/text",
+                            "{\"labels\": " + labels + ", \"seen\": " + Seens.of(current) + "}")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("EditNotAllowed"))
+                    .andExpect(jsonPath("$.parameters.field").value("labels"));
+        }
+        assertThat(written).as("nothing refused is written").isEmpty();
+
+        failure = new StoreException.LabelsNotKept("porelo-store", "AB1");
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"labels\": [\"tests\"], \"seen\": " + Seens.of(current) + "}")
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.title").value("LabelsNotKept"))
+                .andExpect(jsonPath("$.parameters.repository").value("porelo-store"))
+                .andExpect(jsonPath("$.parameters.item").value("AB1"));
     }
 
     @Test

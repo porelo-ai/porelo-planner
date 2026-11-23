@@ -3,14 +3,16 @@
 /// The window gives it a `PlanningClient` to read and write through, and takes part through a few hooks: how a
 /// start reaches it (`PlanningStartTask`), what the screen shows of a run (`PlanningTaskChanges`), the agents a start
 /// may choose (`PlanningAgents`), where the screen stands (`PlanningHost`) and, where the window offers it, how a
-/// forge token reaches the vault (`PlanningForgeAccess`). The package imports nothing of the window; its colors come
-/// from the window's theme.
+/// forge token reaches the vault (`PlanningForgeAccess`) and the folder dialog that chooses a local project's planning
+/// directory (`PlanningChooseDirectory`). The package imports nothing of the window and opens no dialog of the
+/// desktop's own; its colors come from the window's theme.
 library;
 
 export 'src/client.dart';
 export 'src/forge_access_offer.dart';
 export 'src/hooks.dart';
 export 'src/issue_filter.dart';
+export 'src/items_directory.dart';
 export 'src/open_work_filter.dart';
 export 'src/http/planner_source.dart';
 export 'src/models.dart';

@@ -106,7 +106,7 @@ public final class WorkAnswers {
         return correction == null
                 ? null
                 : new org.fuin.porelo.planner.app.answers.Correction(
-                        correction.kind(), correction.states());
+                        correction.kind(), correction.choices());
     }
 
     static StoryWorkOrder order(final WorkRun.Order order) {
@@ -326,6 +326,7 @@ public final class WorkAnswers {
                 issue.state(),
                 issue.size(),
                 issue.priority(),
+                issue.labels(),
                 decimal(minutes.get(issue.id())),
                 issue.blockedBy(),
                 waits(issue),

@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.github.FieldNames;
@@ -69,7 +70,8 @@ final class LocalItem {
                     "number",
                     "parent",
                     "issues",
-                    "blockedBy");
+                    "blockedBy",
+                    "labels");
 
     /**
      * The fields a head holds: the GitHub project's fields and Priority, which GitHub keeps in the
@@ -166,6 +168,14 @@ final class LocalItem {
                             "Its head holds a key or a value that " + FORMAT + " does not know.",
                             Set.of(Warning.Concern.TEXT)));
         }
+        if (labels(head).stream().anyMatch(label -> !TopicLabels.NAMES.contains(label))) {
+            warnings.add(
+                    new Warning(
+                            "UnknownLabel",
+                            "Its head names a label outside the topic labels; it is shown and"
+                                    + " kept.",
+                            Set.of(Warning.Concern.LABELS)));
+        }
         final String rest = text.substring(close + CLOSING.length());
         final int at = rest.indexOf(STAGES);
         final String body = at < 0 ? rest : rest.substring(0, at);
@@ -226,8 +236,10 @@ final class LocalItem {
                 fits = value.isNumber();
             } else if (name.equals("parent")) {
                 fits = value.isNull() || value.isTextual();
-            } else if (name.equals("issues") || name.equals("blockedBy")) {
-                boolean texts = value.isArray();
+            } else if (name.equals("issues") || name.equals("blockedBy") || name.equals("labels")) {
+                boolean texts =
+                        value.isArray()
+                                && (!name.equals("labels") || value.size() <= TopicLabels.MOST);
                 for (final JsonNode link : value) {
                     texts &= link.isTextual();
                 }
@@ -368,6 +380,43 @@ final class LocalItem {
     }
 
     /**
+     * The labels the head names, each text entry in its order, those that break a label's name
+     * among them; an entry of another kind is left out.
+     *
+     * @return the labels
+     */
+    List<String> labels() {
+        return labels(head);
+    }
+
+    private static List<String> labels(final ObjectNode head) {
+        final JsonNode array = head.path("labels");
+        final List<String> labels = new ArrayList<>();
+        if (array.isArray()) {
+            array.forEach(
+                    node -> {
+                        if (node.isTextual()) {
+                            labels.add(node.asText());
+                        }
+                    });
+        }
+        return labels;
+    }
+
+    /**
+     * Sets the labels, or removes the key for none, so a file without labels keeps its head.
+     *
+     * @param labels the labels
+     */
+    void labels(final List<String> labels) {
+        if (labels.isEmpty()) {
+            head.remove("labels");
+        } else {
+            links("labels", labels);
+        }
+    }
+
+    /**
      * Sets a choice field, or removes it for null.
      *
      * @param field the field's name
@@ -435,7 +484,7 @@ final class LocalItem {
                         closed < 0,
                         closed < 0 ? null : closed == 0 ? "COMPLETED" : "NOT_PLANNED",
                         fields(),
-                        List.of(),
+                        labels(),
                         parent(),
                         issues,
                         links("blockedBy"),

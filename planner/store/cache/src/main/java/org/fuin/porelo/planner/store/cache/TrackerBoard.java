@@ -20,6 +20,8 @@ import java.util.Objects;
  *     lists could not be read, in the planner's words
  * @param restFieldIds the fields' second, numeric ids by their ids, which the tracker's REST item
  *     list takes to name the fields whose values it gives
+ * @param priorities the priorities the tracker's own priority field holds, the highest first; empty
+ *     when it holds none or could not be read
  */
 public record TrackerBoard(
         String id,
@@ -27,7 +29,8 @@ public record TrackerBoard(
         Map<String, String> fieldNames,
         Map<String, Map<String, String>> optionIds,
         List<String> faults,
-        Map<String, Long> restFieldIds) {
+        Map<String, Long> restFieldIds,
+        List<String> priorities) {
 
     /** Requires the id and every name and id in the maps, and copies them, keeping their order. */
     public TrackerBoard {
@@ -42,6 +45,7 @@ public record TrackerBoard(
                                 copied(Objects.requireNonNull(byName, "options"))));
         optionIds = Collections.unmodifiableMap(options);
         faults = List.copyOf(faults);
+        priorities = List.copyOf(priorities);
         final Map<String, Long> numeric = new LinkedHashMap<>();
         restFieldIds.forEach(
                 (field, number) ->

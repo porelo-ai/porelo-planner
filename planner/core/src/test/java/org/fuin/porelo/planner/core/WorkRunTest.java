@@ -1497,6 +1497,94 @@ class WorkRunTest {
                 .isEqualTo("Review");
     }
 
+    /** The board with one more issue, made elsewhere, that no reading choice touches. */
+    private static Board withIssueMadeElsewhere(final Board board) {
+        final List<Issue> issues = new java.util.ArrayList<>(board.issues());
+        issues.add(
+                new Issue(
+                        "ZZ9",
+                        board.issues().getFirst().repository(),
+                        "Made elsewhere",
+                        "Backlog",
+                        "S",
+                        List.of(),
+                        null,
+                        null,
+                        "Made by another client."));
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                issues,
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
+    void aReadingChoiceSavedWhileAnUnrelatedItemChangedKeepsTheRunGoing() {
+        // Harm: a person's choice after a reading halts the whole run because another client
+        // changed an item the choice does not touch between the board's read and the save.
+        final Fixture f = new Fixture();
+        unreadableReading(f);
+        final Basis seen = Basis.of(f.store.board());
+        f.store.moves.add(WorkRunTest::withIssueMadeElsewhere);
+
+        f.run.choose("ST1", "AA1", 1, ReadingCycle.Choice.REVIEW_ANYWAY, "", seen, null);
+
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the run goes on").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the choice saved")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void aReadingChoiceWhoseIssueChangedBeforeTheSaveIsRefusedAsChangedAndKeepsTheRun() {
+        // Harm: a choice saved over an issue another client changed after the person saw it, or
+        // the run halted for it instead of the person being told to look again.
+        final Fixture f = new Fixture();
+        unreadableReading(f);
+        final Basis seen = Basis.of(f.store.board());
+        final int saves = f.store.saves;
+        f.store.moves.add(
+                board ->
+                        new Board(
+                                board.revision(),
+                                board.workflow(),
+                                board.stories(),
+                                board.issues().stream()
+                                        .map(
+                                                i ->
+                                                        i.id().equals("AA1")
+                                                                ? i.withVersion(
+                                                                        Version.of("edited"))
+                                                                : i)
+                                        .toList(),
+                                board.work(),
+                                board.repositories()));
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.choose(
+                                        "ST1",
+                                        "AA1",
+                                        1,
+                                        ReadingCycle.Choice.REVIEW_ANYWAY,
+                                        "",
+                                        seen,
+                                        null))
+                .as("the choice over a changed issue")
+                .isInstanceOfSatisfying(
+                        StoreException.Changed.class,
+                        e -> assertThat(e.ids()).as("the changed").containsExactly("AA1"));
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the run is not halted").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(f.store.saves - saves).as("nothing saved").isZero();
+        assertThat(f.record.wentBack).as("every write takes a newer generation").isFalse();
+    }
+
     @Test
     void anUnreadableReadingRefusesARework() {
         // Harm: a rework started with nothing to work from.
@@ -4814,6 +4902,159 @@ class WorkRunTest {
                 .containsExactly(
                         new WorkRun.StoppedRun(
                                 "ST1", run.id(), List.of(new WorkRun.StoppedTask("task", "box"))));
+    }
+
+    @Test
+    void aStorysPriorityCorrectedOverRunningWorkIsSavedWithoutStoppingItsRun() {
+        // Harm: agents stopped mid-task, or a save refused, for a priority that touches no issue.
+        final Fixture f = new Fixture();
+        f.start(role(f.order().tasks(), "MAIN"));
+        withPriorityCorrection(f);
+        final Corrections.Asked asked =
+                new Corrections.Asked(true, "ST1", Warning.NO_PRIORITY, "Low");
+        final Corrections.Preview preview = f.run.correctionPreview(asked);
+        final int saves = f.store.saves;
+
+        f.run.correction(
+                asked,
+                preview.basis(),
+                preview.digest("https://example.org/own.git", null),
+                "https://example.org/own.git",
+                null);
+
+        assertThat(f.store.saves).as("saved once").isEqualTo(saves + 1);
+        assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
+                .as("the run goes on")
+                .isFalse();
+        assertThat(f.active("ST1")).as("its task still at work").hasSize(1);
+    }
+
+    /** Warns ST1 for its missing priority, with the Priority correction offered. */
+    private static void withPriorityCorrection(final Fixture f) {
+        final Board before = f.store.board();
+        f.store.current =
+                new Board(
+                        before.revision(),
+                        before.workflow(),
+                        before.stories().stream()
+                                .map(
+                                        story ->
+                                                story.id().equals("ST1")
+                                                        ? story.withWarnings(
+                                                                List.of(
+                                                                        Warning.noPriority()
+                                                                                .offering(
+                                                                                        new org.fuin
+                                                                                                .porelo
+                                                                                                .planner
+                                                                                                .store
+                                                                                                .Correction(
+                                                                                                "Priority",
+                                                                                                Story
+                                                                                                        .PRIORITIES))))
+                                                        : story)
+                                .toList(),
+                        before.issues(),
+                        before.work(),
+                        before.repositories());
+    }
+
+    @Test
+    void aPriorityCorrectionSavedWithAnotherChoiceThanPreviewedWritesNothing() {
+        // Harm: a priority written that the person never saw previewed.
+        final Fixture f = new Fixture();
+        withPriorityCorrection(f);
+        final Corrections.Preview preview =
+                f.run.correctionPreview(
+                        new Corrections.Asked(true, "ST1", Warning.NO_PRIORITY, "Low"));
+        final int saves = f.store.saves;
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.correction(
+                                        new Corrections.Asked(
+                                                true, "ST1", Warning.NO_PRIORITY, "High"),
+                                        preview.basis(),
+                                        preview.digest("https://example.org/own.git", null),
+                                        "https://example.org/own.git",
+                                        null));
+
+        assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
+        assertThat(conflictOf(refused)).as("as a changed preview").isEqualTo("PreviewChanged");
+        assertThat(f.store.saves).as("nothing written").isEqualTo(saves);
+    }
+
+    @Test
+    void aPriorityCorrectionOfAStoryChangedSinceItsPreviewWritesNothing() {
+        // Harm: a priority written over a story someone changed after the person saw it.
+        final Fixture f = new Fixture();
+        withPriorityCorrection(f);
+        final Corrections.Asked asked =
+                new Corrections.Asked(true, "ST1", Warning.NO_PRIORITY, "Low");
+        final Corrections.Preview preview = f.run.correctionPreview(asked);
+        final Board before = f.store.board();
+        f.store.current =
+                new Board(
+                        before.revision(),
+                        before.workflow(),
+                        before.stories().stream()
+                                .map(
+                                        story ->
+                                                story.id().equals("ST1")
+                                                        ? story.withVersion(
+                                                                new org.fuin.porelo.planner.store
+                                                                        .Version("changed"))
+                                                        : story)
+                                .toList(),
+                        before.issues(),
+                        before.work(),
+                        before.repositories());
+        final int saves = f.store.saves;
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.correction(
+                                        asked,
+                                        preview.basis(),
+                                        preview.digest("https://example.org/own.git", null),
+                                        "https://example.org/own.git",
+                                        null));
+
+        assertThat(refused)
+                .as("refused as changed")
+                .isInstanceOf(org.fuin.porelo.planner.store.StoreException.Changed.class);
+        assertThat(((org.fuin.porelo.planner.store.StoreException.Changed) refused).ids())
+                .as("naming the story")
+                .containsExactly("ST1");
+        assertThat(f.store.saves).as("nothing written").isEqualTo(saves);
+    }
+
+    @Test
+    void aPriorityCorrectionSavedWithoutAnyVersionSeenWritesNothing() {
+        // Harm: a write against a story whose version the caller never named.
+        final Fixture f = new Fixture();
+        withPriorityCorrection(f);
+        final Corrections.Asked asked =
+                new Corrections.Asked(true, "ST1", Warning.NO_PRIORITY, "Low");
+        final Corrections.Preview preview = f.run.correctionPreview(asked);
+        final int saves = f.store.saves;
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.correction(
+                                        asked,
+                                        Basis.none(),
+                                        preview.digest("https://example.org/own.git", null),
+                                        "https://example.org/own.git",
+                                        null));
+
+        assertThat(refused)
+                .as("refused as incomplete")
+                .isInstanceOf(org.fuin.porelo.planner.store.StoreException.BasisIncomplete.class);
+        assertThat(f.store.saves).as("nothing written").isEqualTo(saves);
     }
 
     @Test

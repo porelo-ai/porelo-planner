@@ -45,6 +45,7 @@ import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
@@ -236,6 +237,12 @@ public final class GitStore implements PlanningStore {
      * Answers the board in memory at once; when the last check is older than the interval, one
      * check starts in the background, and requests meanwhile share it.
      */
+    /** The Git store keeps the stories and issues as Markdown files in the project's repository. */
+    @Override
+    public Tracker tracker() {
+        return Tracker.GIT;
+    }
+
     @Override
     public Board board() {
         Snapshot snapshot = current.get();
@@ -517,6 +524,10 @@ public final class GitStore implements PlanningStore {
      */
     @Override
     public NewIssue.Added createIssue(final Revision revision, final NewIssue issue) {
+        if (!issue.labels().isEmpty()) {
+            // The work format holds no labels; refused before anything is written.
+            throw new UnsupportedOperationException(NOT_OFFERED);
+        }
         if (repositories.stream().noneMatch(r -> r.name().equals(issue.repository()))) {
             throw new StoreException.NotSavable(
                     "", issue.repository() + " is no repository of the project");

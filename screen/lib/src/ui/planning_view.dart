@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../client.dart';
 import '../forge_access_offer.dart';
 import '../hooks.dart';
+import '../items_directory.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
@@ -17,6 +18,7 @@ import 'actions.dart';
 import 'board_filter.dart';
 import 'new_issue_dialog.dart';
 import 'open_work_figures.dart';
+import 'planning_correction.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_move_warning.dart';
 import 'planning_issue_view.dart';
@@ -97,8 +99,13 @@ class PlanningScreen extends StatelessWidget {
     this.pageButton,
     this.pageNote,
     this.limits,
+    this.chooseDirectory,
     super.key,
   });
+
+  /// The window's folder dialog, through which a local project's planning directory is chosen; without one the
+  /// screen takes a typed path.
+  final PlanningChooseDirectory? chooseDirectory;
 
   /// The factors the screen's own limits follow, the shown board's when null.
   final PlanningLimits? limits;
@@ -211,6 +218,7 @@ class PlanningScreen extends StatelessWidget {
                 wizards: wizards,
                 unavailableMachines: boards.unavailableMachinesOf(board),
                 machines: boards.machinesOf(board),
+                chooseDirectory: chooseDirectory,
                 onStory: (story) => open(board, story),
                 onIssue: (story, issue) => open(board, story, issue),
               ),
@@ -231,6 +239,7 @@ class PlanningScreen extends StatelessWidget {
                 wizards: wizards,
                 unavailableMachines: boards.unavailableMachinesOf(board),
                 machines: boards.machinesOf(board),
+                chooseDirectory: chooseDirectory,
                 onStory: (story) => open(board, story),
                 onIssue: (story, issue) => open(board, story, issue),
               ),
@@ -291,8 +300,10 @@ class _BoardView extends StatefulWidget {
     required this.wizards,
     required this.machines,
     required this.unavailableMachines,
+    required this.chooseDirectory,
     super.key,
   });
+  final PlanningChooseDirectory? chooseDirectory;
   final Widget? pageButton;
   final Widget? pageNote;
   final PlanningBoard board;
@@ -336,7 +347,7 @@ class _BoardViewState extends State<_BoardView> {
   )..addListener(_rememberScroll);
   final _top = ScrollController();
   final _panel = GlobalKey();
-  PlanningMoveQuestion? _asked;
+  Object? _asked;
 
   void _rememberScroll() {
     if (_horizontal.hasClients) board.preferences.horizontalOffset = _horizontal.offset;
@@ -894,13 +905,14 @@ class _BoardViewState extends State<_BoardView> {
         2 * Space.wide -
         Space.normal -
         PlanningStyle.boardMinimum -
-        (board.question == null ? 0 : PlanningStyle.moveButtons),
+        (board.question == null && board.correctionQuestion == null ? 0 : PlanningStyle.moveButtons),
   );
 
   /// Brings a newly asked move's warnings into view once, since they stand below everything else that scrolls.
   void _showAsked() {
-    if (identical(board.question, _asked)) return;
-    _asked = board.question;
+    final Object? asked = board.question ?? board.correctionQuestion;
+    if (identical(asked, _asked)) return;
+    _asked = asked;
     if (_asked == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final panel = _panel.currentContext;
@@ -948,6 +960,8 @@ class _BoardViewState extends State<_BoardView> {
                       ?widget.pageNote,
                       Text('The stories of project ${board.project} by state, the most important first.'),
                       Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
+                      ItemsDirectoryHeader(board: board, choose: widget.chooseDirectory),
+                      PlanningRepositoryWarnings(board: board),
                       const SizedBox(height: Space.normal),
                       Wrap(
                         spacing: Space.normal,
@@ -1340,6 +1354,7 @@ class _BoardViewState extends State<_BoardView> {
                   state: state,
                   onIssue: (id) => widget.onIssue('', id),
                   sizeBadge: (issue) => _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                  openLink: widget.host.openLink,
                 ),
               ),
           ],
@@ -1562,6 +1577,7 @@ class _BoardViewState extends State<_BoardView> {
                       state: state.name,
                       onIssue: (id) => widget.onIssue('', id),
                       sizeBadge: (issue) => _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                      openLink: widget.host.openLink,
                     ),
                   ),
                 ),
@@ -1963,7 +1979,17 @@ class _BoardViewState extends State<_BoardView> {
                           _priority(context, story.priority ?? ''),
                           ?planningRuleMark(board.rulesOf(story.id), key: Key('planning-rule ${story.id}')),
                           ?planningWarningMark(story.warnings, key: Key('planning-warned ${story.id}')),
+                          ?planningCorrectionOffer(
+                            board: board,
+                            id: story.id,
+                            story: true,
+                            state: story.state,
+                            warnings: story.warnings,
+                            link: story.link,
+                            openLink: widget.host.openLink,
+                          ),
                           ?_size(context, story.size, key: 'planning-size ${story.id}'),
+                          ?planningLabels(story.id, story.labels),
                         ],
                       ),
                     ),
@@ -2039,6 +2065,15 @@ class _BoardViewState extends State<_BoardView> {
                             refusal: board.refusalOf('issue ${issue.id}'),
                             onOpen: () => widget.onIssue(story.id, issue.id),
                             sizeBadge: _size(context, issue.size, key: 'planning-issue-size ${issue.id}'),
+                            correction: planningCorrectionOffer(
+                              board: board,
+                              id: issue.id,
+                              story: false,
+                              state: issue.state,
+                              warnings: issue.warnings,
+                              link: issue.link,
+                              openLink: widget.host.openLink,
+                            ),
                           ),
                         ),
                       ),

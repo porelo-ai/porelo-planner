@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store;
 
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -14,6 +15,7 @@ import org.jspecify.annotations.Nullable;
  * @param priority its priority, or null for the store's own
  * @param story the story it is hung into last, or null for none
  * @param state its initial state for a store that creates in a state, or null for the first state
+ * @param labels its topic labels, in the order of {@link TopicLabels#NAMES}; none when empty
  */
 public record NewIssue(
         String repository,
@@ -24,20 +26,50 @@ public record NewIssue(
         @Nullable String task,
         @Nullable String priority,
         @Nullable String story,
-        @Nullable String state) {
+        @Nullable String state,
+        List<String> labels) {
 
     /**
      * Checks the repository's name, so no store resolves a path from an unchecked one, and the
-     * task's, so none writes a line from a malformed one.
+     * task's, so none writes a line from a malformed one, and the topic labels.
+     *
+     * @throws IllegalArgumentException for a label outside the topic labels or named twice
      */
     public NewIssue {
         Ids.name(repository);
+        labels = TopicLabels.topic(labels);
         if (task != null) {
             Ids.task(task);
         }
         if (story != null) {
             Ids.story(story);
         }
+    }
+
+    /**
+     * A new issue without labels.
+     *
+     * @param repository the repository it belongs to
+     * @param title its title
+     * @param mustBeTrue what must be true
+     * @param size its size, or null when unknown
+     * @param worker who works it
+     * @param task the task that proposed it, or null
+     * @param priority its priority, or null for the store's own
+     * @param story its story, or null for none
+     * @param state its initial state, or null for the first state
+     */
+    public NewIssue(
+            final String repository,
+            final String title,
+            final String mustBeTrue,
+            final @Nullable String size,
+            final Worker worker,
+            final @Nullable String task,
+            final @Nullable String priority,
+            final @Nullable String story,
+            final @Nullable String state) {
+        this(repository, title, mustBeTrue, size, worker, task, priority, story, state, List.of());
     }
 
     /**

@@ -131,10 +131,18 @@ public final class Touched {
                     final String title,
                     final String body,
                     final @Nullable String type,
-                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+                    final List<String> labels) {
                 final Created created =
                         writes.createIssue(
-                                token, owner, repository, title, body, type, issueFieldValues);
+                                token,
+                                owner,
+                                repository,
+                                title,
+                                body,
+                                type,
+                                issueFieldValues,
+                                labels);
                 issue(created.nodeId());
                 return created;
             }
@@ -216,7 +224,7 @@ public final class Touched {
             }
 
             @Override
-            public void updateIssue(
+            public List<String> updateIssue(
                     final String token,
                     final String owner,
                     final String repository,
@@ -224,11 +232,19 @@ public final class Touched {
                     final @Nullable String title,
                     final @Nullable String body,
                     final @Nullable Opening opening,
-                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner>
-                            issueFieldValues) {
+                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+                    final @Nullable List<String> labels) {
                 numbered(repository, number);
-                writes.updateIssue(
-                        token, owner, repository, number, title, body, opening, issueFieldValues);
+                return writes.updateIssue(
+                        token,
+                        owner,
+                        repository,
+                        number,
+                        title,
+                        body,
+                        opening,
+                        issueFieldValues,
+                        labels);
             }
 
             @Override

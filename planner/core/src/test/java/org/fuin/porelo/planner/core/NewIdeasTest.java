@@ -191,6 +191,66 @@ class NewIdeasTest {
     }
 
     @Test
+    void theNamesAllowedAreToldOnceSoARefusalStaysSmallAtTheLimits() {
+        // Harm: a hundred repository faults each listing every repository make a refusal of
+        // hundreds of kilobytes in the window and the log.
+        final List<String> names = new ArrayList<>();
+        for (int index = 0; index < 64; index++) {
+            names.add(String.format("r%02d", index) + "x".repeat(97));
+        }
+        final Board board =
+                new Board(
+                        BOARD.revision(),
+                        BOARD.workflow(),
+                        List.of(),
+                        List.of(),
+                        BOARD.work(),
+                        ProjectRepository.named(names));
+        final List<NewIdeas.@Nullable Issue> issues = new ArrayList<>();
+        for (int index = 0; index < 100; index++) {
+            issues.add(issue(index % 2 == 0 ? "unknown-" + index : "Not A Name"));
+        }
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () -> NewIdeas.check(board, new NewIdeas.Idea(story(), issues), List.of()));
+
+        assertThat(refused).as("the idea is refused").isNotNull();
+        final List<?> faults = (List<?>) refused.parameters().get("faults");
+        assertThat(faults).as("a fault for each issue").hasSize(100);
+        assertThat(String.valueOf(faults.getFirst()))
+                .as("the first repository fault names every repository allowed")
+                .contains(String.join(", ", names));
+        assertThat(faults.stream().mapToInt(fault -> String.valueOf(fault).length()).sum())
+                .as("the names are told once, the other faults stay short")
+                .isLessThan(String.join(", ", names).length() + 100 * 200);
+    }
+
+    @Test
+    void aHundredRepositoryFaultsAreListedWithoutRepeatingWhatWasSent() {
+        // Harm: a fault echoing a malformed repository would carry an agent's words into the
+        // window and the log; one beyond a hundred would make the refusal unbounded.
+        final List<NewIdeas.@Nullable Issue> issues = new ArrayList<>();
+        for (int index = 0; index < 300; index++) {
+            issues.add(issue("secret repo"));
+        }
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () -> NewIdeas.check(BOARD, new NewIdeas.Idea(story(), issues), List.of()));
+
+        assertThat(refused).as("the idea is refused").isNotNull();
+        final List<?> faults = (List<?>) refused.parameters().get("faults");
+        assertThat(faults).as("at most a hundred faults").hasSize(100);
+        for (int index = 0; index < faults.size(); index++) {
+            assertThat(String.valueOf(faults.get(index)))
+                    .as("fault %d", index)
+                    .startsWith("issues[" + index + "].repository: ")
+                    .doesNotContain("secret");
+        }
+    }
+
+    @Test
     void aRefusedRepositoryIsToldWithTheNamesAllowedAndItselfOnlyWhenItIsAName() {
         // Harm: a discussion told only that a repository is wrong guesses again and is refused
         // again; one echoing any text would carry an agent's words into the window and the log.

@@ -43,7 +43,10 @@ class BoardFaultsTest {
                                 List.of("porelo-store")),
                         List.of("ST3: a reference names no issue, and is left out"));
 
-        assertThat(BoardController.workflowOf(board, false).faults())
+        assertThat(
+                        BoardController.workflowOf(
+                                        board, false, org.fuin.porelo.planner.store.Tracker.GIT)
+                                .faults())
                 .as("the board's faults and the work rules' faults")
                 .containsExactly(
                         "ST3: a reference names no issue, and is left out",
@@ -249,8 +252,52 @@ class BoardFaultsTest {
                 List.of());
     }
 
+    @Test
+    void aRepositorysWarningIsAnsweredWithItsCorrectionOfNoChoice() {
+        // Harm: the window never saw a repository's wrong labels, or read a correction whose
+        // empty choices it took for a missing field.
+        final Board plain =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(List.of("Idea"), List.of(), List.of()),
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of()),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-lib")));
+        final Board board =
+                plain.withRepositories(
+                        List.of(
+                                new org.fuin.porelo.planner.store.RepositoryWarning(
+                                                "porelo-lib",
+                                                org.fuin.porelo.planner.store.RepositoryWarning
+                                                        .TOPIC_LABELS,
+                                                List.of("security"),
+                                                List.of("bug"),
+                                                List.of("tests"),
+                                                null)
+                                        .offered()),
+                        List.of());
+
+        final JsonNode warning = mapper().valueToTree(boardOf(board)).path("repositoryWarnings");
+
+        assertThat(warning.toString())
+                .isEqualTo(
+                        "[{\"repository\":\"porelo-lib\",\"kind\":\"TopicLabels\","
+                                + "\"missing\":[\"security\"],\"defaults\":[\"bug\"],"
+                                + "\"differing\":[\"tests\"],"
+                                + "\"correction\":{\"kind\":\"Labels\",\"choices\":[]}}]");
+        assertThat(mapper().valueToTree(boardOf(plain)).path("repositoryWarnings").toString())
+                .as("a board without one")
+                .isEqualTo("[]");
+    }
+
     private static org.fuin.porelo.planner.app.answers.Board boardOf(final Board board) {
-        return BoardController.boardOf(board, new WorkRun.Snapshot(0, Map.of()), false);
+        return BoardController.boardOf(
+                board,
+                new WorkRun.Snapshot(0, Map.of()),
+                false,
+                org.fuin.porelo.planner.store.Tracker.GIT);
     }
 
     /** The mapper the app's Spring Boot sets up, which writes the stream's events. */

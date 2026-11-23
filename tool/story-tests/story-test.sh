@@ -166,7 +166,8 @@ st_forge() {
     ST_KEY_LINE="restrict,from=\"127.0.0.1,::1\" ${key% *} $ST_MARK"
     printf '%s\n' "$ST_KEY_LINE" >>"$HOME/.ssh/authorized_keys"
     chmod 600 "$HOME/.ssh/authorized_keys"
-    read -r host <"/etc/ssh/ssh_host_ed25519_key.pub"
+    # A key file without a final newline still holds its one line, which read gives with a failure.
+    read -r host <"/etc/ssh/ssh_host_ed25519_key.pub" || [[ -n ${host-} ]]
     host=${host#* }
     ST_HOST_LINE="localhost ssh-ed25519 ${host%% *} $ST_MARK"
     printf '%s\n' "$ST_HOST_LINE" >>"$HOME/.ssh/known_hosts"

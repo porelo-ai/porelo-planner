@@ -71,7 +71,8 @@ final class BoardCopyMapping {
                         snapshot.fieldNames(),
                         read.optionIds(),
                         snapshot.fieldFaults(),
-                        snapshot.restFieldIds()),
+                        snapshot.restFieldIds(),
+                        read.priorities()),
                 snapshot.raw().values().stream()
                         .map(item -> tracked(item, listedAt.get(item.id())))
                         .toList(),

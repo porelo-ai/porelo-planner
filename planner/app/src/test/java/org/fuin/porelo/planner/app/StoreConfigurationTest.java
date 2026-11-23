@@ -201,7 +201,8 @@ class StoreConfigurationTest {
                         List.of("example-project"),
                         Instant.parse("2026-11-21T10:00:00Z"),
                         new TrackerBoard(
-                                "PVT_7", Map.of(), Map.of(), Map.of(), List.of(), Map.of()),
+                                "PVT_7", Map.of(), Map.of(), Map.of(), List.of(), Map.of(),
+                                List.of()),
                         List.of(),
                         ChangeCursor.NONE,
                         List.of());

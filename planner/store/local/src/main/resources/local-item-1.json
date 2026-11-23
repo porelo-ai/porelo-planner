@@ -15,6 +15,7 @@
     "parent": {"type": ["string", "null"], "description": "The story or issue it stands under, <repository>#<number>."},
     "issues": {"type": "array", "items": {"type": "string"}, "description": "A story's issues, in their order."},
     "blockedBy": {"type": "array", "items": {"type": "string"}, "description": "The issues it waits on."},
+    "labels": {"type": "array", "maxItems": 100, "items": {"type": "string"}, "description": "Its labels: the topic labels the planner sets and any other, which is shown and kept."},
     "Status": {"type": "string", "description": "A state of the project's workflow; none lets a story follow its issues."},
     "Priority": {"enum": ["Highest", "High", "Medium", "Low", "Lowest"]},
     "Size": {"enum": ["XS", "S", "M", "L", "XL"]},

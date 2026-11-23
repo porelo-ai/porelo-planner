@@ -202,4 +202,96 @@ class CorrectionsTest {
                 .hasMessage(PlanningStore.NOT_OFFERED);
         assertThat(store.saves).as("nothing written").isEmpty();
     }
+
+    /** The correction of a story's priority, as a store offers it: every priority to pick. */
+    private static final Correction PRIORITY = new Correction("Priority", Story.PRIORITIES);
+
+    /** ST1 holding AA1, warned for its priority with the correction offered. */
+    private static Board withPriorityWarning(final Warning warning) {
+        return board(
+                new Revision("board@1"),
+                List.of(story("ST1", "Backlog", List.of("AA1"), warning.offering(PRIORITY))),
+                board().issues());
+    }
+
+    @Test
+    void aStorysMissingOrUnknownPriorityIsSetAsItsPriorityAloneAndSavedOnce() {
+        // Harm: a correction that writes more than the story's priority, or writes it against a
+        // story changed since the person saw it.
+        for (final Warning warning : List.of(Warning.noPriority(), Warning.unknownPriority())) {
+            final CountingStore store = new CountingStore(withPriorityWarning(warning));
+            final Corrections.Asked asked = asked("ST1", warning.kind(), "High");
+
+            final Corrections.Preview preview = preview(store, asked);
+
+            assertThat(preview.writes())
+                    .as("the story's priority alone, for %s", warning.kind())
+                    .isEqualTo(new Writes(Map.of(), Map.of(), Map.of(), Map.of("ST1", "High")));
+            assertThat(preview.from()).as("no priority is told before").isEmpty();
+            assertThat(preview.targets())
+                    .as("the story is the one target, at its version")
+                    .containsOnlyKeys("ST1");
+
+            run(store)
+                    .correction(
+                            asked,
+                            preview.basis(),
+                            preview.digest("https://example.org/own.git", null),
+                            "https://example.org/own.git",
+                            null);
+            assertThat(store.saves)
+                    .as("saved once, as previewed")
+                    .containsExactly(preview.writes());
+        }
+    }
+
+    @Test
+    void aPriorityTheCorrectionDoesNotOfferIsRefusedAndWritesNothing() {
+        // Harm: a priority none of the planner's written into the store, which the board would
+        // read again as unknown.
+        final CountingStore store = new CountingStore(withPriorityWarning(Warning.noPriority()));
+
+        final Throwable refused =
+                catchThrowable(() -> preview(store, asked("ST1", Warning.NO_PRIORITY, "Urgent")));
+
+        assertThat(refused).as("refused").isInstanceOf(Moves.Refused.class);
+        assertThat(((Moves.Refused) refused).name()).isEqualTo(Corrections.REFUSED);
+        assertThat(refused).hasMessage("The choice is none of those the correction offers.");
+        assertThat(store.saves).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void aPriorityCorrectionOfAnIssueIsNotOfferedSinceNoWriteHoldsAnIssuesPriority() {
+        // Harm: a priority correction half carried out, or written as a story's, on an issue.
+        final Board plain = board();
+        final CountingStore store =
+                new CountingStore(
+                        board(
+                                plain.revision(),
+                                plain.stories(),
+                                List.of(
+                                        plain.issues().getFirst(),
+                                        WorkProposalTest.issue(
+                                                        "AA2", "alpha", "Parked", "Backlog", null,
+                                                        "")
+                                                .withWarnings(
+                                                        List.of(
+                                                                Warning.noPriority()
+                                                                        .offering(PRIORITY))))));
+
+        assertThat(
+                        catchThrowable(
+                                () ->
+                                        preview(
+                                                store,
+                                                new Corrections.Asked(
+                                                        false,
+                                                        "AA2",
+                                                        Warning.NO_PRIORITY,
+                                                        "High"))))
+                .as("not offered")
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessage(PlanningStore.NOT_OFFERED);
+        assertThat(store.saves).as("nothing written").isEmpty();
+    }
 }

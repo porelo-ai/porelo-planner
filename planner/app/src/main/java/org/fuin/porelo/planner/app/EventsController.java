@@ -214,6 +214,8 @@ public class EventsController {
                 parameters.put("right", refused.right());
             }
             data.put("parameters", parameters);
+        } else if (cause instanceof StoreException.ItemsDirectoryRefused refused) {
+            data.put("parameters", Problems.itemsDirectory(refused));
         } else if (cause instanceof StoreException known) {
             data.put("parameters", Map.of("repository", known.subject()));
         }
@@ -244,7 +246,7 @@ public class EventsController {
         try {
             // A project given anew in the meantime has closed it; its old board is not sent.
             if (subscription.open()) {
-                board(emitter, subscription.firstFrame());
+                board(emitter, subscription.firstFrame(), store.tracker());
             }
             final Duration step = keepAlive.compareTo(LOAD_EVERY) < 0 ? keepAlive : LOAD_EVERY;
             Instant lastSent = Instant.now();
@@ -281,7 +283,7 @@ public class EventsController {
                                             MediaType.APPLICATION_JSON));
                     lastSent = Instant.now();
                 } else if (next.isPresent()) {
-                    board(emitter, next.get());
+                    board(emitter, next.get(), store.tracker());
                     lastSent = Instant.now();
                 } else if (readsNow) {
                     load(emitter, store, Instant.now());
@@ -310,7 +312,10 @@ public class EventsController {
         }
     }
 
-    private static void board(final SseEmitter emitter, final Changes.Frame frame)
+    private static void board(
+            final SseEmitter emitter,
+            final Changes.Frame frame,
+            final org.fuin.porelo.planner.store.Tracker tracker)
             throws IOException {
         emitter.send(
                 SseEmitter.event()
@@ -318,7 +323,7 @@ public class EventsController {
                         .id(frame.board().revision().value())
                         .data(
                                 BoardController.boardOf(
-                                        frame.board(), frame.work(), frame.reasons()),
+                                        frame.board(), frame.work(), frame.reasons(), tracker),
                                 MediaType.APPLICATION_JSON));
     }
 }

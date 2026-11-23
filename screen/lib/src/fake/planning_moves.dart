@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../client.dart' show planningTopicLabelOf, planningTopicLabels;
 import '../models.dart';
 import 'planning_data.dart';
 import 'refusal.dart';
@@ -348,6 +349,51 @@ Map<String, dynamic> applyPlanningWorker(
   return board;
 }
 
+/// Sets the topic labels of one item, a story when [story] holds, on a copy as the planner does: a name outside the
+/// topic labels, or one given twice, is refused as `LabelNotAllowed`, a label of the person's own stays, and labels
+/// the item carries already save nothing, at the same revision.
+Map<String, dynamic> applyPlanningLabels(
+  Map<String, dynamic> source,
+  String id,
+  List<String> labels,
+  Map<String, String> seen, {
+  required bool story,
+}) {
+  final asked = <String>{};
+  for (final label in labels) {
+    if (!planningTopicLabels.contains(label) || !asked.add(label)) {
+      throw mockRefusal('LabelNotAllowed', {'item': id, 'label': label});
+    }
+  }
+  mockCheckSeen(source, seen, [id]);
+  final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  final issues = [
+    ...(board['stories'] as List).cast<Map<String, dynamic>>().expand(
+      (each) => (each['issues'] as List? ?? []).cast<Map<String, dynamic>>(),
+    ),
+    ...(board['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+  ];
+  // The item itself, never a copy, so the change stands on the board.
+  final item = story ? mockPlanningStory(board, id) : issues.where((each) => each['id'] == id).firstOrNull;
+  if (item == null) throw mockRefusal(story ? 'NoSuchStory' : 'NoSuchIssue', {story ? 'story' : 'issue': id});
+  final carried = (item['labels'] as List? ?? const []).cast<String>();
+  // As the planner does: a label in another case is the topic label, and the topic labels carried save nothing.
+  final topics = {for (final label in carried) ?planningTopicLabelOf(label)};
+  if (topics.length == asked.length && topics.containsAll(asked)) return source;
+  final kept = [
+    for (final label in carried)
+      if (planningTopicLabelOf(label) == null) label,
+  ];
+  final after = [
+    ...kept,
+    for (final label in planningTopicLabels)
+      if (asked.contains(label)) label,
+  ];
+  item['labels'] = after;
+  board['revision'] = '${source['revision']}:labels';
+  return board;
+}
+
 /// Puts every open story with issues where the planner's one rule ([PlanningStoryRule]) puts it, naming the issues
 /// that stand before it in one warning: only a person's move closes a story, as the planner keeps it. A closed story
 /// stays closed; a workflow the rule cannot read derives no state, as the planner then derives none.
@@ -497,3 +543,147 @@ bool _working(Object? work) =>
     work is Map &&
     (work['atWork'] != false ||
         (work['tasks'] as List? ?? const []).whereType<Map<dynamic, dynamic>>().any((task) => task['ended'] == null));
+
+/// The topic labels every repository of a project carries, each with its color and description, in their order.
+const planningTopicLabelStyles = <String, ({String color, String description})>{
+  'documentation': (color: '0075ca', description: 'Guides, references and decisions'),
+  'security': (color: 'b60205', description: 'A guard, a secret or a trust boundary'),
+  'tests': (color: 'fbca04', description: 'Tests and what runs them'),
+  'build': (color: '5319e7', description: 'Building, packaging, releasing and CI'),
+  'dependencies': (color: '0366d6', description: 'A dependency moved or pinned'),
+  'performance': (color: 'd4c5f9', description: 'Time, memory or size'),
+  'usability': (color: 'c2e0c6', description: 'What a person sees, reads or types'),
+};
+
+/// Previews a correction of one warning on [source] as the planner does, writing nothing: a story's Priority and a
+/// repository's Labels are the kinds it answers here, since a Move is previewed as any move, and every other kind is
+/// not offered.
+Map<String, dynamic> previewPlanningCorrection(Map<String, dynamic> source, Map<String, dynamic> correction) {
+  if (correction['repository'] != null) return _previewLabels(source, correction);
+  final id = (correction['story'] ?? correction['issue']) as String;
+  final warningKind = correction['warning'] as String;
+  final choice = correction['choice'] as String;
+  Never refused(String reason) =>
+      throw mockRefusal('CorrectionRefused', {'item': id, 'warning': warningKind, 'reason': reason});
+  final items = correction['story'] != null
+      ? (source['stories'] as List).cast<Map<String, dynamic>>()
+      : [
+          for (final story in (source['stories'] as List).cast<Map<String, dynamic>>())
+            ...(story['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+          ...(source['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+        ];
+  final found = items.where((item) => item['id'] == id).toList();
+  if (found.isEmpty) {
+    throw correction['story'] != null
+        ? mockRefusal('NoSuchStory', {'story': id})
+        : mockRefusal('NoSuchIssue', {'issue': id});
+  }
+  if (found.length > 1) refused('Its id names two items.');
+  final item = found.single;
+  final warnings = (item['warnings'] as List? ?? const []).cast<Map<String, dynamic>>();
+  final warning = warnings.where((each) => each['kind'] == warningKind).firstOrNull;
+  if (warning == null) refused('The warning no longer stands on it.');
+  final holding = [
+    for (final other in warnings)
+      if (!identical(other, warning) && other['holds'] == true) other['text'] as String,
+  ];
+  if (holding.isNotEmpty) refused(holding.join(' '));
+  final offered = warning['correction'];
+  if (offered is! Map<String, dynamic>) throw mockRefusal('NotOffered', {'project': 'mock'});
+  if (offered['kind'] == 'Move') refused('It is set right by a move of it, previewed and saved as any move.');
+  if (offered['kind'] != 'Priority' || correction['story'] == null) {
+    throw mockRefusal('NotOffered', {'project': 'mock'});
+  }
+  if (!(offered['choices'] as List).contains(choice)) refused('$choice is none of the choices it offers.');
+  final targets = {id: ?mockItemVersions(source)[id]};
+  return {
+    'revision': source['revision'] as String,
+    'digest': mockDigest(jsonEncode([targets, correction])),
+    'targets': [
+      for (final target in targets.entries) {'id': target.key, 'version': target.value},
+    ],
+    'story': id,
+    'issue': null,
+    'repository': null,
+    'warning': warningKind,
+    // The planner tells no priority before: the warning says it has none, or one it does not know.
+    'from': '',
+    'to': choice,
+    'calls': <Object>[],
+  };
+}
+
+/// Previews a repository's Labels as the planner does: each default deleted, each missing topic label created, each
+/// differing one updated, in that order; its own labels are never named, and it has no targets.
+Map<String, dynamic> _previewLabels(Map<String, dynamic> source, Map<String, dynamic> correction) {
+  final repository = correction['repository'] as String;
+  final warningKind = correction['warning'] as String;
+  Never refused(String reason) =>
+      throw mockRefusal('CorrectionRefused', {'item': repository, 'warning': warningKind, 'reason': reason});
+  final warning = (source['repositoryWarnings'] as List? ?? const [])
+      .cast<Map<String, dynamic>>()
+      .where((each) => each['repository'] == repository && each['kind'] == warningKind)
+      .firstOrNull;
+  if (warning == null) refused('The warning no longer stands on it.');
+  final offered = warning['correction'];
+  if (offered is! Map<String, dynamic> || offered['kind'] != 'Labels') {
+    throw mockRefusal('NotOffered', {'project': 'mock'});
+  }
+  if (correction['choice'] != null) refused('The choice is none of those the correction offers.');
+  Map<String, dynamic> written(String action, Object? label) => {
+    'action': action,
+    'label': label,
+    'color': planningTopicLabelStyles[label]!.color,
+    'description': planningTopicLabelStyles[label]!.description,
+  };
+  final calls = [
+    for (final label in warning['defaults'] as List)
+      {'action': 'Delete', 'label': label, 'color': null, 'description': null},
+    for (final label in warning['missing'] as List) written('Create', label),
+    for (final label in warning['differing'] as List) written('Update', label),
+  ];
+  return {
+    'revision': source['revision'] as String,
+    'digest': mockDigest(jsonEncode([repository, warningKind, calls])),
+    'targets': <Object>[],
+    'story': null,
+    'issue': null,
+    'repository': repository,
+    'warning': warningKind,
+    'from': '',
+    'to': '',
+    'calls': calls,
+  };
+}
+
+/// Saves a previewed correction on a copy of [source] as the planner does: the versions [seen] and the [digest] are
+/// checked first, and only the warning corrected is lifted, at a new revision; nothing is written on a refusal.
+Map<String, dynamic> applyPlanningCorrection(
+  Map<String, dynamic> source,
+  Map<String, dynamic> correction,
+  Map<String, String> seen,
+  String digest,
+) {
+  final preview = previewPlanningCorrection(source, correction);
+  mockCheckSeen(source, seen, [
+    for (final target in (preview['targets'] as List).cast<Map<String, dynamic>>()) target['id'] as String,
+  ]);
+  if (preview['digest'] != digest) throw mockRefusal('PreviewChanged');
+  final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  if (correction['repository'] case final String repository) {
+    board['repositoryWarnings'] = [
+      for (final warning in (board['repositoryWarnings'] as List).cast<Map<String, dynamic>>())
+        if (warning['repository'] != repository || warning['kind'] != correction['warning']) warning,
+    ];
+  }
+  for (final story in (board['stories'] as List).cast<Map<String, dynamic>>()) {
+    if (story['id'] != correction['story']) continue;
+    story['priority'] = correction['choice'];
+    story['warnings'] = [
+      for (final warning in (story['warnings'] as List? ?? const []).cast<Map<String, dynamic>>())
+        if (warning['kind'] != correction['warning']) warning,
+    ];
+  }
+  board['revision'] = '${source['revision']}:corrected';
+  return board;
+}

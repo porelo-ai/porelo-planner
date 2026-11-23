@@ -12,9 +12,11 @@ import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueField;
 import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
@@ -74,21 +76,34 @@ public interface ProjectWrites {
      * @param number its number in its repository
      * @param type the name of the issue type GitHub gave it, or null for none
      * @param fieldValues the organization issue fields GitHub answered
+     * @param labels the names of the labels GitHub answered it carries
      */
     record Created(
             String nodeId,
             long databaseId,
             int number,
             @Nullable String type,
-            List<IssueFieldValue> fieldValues) {
-        /** Copies the issue field values. */
+            List<IssueFieldValue> fieldValues,
+            List<String> labels) {
+        /** Copies the issue field values and the labels. */
         public Created {
             fieldValues = List.copyOf(fieldValues);
+            labels = List.copyOf(labels);
         }
 
-        /** Makes an issue carrying no organization field values. */
+        /** Makes an issue carrying no labels. */
+        public Created(
+                String nodeId,
+                long databaseId,
+                int number,
+                @Nullable String type,
+                List<IssueFieldValue> fieldValues) {
+            this(nodeId, databaseId, number, type, fieldValues, List.of());
+        }
+
+        /** Makes an issue carrying no organization field values and no labels. */
         public Created(String nodeId, long databaseId, int number, @Nullable String type) {
-            this(nodeId, databaseId, number, type, List.of());
+            this(nodeId, databaseId, number, type, List.of(), List.of());
         }
     }
 
@@ -160,8 +175,8 @@ public interface ProjectWrites {
             String token, String projectId, List<GitHubGraphQl.FieldValue> values);
 
     /**
-     * Makes an issue. GitHub drops the issue type in silence for an account without the right to
-     * set it, so the caller reads it in the answer.
+     * Makes an issue. GitHub drops the issue type and the labels in silence for an account without
+     * the right to set them, so the caller reads them in the answer.
      *
      * @param token the person's token
      * @param owner the repository's owner
@@ -170,6 +185,7 @@ public interface ProjectWrites {
      * @param body the issue's body
      * @param type the name of the issue type it is to carry, or null for none
      * @param issueFieldValues the organization issue fields to set
+     * @param labels the names of the labels it is to carry
      * @return the issue as GitHub made it
      */
     Created createIssue(
@@ -179,7 +195,21 @@ public interface ProjectWrites {
             String title,
             String body,
             @Nullable String type,
-            List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues);
+            List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+            List<String> labels);
+
+    /** Makes an issue without labels. */
+    default Created createIssue(
+            String token,
+            String owner,
+            String repository,
+            String title,
+            String body,
+            @Nullable String type,
+            List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+        return createIssue(
+                token, owner, repository, title, body, type, issueFieldValues, List.of());
+    }
 
     /** Makes an issue without organization field values. */
     default Created createIssue(
@@ -279,8 +309,9 @@ public interface ProjectWrites {
             String token, String owner, String repository, Instant since, int page);
 
     /**
-     * Writes an issue's title, body or open state in one update; what is null is not sent, so
-     * GitHub leaves it, labels, assignees and milestone too.
+     * Writes an issue's title, body, open state or labels in one update; what is null is not sent,
+     * so GitHub leaves it, assignees and milestone too. GitHub drops labels in silence for an
+     * account without the right to set them, so the caller reads them in the answer.
      *
      * @param token the person's token
      * @param owner the repository's owner
@@ -290,8 +321,10 @@ public interface ProjectWrites {
      * @param body the new body, or null to leave it
      * @param opening the new open state, or null to leave it
      * @param issueFieldValues all organization field values, or null to leave them
+     * @param labels the names of all labels it is to carry, or null to leave them
+     * @return the names of the labels GitHub answered it carries
      */
-    void updateIssue(
+    List<String> updateIssue(
             String token,
             String owner,
             String repository,
@@ -299,7 +332,21 @@ public interface ProjectWrites {
             @Nullable String title,
             @Nullable String body,
             @Nullable Opening opening,
-            @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues);
+            @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+            @Nullable List<String> labels);
+
+    /** Updates an issue while leaving its labels untouched. */
+    default void updateIssue(
+            String token,
+            String owner,
+            String repository,
+            int number,
+            @Nullable String title,
+            @Nullable String body,
+            @Nullable Opening opening,
+            @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
+        updateIssue(token, owner, repository, number, title, body, opening, issueFieldValues, null);
+    }
 
     /** Updates an issue while leaving its organization field values untouched. */
     default void updateIssue(
@@ -380,7 +427,8 @@ public interface ProjectWrites {
                     final String title,
                     final String body,
                     final @Nullable String type,
-                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+                    final List<String> labels) {
                 return created(
                         rest.createIssue(
                                 token,
@@ -390,7 +438,9 @@ public interface ProjectWrites {
                                         title,
                                         body,
                                         null,
-                                        null,
+                                        // An empty list is left out, so the request is the one
+                                        // without labels.
+                                        labels.isEmpty() ? null : labels,
                                         null,
                                         issueFieldValues,
                                         type,
@@ -491,7 +541,7 @@ public interface ProjectWrites {
             }
 
             @Override
-            public void updateIssue(
+            public List<String> updateIssue(
                     final String token,
                     final String owner,
                     final String repository,
@@ -499,32 +549,36 @@ public interface ProjectWrites {
                     final @Nullable String title,
                     final @Nullable String body,
                     final @Nullable Opening opening,
-                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner>
-                            issueFieldValues) {
-                rest.updateIssue(
-                        token,
-                        owner,
-                        repository,
-                        number,
-                        new IssuesUpdateRequest(
-                                title,
-                                body,
-                                opening == null
-                                        ? null
-                                        : opening.open()
-                                                ? IssuesUpdateRequest.StateEnum.OPEN
-                                                : IssuesUpdateRequest.StateEnum.CLOSED,
-                                opening == null || opening.open()
-                                        ? null
-                                        : opening.notPlanned()
-                                                ? IssuesUpdateRequest.StateReasonEnum.NOT_PLANNED
-                                                : IssuesUpdateRequest.StateReasonEnum.COMPLETED,
-                                null,
-                                null,
-                                null,
-                                null,
-                                issueFieldValues,
-                                null));
+                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+                    final @Nullable List<String> labels) {
+                final IssuesUpdate200Response updated =
+                        rest.updateIssue(
+                                token,
+                                owner,
+                                repository,
+                                number,
+                                new IssuesUpdateRequest(
+                                        title,
+                                        body,
+                                        opening == null
+                                                ? null
+                                                : opening.open()
+                                                        ? IssuesUpdateRequest.StateEnum.OPEN
+                                                        : IssuesUpdateRequest.StateEnum.CLOSED,
+                                        opening == null || opening.open()
+                                                ? null
+                                                : opening.notPlanned()
+                                                        ? IssuesUpdateRequest.StateReasonEnum
+                                                                .NOT_PLANNED
+                                                        : IssuesUpdateRequest.StateReasonEnum
+                                                                .COMPLETED,
+                                        null,
+                                        null,
+                                        labels,
+                                        null,
+                                        issueFieldValues,
+                                        null));
+                return names(updated.labels());
             }
 
             @Override
@@ -618,6 +672,22 @@ public interface ProjectWrites {
                 id,
                 number,
                 type == null ? null : type.name(),
-                issue.issueFieldValues() == null ? List.of() : issue.issueFieldValues());
+                issue.issueFieldValues() == null ? List.of() : issue.issueFieldValues(),
+                names(issue.labels()));
+    }
+
+    /** The names of the labels GitHub answered, none for an answer without them. */
+    private static List<String> names(final @Nullable List<IssueLabelsInner> labels) {
+        if (labels == null) {
+            return List.of();
+        }
+        final List<String> names = new ArrayList<>();
+        for (final IssueLabelsInner label : labels) {
+            final String name = label == null ? null : label.name();
+            if (name != null) {
+                names.add(name);
+            }
+        }
+        return List.copyOf(names);
     }
 }

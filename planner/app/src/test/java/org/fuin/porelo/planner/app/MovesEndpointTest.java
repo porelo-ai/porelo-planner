@@ -175,6 +175,25 @@ class MovesEndpointTest {
     }
 
     @Test
+    void aBatchWhoseSeenNamesMoreThan2000ItemsIsRefusedWithFixedWordsAndSavesNothing()
+            throws Exception {
+        // Harm: a caller makes the planner hold and walk an unbounded map of versions per write.
+        final String batch = ", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}";
+        moves("{\"seen\": " + Seens.padded(current, 2001) + batch)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        "The body names no versions seen by item id, or more"
+                                                + " than 2000."));
+        assertThat(saved).as("nothing saved").isEmpty();
+
+        moves("{\"seen\": " + Seens.padded(current, 2000) + batch).andExpect(status().isOk());
+        assertThat(saved).as("2000 versions are taken").hasSize(1);
+    }
+
+    @Test
     void aMoveIntoAWorkingStateIsRefusedByNameWithItsParameters() throws Exception {
         // The window offers the work only when it reads this refusal by its name.
         moves("{\"moves\": [{\"story\": \"ST1\", \"to\": \"Building\"}]}")

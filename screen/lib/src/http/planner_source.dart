@@ -706,6 +706,27 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
+  Future<PlanningTracker> setItemsDirectory(String project, String? directory, Map<String, String> seen) async {
+    if (directory != null) {
+      if (planningDirectoryFault(directory) case final fault?) {
+        throw PlanningRefusal('ItemsDirectoryRefused', {'project': project}, fault);
+      }
+    }
+    final answer = await _write(
+      project,
+      ['tracker', 'items'],
+      {'directory': directory, 'seen': _seen(seen)},
+      method: 'PUT',
+      revision: false,
+    );
+    final tracker = PlanningTracker.from(answer);
+    if (tracker == null) {
+      throw const PlanningRefusal('BadAnswer', {}, 'the planner answered a tracker it cannot name');
+    }
+    return tracker;
+  }
+
+  @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async {
     final detail = PlanIssueDetail.from(await _read(project, ['issues', _checked('issue', issue, _issueId)]));
     _workersNamed([?detail.issue]);
@@ -803,6 +824,54 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     return PlanningMoveResult.from(answer);
   }
 
+  /// The correction's body as the planner reads it, each field checked before it leaves the window.
+  static Map<String, dynamic> _correction(PlanningCorrection correction) => {
+    if (correction.story case final story?) 'story': _checked('story', story, _storyId),
+    if (correction.issue case final issue?) 'issue': _checked('issue', issue, _issueId),
+    if (correction.repository case final repository?) 'repository': _checked('repository', repository, _name),
+    'warning': _checked('warning', correction.warning, _kindName),
+    if (correction.choice case final choice?) 'choice': _checked('choice', choice, _choiceName),
+  };
+
+  static final _kindName = RegExp(r'^[A-Z][A-Za-z]{0,63}$');
+  static final _choiceName = RegExp(r'^[A-Za-z][A-Za-z0-9 _-]{0,63}$');
+
+  @override
+  Future<PlanningCorrectionPreview> previewCorrection(String project, PlanningCorrection correction) async {
+    final answer = await _write(project, ['corrections', 'preview'], _correction(correction));
+    final preview = PlanningCorrectionPreview.from(answer);
+    // A preview the window cannot read, or one of another change than asked, must never let a correction go out.
+    if (!_digest.hasMatch(preview.digest) ||
+        planningTargets(answer['targets']) == null ||
+        preview.targets.values.any((version) => !_version.hasMatch(version)) ||
+        answer['to'] is! String ||
+        answer['from'] is! String ||
+        // Every call a repository's correction makes is shown before the person confirms it.
+        PlanLabelCall.readAll(answer['calls']) == null ||
+        !preview.answers(correction)) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not answer a readable preview of the correction.');
+    }
+    return preview;
+  }
+
+  @override
+  Future<PlanningCorrectionSaved> saveCorrection(
+    String project,
+    PlanningCorrection correction,
+    Map<String, String> seen, {
+    required String digest,
+  }) async {
+    final answer = await _write(
+      project,
+      ['corrections'],
+      {..._correction(correction), 'seen': _seen(seen), 'digest': _checked('digest', digest, _digest)},
+    );
+    if ((answer['revision'] as String).trim().isEmpty) {
+      throw const PlanningRefusal('BadAnswer', {}, 'The planner did not confirm the saved revision.');
+    }
+    return PlanningCorrectionSaved.from(answer);
+  }
+
   @override
   Future<PlanningIssueAdded> createIssue(
     String project,
@@ -847,6 +916,42 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     );
     return answer['revision'] as String;
   }
+
+  @override
+  Future<String> setLabels(
+    String project,
+    String item,
+    List<String> labels,
+    Map<String, String> seen, {
+    required bool story,
+  }) async {
+    final id = story ? _checked('story', item, _storyId) : _checked('issue', item, _issueId);
+    final asked = <String>{};
+    for (final label in labels) {
+      // The planner sets only the topic labels; a name outside them or given twice is never sent.
+      if (!planningTopicLabels.contains(label) || !asked.add(label)) {
+        throw PlanningRefusal('LabelNotAllowed', {
+          'item': item,
+          'label': planningTopicLabels.contains(label) ? label : _labelShown(label),
+        }, 'the label is none of $planningTopicLabels, or named twice');
+      }
+    }
+    final answer = await _write(
+      project,
+      [story ? 'stories' : 'issues', id, 'text'],
+      {'labels': labels, 'seen': _seen(seen)},
+      method: 'PUT',
+    );
+    return answer['revision'] as String;
+  }
+
+  /// [label] as a refusal may name it: a label name the tracker could hold, or empty.
+  static String _labelShown(String label) => _labelName.hasMatch(label) ? label : '';
+
+  static final _labelName = RegExp(
+    r'^[^\x00-\x1f\x7f-\x9f\xad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\u2028\u2029\u{e0000}-\u{e007f}]{1,50}$',
+    unicode: true,
+  );
 
   @override
   Future<PlanningWorkerSaved> setWorker(
@@ -1128,6 +1233,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     await _stillBound(project, given);
     _readSources[project] = given.source;
     final snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories'], 'open': board['open']});
+    if (snapshot.tracker == null) {
+      throw const PlanningRefusal('BadAnswer', {}, 'the planner answered a workflow without a tracker it can name');
+    }
     _workersNamed(snapshot.stories.expand((story) => story.issues));
     return snapshot;
   }
@@ -1366,7 +1474,10 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       for (final entry in sent.entries) {
         if (entry.key.length > _key || parameters.length == _parameters) continue;
         final value = entry.value;
-        if (value is String) {
+        if (entry.key == 'directory') {
+          // A directory is kept whole or not at all: a shortened path would name another one.
+          if (value is String && planningDirectory(value)) parameters['directory'] = value;
+        } else if (value is String) {
           parameters[entry.key] = _bounded(value);
         } else if (value is int && value >= 0 && value <= 2147483647) {
           parameters[entry.key] = value;
@@ -1732,7 +1843,9 @@ class _Watch {
         throw const PlanningRefusal('BadAnswer', {}, 'the planner told its read in a load event that is not JSON');
       }
       if (json is Map<String, dynamic> && json['state'] == 'failed') {
-        final failure = json['failure'] is String ? (json['failure'] as String).trim() : '';
+        final failure = json['failure'] is String
+            ? HttpPlanningSource._bounded((json['failure'] as String).trim())
+            : '';
         // Named as the planner names it where that is a plain name, so a refusal the board answers, such as
         // NoForgeAccess with its forge's address, is answered there as when it came before the stream began.
         final problem = json['problem'];
@@ -1741,8 +1854,15 @@ class _Watch {
         final refusal = PlanningRefusal(named, {
           if (given is Map<String, dynamic>)
             for (final entry in given.entries.take(16))
-              if (entry.key.length <= 64 && (entry.value is String || entry.value is num || entry.value is bool))
-                entry.key: entry.value,
+              if (entry.key.length <= 64)
+                if (entry.key == 'directory')
+                // A directory is kept whole or not at all, as in a refusal before the stream.
+                ...{
+                  if (entry.value case final String directory when planningDirectory(directory)) 'directory': directory,
+                } else if (entry.value case final String text)
+                  entry.key: HttpPlanningSource._bounded(text)
+                else if (entry.value is num || entry.value is bool)
+                  entry.key: entry.value,
           'failure': failure,
         }, failure.isEmpty ? 'the planner could not read the board' : 'the planner could not read the board: $failure');
         // A read after the first board that failed leaves the board it had, and the watch on: the next board ends it.
@@ -1791,6 +1911,9 @@ class _Watch {
         throw PlanningRefusal('BadAnswer', const {}, 'the planner streamed a board that cannot be read: $error');
       }
       if (!snapshot.complete) throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed an incomplete board');
+      if (snapshot.tracker == null) {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board without a tracker it can name');
+      }
       // An issue outside the project is named once, and by no id the board holds otherwise.
       final held = {
         for (final story in snapshot.stories) ...[story.id, for (final issue in story.issues) issue.id],

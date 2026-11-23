@@ -23,11 +23,13 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
@@ -151,6 +153,23 @@ public final class ItemsBoardReader implements BoardReader {
     /** The items the last whole read held, or null before the first. */
     private volatile @Nullable Integer lastTotal;
 
+    /** The organization's issue fields as GitHub answers them. */
+    @FunctionalInterface
+    public interface IssueFields {
+
+        /**
+         * Reads the issue fields of an organization.
+         *
+         * @param token the person's token
+         * @param owner the project's owner
+         * @return the fields
+         */
+        List<IssueField> read(String token, String owner);
+    }
+
+    /** The organization's issue fields, or null when they are not read. */
+    private final @Nullable IssueFields issueFields;
+
     /** Waits between two reads of the item list. */
     @FunctionalInterface
     interface Pause {
@@ -210,6 +229,42 @@ public final class ItemsBoardReader implements BoardReader {
                 Thread::sleep,
                 issuePages,
                 limits);
+    }
+
+    /**
+     * Makes the reader that also reads the open issues of the project's repositories and the
+     * organization's issue fields, so the board names the issues that are no items of the project
+     * and offers to set a story's priority to one the organization's field Priority holds.
+     *
+     * @param queries the project's two reads
+     * @param issuePages the pages of a repository's open issues
+     * @param issueFields the organization's issue fields
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param silence how long GitHub may leave the project's read without an answer
+     * @param limits the factors the lists' deadline, the reads again and their pauses follow
+     */
+    public ItemsBoardReader(
+            final ProjectQueries queries,
+            final RepositoryIssues.Pages issuePages,
+            final IssueFields issueFields,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final Duration silence,
+            final LimitFactors limits) {
+        this(
+                queries,
+                tokens,
+                refusals,
+                states,
+                InstantSource.system(),
+                silence,
+                Thread::sleep,
+                issuePages,
+                limits,
+                issueFields);
     }
 
     /**
@@ -312,6 +367,38 @@ public final class ItemsBoardReader implements BoardReader {
             final Pause pause,
             final RepositoryIssues.@Nullable Pages issuePages,
             final LimitFactors limits) {
+        this(queries, tokens, refusals, states, clock, deadline, pause, issuePages, limits, null);
+    }
+
+    /**
+     * Makes the reader with its own clock, deadline and pause, reading the open issues of the
+     * project's repositories when it is given their pages and the organization's issue fields when
+     * it is given them, its other limits following the factors.
+     *
+     * @param queries the project's reads
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param clock tells the time the deadlines are measured by
+     * @param deadline how long GitHub may leave the project's read without an answer
+     * @param pause waits before the item list is read again
+     * @param issuePages the pages of a repository's open issues, or null when none are read
+     * @param limits the factors the lists' deadline, the reads again and their pauses follow
+     * @param issueFields the organization's issue fields, or null when they are not read, so no
+     *     story's priority is offered to set
+     */
+    ItemsBoardReader(
+            final ProjectQueries queries,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final InstantSource clock,
+            final Duration deadline,
+            final Pause pause,
+            final RepositoryIssues.@Nullable Pages issuePages,
+            final LimitFactors limits,
+            final @Nullable IssueFields issueFields) {
+        this.issueFields = issueFields;
         this.issuePages = issuePages;
         this.unlisted = new RepositoryIssues(limits.services(RepositoryIssues.DEADLINE));
         this.mostRereads = limits.tries(MOST_REREADS);
@@ -407,7 +494,8 @@ public final class ItemsBoardReader implements BoardReader {
                         config.repositories(),
                         fieldIds,
                         optionIds,
-                        projectId);
+                        projectId,
+                        priorities(call, config, faults));
 
         ItemsRead current = items(call, read, fieldNames);
         final Set<String> lagging = onProject(call, read, current.missing());
@@ -435,6 +523,44 @@ public final class ItemsBoardReader implements BoardReader {
                 restFieldIds,
                 repositoryIssues);
     }
+
+    /**
+     * Reads the organization's issue fields within the project's read, answering the priorities its
+     * field Priority holds. An owner GitHub knows no issue fields of, a user among them, holds none
+     * and is no fault; a read that fails adds its fault in fixed words and holds none, so no
+     * story's priority is offered to set.
+     */
+    private List<String> priorities(
+            final Call call, final ProjectConfig config, final List<String> faults) {
+        final IssueFields fields = issueFields;
+        if (fields == null) {
+            return List.of();
+        }
+        final String owner = config.project().owner();
+        try {
+            return IssuePriority.offered(
+                    call.of(
+                            "the organization's issue fields",
+                            () -> fields.read(call.token, owner),
+                            true));
+        } catch (final GitHubException e) {
+            if (e.status() == NOT_FOUND) {
+                return List.of();
+            }
+            faults.add(IssuePriority.unread("GitHub answered HTTP " + e.status()));
+            return List.of();
+        } catch (final StoreException e) {
+            faults.add(
+                    IssuePriority.unread(
+                            e instanceof StoreException.Unreachable
+                                    ? "GitHub could not be reached in time"
+                                    : "GitHub refused the read"));
+            return List.of();
+        }
+    }
+
+    /** GitHub's answer for an owner without issue fields, a user's account among them. */
+    private static final int NOT_FOUND = 404;
 
     /**
      * Reads the open issues of the project's repositories within their own budget, adding to the
@@ -811,7 +937,7 @@ public final class ItemsBoardReader implements BoardReader {
      * @param copy the copy
      * @param config what the project is read with, as its files name it now
      * @return the snapshot, or null when the copy is of another project, other project files or
-     *     other repositories
+     *     other repositories, or holds a priority none of the planner's
      */
     @Override
     public @Nullable Snapshot fromCopy(final BoardCopy copy, final ProjectConfig config) {
@@ -821,6 +947,9 @@ public final class ItemsBoardReader implements BoardReader {
             return null;
         }
         final TrackerBoard board = copy.board();
+        if (!Story.PRIORITIES.containsAll(board.priorities())) {
+            return null;
+        }
         final ProjectConfig read =
                 new ProjectConfig(
                         config.forge(),
@@ -831,7 +960,8 @@ public final class ItemsBoardReader implements BoardReader {
                         config.repositories(),
                         board.fieldIds(),
                         board.optionIds(),
-                        board.id());
+                        board.id(),
+                        board.priorities());
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>();
         for (final TrackedItem item : copy.items()) {
             items.putIfAbsent(item.id(), BoardCopyMapping.item(item));

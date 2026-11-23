@@ -54,4 +54,21 @@ final class Seens {
         Basis.of(board).items().keySet().forEach(id -> seen.put(id, "f".repeat(64)));
         return JSON.writeValueAsString(seen);
     }
+
+    /**
+     * The versions of every item the board holds once, filled up with items of other ids to the
+     * number of entries given, as a window that saw a large project sends them.
+     *
+     * @param board the board the window saw
+     * @param entries how many entries the object holds, at least as many as the board's items
+     * @return the object, by id
+     */
+    static String padded(final Board board, final int entries) {
+        final ObjectNode seen = JSON.createObjectNode();
+        Basis.of(board).items().forEach((id, version) -> seen.put(id, version.value()));
+        for (int n = 1; seen.size() < entries; n++) {
+            seen.put("ZZZ" + n, "a".repeat(64));
+        }
+        return JSON.writeValueAsString(seen);
+    }
 }

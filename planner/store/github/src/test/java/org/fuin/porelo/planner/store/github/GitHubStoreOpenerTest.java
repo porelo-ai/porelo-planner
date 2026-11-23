@@ -113,6 +113,10 @@ class GitHubStoreOpenerTest {
                         ProjectWrites.class.getClassLoader(),
                         new Class<?>[] {ProjectWrites.class},
                         (proxy, method, args) -> {
+                            // The organization's issue fields are a read.
+                            if (method.getName().equals("issueFields")) {
+                                return java.util.List.of();
+                            }
                             throw new AssertionError("A read called " + method.getName());
                         });
     }

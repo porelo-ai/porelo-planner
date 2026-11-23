@@ -32,6 +32,7 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
@@ -954,11 +955,19 @@ public final class FieldsBoardWriter implements BoardWriter {
         final String title = edit.title();
         final boolean retitled = title != null && !title.equals(item.title());
         final boolean rewritten = !body.equals(item.body());
-        if (!retitled && !rewritten) {
+        final List<String> topic = edit.labels();
+        final boolean relabelled =
+                topic != null && !TopicLabels.topicOf(item.labels()).equals(topic);
+        if (!retitled && !rewritten && !relabelled) {
             return false;
         }
         final Plan plan = new Plan(current, against);
-        plan.text(id, item, retitled ? title : null, rewritten ? body : null);
+        plan.text(
+                id,
+                item,
+                retitled ? title : null,
+                rewritten ? body : null,
+                relabelled ? topic : null);
         plan.write(tokens.token(current.config().forge()));
         return true;
     }
@@ -1061,6 +1070,12 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         private final Map<String, String> titles = new LinkedHashMap<>();
 
+        /** The topic labels each item is to carry, its other labels kept as GitHub holds them. */
+        private final Map<String, List<String>> topics = new LinkedHashMap<>();
+
+        /** The items whose labels GitHub answered without the topic labels sent. */
+        private final List<StoreException.LabelsNotKept> notKept = new ArrayList<>();
+
         private @Nullable Stage stage;
 
         /**
@@ -1110,6 +1125,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                             : !item.open();
             if (changes) {
                 items.putIfAbsent(id, item);
+                targets.add(id);
                 openings.put(id, new ProjectWrites.Opening(!closed, notPlanned));
             } else {
                 openings.remove(id);
@@ -1131,6 +1147,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             final String option = IssuePriority.option(id, priority);
             if (!option.equals(item.fields().get(FieldNames.PRIORITY))) {
                 items.putIfAbsent(id, item);
+                targets.add(id);
                 priorities.put(id, Objects.requireNonNull(priority));
             }
         }
@@ -1267,6 +1284,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     && openings.isEmpty()
                     && bodies.isEmpty()
                     && titles.isEmpty()
+                    && topics.isEmpty()
                     && links.isEmpty()
                     && stage == null
                     && closings.isEmpty();
@@ -1299,12 +1317,13 @@ public final class FieldsBoardWriter implements BoardWriter {
             bodies.put(id, body);
         }
 
-        /** Sets a title, a body or both, written in one update. */
+        /** Sets a title, a body, the topic labels or several of them, written in one update. */
         void text(
                 final String id,
                 final ItemView item,
                 final @Nullable String title,
-                final @Nullable String body) {
+                final @Nullable String body,
+                final @Nullable List<String> topic) {
             items.putIfAbsent(id, item);
             targets.add(id);
             if (title != null) {
@@ -1312,6 +1331,9 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
             if (body != null) {
                 bodies.put(id, body);
+            }
+            if (topic != null) {
+                topics.put(id, topic);
             }
         }
 
@@ -1455,15 +1477,19 @@ public final class FieldsBoardWriter implements BoardWriter {
             } catch (final RuntimeException e) {
                 throw refusals.refusal(own, e, token);
             }
+            final Map<String, List<String>> labels = labels();
             for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
                 final String id = entry.getKey();
                 final String title = titles.get(id);
                 final String body = bodies.get(id);
-                if (title == null && body == null && !issueFields.containsKey(id)) {
+                if (title == null
+                        && body == null
+                        && !issueFields.containsKey(id)
+                        && !labels.containsKey(id)) {
                     continue;
                 }
                 final ItemView item = entry.getValue();
-                update(token, id, item, title, body, null, written);
+                update(token, id, item, title, body, null, labels.get(id), written);
             }
             if (toComment != null) {
                 // Before the figures, so they are never added without the base they were added to.
@@ -1536,7 +1562,15 @@ public final class FieldsBoardWriter implements BoardWriter {
             for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
                 final ProjectWrites.Opening opening = openings.get(entry.getKey());
                 if (opening != null) {
-                    update(token, entry.getKey(), entry.getValue(), null, null, opening, written);
+                    update(
+                            token,
+                            entry.getKey(),
+                            entry.getValue(),
+                            null,
+                            null,
+                            opening,
+                            null,
+                            written);
                 }
             }
             final String owner = current.config().project().owner();
@@ -1568,6 +1602,33 @@ public final class FieldsBoardWriter implements BoardWriter {
                 }
                 written.add(item.repository());
             }
+            if (!notKept.isEmpty()) {
+                // Everything else stands; the labels alone were left out.
+                throw notKept.get(0);
+            }
+        }
+
+        /**
+         * Every label each item to relabel is to carry: the labels GitHub held right before the
+         * write but the topic labels, then the topic labels asked. Refused, before any write, for
+         * an item whose labels run past the read's page, since a write of them would drop the rest.
+         */
+        private Map<String, List<String>> labels() {
+            final Map<String, List<String>> labels = new LinkedHashMap<>();
+            topics.forEach(
+                    (id, topic) -> {
+                        final ItemView item = Objects.requireNonNull(items.get(id));
+                        final GitHubGraphQl.BoardIssue read = reads.get(item.issueId());
+                        if (read == null) {
+                            throw new IllegalStateException("An item relabelled was not read");
+                        }
+                        if (Boolean.TRUE.equals(read.labelsPage().hasNextPage())) {
+                            throw new StoreException.NotSavable(
+                                    id, "it carries more labels than one read gives");
+                        }
+                        labels.put(id, TopicLabels.after(read.labels(), topic));
+                    });
+            return labels;
         }
 
         /**
@@ -1621,7 +1682,11 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
         }
 
-        /** Writes an issue's title, text or open state, once more after a passing failure. */
+        /**
+         * Writes an issue's title, text, open state or labels, once more after a passing failure;
+         * labels GitHub answered other than every label sent, the person's own included, in any
+         * case and order, are kept as not kept.
+         */
         private void update(
                 final String token,
                 final String id,
@@ -1629,30 +1694,36 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final @Nullable String title,
                 final @Nullable String body,
                 final ProjectWrites.@Nullable Opening opening,
+                final @Nullable List<String> labels,
                 final Set<String> written) {
+            final List<String> answered;
             try {
-                pace.again(
-                        (opening == null ? "the text of " : "the open state of ")
-                                + item.repository()
-                                + "#"
-                                + item.number(),
-                        () -> {
-                            github.updateIssue(
-                                    token,
-                                    current.config().project().owner(),
-                                    item.repository(),
-                                    item.number(),
-                                    title,
-                                    body,
-                                    opening,
-                                    opening == null ? issueFields.get(id) : null);
-                            return null;
-                        });
+                answered =
+                        pace.again(
+                                (opening == null ? "the text of " : "the open state of ")
+                                        + item.repository()
+                                        + "#"
+                                        + item.number(),
+                                () -> {
+                                    return github.updateIssue(
+                                            token,
+                                            current.config().project().owner(),
+                                            item.repository(),
+                                            item.number(),
+                                            title,
+                                            body,
+                                            opening,
+                                            opening == null ? issueFields.get(id) : null,
+                                            labels);
+                                });
             } catch (final RuntimeException e) {
                 // GitHub's words may repeat the title or body sent, so a refusal is fixed.
                 throw refusedCall(e, id, item.repository(), written, token);
             }
             written.add(item.repository());
+            if (labels != null && !TopicLabels.same(answered, labels)) {
+                notKept.add(new StoreException.LabelsNotKept(item.repository(), id));
+            }
         }
 
         private void change(final String token, final String owner, final Link link) {

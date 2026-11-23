@@ -24,6 +24,21 @@ void main() {
     expect((story['issues'] as List).map((dynamic issue) => (issue as Map)['id']), ['I1', 'B900']);
   });
 
+  // Harm: a story whose issues were never reported reads as a known empty list.
+  test('a mock story without an issue list reads its list as unreported, never as empty', () async {
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final data = smallBoard();
+    (data['stories'] as List).first.remove('issues');
+    source.boards['demo'] = data;
+    final list = await source.listStoryIssues('demo', 'S1');
+    expect(list.supplied, isFalse);
+    expect(list.issues, isEmpty);
+    final listed = await source.listStoryIssues('demo', 'S2');
+    expect(listed.supplied, isTrue);
+    expect(listed.issues, isNotEmpty);
+  });
+
   // Harm: an unchanged list advances the revision and emits a misleading change event.
   test('setting the same mock story list keeps the revision and emits no event', () async {
     final source = MockPlanningSource();
@@ -318,4 +333,47 @@ void main() {
     expect(client.providers.single.source, same(source));
     expect(client.providers.single.projects, ['demo']);
   });
+
+  // Harm: the window's planning tests rehearse a directory choice the mock neither keeps nor refuses as the planner.
+  test(
+    'the mock keeps a local project\'s directory, refuses one it is told to, and offers none to GitHub\'s',
+    () async {
+      final source = MockPlanningSource();
+      addTearDown(source.end);
+      source.boards['demo'] = {
+        ...smallBoard(),
+        'tracker': {'kind': 'local', 'items': '/home/mock/planning', 'default': source.defaultItemsDirectory},
+      };
+      source.refusedDirectories['/home/mock/gone'] = 'The directory does not exist.';
+
+      final other = PlanningTracker.local('/home/mock/other', source.defaultItemsDirectory);
+      expect(await source.setItemsDirectory('demo', '/home/mock/other', const {}), other);
+      expect((await source.planningWorkflow('demo')).tracker, other);
+      expect(other.awayFromDefault, isTrue);
+      expect(
+        (await source.setItemsDirectory('demo', null, const {})).awayFromDefault,
+        isFalse,
+        reason: 'null goes back to the default',
+      );
+      await source.setItemsDirectory('demo', '/home/mock/other', const {});
+      final gone = await source
+          .setItemsDirectory('demo', '/home/mock/gone', const {})
+          .then<Object?>((_) => null, onError: (Object error) => error);
+      expect(ItemsDirectoryHeader.refusedOf(gone as PlanningRefusal?), (
+        directory: '/home/mock/gone',
+        words: 'The directory does not exist.',
+      ));
+      expect(
+        (await source.planningWorkflow('demo')).tracker?.items,
+        '/home/mock/other',
+        reason: 'nothing kept on a refusal',
+      );
+
+      source.boards['other'] = smallBoard()..['tracker'] = {'kind': 'github'};
+      final github = await source
+          .setItemsDirectory('other', '/home/mock/other', const {})
+          .then<Object?>((_) => null, onError: (Object error) => error);
+      expect(planningUnsupported(github!), isTrue, reason: 'not offered for GitHub');
+    },
+  );
 }

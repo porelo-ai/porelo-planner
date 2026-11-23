@@ -80,43 +80,72 @@ public final class Projects {
             if (known != null && known.source().equals(source)) {
                 return;
             }
-            synchronized (this) {
-                if (known != null) {
-                    projects.remove(project);
-                    known.store().retire();
-                    records.forget(project);
-                    retired.forEach(listener -> listener.accept(project));
-                }
-            }
-            final PlanningStore store =
-                    new LoggedStore(
-                            project,
-                            Objects.requireNonNull(
-                                    opener.open(project, repository, branch), "store"));
-            final WorkRun.Record record;
-            try {
-                record = records.open(project, repository, branch);
-                record.locked(session -> session.read());
-            } catch (final RuntimeException | Error e) {
-                // The store is kept nowhere, so it is retired here or never.
-                store.retire();
-                throw e;
-            }
-            projects.put(
-                    project,
-                    new Entry(
-                            source,
-                            store,
-                            new WorkRun(
-                                    store,
-                                    record,
-                                    java.time.Clock.systemUTC(),
-                                    why ->
-                                            LOG.info(
-                                                    "No next step in project {}: {}",
-                                                    LogText.of(project),
-                                                    LogText.of(why)))));
+            replace(project, source, known);
         }
+    }
+
+    /**
+     * Opens a known project's store anew from the same source, after a change the store reads only
+     * when it is opened, such as the directory a local project's items are kept in; the change is
+     * made under the project's lock, so no call opens the store meanwhile. A failure after the
+     * change leaves the project unknown, as a project given anew does.
+     *
+     * @param project the project's name, already checked
+     * @param change the change, made before the old store is retired; a change that fails leaves
+     *     the project as it was
+     * @throws Refusal {@code NoSuchProject} when the planner was not given it
+     */
+    public void reopen(final String project, final Runnable change) {
+        synchronized (locks.computeIfAbsent(project, any -> new Object())) {
+            final Entry known = projects.get(project);
+            if (known == null) {
+                store(project);
+                throw new IllegalStateException("The project was retired");
+            }
+            change.run();
+            replace(project, known.source(), known);
+        }
+    }
+
+    /** Retires the project's store, if any, and opens it from the source; held under its lock. */
+    private void replace(final String project, final Source source, final @Nullable Entry known) {
+        synchronized (this) {
+            if (known != null) {
+                projects.remove(project);
+                known.store().retire();
+                records.forget(project);
+                retired.forEach(listener -> listener.accept(project));
+            }
+        }
+        final PlanningStore store =
+                new LoggedStore(
+                        project,
+                        Objects.requireNonNull(
+                                opener.open(project, source.repository(), source.branch()),
+                                "store"));
+        final WorkRun.Record record;
+        try {
+            record = records.open(project, source.repository(), source.branch());
+            record.locked(session -> session.read());
+        } catch (final RuntimeException | Error e) {
+            // The store is kept nowhere, so it is retired here or never.
+            store.retire();
+            throw e;
+        }
+        projects.put(
+                project,
+                new Entry(
+                        source,
+                        store,
+                        new WorkRun(
+                                store,
+                                record,
+                                java.time.Clock.systemUTC(),
+                                why ->
+                                        LOG.info(
+                                                "No next step in project {}: {}",
+                                                LogText.of(project),
+                                                LogText.of(why)))));
     }
 
     /** Forgets every project, retiring its store; the mock mode's reset. */

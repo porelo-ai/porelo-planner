@@ -405,6 +405,32 @@ class ProjectFileTest {
             """;
 
     @Test
+    void aTrackedProjectWhoseKeyIsNoFolderIsRefusedAtOpeningAndAtEveryReadNamingTheKey()
+            throws Exception {
+        // Harm: a tracked project opened with a folder Porelo never makes, so its discussions read
+        // nothing; the planner refuses the project and names the key to set right.
+        final String broken = TRACKED.replace("frontend:", "Core:");
+        assertThatThrownBy(() -> ProjectFile.read(tracked(broken), HTTPS_OWN, null, 10))
+                .as("opened with a key that is no folder name")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("porelo-project")
+                .hasMessageContaining("project.yml repositories.Core");
+
+        final Files remote = tracked(TRACKED);
+        final org.fuin.porelo.planner.store.TrackedProject first =
+                java.util.Objects.requireNonNull(
+                        ProjectFile.read(remote, HTTPS_OWN, null, 10).tracked());
+        final ProjectFile.Again again =
+                new ProjectFile.Again(remote, () -> () -> {}, HTTPS_OWN, null, 10, first);
+        remote.commit = "c2";
+        remote.files.put("porelo-project@c2:project.yml", broken);
+        assertThatThrownBy(again::current)
+                .as("the opened project's read once its head names such a key")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("project.yml repositories.Core");
+    }
+
+    @Test
     void aTrackedProjectsFilesAreReadAgainOnlyWhenTheOwnHeadMoved() throws Exception {
         // Harm: a workflow changed in the own repository never seen until the project is opened
         // anew, or the files fetched on every look at the board.

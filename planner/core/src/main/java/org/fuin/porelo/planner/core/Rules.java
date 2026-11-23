@@ -6,6 +6,7 @@ import org.fuin.porelo.planner.store.Dependencies;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.UnlistedIssue;
@@ -104,6 +105,21 @@ public final class Rules {
         }
         final Issue current = issue(dependencies.board(), parent);
         return own.withWorkerAndRisk(current.worker(), current.risk());
+    }
+
+    /**
+     * Answers the recheck of a worker change: {@link #worker} on the issue and its sub-issues as
+     * the store reads them now.
+     *
+     * @param issue the issue's id
+     * @param worker the worker it is to have
+     * @return the recheck the store runs before it writes the change
+     */
+    public static Recheck workerRecheck(final String issue, final Worker worker) {
+        return new Recheck(
+                java.util.Set.of(Recheck.Need.STORY_ISSUES),
+                java.util.Set.of(issue),
+                dependencies -> worker(dependencies, issue, worker));
     }
 
     /** Checks a worker change, including the live states of the issue and its sub-issues. */

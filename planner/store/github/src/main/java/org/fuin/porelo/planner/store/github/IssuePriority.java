@@ -94,6 +94,52 @@ final class IssuePriority {
                                         "the organization has no single-select issue field Priority"));
     }
 
+    /** The planner's priorities GitHub's field can hold, the highest first: it has no Lowest. */
+    private static final List<String> HOLDABLE = List.of("Highest", "High", "Medium", "Low");
+
+    /**
+     * The priorities the organization's issue field Priority holds, the highest first: those of
+     * Highest, High, Medium and Low whose option the field offers.
+     *
+     * @param fields the organization's issue fields
+     * @return the priorities; none when the organization has no single-select field Priority
+     */
+    static List<String> offered(final List<IssueField> fields) {
+        final IssueField field =
+                fields.stream()
+                        .filter(
+                                each ->
+                                        FieldNames.PRIORITY.equals(each.name())
+                                                && each.dataType()
+                                                        == IssueField.DataTypeEnum.SINGLE_SELECT
+                                                && each.id() != null)
+                        .findFirst()
+                        .orElse(null);
+        if (field == null || field.options() == null) {
+            return List.of();
+        }
+        final List<String> offered =
+                field.options().stream()
+                        .map(option -> option.name())
+                        .filter(Objects::nonNull)
+                        .toList();
+        return HOLDABLE.stream()
+                .filter(priority -> offered.contains(option("", priority)))
+                .toList();
+    }
+
+    /**
+     * The board's fault when the organization's issue fields could not be read, in fixed words.
+     *
+     * @param cause what kept them from being read, in fixed words
+     * @return the fault
+     */
+    static String unread(final String cause) {
+        return "The organization's issue field Priority could not be read ("
+                + cause
+                + "), so no story's priority is offered to set";
+    }
+
     /** Refuses an option the organization's field does not offer. */
     static void accepts(final String id, final IssueField field, final String option) {
         if (field.options() == null

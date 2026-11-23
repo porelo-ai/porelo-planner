@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.core.Workers;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -239,6 +240,11 @@ public final class WorkRequests {
      * @param worker who works it
      * @param seen the versions the person saw, or null when the body names none
      * @param task the Porelo task that proposed it, or null
+     * @param priority its priority, or null
+     * @param story the story it is hung into, or null
+     * @param state its initial state, or null
+     * @param confirm whether the warnings of the move to state are confirmed
+     * @param labels its topic labels, in the order of {@link TopicLabels#NAMES}; none when left out
      */
     public record IssueRequest(
             @Nullable String repository,
@@ -251,7 +257,8 @@ public final class WorkRequests {
             @Nullable String priority,
             @Nullable String story,
             @Nullable String state,
-            boolean confirm) {}
+            boolean confirm,
+            List<String> labels) {}
 
     private static final Set<String> ISSUE_MEMBERS =
             Set.of(
@@ -265,7 +272,8 @@ public final class WorkRequests {
                     "priority",
                     "story",
                     "state",
-                    "confirm");
+                    "confirm",
+                    "labels");
 
     /**
      * The idea a discussion wrote, as the window hands it in.
@@ -559,19 +567,23 @@ public final class WorkRequests {
 
     private static final Set<String> PRIORITY_MEMBERS = Set.of("priority", "seen");
 
+    /** The most versions one write's {@code seen} may name, as the description bounds it. */
+    static final int MOST_SEEN = 2000;
+
     /** An item's version as the description gives it. */
     private static final java.util.regex.Pattern VERSION =
             java.util.regex.Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
 
     /**
-     * Reads the versions a person saw: one JSON object whose every member is named by an issue's or
-     * a story's id and holds a version; an empty object is a write without targets.
+     * Reads the versions a person saw: one JSON object of at most {@value #MOST_SEEN} members, each
+     * named by an issue's or a story's id and holding a version; an empty object is a write without
+     * targets.
      *
      * @param node the member, or null when it is missing
-     * @return the versions, or null for a member that is none
+     * @return the versions, or null for a member that is none or names too many
      */
     static @Nullable Basis seen(final @Nullable JsonNode node) {
-        if (node == null || !node.isObject()) {
+        if (node == null || !node.isObject() || node.size() > MOST_SEEN) {
             return null;
         }
         final Map<String, Version> items = new java.util.LinkedHashMap<>();
@@ -588,13 +600,14 @@ public final class WorkRequests {
     }
 
     /**
-     * Reads the versions a person saw from a body bound as a map.
+     * Reads the versions a person saw from a body bound as a map, of at most {@value #MOST_SEEN}
+     * entries.
      *
      * @param seen the member, or null when it is missing
-     * @return the versions, or null for a member that is none
+     * @return the versions, or null for a member that is none or names too many
      */
     static @Nullable Basis seen(final @Nullable Map<String, String> seen) {
-        if (seen == null) {
+        if (seen == null || seen.size() > MOST_SEEN) {
             return null;
         }
         final Map<String, Version> items = new java.util.LinkedHashMap<>();
@@ -664,13 +677,38 @@ public final class WorkRequests {
                 member(body, "priority"),
                 member(body, "story"),
                 member(body, "state"),
-                body.has("confirm") && body.get("confirm").asBoolean());
+                body.has("confirm") && body.get("confirm").asBoolean(),
+                newLabels(body));
+    }
+
+    /**
+     * A new issue's topic labels: an array of the topic labels, each once; a refusal never repeats
+     * what was sent.
+     */
+    private static List<String> newLabels(final JsonNode body) {
+        if (!body.has("labels")) {
+            return List.of();
+        }
+        final JsonNode value = body.get("labels");
+        final List<String> labels = new ArrayList<>();
+        boolean texts = value.isArray();
+        if (texts) {
+            for (final JsonNode label : value) {
+                texts &= label.isString();
+                labels.add(label.isString() ? label.asString() : "");
+            }
+        }
+        if (!texts || TopicLabels.refused(labels) != null) {
+            throw NewIssues.refused("labels", "The labels must be topic labels, each named once.");
+        }
+        return TopicLabels.topic(labels);
     }
 
     private static Basis seenOrIssueRefused(final JsonNode body) {
         final Basis seen = seen(body.get("seen"));
         if (seen == null) {
-            throw NewIssues.refused("seen", "The member seen holds no versions by item id.");
+            throw NewIssues.refused(
+                    "seen", "The member seen holds no versions by item id, or more than 2000.");
         }
         return seen;
     }

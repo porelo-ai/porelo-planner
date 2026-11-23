@@ -45,5 +45,12 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId>
         </dependency>
+        <dependency>
+            <!-- A discussion's brief is read from the board this store gives. -->
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

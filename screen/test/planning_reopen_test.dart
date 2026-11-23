@@ -17,6 +17,7 @@ class _ReplyOnlySource extends FakePlanningSource {
     bool confirm = false,
   }) async {
     saves.add((project, moves, board['revision'] as String));
+    seens.add(seen);
     storiesFailure = const PlanningRefusal('Unavailable');
     return PlanningMoveResult.from({'revision': 'r2', 'moved': <String>[]});
   }

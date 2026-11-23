@@ -109,7 +109,8 @@ class GitHubAddsHttpTest {
                 final String title,
                 final String body,
                 final @Nullable String type,
-                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues,
+                final List<String> labels) {
             final int number = made.size() + 1;
             made.add(repository + "#" + number);
             return new Created(
@@ -222,7 +223,7 @@ class GitHubAddsHttpTest {
         }
 
         @Override
-        public void updateIssue(
+        public List<String> updateIssue(
                 final String token,
                 final String owner,
                 final String repository,
@@ -230,7 +231,8 @@ class GitHubAddsHttpTest {
                 final @Nullable String title,
                 final @Nullable String body,
                 final @Nullable Opening opening,
-                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues,
+                final @Nullable List<String> labels) {
             throw new AssertionError("a new item changes no issue");
         }
 

@@ -129,6 +129,15 @@ class PlanningIssueView extends StatelessWidget {
                 ],
               ),
             ),
+            ?planningLabels(issue.id, issue.labels),
+            PlanningLabelsEdit(
+              item: issue.id,
+              labels: issue.labels,
+              unavailable: detail.labelsSaving
+                  ? 'waiting for the planner'
+                  : board.labelsUnavailable(issue.id, story: false),
+              onSave: (labels) => unawaited(detail.setLabels(issue.id, labels, story: false)),
+            ),
             PlanningWebLink(link: issue.link, label: 'Open issue', openLink: openLink),
             if (planningShown(reply.revision, multiline: false).trim() case final revision when revision.isNotEmpty)
               _revision(context, revision),
@@ -138,6 +147,12 @@ class PlanningIssueView extends StatelessWidget {
           Text(
             problem,
             key: const Key('planning-worker-problem'),
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+        if (detail.labelsProblem case final problem?)
+          Text(
+            problem,
+            key: const Key('planning-labels-problem'),
             style: TextStyle(color: theme.colorScheme.error),
           ),
         const Divider(),

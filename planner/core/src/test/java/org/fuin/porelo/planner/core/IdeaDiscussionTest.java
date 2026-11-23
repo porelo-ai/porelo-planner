@@ -64,6 +64,17 @@ class IdeaDiscussionTest {
                 .isSubstringOf(offer.prompt());
     }
 
+    @Test
+    void theIdeaFormatTakesOnlyRepositoryNames() {
+        // Harm: a name with a quote breaks the schema the agent is given, and one holding the
+        // placeholder is put in place of the names a second time.
+        for (final String name : new String[] {"a\"b", "[\"{repositories}\"]", "{repositories}"}) {
+            assertThatThrownBy(() -> IdeaDiscussion.format(List.of("porelo", name)))
+                    .as("the name %s", name)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     /** A project whose folders are not its repositories' names, as Porelo places them. */
     private static Board namedApart() {
         final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);

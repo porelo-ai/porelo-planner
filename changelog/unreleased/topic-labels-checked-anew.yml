@@ -1,0 +1,2 @@
+title: A topic label carried in another case counts as the topic label, a write of labels is saved only when GitHub keeps every label sent, and a repository's Labels correction reads that repository's labels anew for its preview and its confirm.
+type: changed

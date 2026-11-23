@@ -1,5 +1,8 @@
 {
   "revision" : "mock@1",
+  "tracker" : {
+    "kind" : "github"
+  },
   "states" : [ {
     "name" : "New",
     "kind" : "WAITING",

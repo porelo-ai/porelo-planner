@@ -61,6 +61,8 @@ import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
 import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
 import org.fuin.porelo.planner.store.github.RepositoryIssues;
+import org.fuin.porelo.planner.store.github.RepositoryLabels;
+import org.fuin.porelo.planner.store.local.ItemsDirectories;
 import org.fuin.porelo.planner.store.local.LocalDirectoryStores;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -235,7 +237,8 @@ public class StoreConfiguration {
                                 limits)
                         .keepingCopies(() -> boardCopies(environment, limits))
                         .lookingForChanges(
-                                GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));
+                                GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl))
+                        .keepingLabels(RepositoryLabels.Forge.over(rest));
         return TrackedStores.byKind(
                 Map.of(
                         GitHubStoreOpener.KIND,
@@ -244,7 +247,8 @@ public class StoreConfiguration {
                         new LocalDirectoryStores(
                                 PrivateFiles.of(environment, limits),
                                 environment,
-                                Clock.systemUTC())));
+                                Clock.systemUTC(),
+                                itemsDirectories(environment, limits))));
     }
 
     /**
@@ -357,6 +361,30 @@ public class StoreConfiguration {
                 return running;
             }
         };
+    }
+
+    /**
+     * The directories the person chose for local projects' items, kept in the planner's state
+     * directory; nothing is made or read until a project asks.
+     *
+     * @param limits the factors from the command line
+     * @return the choices
+     */
+    @Bean
+    public ItemsDirectories itemsDirectories(final ObjectProvider<LimitFactors> limits) {
+        return itemsDirectories(System.getenv(), limits.getIfAvailable(() -> LimitFactors.DEFAULT));
+    }
+
+    /**
+     * The directories the person chose, kept under the environment's state directory.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the choices
+     */
+    static ItemsDirectories itemsDirectories(
+            final Map<String, String> environment, final LimitFactors limits) {
+        return new ItemsDirectories(PrivateFiles.of(environment, limits), environment);
     }
 
     /**

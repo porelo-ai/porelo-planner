@@ -292,7 +292,7 @@ public final class Edits {
                         "A part must have 1 to " + MOST_PART + " characters and not be blank.");
             }
         }
-        return new TextEdit(edit.kind(), title, edit.written(), edit.removed());
+        return new TextEdit(edit.kind(), title, edit.written(), edit.removed(), edit.labels());
     }
 
     /**

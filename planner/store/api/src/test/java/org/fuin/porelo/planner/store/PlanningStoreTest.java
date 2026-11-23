@@ -92,7 +92,8 @@ class PlanningStoreTest {
                                                 Map.of(),
                                                 Set.of())),
                         () -> STORE.comment("XY03", "A comment."),
-                        () -> STORE.addUnlistedIssue(BOARD.revision(), "porelo-lib#7"))) {
+                        () -> STORE.addUnlistedIssue(BOARD.revision(), "porelo-lib#7"),
+                        () -> STORE.correctLabels("porelo-lib", List.of()))) {
             assertThatThrownBy(edit::run)
                     .as("an edit the store does not offer")
                     .isInstanceOf(UnsupportedOperationException.class)
@@ -105,5 +106,12 @@ class PlanningStoreTest {
         // Harm: a store without the add answered as if the issue were no longer offered, so the
         // window reloads forever instead of hiding a button the store cannot serve.
         assertThat(STORE.addsUnlistedIssues()).as("a store adds none unless it says so").isFalse();
+    }
+
+    @Test
+    void aStoreKeepsNoRepositorysLabelsUnlessItSaysSo() {
+        // Harm: a store with no labels was asked to correct them, so the window offered a
+        // correction refused at every click.
+        assertThat(STORE.keepsRepositoryLabels()).as("labels kept").isFalse();
     }
 }

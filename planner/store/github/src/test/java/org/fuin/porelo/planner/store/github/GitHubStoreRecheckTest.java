@@ -11,13 +11,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.core.Rules;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.Test;
@@ -227,6 +231,145 @@ class GitHubStoreRecheckTest {
                         () -> store.save(Basis.none(), moved(), blockersClosed(new ArrayList<>())))
                 .as("the move whose blocker is still open")
                 .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(saves.saved).as("the saves written").isEmpty();
+    }
+
+    /** Backlog is the working state of one work, so no agent's issue may stand in it unstarted. */
+    private static final Work BUILDING =
+            new Work(
+                    Map.of(
+                            "Backlog",
+                            new WorkRule(
+                                    List.of("Idea"),
+                                    "Finished",
+                                    null,
+                                    null,
+                                    WorkRule.Per.STORY,
+                                    List.of("UNATTENDED"),
+                                    "Build {story}",
+                                    Map.of("codex", "gpt"))),
+                    List.of());
+
+    /**
+     * The board at a revision: PL1, a person's issue, with its sub-issue PL1.1 in the state given;
+     * the items keyed by the board's ids.
+     */
+    private static Snapshot parentAndSub(final String revision, final String subState) {
+        final ItemView parent = item("one", 1, true, List.of());
+        final ItemView sub = item("four", 4, true, List.of());
+        final Map<String, ItemView> items = new LinkedHashMap<>();
+        items.put(
+                "PL1",
+                new ItemView(
+                        parent.itemId(),
+                        parent.issueId(),
+                        parent.repository(),
+                        parent.number(),
+                        parent.title(),
+                        parent.body(),
+                        true,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        null,
+                        List.of(sub.issueId()),
+                        List.of(),
+                        parent.link(),
+                        Instant.EPOCH,
+                        false));
+        items.put(
+                "PL1.1",
+                new ItemView(
+                        sub.itemId(),
+                        sub.issueId(),
+                        sub.repository(),
+                        sub.number(),
+                        sub.title(),
+                        sub.body(),
+                        true,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        parent.issueId(),
+                        List.of(),
+                        List.of(),
+                        sub.link(),
+                        Instant.EPOCH,
+                        false));
+        final List<Issue> issues =
+                List.of(
+                        new Issue(
+                                        "PL1",
+                                        "example-project",
+                                        "PL1",
+                                        "Idea",
+                                        "S",
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "# PL1")
+                                .withWorkerAndRisk(Worker.MANUAL, Risk.ORDINARY),
+                        new Issue(
+                                        "PL1.1",
+                                        "example-project",
+                                        "PL1.1",
+                                        subState,
+                                        "S",
+                                        List.of(),
+                                        "PL1",
+                                        null,
+                                        "# PL4")
+                                .withWorkerAndRisk(Worker.MANUAL, Risk.ORDINARY));
+        return new Snapshot(
+                new Board(
+                        new Revision(revision),
+                        WORKFLOW,
+                        List.of(),
+                        issues,
+                        BUILDING,
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("example-project"))),
+                items,
+                CONFIG);
+    }
+
+    @Test
+    void aWorkerHandedToAnAgentWhileASubIssueIsLiveInAWorkingStateIsRefused() {
+        // Harm: an agent's issue whose sub-issue another client moved into a working state since
+        // the board was read waits there forever, as no task entered that state.
+        final Reads reads =
+                new Reads() {
+                    @Override
+                    public Snapshot read(final ProjectConfig config) {
+                        return parentAndSub("r1", "Idea");
+                    }
+
+                    @Override
+                    public Snapshot reread(
+                            final ProjectConfig config,
+                            final Snapshot held,
+                            final Touched.Ids touched) {
+                        byId.add(touched.issues());
+                        return touched.issues().contains("I_four")
+                                ? parentAndSub(held.board().revision().value() + "+", "Backlog")
+                                : held;
+                    }
+                };
+        final Saves saves = new Saves();
+        final GitHubStore store = store(reads, saves);
+        assertThat(store.board().issue("PL1.1").orElseThrow().state())
+                .as("the sub-issue as the caller read it")
+                .isEqualTo("Idea");
+        final Writes writes = new Writes(Map.of(), Map.of(), Map.of("PL1", Worker.AGENT));
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        Basis.none(),
+                                        writes,
+                                        Rules.workerRecheck("PL1", Worker.AGENT)))
+                .as("the worker change over a sub-issue now in work")
+                .hasMessageContaining("PL1.1 stands in Backlog");
         assertThat(saves.saved).as("the saves written").isEmpty();
     }
 }

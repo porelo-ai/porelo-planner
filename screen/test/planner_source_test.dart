@@ -16,6 +16,7 @@ const _seen = {'ST1': servedVersion};
 
 Map<String, dynamic> _workflow(String revision) => {
   'revision': revision,
+  'tracker': {'kind': 'github'},
   'states': [
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Building', 'kind': 'WORKING'},
@@ -847,6 +848,174 @@ void main() {
     }
   });
 
+  // Harm: a correction sent with another path or body than the planner reads is never saved, one saved without the
+  // versions and the digest its preview showed writes over what the person did not see, and a preview the window
+  // cannot read lets a correction go out unasked.
+  test('a correction posts exactly its members, its save the versions and digest of its preview', () async {
+    final (planner, source) = await _started();
+    const correction = PlanningCorrection(story: 'ST1', warning: 'NoPriority', choice: 'High');
+    final preview = {
+      'revision': 'r1',
+      'digest': _digest,
+      'targets': [
+        {'id': 'ST1', 'version': servedVersion},
+      ],
+      'story': 'ST1',
+      'issue': null,
+      'repository': null,
+      'warning': 'NoPriority',
+      'from': '',
+      'to': 'High',
+      'calls': <Object>[],
+    };
+    planner.routes['POST /projects/demo/corrections/preview'] = () => _Reply(200, preview);
+    final previewed = await source.previewCorrection('demo', correction);
+    expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/corrections/preview']);
+    expect(jsonDecode(planner.calls.last.body), {'story': 'ST1', 'warning': 'NoPriority', 'choice': 'High'});
+    expect(previewed.targets, _seen, reason: 'the targets the save sends back');
+    expect(previewed.to, 'High');
+
+    planner.routes['POST /projects/demo/corrections'] = () => _Reply(200, {'revision': 'r2'});
+    final saved = await source.saveCorrection('demo', correction, previewed.targets, digest: previewed.digest);
+    expect(planner.targets.last, 'POST /projects/demo/corrections');
+    expect(jsonDecode(planner.calls.last.body), {
+      'story': 'ST1',
+      'warning': 'NoPriority',
+      'choice': 'High',
+      'seen': _seen,
+      'digest': _digest,
+    });
+    expect(saved.revision, 'r2');
+
+    planner.routes['POST /projects/demo/corrections/preview'] = () => _Reply(200, {...preview, 'digest': 'short'});
+    expect(
+      (await _refusal(source.previewCorrection('demo', correction))).name,
+      'BadAnswer',
+      reason: 'a preview without a readable digest',
+    );
+    for (final (other, what) in [
+      ({...preview, 'to': 'Low'}, 'another choice'),
+      ({...preview, 'story': 'ST2'}, 'another story'),
+      ({...preview, 'story': null, 'issue': 'ST1'}, 'an issue for a story'),
+      ({...preview, 'warning': 'UnknownPriority'}, 'another warning'),
+    ]) {
+      planner.routes['POST /projects/demo/corrections/preview'] = () => _Reply(200, other);
+      expect(
+        (await _refusal(source.previewCorrection('demo', correction))).name,
+        'BadAnswer',
+        reason: 'a preview of $what than asked',
+      );
+    }
+    final calls = planner.calls.length;
+    expect(
+      (await _refusal(
+        source.previewCorrection('demo', const PlanningCorrection(story: 'ST1', warning: 'NoPriority', choice: 'Hi\n')),
+      )).name,
+      'InvalidName',
+      reason: 'a choice that is no name is never sent',
+    );
+    expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
+  });
+
+  // Harm: a repository's labels written on its forge by calls the person was not shown, a repository correction
+  // sent with a body the planner reads as another, or one bound to versions a repository does not have.
+  test(
+    'a repository correction posts no choice, saves with no versions and is previewed only with its calls',
+    () async {
+      final (planner, source) = await _started();
+      const correction = PlanningCorrection(repository: 'porelo-host', warning: 'TopicLabels');
+      final preview = {
+        'revision': 'r1',
+        'digest': _digest,
+        'targets': <Object>[],
+        'story': null,
+        'issue': null,
+        'repository': 'porelo-host',
+        'warning': 'TopicLabels',
+        'from': '',
+        'to': '',
+        'calls': [
+          {'action': 'Delete', 'label': 'bug', 'color': null, 'description': null},
+          {'action': 'Create', 'label': 'documentation', 'color': '0075ca', 'description': 'Guides'},
+          {'action': 'Update', 'label': 'tests', 'color': 'fbca04', 'description': 'Tests'},
+        ],
+      };
+      planner.routes['POST /projects/demo/corrections/preview'] = () => _Reply(200, preview);
+      final previewed = await source.previewCorrection('demo', correction);
+      expect(jsonDecode(planner.calls.last.body), {'repository': 'porelo-host', 'warning': 'TopicLabels'});
+      expect(
+        [for (final call in previewed.calls) '${call.action} ${call.label} ${call.color}'],
+        ['Delete bug null', 'Create documentation 0075ca', 'Update tests fbca04'],
+        reason: 'every call it would make, in its order',
+      );
+      expect(previewed.targets, isEmpty);
+
+      planner.routes['POST /projects/demo/corrections'] = () => _Reply(200, {'revision': 'r2'});
+      await source.saveCorrection('demo', correction, previewed.targets, digest: previewed.digest);
+      expect(jsonDecode(planner.calls.last.body), {
+        'repository': 'porelo-host',
+        'warning': 'TopicLabels',
+        'seen': <String, Object>{},
+        'digest': _digest,
+      }, reason: 'a repository has no item version, so it sends none');
+
+      for (final (unreadable, why) in [
+        ({...preview, 'calls': null}, 'no calls'),
+        (
+          {
+            ...preview,
+            'calls': [
+              {'action': 'Rename', 'label': 'bug', 'color': null, 'description': null},
+            ],
+          },
+          'a call of an unknown action',
+        ),
+        (
+          {
+            ...preview,
+            'calls': [
+              {'action': 'Create', 'label': 'docs\u202e', 'color': '0075ca', 'description': 'Guides'},
+            ],
+          },
+          'a label that is no name',
+        ),
+        (
+          {
+            ...preview,
+            'calls': [
+              {'action': 'Delete', 'label': 'bug', 'color': '0075ca', 'description': null},
+            ],
+          },
+          'a delete that writes a color',
+        ),
+        (
+          {
+            ...preview,
+            'calls': [
+              for (var at = 0; at <= PlanLabelCall.mostCalls; at++)
+                {'action': 'Delete', 'label': 'l$at', 'color': null, 'description': null},
+            ],
+          },
+          'more calls than any correction makes',
+        ),
+        ({...preview, 'repository': 'porelo-other'}, 'a preview of another repository'),
+      ]) {
+        planner.routes['POST /projects/demo/corrections/preview'] = () => _Reply(200, unreadable);
+        expect((await _refusal(source.previewCorrection('demo', correction))).name, 'BadAnswer', reason: why);
+      }
+
+      final calls = planner.calls.length;
+      expect(
+        (await _refusal(
+          source.previewCorrection('demo', const PlanningCorrection(repository: '/home/x:pw', warning: 'TopicLabels')),
+        )).name,
+        'InvalidName',
+        reason: 'a repository that is no name is never sent',
+      );
+      expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
+    },
+  );
+
   // Harm: a priority sent with another method, path or body than the planner reads is never saved, and one answered
   // without a revision is taken as saved.
   test('a priority puts exactly its members on the story and reads the revision it answers', () async {
@@ -866,6 +1035,37 @@ void main() {
       (await _refusal(source.setPriority('demo', 'ST1', 'Urgent', _seen))).name,
       'PriorityNotAllowed',
       reason: 'a sixth priority is never sent',
+    );
+    expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
+  });
+
+  // Harm: labels written to another item than the one chosen, a story's to an issue of the same reference, or a label
+  // the planner sets for no one sent at all.
+  test('labels put exactly their members on the item\'s text edit, a story\'s on the story\'s', () async {
+    final (planner, source) = await _started();
+    planner.routes['PUT /projects/demo/issues/repo%237/text'] = () => _Reply(200, {'revision': 'r2'});
+    planner.routes['PUT /projects/demo/stories/repo%237/text'] = () => _Reply(200, {'revision': 'r3'});
+    expect(await source.setLabels('demo', 'repo#7', ['tests'], _seen, story: false), 'r2', reason: 'its revision');
+    expect(planner.targets.last, 'PUT /projects/demo/issues/repo%237/text', reason: 'the issue\'s text edit');
+    expect(jsonDecode(planner.calls.last.body), {
+      'labels': ['tests'],
+      'seen': _seen,
+    }, reason: 'only its members');
+    expect(await source.setLabels('demo', 'repo#7', const [], _seen, story: true), 'r3', reason: 'its revision');
+    expect(planner.targets.last, 'PUT /projects/demo/stories/repo%237/text', reason: 'the story\'s text edit');
+    expect(jsonDecode(planner.calls.last.body), {'labels': <String>[], 'seen': _seen}, reason: 'none takes all off');
+    final calls = planner.calls.length;
+    final refused = await _refusal(source.setLabels('demo', 'repo#7', ['tests', 'bug'], _seen, story: false));
+    expect((refused.name, refused.parameters['label']), ('LabelNotAllowed', 'bug'), reason: 'refused by name');
+    expect(
+      (await _refusal(source.setLabels('demo', 'repo#7', ['tests', 'tests'], _seen, story: false))).name,
+      'LabelNotAllowed',
+      reason: 'a label twice is refused too',
+    );
+    expect(
+      (await _refusal(source.setLabels('demo', '../x', ['tests'], _seen, story: false))).name,
+      'InvalidName',
+      reason: 'checked before it is sent',
     );
     expect(planner.calls, hasLength(calls), reason: 'nothing reached the planner');
   });
@@ -3055,6 +3255,195 @@ void main() {
     expect([for (final refusal in refusals) refusal.name], everyElement('InvalidName'));
     expect(refusals[1].parameters, {'story': '..'}, reason: 'the refusal names what it refused');
     expect(planner.calls, isEmpty, reason: 'nothing reaches the planner');
+  });
+
+  group('a local project\'s directory', () {
+    const chosen = '/home/person/planning';
+    const standard = '/home/person/.local/share/porelo-planner/items/demo';
+
+    // Harm: the person's choice of directory not kept, or kept for a write the planner checks against items seen.
+    test('a directory chosen is sent with an empty seen, and the default as null, the tracker read back', () async {
+      final (planner, source) = await _started();
+      planner.routes['PUT /projects/demo/tracker/items'] = () =>
+          _Reply(200, {'kind': 'local', 'items': chosen, 'default': standard});
+
+      final kept = await source.setItemsDirectory('demo', chosen, const {});
+      await source.setItemsDirectory('demo', null, const {});
+
+      expect(kept, const PlanningTracker.local(chosen, standard), reason: 'the tracker the planner answered');
+      final sent = [
+        for (final call in planner.calls)
+          if (call.target == '/projects/demo/tracker/items') '${call.method} ${call.body}',
+      ];
+      expect(sent, [
+        'PUT ${jsonEncode({'directory': chosen, 'seen': <String, String>{}})}',
+        'PUT ${jsonEncode({'directory': null, 'seen': <String, String>{}})}',
+      ]);
+    });
+
+    // Harm: a path outside the planner's rule reaches it, is taken in another form, or hides what it names.
+    test(
+      'a directory outside the planner\'s rule is refused before anything is sent, in the planner\'s words',
+      () async {
+        final (planner, source) = await _started();
+        final refusals = <String, String>{
+          '/${'d' * 4095}': planningDirectoryTooLong,
+          '/${'ä' * 2048}': planningDirectoryTooLong,
+          for (final directory in [
+            '',
+            'planning',
+            '/home/person\nplanning',
+            '/a/../b',
+            '/a/./b',
+            '/a//b',
+            '//a',
+            '/a/',
+            ' /a',
+            '/a ',
+            '/a\u00a0',
+            '/a\u0085b',
+            '/a\u009bb',
+            '/a\u2028b',
+            '/a\u202eb',
+            '/a\u2067b',
+            'C:/a',
+            'C:\\a\\',
+            'C:\\a/b',
+            '\\\\server\\share',
+            '\\\\.\\pipe',
+            '\\\\?\\C:\\a',
+          ])
+            directory: planningDirectoryNotNormal,
+        };
+        for (final MapEntry(key: directory, value: words) in refusals.entries) {
+          final refusal = await _refusal(source.setItemsDirectory('demo', directory, const {}));
+          expect(refusal.name, 'ItemsDirectoryRefused', reason: 'refused: $directory');
+          expect(refusal.description, words, reason: 'the planner\'s words for $directory');
+          expect(refusal.parameters, isNot(contains('directory')), reason: 'a path it cannot take is not named');
+        }
+        for (final directory in ['/', '/${'d' * 4094}', 'C:\\', 'C:\\Users\\person\\Planung ä']) {
+          expect(planningDirectoryFault(directory), isNull, reason: 'taken: $directory');
+        }
+        expect(planner.targets.where((target) => target.contains('tracker')), isEmpty);
+      },
+    );
+
+    // Harm: a long refused directory named shortened, so the person and the folder dialog are sent to another one.
+    test('a refused directory is named whole, however long, and one that is no path is not named', () async {
+      final (planner, source) = await _started();
+      final long = '/home/person/${'d' * 2000}';
+      var named = long;
+      planner.routes['PUT /projects/demo/tracker/items'] = () => _Reply.problem(
+        'ItemsDirectoryRefused',
+        {'project': 'demo', 'directory': named},
+        'The directory does not exist.',
+        400,
+      );
+
+      final whole = await _refusal(source.setItemsDirectory('demo', long, const {}));
+      named = 'elsewhere';
+      final other = await _refusal(source.setItemsDirectory('demo', long, const {}));
+
+      expect(whole.name, 'ItemsDirectoryRefused');
+      expect(whole.parameters['directory'], long, reason: 'kept whole');
+      expect(whole.description, 'The directory does not exist.', reason: 'the planner\'s words');
+      expect(other.parameters, isNot(contains('directory')), reason: 'a parameter that is no path is dropped');
+    });
+
+    // Harm: a board read without knowing where it is kept, so a local project's directory cannot be shown or chosen.
+    test('a workflow or a streamed board without a tracker it can name is refused as no answer', () async {
+      final (planner, source) = await _started();
+      for (final tracker in <Object?>[
+        null,
+        {'kind': 'local'},
+        {'kind': 'local', 'items': 'planning', 'default': standard},
+        {'kind': 'local', 'items': chosen},
+        {'kind': 'local', 'items': chosen, 'default': '$standard/'},
+        {'kind': 'forge'},
+        {'kind': 'git', 'items': '/home/person/planning'},
+      ]) {
+        planner.routes['GET /projects/demo/workflow'] = () =>
+            _Reply(200, {..._workflow(planner.workflowRevision), 'tracker': tracker});
+        expect((await _refusal(source.planningWorkflow('demo'))).name, 'BadAnswer', reason: 'workflow with $tracker');
+      }
+      planner.routes['GET /projects/demo/workflow'] = () => _Reply(200, {
+        ..._workflow(planner.workflowRevision),
+        'tracker': {'kind': 'local', 'items': chosen, 'default': standard},
+      });
+      expect((await source.planningWorkflow('demo')).tracker, const PlanningTracker.local(chosen, standard));
+      planner.routes['GET /projects/demo/workflow'] = () => _Reply(200, {
+        ..._workflow(planner.workflowRevision),
+        'tracker': {'kind': 'git'},
+      });
+      expect((await source.planningWorkflow('demo')).tracker, const PlanningTracker.git());
+
+      final streams = _Streams(planner, first: false);
+      final watched = source.watchStories('demo').first;
+      await _until(() => streams.opened.isNotEmpty, 'the stream');
+      streams.opened.last.add(_event('r1', more: {'tracker': null}));
+      expect((await _refusal(watched)).name, 'BadAnswer', reason: 'a streamed board without a tracker');
+    });
+
+    // Harm: a kept directory gone, told as a failed read the person cannot answer, or answered from the default.
+    test('a stream whose read refuses the kept directory ends the watch with the refusal naming it', () async {
+      final (planner, source) = await _started();
+      final streams = _Streams(planner, first: false);
+      final watched = source.watchStories('demo').first;
+      await _until(() => streams.opened.isNotEmpty, 'the stream');
+      streams.opened.last.add(
+        _load({
+          'state': 'failed',
+          'problem': 'ItemsDirectoryRefused',
+          'failure': 'The directory does not exist.',
+          'parameters': {'project': 'demo', 'directory': chosen},
+        }),
+      );
+      final refusal = await _refusal(watched);
+      expect(refusal.name, 'ItemsDirectoryRefused');
+      expect(ItemsDirectoryHeader.refusedOf(refusal), (
+        directory: chosen,
+        words: 'The directory does not exist.',
+      ), reason: 'the planner\'s phrase, not the description built around it');
+    });
+
+    // Harm: a kept directory moved away after the first board is not told with its directory, or a parameter the
+    // planner streamed outside the rule or past its bound reaches the screen.
+    test('a read refused after the first board is told with its directory in the rule and bounded words', () async {
+      final (planner, source) = await _started(backoff: Duration.zero);
+      final streams = _Streams(planner);
+      final watch = source.watchStories('demo') as PlanningWatch;
+      final revisions = <String>[];
+      final watching = watch.listen((reply) => revisions.add(reply.revision));
+      addTearDown(watching.cancel);
+      await _until(() => revisions.isNotEmpty, 'the first board');
+
+      streams.opened.last.add(
+        _load({
+          'state': 'failed',
+          'problem': 'ItemsDirectoryRefused',
+          'failure': 'The directory does not exist.',
+          'parameters': {'directory': chosen, 'note': 'x' * 5000},
+        }),
+      );
+      await _until(() => watch.readFailed.value != null, 'the failed read told');
+      final told = watch.readFailed.value!;
+      expect(ItemsDirectoryHeader.refusedOf(told), (directory: chosen, words: 'The directory does not exist.'));
+      expect((told.parameters['note'] as String).length, lessThanOrEqualTo(1003), reason: 'bounded');
+
+      streams.send('r2');
+      await _until(() => revisions.length == 2, 'the next board');
+      streams.opened.last.add(
+        _load({
+          'state': 'failed',
+          'problem': 'ItemsDirectoryRefused',
+          'failure': 'x' * 5000,
+          'parameters': {'directory': '/a/\u202e/b'},
+        }),
+      );
+      await _until(() => watch.readFailed.value != null, 'the second failed read told');
+      expect(watch.readFailed.value!.parameters, isNot(contains('directory')), reason: 'outside the rule');
+      expect((watch.readFailed.value!.parameters['failure'] as String).length, lessThanOrEqualTo(1003));
+    });
   });
 }
 

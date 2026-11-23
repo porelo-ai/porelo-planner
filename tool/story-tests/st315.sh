@@ -125,12 +125,15 @@ step_1() {
 }
 
 step_2() {
-    local moves seen
+    local moves digest seen
     moves='{"moves": [{"issue": "AB01", "to": "Estimated"}]}'
     st_api POST "/projects/$PROJECT/moves/preview" "$moves"
     st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    digest=$(jq -r '.digest' <<<"$ST_BODY")
     seen=$(st_seen "$ST_BODY")
-    st_api POST "/projects/$PROJECT/moves" "$(jq -c --argjson s "$seen" '. + {seen: $s}' <<<"$moves")"
+    # A move is saved only with the digest of the preview it was shown as, and the versions that preview names.
+    st_api POST "/projects/$PROJECT/moves" \
+        "$(jq -c --arg d "$digest" --argjson s "$seen" '. + {digest: $d, seen: $s}' <<<"$moves")"
     st_is "the move's status" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     st_is "the issues the move names" '["AB01"]' "$(jq -c '.moved' <<<"$ST_BODY")"
 }
@@ -167,7 +170,7 @@ step_4() {
 }
 
 step_5() {
-    local clones file faults
+    local clones file
     clones=$(st_clones "$ALPHA") || st_no "a clone of $ALPHA" "git clone failed" || return 1
     file=$clones/$ALPHA/issues/AB02-The-Second-Step.md
     # As a person edits it: the head's state replaced by one the workflow does not know.
@@ -177,13 +180,12 @@ step_5() {
         git -C "$clones/$ALPHA" push -q origin main || st_no "the edited head pushed" "git push failed" || return 1
     st_api POST "/projects/$PROJECT/refresh"
     st_is "POST /refresh" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
-    st_api GET "/projects/$PROJECT/workflow"
-    st_is "GET /workflow" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
-    faults=$(jq -r '.faults[]' <<<"$ST_BODY")
-    grep -q -F "$ALPHA: issues/AB02-The-Second-Step.md" <<<"$faults" ||
-        st_no "a fault naming $ALPHA: issues/AB02-The-Second-Step.md" "${faults:-no fault}" || return 1
     st_api GET "/projects/$PROJECT/stories"
     st_is "GET /stories" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    # A state no workflow knows is the issue's own warning, with the move that sets it right, not a board fault.
+    st_is "AB02's warning" StateOutsideWorkflow \
+        "$(jq -r '[.stories[].issues[]?, .issues[]?] | map(select(.id == "AB02")) | first | .warnings[0].kind // "none"' \
+            <<<"$ST_BODY")" || return 1
     st_is "ST1's issues still on the board" '["AB01"]' \
         "$(jq -c '[.stories[] | select(.id == "ST1") | .issues[] | select(.id != "AB02") | .id]' <<<"$ST_BODY")"
 }
@@ -195,7 +197,7 @@ st_step 1 "the repository of the issues has no build of its own" step_1
 st_step 2 "an issue moved between two planning states through the planner is saved" step_2
 st_step 3 "an idea handed in through the planner gets the next free number" step_3
 st_step 4 "a fresh clone holds the move, its stage record, the idea, both index rows and a passing check" step_4
-st_step 5 "a head broken by hand is a fault on the board, and the rest of the board stands" step_5
+st_step 5 "a head broken by hand is warned on its issue, and the rest of the board stands" step_5
 st_skip 6 "porelo-buildtools and every repository build without the story and issue commands" \
     "their own builds show it"
 st_finish

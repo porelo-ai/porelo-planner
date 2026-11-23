@@ -167,8 +167,8 @@ step_2() {
         return 1
     st_is "AB03's warning and its correction" "StateOutsideWorkflow Move" \
         "$(jq -r '.warnings[0] | "\(.kind) \(.correction.kind // "none")"' <<<"$issue")" || return 1
-    jq -e '.warnings[0].correction.states | index("Estimated")' <<<"$issue" >/dev/null ||
-        st_no "Estimated among the states offered for AB03" "$(jq -c '.warnings[0].correction.states' <<<"$issue")"
+    jq -e '.warnings[0].correction.choices | index("Estimated")' <<<"$issue" >/dev/null ||
+        st_no "Estimated among the states offered for AB03" "$(jq -c '.warnings[0].correction.choices' <<<"$issue")"
 }
 
 step_3() {

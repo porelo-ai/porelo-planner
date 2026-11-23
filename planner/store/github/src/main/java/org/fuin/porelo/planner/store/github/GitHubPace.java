@@ -261,6 +261,23 @@ public final class GitHubPace implements Pace {
     }
 
     /**
+     * Wraps the read of the organization's issue fields so a spent rate limit it meets holds every
+     * look, as the other reads do.
+     *
+     * @param fields the read
+     * @return the same read, noting a spent rate limit
+     */
+    public ItemsBoardReader.IssueFields watching(final ItemsBoardReader.IssueFields fields) {
+        return (token, owner) -> {
+            try {
+                return fields.read(token, owner);
+            } catch (final GitHubException e) {
+                throw noted(e);
+            }
+        };
+    }
+
+    /**
      * Wraps the pages of a repository's open issues so a spent rate limit they meet holds every
      * look, and the limit each answer names paces the looks, as the other reads do.
      *

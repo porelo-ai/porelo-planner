@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -87,11 +88,13 @@ public record IdeaDiscussion(
      * The idea format for a project: {@code idea-1.json}, a JSON schema that allows only the
      * project's repositories by name.
      *
-     * @param repositories the names of the project's repositories, each checked as one
+     * @param repositories the names of the project's repositories
      * @return the format
+     * @throws IllegalArgumentException when one is no repository's name
      */
     public static String format(final List<String> repositories) {
-        // Each name was checked as a repository's name, so it needs no escaping in JSON.
+        // A name holds no quote, backslash or brace, so it needs no escaping in JSON.
+        repositories.forEach(Ids::name);
         return TEMPLATE.replace(
                 REPOSITORIES,
                 repositories.stream()

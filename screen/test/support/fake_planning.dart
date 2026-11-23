@@ -2,7 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:porelo_planning/planning_fake.dart'
-    show applyPlanningWorker, mockCheckSeen, mockItemVersion, mockItemVersions, mockVersionedStories;
+    show
+        applyPlanningCorrection,
+        applyPlanningLabels,
+        applyPlanningWorker,
+        mockCheckSeen,
+        mockItemVersion,
+        mockItemVersions,
+        mockVersionedStories,
+        previewPlanningCorrection;
 import 'package:porelo_planning/porelo_planning.dart';
 
 /// A small board: one waiting, one working and one closed state, and two stories with an issue each.
@@ -91,6 +99,7 @@ class FakePlanningSource implements PlanningSource {
     'stories': mockVersionedStories(board),
     'revision': board['revision'],
     'repositories': ?board['repositories'],
+    'repositoryWarnings': ?board['repositoryWarnings'],
     'open': ?board['open'],
   });
 
@@ -174,6 +183,25 @@ class FakePlanningSource implements PlanningSource {
       'stories': <Object?>[],
       'warnings': warnings,
     });
+  }
+
+  /// Every correction save asked of it: the project, the correction, the versions seen and the digest.
+  final List<(String, PlanningCorrection, Map<String, String>, String)> corrections = [];
+
+  @override
+  Future<PlanningCorrectionPreview> previewCorrection(String project, PlanningCorrection correction) async =>
+      PlanningCorrectionPreview.from(previewPlanningCorrection(board, correction.toMap()));
+
+  @override
+  Future<PlanningCorrectionSaved> saveCorrection(
+    String project,
+    PlanningCorrection correction,
+    Map<String, String> seen, {
+    required String digest,
+  }) async {
+    corrections.add((project, correction, seen, digest));
+    replace(applyPlanningCorrection(board, correction.toMap(), seen, digest));
+    return PlanningCorrectionSaved.from({'revision': board['revision']});
   }
 
   @override
@@ -295,6 +323,23 @@ class FakePlanningSource implements PlanningSource {
     return next;
   }
 
+  /// Every labels change asked of it: the project, item, whether it is a story, and the labels.
+  final List<(String, String, bool, List<String>)> labelChanges = [];
+
+  @override
+  Future<String> setLabels(
+    String project,
+    String item,
+    List<String> labels,
+    Map<String, String> seen, {
+    required bool story,
+  }) async {
+    labelChanges.add((project, item, story, labels));
+    final next = applyPlanningLabels(board, item, labels, seen, story: story);
+    if (next['revision'] != board['revision']) replace(next);
+    return next['revision'] as String;
+  }
+
   Never _notServed(String call) => throw PlanningUnsupported('this provider has no $call');
 
   @override
@@ -319,6 +364,10 @@ class FakePlanningSource implements PlanningSource {
   @override
   Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen) async =>
       _notServed('ListIssue');
+
+  @override
+  Future<PlanningTracker> setItemsDirectory(String project, String? directory, Map<String, String> seen) async =>
+      _notServed('SetItemsDirectory');
 
   @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');

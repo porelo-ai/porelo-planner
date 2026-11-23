@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.ProjectRepository;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
@@ -27,6 +28,9 @@ import org.fuin.porelo.planner.store.Workflow;
  *     name
  * @param projectId the GitHub project's node id, which a field value is written to; empty until it
  *     is read
+ * @param priorities the priorities the organization's issue field Priority holds, the highest
+ *     first, which a correction of a story's priority offers; empty until it is read, and when the
+ *     owner has no such field or it could not be read
  */
 public record ProjectConfig(
         URI forge,
@@ -37,7 +41,44 @@ public record ProjectConfig(
         List<ProjectRepository> repositories,
         Map<String, String> fieldIds,
         Map<String, Map<String, String>> optionIds,
-        String projectId) {
+        String projectId,
+        List<String> priorities) {
+
+    /**
+     * Makes the configuration before the organization's issue field Priority is read.
+     *
+     * @param forge the forge's origin
+     * @param project the GitHub project
+     * @param commit the commit the project's files were read from
+     * @param workflow the project's workflow
+     * @param work the project's work rules
+     * @param repositories the project's repositories, its own first, each with its folder
+     * @param fieldIds the GitHub ids of the project's fields, by field name
+     * @param optionIds the GitHub ids of each single-select field's options
+     * @param projectId the GitHub project's node id
+     */
+    public ProjectConfig(
+            final URI forge,
+            final ProjectRef project,
+            final String commit,
+            final Workflow workflow,
+            final Work work,
+            final List<ProjectRepository> repositories,
+            final Map<String, String> fieldIds,
+            final Map<String, Map<String, String>> optionIds,
+            final String projectId) {
+        this(
+                forge,
+                project,
+                commit,
+                workflow,
+                work,
+                repositories,
+                fieldIds,
+                optionIds,
+                projectId,
+                List.of());
+    }
 
     /**
      * Makes the configuration before the project's node id is read.
@@ -63,7 +104,11 @@ public record ProjectConfig(
         this(forge, project, commit, workflow, work, repositories, fieldIds, optionIds, "");
     }
 
-    /** Checks the forge and the names, and copies the lists and maps. */
+    /**
+     * Checks the forge, the names and the priorities, and copies the lists and maps.
+     *
+     * @throws IllegalArgumentException for a priority none of the planner's
+     */
     public ProjectConfig {
         TokenSource.checkedOrigin(forge);
         if (commit.isBlank()) {
@@ -80,6 +125,30 @@ public record ProjectConfig(
                         options.put(
                                 field, Collections.unmodifiableMap(new LinkedHashMap<>(byName))));
         optionIds = Collections.unmodifiableMap(options);
+        priorities = List.copyOf(priorities);
+        if (!Story.PRIORITIES.containsAll(priorities)) {
+            throw new IllegalArgumentException("A priority is none of " + Story.PRIORITIES);
+        }
+    }
+
+    /**
+     * Answers this configuration with the priorities the organization's issue field holds.
+     *
+     * @param held the priorities, the highest first
+     * @return the configuration
+     */
+    public ProjectConfig withPriorities(final List<String> held) {
+        return new ProjectConfig(
+                forge,
+                project,
+                commit,
+                workflow,
+                work,
+                repositories,
+                fieldIds,
+                optionIds,
+                projectId,
+                held);
     }
 
     /**

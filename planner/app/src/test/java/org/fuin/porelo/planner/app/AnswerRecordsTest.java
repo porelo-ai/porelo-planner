@@ -79,7 +79,7 @@ class AnswerRecordsTest {
         for (final Map.Entry<String, Class<?>> answer : answers.entrySet()) {
             final RecordComponent[] components = answer.getValue().getRecordComponents();
             for (int i = 0; i < components.length; i++) {
-                final String field = components[i].getName();
+                final String field = wireName(components[i]);
                 final com.fasterxml.jackson.databind.JsonNode property =
                         property(answer.getKey(), field);
                 if (!required(answer.getKey()).contains(field) || nullable(property)) {
@@ -114,7 +114,7 @@ class AnswerRecordsTest {
                     .as("the fields %s writes with every field set", schema)
                     .isEqualTo(names(components));
             for (int i = 0; i < components.length; i++) {
-                final String field = components[i].getName();
+                final String field = wireName(components[i]);
                 final boolean required = required(schema).contains(field);
                 if ((!required || nullable(property(schema, field)))
                         && !SENT_THOUGH_OPTIONAL.contains(schema + "." + field)) {
@@ -178,7 +178,7 @@ class AnswerRecordsTest {
                 if (!raw.isEnum()) {
                     continue;
                 }
-                final String field = components[i].getName();
+                final String field = wireName(components[i]);
                 final Set<String> written = new TreeSet<>();
                 for (final Object constant : raw.getEnumConstants()) {
                     final Object[] values = values(type);
@@ -356,7 +356,21 @@ class AnswerRecordsTest {
 
     private static Set<String> names(final RecordComponent[] components) {
         final Set<String> names = new TreeSet<>();
-        Arrays.stream(components).forEach(component -> names.add(component.getName()));
+        Arrays.stream(components).forEach(component -> names.add(wireName(component)));
         return names;
+    }
+
+    /**
+     * The name a record's field is written under: its JSON property's, which differs from the
+     * field's own where that is a Java keyword such as {@code default}.
+     */
+    static String wireName(final RecordComponent component) {
+        final com.fasterxml.jackson.annotation.JsonProperty property =
+                component
+                        .getAccessor()
+                        .getAnnotation(com.fasterxml.jackson.annotation.JsonProperty.class);
+        return property == null || property.value().isEmpty()
+                ? component.getName()
+                : property.value();
     }
 }

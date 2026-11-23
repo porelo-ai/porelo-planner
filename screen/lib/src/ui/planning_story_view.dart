@@ -13,6 +13,7 @@ import '../story_groups.dart';
 import '../story_work.dart';
 import 'actions.dart';
 import 'open_work_figures.dart';
+import 'planning_correction.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_text.dart';
 import 'planning_move_warning.dart';
@@ -125,8 +126,32 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
               ?planningWarningMark(story.warnings, key: Key('planning-warned ${story.id}')),
+              ?planningCorrectionOffer(
+                board: detail.board,
+                id: story.id,
+                story: true,
+                state: story.state,
+                warnings: story.warnings,
+                link: story.link,
+                openLink: openLink,
+              ),
+              ?planningLabels(story.id, story.labels),
+              PlanningLabelsEdit(
+                item: story.id,
+                labels: story.labels,
+                unavailable: detail.labelsSaving
+                    ? 'waiting for the planner'
+                    : detail.board.labelsUnavailable(story.id, story: true),
+                onSave: (labels) => unawaited(detail.setLabels(story.id, labels, story: true)),
+              ),
             ],
           ),
+          if (detail.labelsProblem case final problem?)
+            Text(
+              problem,
+              key: const Key('planning-labels-problem'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           Text(planningValue(story.title), style: Theme.of(context).textTheme.headlineSmall),
           PlanningWebLink(link: story.link, label: 'Open story', openLink: openLink),
           _head(context, story),
@@ -394,6 +419,16 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
             child: Text(planningValue(issue.id)),
           ),
           ?planningWarningMark(issue.warnings, key: Key('planning-warned-issue ${issue.id}')),
+          ?planningCorrectionOffer(
+            board: detail.board,
+            id: issue.id,
+            story: false,
+            state: issue.state,
+            warnings: issue.warnings,
+            link: issue.link,
+            openLink: openLink,
+          ),
+          ?planningLabels(issue.id, issue.labels),
         ],
       ),
       Text(planningValue(issue.title)),

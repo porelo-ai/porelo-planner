@@ -8,6 +8,7 @@
     "state" : "Implementing",
     "size" : "L",
     "priority" : "Highest",
+    "labels" : [ ],
     "minutesLeft" : null,
     "blockedBy" : [ "B540" ],
     "waitsOn" : [ ],

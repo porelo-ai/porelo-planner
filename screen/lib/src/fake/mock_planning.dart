@@ -99,6 +99,40 @@ class MockPlanningSource implements PlanningSource {
     return StoryWorkOrder.from(work.call('StartStoryWork', request.toMap()), request: request, proposal: proposal);
   }
 
+  /// Where a local project's planning goes back to when its directory is chosen as null.
+  String defaultItemsDirectory = '/home/mock/.local/share/porelo-planner/items';
+
+  /// The directories the planner refuses, each with its words, as a missing one or a link is refused.
+  final Map<String, String> refusedDirectories = {};
+
+  /// Every directory asked for, each with its project and the versions seen, in order; null for the default.
+  final List<(String, String?, Map<String, String>)> directoryCalls = [];
+
+  /// Keeps the directory of a local project's board, as the planner does, and shows the board with it; a project
+  /// whose board names no local tracker is not offered the call.
+  @override
+  Future<PlanningTracker> setItemsDirectory(String project, String? directory, Map<String, String> seen) async {
+    final current = board(project);
+    directoryCalls.add((project, directory, Map.unmodifiable(seen)));
+    if (PlanningTracker.from(current['tracker'])?.local != true) {
+      throw PlanningRefusal('NotOffered', {'project': project}, 'This planner keeps no directory for $project.', true);
+    }
+    if (directory != null) {
+      if (planningDirectoryFault(directory) case final fault?) {
+        throw PlanningRefusal('ItemsDirectoryRefused', {'project': project}, fault);
+      }
+    }
+    if (refusedDirectories[directory] case final words?) {
+      throw PlanningRefusal('ItemsDirectoryRefused', {'project': project, 'directory': directory!}, words);
+    }
+    final items = directory ?? defaultItemsDirectory;
+    push(project, {
+      ...current,
+      'tracker': {'kind': 'local', 'items': items, 'default': defaultItemsDirectory},
+    });
+    return PlanningTracker.local(items, defaultItemsDirectory);
+  }
+
   /// The projects asked to fetch their repositories, in order.
   final List<String> refreshes = [];
 
@@ -303,6 +337,56 @@ class MockPlanningSource implements PlanningSource {
     return next;
   }
 
+  /// Correction previews asked of it, each with its project and correction.
+  final List<Map<String, dynamic>> correctionPreviews = [];
+
+  /// Correction saves asked of it, each with its project, correction, versions seen and digest.
+  final List<Map<String, dynamic>> correctionCalls = [];
+
+  @override
+  Future<PlanningCorrectionPreview> previewCorrection(String project, PlanningCorrection correction) async {
+    correctionPreviews.add({'project': project, 'correction': correction.toMap()});
+    return PlanningCorrectionPreview.from(previewPlanningCorrection(board(project), correction.toMap()));
+  }
+
+  /// Saves the correction as the planner does and shows the board at a new revision.
+  @override
+  Future<PlanningCorrectionSaved> saveCorrection(
+    String project,
+    PlanningCorrection correction,
+    Map<String, String> seen, {
+    required String digest,
+  }) async {
+    correctionCalls.add({'project': project, 'correction': correction.toMap(), 'seen': seen, 'digest': digest});
+    if (moveGate case final gate?) await gate.future;
+    final next = applyPlanningCorrection(board(project), correction.toMap(), seen, digest);
+    if (moveFailure case final failure?) throw failure;
+    push(project, next);
+    return PlanningCorrectionSaved.from({'revision': next['revision']});
+  }
+
+  /// Labels changes asked of it, each with its project, item, whether it is a story, the labels and versions seen.
+  final List<Map<String, dynamic>> labelsCalls = [];
+
+  /// A refusal of the next labels changes, set by a test.
+  Object? labelsFailure;
+
+  @override
+  Future<String> setLabels(
+    String project,
+    String item,
+    List<String> labels,
+    Map<String, String> seen, {
+    required bool story,
+  }) async {
+    labelsCalls.add({'project': project, 'item': item, 'story': story, 'labels': labels, 'seen': seen});
+    if (labelsFailure ?? moveFailure case final failure?) throw failure;
+    final current = board(project);
+    final next = applyPlanningLabels(current, item, labels, seen, story: story);
+    if (next['revision'] != current['revision']) push(project, next);
+    return next['revision'] as String;
+  }
+
   /// Worker changes asked of it, each with its project, issue, worker and versions seen.
   final List<Map<String, dynamic>> workerCalls = [];
 
@@ -342,11 +426,14 @@ class MockPlanningSource implements PlanningSource {
     if (readIssues case final read?) return read(project, story);
     final record = mockPlanningStory(board(project), story);
     if (record == null) throw mockRefusal('NoSuchStory', {'story': story});
+    // A story whose record names no issues has its list unreported, never an empty one.
+    final listed = record['issues'] as List?;
     return PlanIssueList.from({
-      'issues': [
-        for (final issue in (record['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
-          {...issue, 'version': mockItemVersion(issue)},
-      ],
+      'issues': listed == null
+          ? null
+          : [
+              for (final issue in listed.cast<Map<String, dynamic>>()) {...issue, 'version': mockItemVersion(issue)},
+            ],
       'revision': board(project)['revision'],
     });
   }
@@ -401,6 +488,7 @@ class MockPlanningSource implements PlanningSource {
       'work': current['work'] ?? <dynamic>[],
       'faults': current['faults'] ?? <dynamic>[],
       'reasons': current['reasons'] ?? false,
+      'tracker': ?current['tracker'],
     });
   }
 

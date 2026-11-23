@@ -16,13 +16,16 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.Correction;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Warning;
+import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -145,7 +148,9 @@ public final class IssueMapping {
                         config.workflow(),
                         config.names(),
                         config.forge(),
-                        config.project().owner()),
+                        config.project().owner(),
+                        config.work(),
+                        config.priorities()),
                 states,
                 waits);
     }
@@ -165,17 +170,47 @@ public final class IssueMapping {
             final List<String> repositories,
             final StoryStates states) {
         return read(
-                items, Set.of(), new Mapping(workflow, repositories, null, null), states, Map.of());
+                items,
+                Set.of(),
+                new Mapping(workflow, repositories, null, null, null, List.of()),
+                states,
+                Map.of());
     }
 
+    /**
+     * What the items are mapped by; without work rules, as for local items, no correction is
+     * offered, and without priorities the organization's field holds, no priority's.
+     */
     private record Mapping(
             Workflow workflow,
             List<String> repositories,
             @Nullable URI forge,
-            @Nullable String owner) {
+            @Nullable String owner,
+            @Nullable Work work,
+            List<String> priorities) {
         String own() {
             return repositories.getFirst();
         }
+    }
+
+    /**
+     * The item's warnings with the correction given on each of the kinds named, the others as they
+     * are.
+     */
+    private static List<Warning> offering(
+            final List<Warning> warnings,
+            final @Nullable Correction correction,
+            final Set<String> kinds) {
+        if (correction == null) {
+            return warnings;
+        }
+        return warnings.stream()
+                .map(
+                        warning ->
+                                kinds.contains(warning.kind())
+                                        ? warning.offering(correction)
+                                        : warning)
+                .toList();
     }
 
     private static Mapped read(
@@ -332,11 +367,27 @@ public final class IssueMapping {
                             item));
         }
 
+        // A state is set right by a move the person picks, a story's priority by one the
+        // organization's field holds; a story's state, an issue's priority and every other warning
+        // only by hand.
+        final Work work = config.work();
+        final Correction move = work == null ? null : Correction.ofState(workflow, work);
+        final Correction priority =
+                work == null ? null : Correction.ofPriority(work, config.priorities());
         final Comparator<ItemView> order = byPriorityThenRank();
         final List<Story> sortedStories =
                 stories.stream()
                         .sorted(Comparator.comparing(Map.Entry::getValue, order))
                         .map(Map.Entry::getKey)
+                        .map(
+                                story ->
+                                        story.withWarnings(
+                                                offering(
+                                                        story.warnings(),
+                                                        priority,
+                                                        Set.of(
+                                                                Warning.NO_PRIORITY,
+                                                                Warning.UNKNOWN_PRIORITY))))
                         .toList();
         final List<Map.Entry<Issue, ItemView>> all = new ArrayList<>();
         issues.values()
@@ -352,6 +403,13 @@ public final class IssueMapping {
                 all.stream()
                         .sorted(Comparator.comparing(Map.Entry::getValue, order))
                         .map(Map.Entry::getKey)
+                        .map(
+                                issue ->
+                                        issue.withWarnings(
+                                                offering(
+                                                        issue.warnings(),
+                                                        move,
+                                                        Set.of(Warning.STATE_OUTSIDE_WORKFLOW))))
                         .toList();
         return new Mapped(sortedStories, sortedIssues, faults, List.copyOf(outside));
     }
@@ -411,7 +469,8 @@ public final class IssueMapping {
                 issue.priority(),
                 warnings,
                 issue.waitsOn(),
-                issue.version());
+                issue.version(),
+                issue.labels());
     }
 
     /** The warnings with one more, each kind once. */
@@ -593,7 +652,8 @@ public final class IssueMapping {
                 priority,
                 warnings,
                 waitsOn,
-                ItemVersions.of(item));
+                ItemVersions.of(item),
+                labels(item));
     }
 
     /** An owner's or a repository's name as GitHub allows it in an address. */
@@ -843,7 +903,21 @@ public final class IssueMapping {
                 whole,
                 closedAt,
                 warnings,
-                ItemVersions.of(item));
+                ItemVersions.of(item),
+                labels(item));
+    }
+
+    /**
+     * An item's labels as the board shows them, in GitHub's order: one that breaks a label's name,
+     * or one named again, is left out, as are any past the most an item carries. A label left out
+     * is never written, so it stays on GitHub.
+     */
+    private static List<String> labels(final ItemView item) {
+        return item.labels().stream()
+                .filter(TopicLabels::wellFormed)
+                .distinct()
+                .limit(TopicLabels.MOST)
+                .toList();
     }
 
     /**

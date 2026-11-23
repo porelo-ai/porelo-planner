@@ -25,6 +25,8 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.TopicLabels;
+import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -71,6 +73,7 @@ public final class MockStore implements PlanningStore {
      * @param faults what the store could not read, in words
      * @param stories every story
      * @param issues every issue
+     * @param labels the labels of the items that carry any, by id, in their order
      */
     record BoardFile(
             String revision,
@@ -79,7 +82,8 @@ public final class MockStore implements PlanningStore {
             Map<String, RuleFile> work,
             List<String> faults,
             List<StoryFile> stories,
-            List<Issue> issues) {}
+            List<Issue> issues,
+            Map<String, List<String>> labels) {}
 
     /**
      * One story as {@code mock/board.json} holds it: its values, without a version, which the mock
@@ -114,7 +118,7 @@ public final class MockStore implements PlanningStore {
          * The story, its state its own stored value only when closed, as the mock gives every story
          * after a save, so a save leaves an untouched story's version as it was.
          */
-        Story story(final Workflow workflow) {
+        Story story(final Workflow workflow, final List<String> labels) {
             return new Story(
                     id,
                     title,
@@ -127,7 +131,8 @@ public final class MockStore implements PlanningStore {
                     link,
                     issuesWhole,
                     closedAt,
-                    warnings);
+                    warnings,
+                    labels);
         }
     }
 
@@ -243,13 +248,48 @@ public final class MockStore implements PlanningStore {
         return new Board(
                 new Revision(file.revision()),
                 file.workflow(),
-                file.stories().stream().map(story -> story.story(file.workflow())).toList(),
+                file.stories().stream()
+                        .map(
+                                story ->
+                                        story.story(
+                                                file.workflow(),
+                                                file.labels().getOrDefault(story.id(), List.of())))
+                        .toList(),
                 file.issues().stream()
-                        .map(issue -> issue.withWarnings(offering(issue.warnings(), move)))
+                        .map(
+                                issue ->
+                                        labelled(
+                                                        issue,
+                                                        file.labels()
+                                                                .getOrDefault(
+                                                                        issue.id(), List.of()))
+                                                .withWarnings(offering(issue.warnings(), move)))
                         .toList(),
                 work,
                 // The mock board knows no project.yml, so each repository's folder is its name.
                 org.fuin.porelo.planner.store.ProjectRepository.named(file.repositories()));
+    }
+
+    /** The issue carrying its labels, its version taken over them too. */
+    private static Issue labelled(final Issue issue, final List<String> labels) {
+        return new Issue(
+                issue.id(),
+                issue.repository(),
+                issue.title(),
+                issue.state(),
+                issue.size(),
+                issue.blockedBy(),
+                issue.parent(),
+                issue.link(),
+                issue.text(),
+                issue.worker(),
+                issue.risk(),
+                issue.estimate(),
+                issue.minutes(),
+                issue.priority(),
+                issue.warnings(),
+                issue.waitsOn(),
+                labels);
     }
 
     /** Each warning about the state alone with the correction given, the others with none. */
@@ -313,6 +353,12 @@ public final class MockStore implements PlanningStore {
         return chosen;
     }
 
+    /** The mock board stands for a project GitHub's tracker keeps. */
+    @Override
+    public Tracker tracker() {
+        return Tracker.GITHUB;
+    }
+
     @Override
     public Board board() {
         return current;
@@ -360,6 +406,12 @@ public final class MockStore implements PlanningStore {
         keep(writes.issueReasons());
         keep(writes.storyReasons());
         return current;
+    }
+
+    /** Sets the topic labels of an issue or a story and keeps every other label it carries. */
+    @Override
+    public boolean setsLabels() {
+        return true;
     }
 
     /** Whether a move's reason is kept: in memory, with the item it closes. */
@@ -423,22 +475,23 @@ public final class MockStore implements PlanningStore {
                     written == null
                             ? issue
                             : new Issue(
-                                    issue.id(),
-                                    issue.repository(),
-                                    issue.title(),
-                                    issue.state(),
-                                    written.size(),
-                                    issue.blockedBy(),
-                                    issue.parent(),
-                                    issue.link(),
-                                    ResultText.withoutHead(issue.text(), written),
-                                    issue.worker(),
-                                    issue.risk(),
-                                    issue.estimate(),
-                                    issue.minutes(),
-                                    issue.priority(),
-                                    issue.warnings(),
-                                    issue.waitsOn()));
+                                            issue.id(),
+                                            issue.repository(),
+                                            issue.title(),
+                                            issue.state(),
+                                            written.size(),
+                                            issue.blockedBy(),
+                                            issue.parent(),
+                                            issue.link(),
+                                            ResultText.withoutHead(issue.text(), written),
+                                            issue.worker(),
+                                            issue.risk(),
+                                            issue.estimate(),
+                                            issue.minutes(),
+                                            issue.priority(),
+                                            issue.warnings(),
+                                            issue.waitsOn())
+                                    .withLabels(issue.labels()));
         }
         final Board sized =
                 new Board(
@@ -493,31 +546,32 @@ public final class MockStore implements PlanningStore {
                                             || fields.named().contains(Fields.Field.ESTIMATE)
                                             || fields.named().contains(Fields.Field.PRIORITY))
                             ? new Issue(
-                                    known.id(),
-                                    known.repository(),
-                                    known.title(),
-                                    known.state(),
-                                    fields.named().contains(Fields.Field.SIZE)
-                                            ? fields.size()
-                                            : known.size(),
-                                    known.blockedBy(),
-                                    known.parent(),
-                                    known.link(),
-                                    known.text(),
-                                    known.worker(),
-                                    known.risk(),
-                                    fields.named().contains(Fields.Field.ESTIMATE)
-                                            ? estimate(fields.estimateMinutes())
-                                            : known.estimate(),
-                                    known.minutes(),
-                                    fields.named().contains(Fields.Field.PRIORITY)
-                                            ? fields.priority()
-                                            : known.priority(),
-                                    fields.named().contains(Fields.Field.PRIORITY)
-                                                    && fields.priority() != null
-                                            ? prioritized(known.warnings())
-                                            : known.warnings(),
-                                    known.waitsOn())
+                                            known.id(),
+                                            known.repository(),
+                                            known.title(),
+                                            known.state(),
+                                            fields.named().contains(Fields.Field.SIZE)
+                                                    ? fields.size()
+                                                    : known.size(),
+                                            known.blockedBy(),
+                                            known.parent(),
+                                            known.link(),
+                                            known.text(),
+                                            known.worker(),
+                                            known.risk(),
+                                            fields.named().contains(Fields.Field.ESTIMATE)
+                                                    ? estimate(fields.estimateMinutes())
+                                                    : known.estimate(),
+                                            known.minutes(),
+                                            fields.named().contains(Fields.Field.PRIORITY)
+                                                    ? fields.priority()
+                                                    : known.priority(),
+                                            fields.named().contains(Fields.Field.PRIORITY)
+                                                            && fields.priority() != null
+                                                    ? prioritized(known.warnings())
+                                                    : known.warnings(),
+                                            known.waitsOn())
+                                    .withLabels(known.labels())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -540,16 +594,17 @@ public final class MockStore implements PlanningStore {
             stories.add(
                     known.id().equals(story)
                             ? new Story(
-                                    known.id(),
-                                    known.title(),
-                                    known.state(),
-                                    known.priority(),
-                                    known.size(),
-                                    issues,
-                                    known.description(),
-                                    known.link(),
-                                    known.issuesWhole(),
-                                    known.warnings())
+                                            known.id(),
+                                            known.title(),
+                                            known.state(),
+                                            known.priority(),
+                                            known.size(),
+                                            issues,
+                                            known.description(),
+                                            known.link(),
+                                            known.issuesWhole(),
+                                            known.warnings())
+                                    .withLabels(known.labels())
                             : known);
         }
         current = saved(withItems(board, stories, board.issues()), NOTHING);
@@ -569,22 +624,23 @@ public final class MockStore implements PlanningStore {
             issues.add(
                     known.id().equals(issue)
                             ? new Issue(
-                                    known.id(),
-                                    known.repository(),
-                                    known.title(),
-                                    known.state(),
-                                    known.size(),
-                                    blockedBy,
-                                    known.parent(),
-                                    known.link(),
-                                    known.text(),
-                                    known.worker(),
-                                    known.risk(),
-                                    known.estimate(),
-                                    known.minutes(),
-                                    known.priority(),
-                                    known.warnings(),
-                                    known.waitsOn())
+                                            known.id(),
+                                            known.repository(),
+                                            known.title(),
+                                            known.state(),
+                                            known.size(),
+                                            blockedBy,
+                                            known.parent(),
+                                            known.link(),
+                                            known.text(),
+                                            known.worker(),
+                                            known.risk(),
+                                            known.estimate(),
+                                            known.minutes(),
+                                            known.priority(),
+                                            known.warnings(),
+                                            known.waitsOn())
+                                    .withLabels(known.labels())
                             : known);
         }
         current = saved(withItems(board, board.stories(), issues), NOTHING);
@@ -612,9 +668,17 @@ public final class MockStore implements PlanningStore {
             title = known.title();
             text = known.text();
         }
+        final List<String> labels =
+                story ? storyOf(board, id).labels() : issueOf(board, id).labels();
         final String newTitle = edit.title() == null ? title : edit.title();
         final String newText = written(id, text, edit);
-        if (newTitle.equals(title) && newText.equals(text)) {
+        final List<String> asked = edit.labels();
+        // The topic labels it carries asked again, in any order, are kept as they stand.
+        final List<String> newLabels =
+                asked == null || TopicLabels.topicOf(labels).equals(asked)
+                        ? labels
+                        : TopicLabels.after(labels, asked);
+        if (newTitle.equals(title) && newText.equals(text) && newLabels.equals(labels)) {
             return board;
         }
         final List<Story> stories = new ArrayList<>();
@@ -622,16 +686,17 @@ public final class MockStore implements PlanningStore {
             stories.add(
                     story && known.id().equals(id)
                             ? new Story(
-                                    known.id(),
-                                    newTitle,
-                                    known.state(),
-                                    known.priority(),
-                                    known.size(),
-                                    known.issues(),
-                                    newText,
-                                    known.link(),
-                                    known.issuesWhole(),
-                                    known.warnings())
+                                            known.id(),
+                                            newTitle,
+                                            known.state(),
+                                            known.priority(),
+                                            known.size(),
+                                            known.issues(),
+                                            newText,
+                                            known.link(),
+                                            known.issuesWhole(),
+                                            known.warnings())
+                                    .withLabels(newLabels)
                             : known);
         }
         final List<Issue> issues = new ArrayList<>();
@@ -639,22 +704,23 @@ public final class MockStore implements PlanningStore {
             issues.add(
                     !story && known.id().equals(id)
                             ? new Issue(
-                                    known.id(),
-                                    known.repository(),
-                                    newTitle,
-                                    known.state(),
-                                    known.size(),
-                                    known.blockedBy(),
-                                    known.parent(),
-                                    known.link(),
-                                    newText,
-                                    known.worker(),
-                                    known.risk(),
-                                    known.estimate(),
-                                    known.minutes(),
-                                    known.priority(),
-                                    known.warnings(),
-                                    known.waitsOn())
+                                            known.id(),
+                                            known.repository(),
+                                            newTitle,
+                                            known.state(),
+                                            known.size(),
+                                            known.blockedBy(),
+                                            known.parent(),
+                                            known.link(),
+                                            newText,
+                                            known.worker(),
+                                            known.risk(),
+                                            known.estimate(),
+                                            known.minutes(),
+                                            known.priority(),
+                                            known.warnings(),
+                                            known.waitsOn())
+                                    .withLabels(newLabels)
                             : known);
         }
         current = saved(withItems(board, stories, issues), NOTHING);
@@ -819,14 +885,15 @@ public final class MockStore implements PlanningStore {
             stories.set(
                     stories.indexOf(taken),
                     new Story(
-                            id,
-                            taken.title(),
-                            taken.state(),
-                            taken.priority(),
-                            taken.size(),
-                            story.existing(),
-                            taken.description(),
-                            taken.link()));
+                                    id,
+                                    taken.title(),
+                                    taken.state(),
+                                    taken.priority(),
+                                    taken.size(),
+                                    story.existing(),
+                                    taken.description(),
+                                    taken.link())
+                            .withLabels(taken.labels()));
         } else {
             int last = 0;
             for (final Story known : board.stories()) {
@@ -1054,7 +1121,8 @@ public final class MockStore implements PlanningStore {
                             issue.minutes(),
                             issue.priority(),
                             settled(issue.warnings(), writes.issues().containsKey(issue.id())),
-                            issue.waitsOn()));
+                            issue.waitsOn(),
+                            issue.labels()));
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
@@ -1128,7 +1196,8 @@ public final class MockStore implements PlanningStore {
                         state,
                         derived,
                         issueIds,
-                        issueStates));
+                        issueStates),
+                story.labels());
     }
 
     /**

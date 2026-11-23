@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
 import org.fuin.porelo.planner.store.StageResult;
@@ -31,6 +32,7 @@ import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
+import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
@@ -105,6 +107,47 @@ class LocalDirectoryStoreTest {
                 new Work(Map.of(), List.of()),
                 "files",
                 states);
+    }
+
+    @Test
+    void theFoldersTheProjectFileNamesReachADiscussionsBriefThroughTheBoard() {
+        // Harm: a discussion over a local project sends its agent to folders Porelo never made.
+        final TrackedProject project =
+                new TrackedProject(
+                        null,
+                        "",
+                        "local",
+                        "",
+                        List.of(
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "plans", "example"),
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "engine", "lib")),
+                        WORKFLOW,
+                        new Work(
+                                Map.of(
+                                        "Analyzing",
+                                        new WorkRule(
+                                                List.of("Backlog"),
+                                                "Analyzed",
+                                                null,
+                                                null,
+                                                WorkRule.Per.REPOSITORY,
+                                                List.of("AGENT"),
+                                                "Analyze {story}: {issues}; {tasks}",
+                                                Map.of("codex", "model-a"))),
+                                List.of()),
+                        "files",
+                        states -> states.isEmpty() ? "Idea" : states.getFirst());
+
+        assertThat(
+                        org.fuin.porelo.planner.core.IdeaDiscussion.offer(
+                                        store(project).board(), "An idea")
+                                .prompt())
+                .as("each repository beside the folder the project file names")
+                .contains(
+                        "`plans`, read at `/workspace/example/`",
+                        "`engine`, read at `/workspace/lib/`");
     }
 
     @Test
@@ -326,6 +369,52 @@ class LocalDirectoryStoreTest {
     }
 
     @Test
+    void topicLabelsAreSavedAndALabelOfTheFilesOwnIsShownKeptAndWarned() throws Exception {
+        // Harm: a label written into the file by hand vanishes on the next save, a new issue's
+        // labels are lost, or one that hides text reaches the window.
+        final LocalDirectoryStore store = store();
+        final NewIssue.Added added =
+                store.createIssue(
+                        store.board().revision(),
+                        new NewIssue(
+                                "engine",
+                                "Keep the data",
+                                "The data survives",
+                                "S",
+                                Worker.AGENT,
+                                null,
+                                null,
+                                null,
+                                null,
+                                List.of("tests")));
+        final Issue made = store().board().issue(added.id()).orElseThrow();
+        assertThat(made.labels()).as("the new issue's label").containsExactly("tests");
+        assertThat(made.warnings()).as("a topic label warns of nothing").isEmpty();
+
+        edit(
+                "engine-1.md",
+                text -> text.replace("\"tests\"", "\"needs-design\", \"a\\u202Eb\", \"tests\""));
+        final Issue read = store.refresh().issue(added.id()).orElseThrow();
+        assertThat(read.labels())
+                .as("the file's own label shown, the one that hides text left out")
+                .containsExactly("needs-design", "tests");
+        assertThat(read.warnings()).extracting(Warning::kind).containsExactly("UnknownLabel");
+        assertThat(read.warnings().getFirst().holdsWork()).as("it holds nothing back").isFalse();
+
+        store.setText(
+                store.board().revision(),
+                added.id(),
+                new TextEdit(TextEdit.Kind.ISSUE, null, Map.of(), Set.of(), List.of("usability")));
+
+        assertThat(store().board().issue(added.id()).orElseThrow().labels())
+                .as("the topic label replaced, the file's own kept")
+                .containsExactly("needs-design", "usability");
+        assertThat(Files.readString(items.resolve("engine-1.md")))
+                .as("the label that hides text kept in the file")
+                .contains("a\u202Eb");
+    }
+
+    @Test
     void linkedOversizedAndSecondNamedFilesAreFaultsAndOtherEntriesDoNotWakePolling()
             throws Exception {
         // Harm: a placed link or hard link reads another file, or a huge file is read whole.
@@ -397,8 +486,11 @@ class LocalDirectoryStoreTest {
 
         assertThatThrownBy(store::refresh)
                 .as("a missing directory is refused")
-                .isInstanceOf(StoreException.Unreadable.class)
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class)
                 .hasMessageNotContaining(temp.toString());
+        assertThatThrownBy(store::board)
+                .as("the board held is refused too")
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
         assertThat(items).as("a read does not make it").doesNotExist();
         Files.createSymbolicLink(items, elsewhere);
         assertThatThrownBy(
@@ -409,7 +501,7 @@ class LocalDirectoryStoreTest {
                                         new Fields(
                                                 Set.of(Fields.Field.SIZE), "M", null, null, null)))
                 .as("a write does not follow a replaced directory")
-                .isInstanceOf(StoreException.Unreadable.class);
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
         assertThat(Files.readString(elsewhere.resolve("engine-1.md")))
                 .as("nothing was written through the link")
                 .doesNotContain("\"M\"");
@@ -751,7 +843,10 @@ class LocalDirectoryStoreTest {
         store.refresh();
         assertThat(hooked.directoryChecks).as("a read").hasValue(1);
         hooked.directoryChecks.set(0);
-        store.save(store.board().revision(), new Writes(Map.of(added.id(), "Backlog"), Map.of()));
+        final Revision held = store.board().revision();
+        assertThat(hooked.directoryChecks).as("the board held").hasValue(1);
+        hooked.directoryChecks.set(0);
+        store.save(held, new Writes(Map.of(added.id(), "Backlog"), Map.of()));
         assertThat(hooked.directoryChecks).as("a write").hasValue(1);
     }
 }

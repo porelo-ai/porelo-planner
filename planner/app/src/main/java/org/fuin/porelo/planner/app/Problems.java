@@ -7,6 +7,7 @@ import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.planner.store.local.ItemsDirectories;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -195,6 +196,12 @@ public class Problems {
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
+            case StoreException.ItemsDirectoryRefused refused ->
+                    problem(
+                            "ItemsDirectoryRefused",
+                            HttpStatus.CONFLICT,
+                            detail,
+                            itemsDirectory(refused));
             case StoreException.StaleRevision any ->
                     // No call is checked against a revision; one that still reaches a caller is a
                     // save that kept losing to another, which a retry answers.
@@ -239,6 +246,12 @@ public class Problems {
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("pushed", String.join(",", partly.pushed()), "failed", subject));
+            case StoreException.LabelsNotKept dropped ->
+                    problem(
+                            "LabelsNotKept",
+                            HttpStatus.BAD_GATEWAY,
+                            detail,
+                            Map.of("repository", subject, "item", dropped.item()));
         };
     }
 
@@ -306,6 +319,21 @@ public class Problems {
         problem.setInstance(URI.create("/"));
         problem.setProperty("parameters", parameters);
         return ResponseEntity.status(status).body(problem);
+    }
+
+    /**
+     * The directory an ItemsDirectoryRefused refusal names, absolute: the person's own choice,
+     * named to them over loopback to a signed request; none where it names none or a text outside
+     * the rule a directory follows, so no refusal carries what a body or a file put there.
+     *
+     * @param refused the refusal
+     * @return the parameters
+     */
+    static Map<String, Object> itemsDirectory(final StoreException.ItemsDirectoryRefused refused) {
+        final String directory = refused.directory();
+        return directory == null || ItemsDirectories.shapeFault(directory) != null
+                ? Map.of()
+                : Map.of("directory", directory);
     }
 
     private static Map<String, Object> forgeAccess(

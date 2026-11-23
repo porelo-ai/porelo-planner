@@ -53,6 +53,17 @@ import org.junit.jupiter.api.Test;
 
 class ItemsBoardReaderTest {
 
+    /**
+     * The move offered on an issue outside the workflow: into Idea or Backlog, which no work enters
+     * alone.
+     */
+    private static final org.fuin.porelo.planner.store.Warning MOVE_OFFERED =
+            org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()
+                    .offering(
+                            new org.fuin.porelo.planner.store.Correction(
+                                    org.fuin.porelo.planner.store.Correction.MOVE,
+                                    List.of("Idea", "Backlog")));
+
     private static final String TOKEN = "github_pat_reader_test_0123456789";
 
     private static final String OWNER = "example-org";
@@ -107,6 +118,34 @@ class ItemsBoardReaderTest {
         private final List<List<String>> issueBatches = new ArrayList<>();
         private final List<Duration> pauses = new ArrayList<>();
         private final AtomicInteger tokenAsks = new AtomicInteger();
+
+        /** The organization's issue fields, each read once in turn; null when none are read. */
+        private @Nullable Deque<Supplier<List<org.fuin.porelo.forge.github.model.IssueField>>>
+                issueFields;
+
+        /** The owners whose issue fields were read. */
+        private final List<String> fieldOwners = new ArrayList<>();
+
+        private GitHub issueFields(
+                final Supplier<List<org.fuin.porelo.forge.github.model.IssueField>> answer) {
+            if (issueFields == null) {
+                issueFields = new ArrayDeque<>();
+            }
+            java.util.Objects.requireNonNull(issueFields).add(answer);
+            return this;
+        }
+
+        private ItemsBoardReader.@Nullable IssueFields issueFieldsRead() {
+            final var answers = issueFields;
+            if (answers == null) {
+                return null;
+            }
+            return (token, owner) -> {
+                assertThat(token).as("the token the read asked for").isEqualTo(TOKEN);
+                fieldOwners.add(owner);
+                return next(answers).get();
+            };
+        }
 
         private GitHub fieldsPage(final List<ProjectField> page, final @Nullable String next) {
             fields.add(
@@ -239,7 +278,10 @@ class ItemsBoardReaderTest {
                     FIRST_OPEN,
                     InstantSource.system(),
                     ItemsBoardReader.DEADLINE,
-                    pauses::add);
+                    pauses::add,
+                    null,
+                    LimitFactors.DEFAULT,
+                    issueFieldsRead());
         }
 
         private Snapshot read() {
@@ -416,10 +458,154 @@ class ItemsBoardReaderTest {
                 new GitHub().fieldsPage(FIELDS, null).itemsPage(null, missing).read();
         assertThat(absent.board().stories().getFirst().warnings())
                 .as("a project value cannot replace a missing issue Priority")
-                .contains(Warning.noPriority());
+                .extracting(Warning::kind)
+                .contains(Warning.NO_PRIORITY);
         assertThat(absent.board().stories().getFirst().priority())
                 .as("shown as Medium, as a story without a priority is, never the project's High")
                 .isEqualTo("Medium");
+    }
+
+    /** A story without a priority, its issue holding no option of the organization's field. */
+    private static ProjectItem unprioritized() {
+        final ProjectItem original = story("High");
+        return new ProjectItem(
+                original.id(),
+                false,
+                withPriority(java.util.Objects.requireNonNull(original.issue()), null),
+                original.values(),
+                original.valuesPage());
+    }
+
+    /** The organization's single-select issue field Priority with the options given. */
+    private static List<org.fuin.porelo.forge.github.model.IssueField> priorityField(
+            final String... options) {
+        return List.of(
+                new org.fuin.porelo.forge.github.model.IssueField(
+                        11L,
+                        "IF_11",
+                        FieldNames.PRIORITY,
+                        "",
+                        org.fuin.porelo.forge.github.model.IssueField.DataTypeEnum.SINGLE_SELECT,
+                        null,
+                        Arrays.stream(options)
+                                .map(
+                                        name ->
+                                                new org.fuin.porelo.forge.github.model
+                                                        .IssueFieldOptionsInner(
+                                                        1L,
+                                                        name,
+                                                        null,
+                                                        org.fuin.porelo.forge.github.model
+                                                                .IssueFieldOptionsInner.ColorEnum
+                                                                .GRAY,
+                                                        null,
+                                                        null,
+                                                        null))
+                                .toList(),
+                        null,
+                        null));
+    }
+
+    private static List<Warning> storyWarnings(final Snapshot read) {
+        return read.board().stories().getFirst().warnings();
+    }
+
+    @Test
+    void aStorysPriorityIsOfferedTheOptionsTheOrganizationsFieldHoldsAsTheReadFoundThem() {
+        // Harm: a priority offered that the organization's field lacks, so its save is refused
+        // only after the person confirmed it.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .issueFields(() -> priorityField("High", "Medium", "Low"))
+                        .itemsPage(null, unprioritized());
+
+        final Snapshot read = github.read();
+
+        assertThat(github.fieldOwners)
+                .as("the project owner's fields, read once")
+                .containsExactly(OWNER);
+        assertThat(storyWarnings(read))
+                .as("the priorities the field holds, no Highest without Urgent")
+                .containsExactly(
+                        Warning.noPriority()
+                                .offering(
+                                        new org.fuin.porelo.planner.store.Correction(
+                                                org.fuin.porelo.planner.store.Correction.PRIORITY,
+                                                List.of("High", "Medium", "Low"))));
+        assertThat(read.fieldFaults()).as("no fault").isEmpty();
+        assertThat(read.config().priorities())
+                .as("kept for the reads that map the board again")
+                .containsExactly("High", "Medium", "Low");
+    }
+
+    @Test
+    void anOwnerWithoutAPriorityFieldIsOfferedNoPriorityAndNoFault() {
+        // Harm: a priority offered that no field can hold, or a user's project shown as broken.
+        for (final Supplier<List<org.fuin.porelo.forge.github.model.IssueField>> answer :
+                List.<Supplier<List<org.fuin.porelo.forge.github.model.IssueField>>>of(
+                        List::of,
+                        () -> {
+                            throw GitHubExceptions.refused(404, "Not Found");
+                        })) {
+            final Snapshot read =
+                    new GitHub()
+                            .fieldsPage(FIELDS, null)
+                            .issueFields(answer)
+                            .itemsPage(null, unprioritized())
+                            .read();
+
+            assertThat(storyWarnings(read))
+                    .as("no correction")
+                    .containsExactly(Warning.noPriority());
+            assertThat(read.fieldFaults()).as("no fault").isEmpty();
+        }
+    }
+
+    @Test
+    void aFailedReadOfTheOrganizationsFieldsIsAFaultAndOffersNoPriority() {
+        // Harm: a priority offered that the field may not hold, or the failure kept from the
+        // person.
+        final Snapshot read =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .issueFields(
+                                () -> {
+                                    throw GitHubExceptions.refused(403, "Resource not accessible");
+                                })
+                        .itemsPage(null, unprioritized())
+                        .read();
+
+        assertThat(storyWarnings(read)).as("no correction").containsExactly(Warning.noPriority());
+        assertThat(read.fieldFaults())
+                .as("the fault, in fixed words naming GitHub's status")
+                .containsExactly(
+                        "The organization's issue field Priority could not be read (GitHub"
+                                + " answered HTTP 403), so no story's priority is offered to set");
+        assertThat(read.board().faults())
+                .as("on the board")
+                .contains(read.fieldFaults().getFirst());
+    }
+
+    @Test
+    void theHeldPrioritiesComeBackFromTheBoardCopy() {
+        // Harm: a board loaded from its copy offering a priority the field lacks, or none at all.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .issueFields(() -> priorityField("Urgent", "Low"))
+                        .itemsPage(null, unprioritized());
+        final Snapshot read = github.read();
+        final BoardCopy copy =
+                BoardCopyMapping.toCopy(
+                        read, ChangeCursor.NONE, List.of(), Map.of(), Instant.EPOCH);
+
+        final Snapshot loaded =
+                java.util.Objects.requireNonNull(
+                        github.reader(AccessRefusals.DEFAULT).fromCopy(copy, CONFIG));
+
+        assertThat(loaded.config().priorities()).as("as read").containsExactly("Highest", "Low");
+        assertThat(storyWarnings(loaded)).as("as the read offered").isEqualTo(storyWarnings(read));
     }
 
     @Test
@@ -1728,12 +1914,7 @@ class ItemsBoardReaderTest {
                                         org.fuin.porelo.planner.store.Warning
                                                 .stateOutsideWorkflow())),
                         org.assertj.core.groups.Tuple.tuple(
-                                "example-lib#5",
-                                "Parked",
-                                List.of(),
-                                Set.of(
-                                        org.fuin.porelo.planner.store.Warning
-                                                .stateOutsideWorkflow())));
+                                "example-lib#5", "Parked", List.of(), Set.of(MOVE_OFFERED)));
         assertThat(snapshot.board().holdsWork("example-lib#3"))
                 .as("neither copy worked")
                 .isPresent();
@@ -2281,10 +2462,7 @@ class ItemsBoardReaderTest {
                 .extracting(Issue::id, Issue::state, Issue::worker, Issue::warnings)
                 .containsExactly(
                         Tuple.tuple(
-                                "example-lib#3",
-                                "Accepted",
-                                Worker.MANUAL,
-                                List.of(Warning.stateOutsideWorkflow())));
+                                "example-lib#3", "Accepted", Worker.MANUAL, List.of(MOVE_OFFERED)));
         assertThat(before.stories().get(0).issues())
                 .as("under its story")
                 .containsExactly("example-lib#3");

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../planning_board.dart';
+import 'planning_correction.dart';
 import 'planning_detail_widgets.dart';
 import 'planning_issue_row.dart';
 import 'style.dart';
@@ -17,6 +18,7 @@ class PlanningNoStoryCard extends StatelessWidget {
     required this.state,
     required this.onIssue,
     required this.sizeBadge,
+    required this.openLink,
     this.phaseFolded = false,
     super.key,
   });
@@ -32,6 +34,9 @@ class PlanningNoStoryCard extends StatelessWidget {
 
   /// Whether the phase shows compact tiles instead of expandable cards.
   final bool phaseFolded;
+
+  /// Opens an address in the person's browser.
+  final Future<void> Function(Uri) openLink;
 
   /// Draws the board's reported size badge.
   final Widget? Function(PlanIssue) sizeBadge;
@@ -96,6 +101,15 @@ class PlanningNoStoryCard extends StatelessWidget {
                     onOpen: () => onIssue(issue.id),
                     sizeBadge: sizeBadge(issue),
                     menu: _menu(context, issue),
+                    correction: planningCorrectionOffer(
+                      board: board,
+                      id: issue.id,
+                      story: false,
+                      state: issue.state,
+                      warnings: issue.warnings,
+                      link: issue.link,
+                      openLink: openLink,
+                    ),
                   ),
                 ),
               if (!all && issues.length > 20)

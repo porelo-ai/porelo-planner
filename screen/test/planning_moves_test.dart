@@ -47,6 +47,10 @@ Map<String, dynamic> _retitled(Map<String, dynamic> data, String story, String r
   ],
 };
 
+/// [data] as the planner serves it: every story and issue with the version it stands at.
+PlanningSnapshot _versioned(Map<String, dynamic> data) =>
+    PlanningSnapshot.from({...data, 'stories': mockVersionedStories(data)});
+
 class _Backend extends Fake implements PlanningSource {
   Map<String, dynamic> data = _fixture();
   final changes = StreamController<PlanningSnapshot>.broadcast(sync: true);
@@ -93,6 +97,9 @@ class _Backend extends Fake implements PlanningSource {
   List<Map<String, dynamic>> warnings = const [];
   Object? previewFailure;
 
+  /// Targets the next previews name beside the moved items, as a planner holding more than the board shows does.
+  Map<String, String> moreTargets = const {};
+
   @override
   Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) async {
     previewed.add({'moves': moves.map((move) => move.toMap()).toList(), 'revision': data['revision']});
@@ -103,6 +110,7 @@ class _Backend extends Fake implements PlanningSource {
       'targets': [
         for (final move in moves)
           if (versions[move.id] case final version?) {'id': move.id, 'version': version},
+        for (final target in moreTargets.entries) {'id': target.key, 'version': target.value},
       ],
       'digest': FakePlanningSource.digestAt(data['revision']),
       'issues': <Object>[],
@@ -572,6 +580,19 @@ void main() {
     expect(board.snapshot!.revision, 'changed');
   });
 
+  // Harm: an item the person never saw is saved over with the preview's own version sent as the one seen.
+  test('a preview naming a target the board did not show saves nothing and reads the board again', () async {
+    backend.moreTargets = {'IssueUnseen': 'a' * 64};
+    final reads = backend.storyReads;
+    await board.move('StoryTwo', 'Rejected');
+    await pumpEventQueue();
+    expect(backend.calls, isEmpty, reason: 'nothing saved');
+    expect(board.pending, isEmpty);
+    expect(board.moveProblem, contains('Move it again'));
+    expect(backend.storyReads, greaterThan(reads), reason: 'the board is read again');
+    expect(board.stories.last.state, 'Ready');
+  });
+
   // Harm: a planner without the preview answered as if the move were made.
   test('a preview the planner does not know moves nothing', () async {
     backend.previewFailure = const PlanningRefusal('Http404', {}, 'the planner answered HTTP 404');
@@ -715,7 +736,7 @@ void main() {
       {..._fixture(), 'revision': ''},
     ]) {
       backend.data = _fixture();
-      backend.changes.add(PlanningSnapshot.from(backend.data));
+      backend.changes.add(_versioned(backend.data));
       backend.gate = Completer<void>();
       final saved = board.move('StoryOne', 'Rejected');
       await pumpEventQueue();
@@ -950,7 +971,7 @@ void main() {
     ];
     for (final (index, data) in [unreported, unplaced].indexed) {
       backend.data = {...data, 'revision': 'shown-$index'};
-      backend.changes.add(PlanningSnapshot.from(backend.data));
+      backend.changes.add(_versioned(backend.data));
       await Future<void>.delayed(Duration.zero);
       backend.confirmed = false;
       await board.move('StoryOne', 'Rejected');
@@ -1030,7 +1051,7 @@ void main() {
       reason: 'all its issues closed, it is held in the last open state',
     );
     backend.data = closed();
-    backend.changes.add(PlanningSnapshot.from(backend.data));
+    backend.changes.add(_versioned(backend.data));
     await Future<void>.delayed(Duration.zero);
     backend.listing = Completer<PlanningSnapshot>();
     backend.listingStarted = Completer<void>();
@@ -1118,7 +1139,7 @@ void main() {
         expect(story['state'], 'Finished');
 
         backend.data = finishing(done, done: done, last: done);
-        backend.changes.add(PlanningSnapshot.from(backend.data));
+        backend.changes.add(_versioned(backend.data));
         await Future<void>.delayed(Duration.zero);
         backend.listing = Completer<PlanningSnapshot>();
         backend.listingStarted = Completer<void>();

@@ -17,13 +17,15 @@ public abstract sealed class StoreException extends RuntimeException
                 StoreException.NoForgeAccess,
                 StoreException.Unreachable,
                 StoreException.Unreadable,
+                StoreException.ItemsDirectoryRefused,
                 StoreException.StaleRevision,
                 StoreException.Changed,
                 StoreException.BasisIncomplete,
                 StoreException.NotSavable,
                 StoreException.InStory,
                 StoreException.Busy,
-                StoreException.PartlySaved {
+                StoreException.PartlySaved,
+                StoreException.LabelsNotKept {
 
     private static final long serialVersionUID = 1L;
 
@@ -196,6 +198,37 @@ public abstract sealed class StoreException extends RuntimeException
             super(
                     Ids.name(repository),
                     "Repository " + repository + " could not be read: " + fault);
+        }
+    }
+
+    /**
+     * The directory a local project's stories and issues are kept in cannot be used: it is missing,
+     * reached through a link or not the account's alone, or the kept choice of it cannot be read.
+     * The planner never falls back to another directory meanwhile.
+     */
+    public static final class ItemsDirectoryRefused extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final @Nullable String directory;
+
+        /**
+         * Names the directory and why, the words free of any path.
+         *
+         * @param directory the directory refused, absolute, or null where none can be named
+         * @param reason why, in fixed words
+         */
+        public ItemsDirectoryRefused(final @Nullable String directory, final String reason) {
+            super(directory == null ? "" : directory, reason);
+            this.directory = directory;
+        }
+
+        /**
+         * Answers the directory refused.
+         *
+         * @return the directory, absolute, or null where none can be named
+         */
+        public @Nullable String directory() {
+            return directory;
         }
     }
 
@@ -417,6 +450,37 @@ public abstract sealed class StoreException extends RuntimeException
          */
         public java.util.List<String> pushed() {
             return pushed;
+        }
+    }
+
+    /**
+     * The tracker, read back after a write of an item's labels, does not carry the topic labels
+     * asked, as GitHub drops them without an error for an account that may not set them; what else
+     * the write saved stands.
+     */
+    public static final class LabelsNotKept extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final String item;
+
+        /**
+         * Names the repository and the item.
+         *
+         * @param repository the item's repository
+         * @param item the story's or the issue's id
+         */
+        public LabelsNotKept(final String repository, final String item) {
+            super(repository, "The tracker did not keep the labels asked.");
+            this.item = item;
+        }
+
+        /**
+         * Answers the item whose labels were not kept.
+         *
+         * @return the story's or the issue's id
+         */
+        public String item() {
+            return item;
         }
     }
 }

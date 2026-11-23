@@ -237,6 +237,10 @@
     }
   },
   "faults": [],
+  "labels": {
+    "ST294": ["usability"],
+    "PJ74": ["documentation", "needs-design"]
+  },
   "stories": [
     {
       "id": "ST294",

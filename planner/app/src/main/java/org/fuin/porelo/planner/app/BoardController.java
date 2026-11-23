@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.app.answers.IssueAdded;
 import org.fuin.porelo.planner.app.answers.IssueDetail;
 import org.fuin.porelo.planner.app.answers.IssueList;
 import org.fuin.porelo.planner.app.answers.IssueReply;
+import org.fuin.porelo.planner.app.answers.LabelCall;
 import org.fuin.porelo.planner.app.answers.MoveWarning;
 import org.fuin.porelo.planner.app.answers.Moved;
 import org.fuin.porelo.planner.app.answers.MovedIssue;
@@ -43,6 +44,7 @@ import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.StoryWorkReply;
 import org.fuin.porelo.planner.app.answers.Target;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
+import org.fuin.porelo.planner.app.answers.Tracker;
 import org.fuin.porelo.planner.app.answers.WorkerSaved;
 import org.fuin.porelo.planner.core.Corrections;
 import org.fuin.porelo.planner.core.Edits;
@@ -69,6 +71,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
+import org.fuin.porelo.planner.store.RepositoryWarning;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -230,7 +233,8 @@ public class BoardController {
     private static Basis seen(final String item, final @Nullable Map<String, String> seen) {
         final Basis basis = WorkRequests.seen(seen);
         if (basis == null) {
-            throw notAllowed(item, "", "The body names no versions seen.");
+            throw notAllowed(
+                    item, "", "The body names no versions seen by item id, or more than 2000.");
         }
         return basis;
     }
@@ -338,14 +342,17 @@ public class BoardController {
      *
      * @param story the story's id, or null
      * @param issue the issue's id, or null
+     * @param repository the repository's name, or null
      * @param warning the kind of the warning it sets right
-     * @param state the state the person picked
+     * @param choice what the person picked among the correction's choices, or null for a correction
+     *     that offers none
      */
     public record CorrectionRequest(
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String repository,
             @Nullable String warning,
-            @Nullable String state) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String choice) {}
 
     /**
      * A correction the person confirmed, as the window sends it to save.
@@ -353,19 +360,20 @@ public class BoardController {
      * @param seen the versions the person saw, by item id: the preview's targets
      * @param story the story's id, or null
      * @param issue the issue's id, or null
+     * @param repository the repository's name, or null
      * @param warning the kind of the warning it sets right
-     * @param state the state the person picked
+     * @param choice what the person picked among the correction's choices, or null for a correction
+     *     that offers none
      * @param digest the preview's digest
-     * @param confirm whether the person confirmed the preview's warnings
      */
     public record CorrectionConfirm(
             @Nullable Map<String, String> seen,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String repository,
             @Nullable String warning,
-            @Nullable String state,
-            @Nullable String digest,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Boolean confirm) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String choice,
+            @Nullable String digest) {}
 
     /**
      * Answers what the correction of one warning would write, writing nothing.
@@ -379,8 +387,19 @@ public class BoardController {
             @PathVariable("project") final String project,
             @RequestBody final CorrectionRequest body) {
         final String name = name(project);
+        final Corrections.@Nullable Repository labels =
+                repository(
+                        name,
+                        body.story(),
+                        body.issue(),
+                        body.repository(),
+                        body.warning(),
+                        body.choice());
+        if (labels != null) {
+            return labelsPreview(name, labels);
+        }
         final Corrections.Asked asked =
-                asked(name, body.story(), body.issue(), body.warning(), body.state());
+                asked(name, body.story(), body.issue(), body.warning(), body.choice());
         final Projects.Given given = projects.given(name);
         final Corrections.Preview preview;
         try {
@@ -394,28 +413,40 @@ public class BoardController {
                 targets(preview.targets()),
                 asked.story() ? asked.id() : null,
                 asked.story() ? null : asked.id(),
+                null,
                 asked.warning(),
                 preview.from(),
-                asked.state(),
-                preview.warnings().stream().map(BoardController::warning).toList());
+                asked.choice(),
+                List.of());
     }
 
     /**
      * Saves the correction of one warning whose preview the person confirmed, under the project's
-     * writer lock, writing nothing for a stale, changed or repeated confirm; a confirmed one stops
-     * each run at work on the story, as a move's does.
+     * writer lock, writing nothing for a stale, changed or repeated confirm; it writes no state, so
+     * it stops no run.
      *
      * @param project the project's name
      * @param body the confirmed correction
-     * @return the revision after the save and the runs it stopped
+     * @return the revision after the save
      */
     @PostMapping("/projects/{project}/corrections")
     public CorrectionSaved saveCorrection(
             @PathVariable("project") final String project,
             @RequestBody final CorrectionConfirm body) {
         final String name = name(project);
+        final Corrections.@Nullable Repository labels =
+                repository(
+                        name,
+                        body.story(),
+                        body.issue(),
+                        body.repository(),
+                        body.warning(),
+                        body.choice());
+        if (labels != null) {
+            return labels(name, labels, body.seen(), body.digest());
+        }
         final Corrections.Asked asked =
-                asked(name, body.story(), body.issue(), body.warning(), body.state());
+                asked(name, body.story(), body.issue(), body.warning(), body.choice());
         final Basis basis = seen(asked.id(), body.seen());
         final String digest = body.digest();
         if (digest == null || !DIGEST.matcher(digest).matches()) {
@@ -423,24 +454,17 @@ public class BoardController {
         }
         final Projects.Given given = projects.given(name);
         try {
-            final WorkRun.MoveSaved<Board> answer =
+            final Board saved =
                     given.work()
-                            .correction(
-                                    asked,
-                                    basis,
-                                    digest,
-                                    Boolean.TRUE.equals(body.confirm()),
-                                    given.repository(),
-                                    given.branch());
-            final Board saved = answer.saved();
+                            .correction(asked, basis, digest, given.repository(), given.branch());
             LOG.info(
                     "Saved a correction of {} in project {} as revision {}",
                     LogText.of(asked.id()),
                     LogText.of(name),
                     LogText.of(saved.revision().value()));
-            return new CorrectionSaved(saved.revision().value(), stopped(answer.stopped()));
+            return new CorrectionSaved(saved.revision().value());
         } catch (final StoreException.NotSavable e) {
-            throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()), asked.state());
+            throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()), asked.choice());
         } catch (final UnsupportedOperationException e) {
             throw correctionNotOffered(name);
         } finally {
@@ -448,15 +472,131 @@ public class BoardController {
         }
     }
 
-    /** A correction's body checked: exactly one item, a warning's kind and a state's name. */
+    /**
+     * A repository's correction checked: exactly one repository and no item, spelled as a name, a
+     * warning's kind and a choice spelled as one, if any; whether the correction takes it is
+     * checked on the board. Null for a body that names no repository.
+     */
+    private static Corrections.@Nullable Repository repository(
+            final String project,
+            final @Nullable String story,
+            final @Nullable String issue,
+            final @Nullable String repository,
+            final @Nullable String warning,
+            final @Nullable String choice) {
+        if (repository == null) {
+            return null;
+        }
+        if (story != null || issue != null) {
+            throw notAllowed("", "", EXACTLY_ONE);
+        }
+        final String named = checked(project, () -> Ids.name(repository), "repository");
+        if (warning == null || !WARNING_KIND.matcher(warning).matches()) {
+            throw notAllowed(named, "", "The body names no warning's kind.");
+        }
+        if (choice != null && !STATE.matcher(choice).matches()) {
+            throw notAllowed(named, "", "The choice must be a state's or a priority's name.");
+        }
+        return new Corrections.Repository(named, warning, choice);
+    }
+
+    /** Answers the calls a repository's correction would make, writing nothing. */
+    private CorrectionPreview labelsPreview(final String name, final Corrections.Repository asked) {
+        final Projects.Given given = projects.given(name);
+        final Corrections.Labels preview;
+        try {
+            preview = given.work().labelsPreview(asked);
+        } catch (final UnsupportedOperationException e) {
+            throw correctionNotOffered(name);
+        }
+        return new CorrectionPreview(
+                preview.revision(),
+                preview.digest(given.repository(), given.branch()),
+                List.of(),
+                null,
+                null,
+                asked.repository(),
+                asked.warning(),
+                "",
+                "",
+                preview.calls().stream().map(BoardController::labelCall).toList());
+    }
+
+    /**
+     * Makes the calls of a repository's correction whose preview the person confirmed; it has no
+     * targets, so the versions seen must be sent as every write's are, and exactly as none.
+     */
+    private CorrectionSaved labels(
+            final String name,
+            final Corrections.Repository asked,
+            final @Nullable Map<String, String> seen,
+            final @Nullable String digest) {
+        if (!seen(asked.repository(), seen).items().isEmpty()) {
+            throw notAllowed(asked.repository(), "", SEEN_NONE);
+        }
+        if (digest == null || !DIGEST.matcher(digest).matches()) {
+            throw notAllowed(asked.repository(), "", "The body names no preview's digest.");
+        }
+        final Projects.Given given = projects.given(name);
+        try {
+            final Board saved =
+                    given.work().labels(asked, digest, given.repository(), given.branch());
+            LOG.info(
+                    "Set the labels of repository {} right in project {}",
+                    LogText.of(asked.repository()),
+                    LogText.of(name));
+            return new CorrectionSaved(saved.revision().value());
+        } catch (final StoreException.NotSavable e) {
+            throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()));
+        } catch (final UnsupportedOperationException e) {
+            throw correctionNotOffered(name);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    private static LabelCall labelCall(final RepositoryWarning.Call call) {
+        return new LabelCall(
+                LabelCall.ActionEnum.fromValue(call.action().spelled()),
+                call.label(),
+                call.color(),
+                call.description());
+    }
+
+    /**
+     * A repository's warning as the board answers it.
+     *
+     * @param warning the warning
+     * @return the answer
+     */
+    static org.fuin.porelo.planner.app.answers.RepositoryWarning repositoryWarning(
+            final RepositoryWarning warning) {
+        final org.fuin.porelo.planner.store.@Nullable Correction correction = warning.correction();
+        return new org.fuin.porelo.planner.app.answers.RepositoryWarning(
+                warning.repository(),
+                warning.kind(),
+                warning.missing(),
+                warning.defaults(),
+                warning.differing(),
+                correction == null
+                        ? null
+                        : new org.fuin.porelo.planner.app.answers.Correction(
+                                correction.kind(), correction.choices()));
+    }
+
+    /**
+     * A correction's body checked: exactly one item, a warning's kind and a choice spelled as a
+     * state's or a priority's name; whether the correction offers the choice is checked on the
+     * board.
+     */
     private static Corrections.Asked asked(
             final String project,
             final @Nullable String story,
             final @Nullable String issue,
             final @Nullable String warning,
-            final @Nullable String state) {
+            final @Nullable String choice) {
         if ((story == null) == (issue == null)) {
-            throw notAllowed("", "", "A correction must name exactly one story or one issue.");
+            throw notAllowed("", "", EXACTLY_ONE);
         }
         final String id =
                 story != null
@@ -465,11 +605,17 @@ public class BoardController {
         if (warning == null || !WARNING_KIND.matcher(warning).matches()) {
             throw notAllowed(id, "", "The body names no warning's kind.");
         }
-        if (state == null || !STATE.matcher(state).matches()) {
-            throw notAllowed(id, "", "The state must be a state's name.");
+        if (choice == null || !STATE.matcher(choice).matches()) {
+            throw notAllowed(id, "", "The choice must be a state's or a priority's name.");
         }
-        return new Corrections.Asked(story != null, id, warning, state);
+        return new Corrections.Asked(story != null, id, warning, choice);
     }
+
+    private static final String EXACTLY_ONE =
+            "A correction must name exactly one story, one issue or one repository.";
+
+    private static final String SEEN_NONE =
+            "A repository's correction sends its versions seen as {}.";
 
     private static Refusal correctionNotOffered(final String name) {
         return new Refusal(
@@ -598,6 +744,14 @@ public class BoardController {
         if (priority != null && !Story.PRIORITIES.contains(priority)) {
             throw NewIssues.refused("priority", "The priority must be Highest to Lowest.");
         }
+        if (!body.labels().isEmpty() && !store.setsLabels()) {
+            // Refused before anything is made, so no issue stands without the labels asked.
+            throw new Refusal(
+                    "NotOffered",
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "This planner does not set labels.",
+                    Map.of("project", name));
+        }
         final String story = body.story();
         Edits.unchanged(board, seen, Targets.of(board, new Operation.CreateIssue(story)));
         if (story != null && board.holdsWork(story).isPresent()) {
@@ -628,7 +782,8 @@ public class BoardController {
                                 issue.task(),
                                 priority,
                                 story,
-                                createsInState ? state : null),
+                                createsInState ? state : null,
+                                body.labels()),
                         Recheck.none());
         LOG.info(
                 "Added issue {} to project {} as revision {}",
@@ -805,15 +960,7 @@ public class BoardController {
         }
         try {
             final String saved =
-                    store.save(
-                                    body.seen(),
-                                    writes,
-                                    new Recheck(
-                                            Set.of(),
-                                            Set.of(issue),
-                                            dependencies ->
-                                                    Rules.worker(
-                                                            dependencies, issue, body.worker())))
+                    store.save(body.seen(), writes, Rules.workerRecheck(issue, body.worker()))
                             .revision()
                             .value();
             LOG.info(
@@ -969,7 +1116,24 @@ public class BoardController {
     public org.fuin.porelo.planner.app.answers.Workflow workflow(
             @PathVariable("project") final String project) {
         final PlanningStore store = projects.store(name(project));
-        return workflowOf(store.board(), store.keepsReasons());
+        return workflowOf(store.board(), store.keepsReasons(), store.tracker());
+    }
+
+    /**
+     * Maps where a store keeps a project's stories and issues, as the window is told it.
+     *
+     * @param tracker the store's tracker
+     * @return the answer
+     */
+    static Tracker tracker(final org.fuin.porelo.planner.store.Tracker tracker) {
+        return new Tracker(
+                switch (tracker.kind()) {
+                    case GITHUB -> Tracker.KindEnum.GITHUB;
+                    case GIT -> Tracker.KindEnum.GIT;
+                    case LOCAL -> Tracker.KindEnum.LOCAL;
+                },
+                tracker.items(),
+                tracker.defaultItems());
     }
 
     /**
@@ -977,16 +1141,20 @@ public class BoardController {
      *
      * @param board the board
      * @param reasons whether the board's store keeps a move's reason
+     * @param tracker where the board's store keeps the stories and issues
      * @return the workflow's answer
      */
     static org.fuin.porelo.planner.app.answers.Workflow workflowOf(
-            final Board board, final boolean reasons) {
+            final Board board,
+            final boolean reasons,
+            final org.fuin.porelo.planner.store.Tracker tracker) {
         final Workflow workflow = board.workflow();
         final WorkRules.Checked checked = WorkRules.check(workflow, board.work());
         final List<org.fuin.porelo.planner.app.answers.WorkRule> work = new ArrayList<>();
         checked.rules().forEach((state, rule) -> work.add(rule(state, rule)));
         return new org.fuin.porelo.planner.app.answers.Workflow(
                 board.revision().value(),
+                tracker(tracker),
                 workflow.states().stream()
                         .map(
                                 state ->
@@ -1010,15 +1178,24 @@ public class BoardController {
      * @param board the board
      * @param snapshot the local work generation
      * @param reasons whether the board's store keeps a move's reason
+     * @param tracker where the board's store keeps the stories and issues
      * @return the workflow's answer and every story in one
      */
     static org.fuin.porelo.planner.app.answers.Board boardOf(
-            final Board board, final WorkRun.Snapshot snapshot, final boolean reasons) {
-        final org.fuin.porelo.planner.app.answers.Workflow workflow = workflowOf(board, reasons);
+            final Board board,
+            final WorkRun.Snapshot snapshot,
+            final boolean reasons,
+            final org.fuin.porelo.planner.store.Tracker tracker) {
+        final org.fuin.porelo.planner.app.answers.Workflow workflow =
+                workflowOf(board, reasons, tracker);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new org.fuin.porelo.planner.app.answers.Board(
                 workflow.revision(),
+                workflow.tracker(),
                 board.names(),
+                board.repositoryWarnings().stream()
+                        .map(BoardController::repositoryWarning)
+                        .toList(),
                 workflow.states(),
                 workflow.phases(),
                 workflow.work(),
@@ -1173,6 +1350,7 @@ public class BoardController {
                         closedAt(story),
                         story.priority(),
                         story.size(),
+                        story.labels(),
                         story.link(),
                         issues(board, story, snapshot, counter.minutes()),
                         WorkAnswers.work(board, snapshot.runs().get(story.id())),
@@ -1304,6 +1482,7 @@ public class BoardController {
                         issue.state(),
                         issue.size(),
                         issue.priority(),
+                        issue.labels(),
                         view.minutesLeft(),
                         issue.blockedBy(),
                         view.waitsOn(),
@@ -1657,6 +1836,7 @@ public class BoardController {
                 closedAt(story),
                 story.priority(),
                 story.size(),
+                story.labels(),
                 story.link(),
                 issues(board, story, snapshot, counter.minutes()),
                 WorkAnswers.work(board, snapshot.runs().get(story.id())),

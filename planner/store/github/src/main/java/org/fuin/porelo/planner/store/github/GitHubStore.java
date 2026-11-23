@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.ReadProgress;
 import org.fuin.porelo.planner.store.Recheck;
+import org.fuin.porelo.planner.store.RepositoryWarning;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
@@ -36,6 +37,7 @@ import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TextFormat;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
@@ -72,6 +74,7 @@ public final class GitHubStore implements PlanningStore {
      * @param copies keeps the board's copy on disk, which a start serves before GitHub is read, or
      *     null to keep none
      * @param changes tells what changed on the board since its copy's last look
+     * @param labels the repositories' labels, read at the project's first read and at each refresh
      */
     public record Parts(
             BoardReader reader,
@@ -81,7 +84,8 @@ public final class GitHubStore implements PlanningStore {
             StageMetrics metrics,
             StoryStates storyStates,
             @Nullable BoardCopies copies,
-            TrackerChanges changes) {
+            TrackerChanges changes,
+            RepositoryLabels labels) {
 
         /**
          * Parts that only read, knowing no change probe and no stage numbers.
@@ -99,7 +103,8 @@ public final class GitHubStore implements PlanningStore {
                     StageMetrics.NONE,
                     storyStates,
                     null,
-                    TrackerChanges.NONE);
+                    TrackerChanges.NONE,
+                    RepositoryLabels.NONE);
         }
 
         /**
@@ -109,7 +114,8 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts writer(final BoardWriter other) {
-            return new Parts(reader, other, probe, refusals, metrics, storyStates, copies, changes);
+            return new Parts(
+                    reader, other, probe, refusals, metrics, storyStates, copies, changes, labels);
         }
 
         /**
@@ -120,7 +126,7 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts probe(final ChangeProbe other) {
             return new Parts(
-                    reader, writer, other, refusals, metrics, storyStates, copies, changes);
+                    reader, writer, other, refusals, metrics, storyStates, copies, changes, labels);
         }
 
         /**
@@ -130,7 +136,8 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts refusals(final AccessRefusals other) {
-            return new Parts(reader, writer, probe, other, metrics, storyStates, copies, changes);
+            return new Parts(
+                    reader, writer, probe, other, metrics, storyStates, copies, changes, labels);
         }
 
         /**
@@ -140,7 +147,8 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts metrics(final StageMetrics other) {
-            return new Parts(reader, writer, probe, refusals, other, storyStates, copies, changes);
+            return new Parts(
+                    reader, writer, probe, refusals, other, storyStates, copies, changes, labels);
         }
 
         /**
@@ -150,7 +158,8 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts copies(final @Nullable BoardCopies other) {
-            return new Parts(reader, writer, probe, refusals, metrics, storyStates, other, changes);
+            return new Parts(
+                    reader, writer, probe, refusals, metrics, storyStates, other, changes, labels);
         }
 
         /**
@@ -160,7 +169,19 @@ public final class GitHubStore implements PlanningStore {
          * @return the parts
          */
         public Parts changes(final TrackerChanges other) {
-            return new Parts(reader, writer, probe, refusals, metrics, storyStates, copies, other);
+            return new Parts(
+                    reader, writer, probe, refusals, metrics, storyStates, copies, other, labels);
+        }
+
+        /**
+         * The same parts keeping the repositories' labels through another forge.
+         *
+         * @param other the labels
+         * @return the parts
+         */
+        public Parts labels(final RepositoryLabels other) {
+            return new Parts(
+                    reader, writer, probe, refusals, metrics, storyStates, copies, changes, other);
         }
     }
 
@@ -313,6 +334,11 @@ public final class GitHubStore implements PlanningStore {
     }
 
     @Override
+    public Tracker tracker() {
+        return Tracker.GITHUB;
+    }
+
+    @Override
     public Board board() {
         final Snapshot current = snapshot;
         if (current != null) {
@@ -414,7 +440,12 @@ public final class GitHubStore implements PlanningStore {
             throw refused(e);
         }
         final WholeRead why = snapshot == null ? WholeRead.FIRST : WholeRead.RELOAD;
-        return served(wholeBesideSaves(now, true, why).board());
+        final Board read = wholeBesideSaves(now, true, why).board();
+        if (parts.labels().kept()) {
+            // A refresh is the one read after the first that checks the labels again.
+            readLabels(read.names());
+        }
+        return served(read);
     }
 
     /** Why the board is read whole, named in the log so a read after the first can be explained. */
@@ -495,6 +526,12 @@ public final class GitHubStore implements PlanningStore {
                                     return readAfterWriting();
                                 })
                         .board());
+    }
+
+    /** Writes the topic labels of an issue or a story and keeps every other label it carries. */
+    @Override
+    public boolean setsLabels() {
+        return true;
     }
 
     /** Whether an issue's requested state is written during its creation. */
@@ -1570,22 +1607,88 @@ public final class GitHubStore implements PlanningStore {
      * store answers goes through here, so the window is told the pace with each.
      */
     private Board served(final Board board) {
-        final List<String> pace = parts.probe().pace().faults();
-        if (pace.isEmpty()) {
+        final RepositoryLabels labels = parts.labels();
+        if (labels.kept() && !labels.everRead()) {
+            // The project's first read, by whichever way the board came, checks its labels once.
+            readLabels(board.names());
+        }
+        final List<String> faults = new ArrayList<>(labels.faults(board.names()));
+        faults.addAll(parts.probe().pace().faults());
+        return board.withRepositories(labels.warnings(board.names()), faults);
+    }
+
+    /**
+     * Reads every repository's labels anew with the person's token for GitHub alone; a read that
+     * cannot be made leaves each repository a fault until the next.
+     */
+    private void readLabels(final List<String> repositories) {
+        final String token;
+        try {
+            token = tokens.token(config.forge());
+        } catch (final RuntimeException e) {
+            parts.labels().unread(repositories, "no token for GitHub is at hand");
+            return;
+        }
+        parts.labels().read(token, config.project().owner(), repositories);
+    }
+
+    @Override
+    public boolean keepsRepositoryLabels() {
+        return parts.labels().kept();
+    }
+
+    /**
+     * Reads one of the project's repositories' labels anew with the person's token for GitHub
+     * alone, and answers the board with them; a repository the board does not name is read nothing
+     * for.
+     */
+    @Override
+    public Board rereadLabels(final String repository) {
+        if (!parts.labels().kept()) {
+            throw new UnsupportedOperationException(NOT_OFFERED);
+        }
+        final Board board = board();
+        if (!board.names().contains(repository)) {
             return board;
         }
-        final List<String> faults = new java.util.ArrayList<>(board.faults());
-        faults.addAll(pace);
-        return new Board(
-                board.revision(),
-                board.workflow(),
-                board.stories(),
-                board.issues(),
-                board.work(),
-                board.repositories(),
-                faults,
-                board.owner(),
-                board.unlisted());
+        try {
+            parts.labels()
+                    .reread(tokens.token(config.forge()), config.project().owner(), repository);
+        } catch (final RuntimeException e) {
+            // A refusal of the login or its rate limit is answered as any other call's.
+            throw refused(e);
+        }
+        return board();
+    }
+
+    /**
+     * Makes a correction's calls on one repository's labels under the lock, with the person's token
+     * for GitHub alone; the board held is not read again, since no item changed.
+     */
+    @Override
+    public Board correctLabels(final String repository, final List<RepositoryWarning.Call> calls) {
+        if (!parts.labels().kept()) {
+            throw new UnsupportedOperationException(NOT_OFFERED);
+        }
+        final Snapshot now;
+        try {
+            now =
+                    lockedForSave(
+                            () -> {
+                                final Snapshot held = current();
+                                parts.labels()
+                                        .correct(
+                                                tokens.token(config.forge()),
+                                                config.project().owner(),
+                                                repository,
+                                                calls);
+                                return held;
+                            });
+        } catch (final RuntimeException e) {
+            // A refusal of the login or its rate limit is answered as any other call's.
+            throw refused(e);
+        }
+        return served(now.board());
     }
 
     /**

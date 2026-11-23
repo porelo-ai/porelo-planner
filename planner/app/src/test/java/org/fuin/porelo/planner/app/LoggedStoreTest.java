@@ -91,6 +91,27 @@ class LoggedStoreTest {
                         reached.add("list " + issue);
                         return BOARD;
                     }
+
+                    @Override
+                    public boolean keepsRepositoryLabels() {
+                        reached.add("keeps labels");
+                        return true;
+                    }
+
+                    @Override
+                    public Board rereadLabels(final String repository) {
+                        reached.add("reread " + repository);
+                        return BOARD;
+                    }
+
+                    @Override
+                    public Board correctLabels(
+                            final String repository,
+                            final List<org.fuin.porelo.planner.store.RepositoryWarning.Call>
+                                    calls) {
+                        reached.add("labels " + repository);
+                        return BOARD;
+                    }
                 };
         final LoggedStore store = new LoggedStore("alpha", wrapped);
 
@@ -107,6 +128,9 @@ class LoggedStoreTest {
         store.comment("AB1", "A comment.");
         assertThat(store.addsUnlistedIssues()).as("the wrapped store's add").isTrue();
         store.addUnlistedIssue(BOARD.revision(), "porelo-lib#7");
+        assertThat(store.keepsRepositoryLabels()).as("the wrapped store's labels").isTrue();
+        store.rereadLabels("porelo-lib");
+        store.correctLabels("porelo-lib", List.of());
 
         assertThat(reached)
                 .as("the edits the wrapped store was given")
@@ -117,6 +141,9 @@ class LoggedStoreTest {
                         "text ST1",
                         "comment AB1",
                         "lists",
-                        "list porelo-lib#7");
+                        "list porelo-lib#7",
+                        "keeps labels",
+                        "reread porelo-lib",
+                        "labels porelo-lib");
     }
 }

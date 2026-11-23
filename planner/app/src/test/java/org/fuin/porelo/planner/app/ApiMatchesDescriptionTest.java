@@ -49,6 +49,9 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Health", org.fuin.porelo.planner.app.answers.Health.class),
                     Map.entry("Proof", org.fuin.porelo.planner.app.answers.Proof.class),
                     Map.entry("Workflow", org.fuin.porelo.planner.app.answers.Workflow.class),
+                    Map.entry("Tracker", org.fuin.porelo.planner.app.answers.Tracker.class),
+                    Map.entry(
+                            "ItemsDirectoryRequest", TrackerController.ItemsDirectoryRequest.class),
                     Map.entry("State", org.fuin.porelo.planner.app.answers.State.class),
                     Map.entry("Phase", org.fuin.porelo.planner.app.answers.Phase.class),
                     Map.entry("WorkRule", org.fuin.porelo.planner.app.answers.WorkRule.class),
@@ -65,6 +68,10 @@ class ApiMatchesDescriptionTest {
                     Map.entry("IssueDetail", org.fuin.porelo.planner.app.answers.IssueDetail.class),
                     Map.entry("ItemWarning", org.fuin.porelo.planner.app.answers.ItemWarning.class),
                     Map.entry("Correction", org.fuin.porelo.planner.app.answers.Correction.class),
+                    Map.entry(
+                            "RepositoryWarning",
+                            org.fuin.porelo.planner.app.answers.RepositoryWarning.class),
+                    Map.entry("LabelCall", org.fuin.porelo.planner.app.answers.LabelCall.class),
                     Map.entry(
                             "CorrectionPreview",
                             org.fuin.porelo.planner.app.answers.CorrectionPreview.class),
@@ -289,8 +296,8 @@ class ApiMatchesDescriptionTest {
                         include != null && include.value() == JsonInclude.Include.NON_NULL;
                 if (!leftOut
                         && !AnswerRecordsTest.SENT_THOUGH_OPTIONAL.contains(
-                                entry.getKey() + "." + component.getName())) {
-                    always.add(component.getName());
+                                entry.getKey() + "." + AnswerRecordsTest.wireName(component))) {
+                    always.add(AnswerRecordsTest.wireName(component));
                 }
             }
             if (!entry.getKey().equals("ProjectSource")) {
@@ -342,6 +349,7 @@ class ApiMatchesDescriptionTest {
                     final Set<String> members = new TreeSet<>(parts);
                     members.add("title");
                     members.add("seen");
+                    members.add("labels");
                     final Set<String> described = new TreeSet<>();
                     schemas.get(schema)
                             .get("properties")
@@ -349,7 +357,7 @@ class ApiMatchesDescriptionTest {
                             .forEach(member -> described.add(member.getKey()));
                     assertThat(described)
                             .as("the members of %s against those the planner reads", schema)
-                            .contains("title", "seen")
+                            .contains("title", "seen", "labels")
                             .isEqualTo(members);
                 });
     }
@@ -436,6 +444,53 @@ class ApiMatchesDescriptionTest {
         assertThat(health.at("/commit/pattern").asText())
                 .as("the description's commit pattern against PlannerBuild's")
                 .isEqualTo("^" + PlannerBuild.COMMIT.pattern() + "$");
+    }
+
+    @Test
+    void theLabelNamePatternRefusesEveryCharacterTheStoresLabelRuleRefuses() {
+        // Harm: the window takes a label name that hides or turns text, which the planner refuses
+        // or a person reads as another label.
+        final String ecma = description.at("/components/schemas/LabelName/pattern").asText();
+        // Read without the u flag, a tag character stands as its surrogate pair; Java matches by
+        // code points, so each pair is read as the range of code points it encodes.
+        final java.util.regex.Matcher pairs =
+                java.util.regex.Pattern.compile(
+                                "\\\\u(D[89AB][0-9A-F]{2})\\[\\\\u(D[C-F][0-9A-F]{2})-\\\\u(D[C-F][0-9A-F]{2})\\]",
+                                java.util.regex.Pattern.CASE_INSENSITIVE)
+                        .matcher(ecma);
+        final StringBuilder read = new StringBuilder();
+        while (pairs.find()) {
+            final char high = (char) Integer.parseInt(pairs.group(1), 16);
+            pairs.appendReplacement(
+                    read,
+                    java.util.regex.Matcher.quoteReplacement(
+                            String.format(
+                                    "[\\x{%X}-\\x{%X}]",
+                                    Character.toCodePoint(
+                                            high, (char) Integer.parseInt(pairs.group(2), 16)),
+                                    Character.toCodePoint(
+                                            high, (char) Integer.parseInt(pairs.group(3), 16)))));
+        }
+        pairs.appendTail(read);
+        final java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(read.toString());
+        for (final int hidden :
+                List.of(
+                        0x0000, 0x001F, 0x007F, 0x0085, 0x009F, 0x00AD, 0x034F, 0x061C, 0x180E,
+                        0x200B, 0x200F, 0x202A, 0x202E, 0x2060, 0x2064, 0x2066, 0x206F, 0xFEFF,
+                        0x2028, 0x2029, 0xE0000, 0xE0001, 0xE0041, 0xE007F)) {
+            final String name = "a" + Character.toString(hidden) + "b";
+            assertThat(pattern.matcher(name).matches()).as("U+%04X", hidden).isFalse();
+            assertThat(org.fuin.porelo.planner.store.TopicLabels.wellFormed(name))
+                    .as("U+%04X by the store's rule", hidden)
+                    .isFalse();
+        }
+        for (final String name :
+                List.of("needs-design", "Größe 🙂", "a" + Character.toString(0xE0080))) {
+            assertThat(pattern.matcher(name).matches()).as(name).isTrue();
+            assertThat(org.fuin.porelo.planner.store.TopicLabels.wellFormed(name))
+                    .as("%s by the store's rule", name)
+                    .isTrue();
+        }
     }
 
     @Test
@@ -678,7 +733,10 @@ class ApiMatchesDescriptionTest {
         operation.path("responses").fieldNames().forEachRemaining(statuses::add);
         assertThat(statuses)
                 .as("every answer of the hand-in")
-                .isEqualTo(Set.of("201", "400", "401", "404", "422", "501", "502", "503", "504"));
+                .isEqualTo(
+                        Set.of(
+                                "201", "400", "401", "404", "409", "422", "501", "502", "503",
+                                "504"));
         assertThat(operation.at("/responses/422/$ref").asText())
                 .as("a refused idea's answer")
                 .isEqualTo("#/components/responses/IdeaRefused");
@@ -721,7 +779,7 @@ class ApiMatchesDescriptionTest {
         operation.path("responses").fieldNames().forEachRemaining(statuses::add);
         assertThat(statuses)
                 .as("every answer of the hand-in")
-                .isEqualTo(Set.of("200", "400", "401", "404", "422", "501", "502", "503"));
+                .isEqualTo(Set.of("200", "400", "401", "404", "409", "422", "501", "502", "503"));
         assertThat(operation.at("/responses/422/$ref").asText())
                 .as("a refused result's answer")
                 .isEqualTo("#/components/responses/ResultRefused");
@@ -1065,7 +1123,8 @@ class ApiMatchesDescriptionTest {
 
     private static Set<String> names(final RecordComponent[] components) {
         final Set<String> names = new TreeSet<>();
-        Arrays.stream(components).forEach(component -> names.add(component.getName()));
+        Arrays.stream(components)
+                .forEach(component -> names.add(AnswerRecordsTest.wireName(component)));
         return names;
     }
 }

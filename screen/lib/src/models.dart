@@ -1,6 +1,8 @@
 /// The planning records as the planning service reports them; an absent field stays absent.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show immutable;
 
 import 'story_work_order.dart';
@@ -38,16 +40,24 @@ String planningShown(String text, {bool multiline = true}) => text.replaceAll(
 @immutable
 class PlanWarning {
   /// Takes a warning's parts.
-  const PlanWarning(this.kind, this.text, {this.holds = false});
+  const PlanWarning(this.kind, this.text, {this.holds = false, this.correction});
 
-  /// Reads one warning; a field that is no text reads as empty, and a hold that is not true as none.
+  /// Reads one warning; a field that is no text reads as empty, a hold that is not true as none, and a correction the
+  /// window cannot read as none offered.
   PlanWarning.from(Map<String, dynamic> map)
     : kind = _planText(map, 'kind'),
       text = _planText(map, 'text'),
-      holds = map['holds'] == true;
+      holds = map['holds'] == true,
+      correction = PlanCorrection.read(map['correction']);
 
   /// The kind of an id that names another item too, whose own page no read by that id finds.
   static const idTwice = 'IdTwice';
+
+  /// The kind of a text without the sections the planner reads, which the person repairs where the item is kept.
+  static const bodyNotSectioned = 'BodyNotSectioned';
+
+  /// The one change the store offers to set it right, or null when it offers none.
+  final PlanCorrection? correction;
 
   /// The planner's name of what is wrong, such as StateOutsideWorkflow; one the window does not know is shown as any.
   final String kind;
@@ -70,6 +80,234 @@ class PlanWarning {
     for (final warning in _planList(value, PlanWarning.from))
       if (warning.kind.isNotEmpty || warning.text.isNotEmpty) warning,
   ];
+}
+
+/// The one change a store offers to set a warning right, which the person picks among its [choices] and confirms.
+@immutable
+class PlanCorrection {
+  /// Takes a correction's parts.
+  const PlanCorrection(this.kind, this.choices);
+
+  /// Reads a warning's correction; null for none and for one the window cannot read, which it then offers as none.
+  static PlanCorrection? read(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final kind = value['kind'];
+    final choices = value['choices'];
+    if (kind is! String || !_kind.hasMatch(kind) || choices is! List) return null;
+    // A Labels alone offers no choice; any other kind without one could never be picked.
+    if ((choices.isEmpty && kind != labels) || choices.length > mostChoices) return null;
+    final read = <String>[];
+    for (final choice in choices) {
+      if (choice is! String || !_choice.hasMatch(choice) || read.contains(choice)) return null;
+      read.add(choice);
+    }
+    return PlanCorrection(kind, List.unmodifiable(read));
+  }
+
+  static final _kind = RegExp(r'^[A-Z][A-Za-z]{0,63}$');
+
+  /// A choice as the planner takes it back: a state's or a priority's name.
+  static final _choice = RegExp(r'^[A-Za-z][A-Za-z0-9 _-]{0,63}$');
+
+  /// The most choices the window reads of one correction.
+  static const mostChoices = 64;
+
+  /// An issue moved into the state picked, previewed and saved as any move of it.
+  static const move = 'Move';
+
+  /// A story's priority set to the one picked, previewed and saved as a correction.
+  static const priority = 'Priority';
+
+  /// A repository's labels brought to the topic labels, previewed and saved as a correction; it offers no choice.
+  static const labels = 'Labels';
+
+  /// An open name of the change; the window offers only those it knows.
+  final String kind;
+
+  /// The values the person picks from, in the planner's order.
+  final List<String> choices;
+
+  /// Whether the window knows how to offer it.
+  bool get known => kind == move || kind == priority || kind == labels;
+}
+
+/// Whether [name] is a label's name as a forge keeps it: 1 to 50 characters, none a control, format, bidi or
+/// zero-width character, a soft hyphen, a combining grapheme joiner, the Mongolian vowel separator or a tag character.
+bool planningLabelName(String name) => name.isNotEmpty && name.runes.length <= 50 && !name.contains(_notInLabelName);
+
+final _notInLabelName = RegExp(
+  r'[\x00-\x1f\x7f-\x9f\xad\u034f\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\u2028\u2029\u{e0000}-\u{e007f}]',
+  unicode: true,
+);
+
+/// What is wrong in one of the project's repositories itself, rather than in a story or an issue: for
+/// [topicLabels], the topic labels it lacks or carries otherwise, and GitHub's defaults it still carries. It holds
+/// back no item and no work.
+@immutable
+class PlanRepositoryWarning {
+  /// Takes a warning's parts.
+  const PlanRepositoryWarning(
+    this.repository,
+    this.kind, {
+    this.missing = const [],
+    this.defaults = const [],
+    this.differing = const [],
+    this.correction,
+  });
+
+  /// Reads one warning; null for one the window cannot read: a repository or kind that is no name, a label list
+  /// that is no list of label names, names one twice or is longer than its bound.
+  static PlanRepositoryWarning? read(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final repository = value['repository'];
+    final kind = value['kind'];
+    if (repository is! String || !_repository.hasMatch(repository) || repository.contains('..')) return null;
+    if (kind is! String || !_kind.hasMatch(kind)) return null;
+    final missing = _labels(value['missing'], mostTopicLabels);
+    final defaults = _labels(value['defaults'], mostDefaultLabels);
+    final differing = _labels(value['differing'], mostTopicLabels);
+    if (missing == null || defaults == null || differing == null) return null;
+    return PlanRepositoryWarning(
+      repository,
+      kind,
+      missing: missing,
+      defaults: defaults,
+      differing: differing,
+      correction: PlanCorrection.read(value['correction']),
+    );
+  }
+
+  /// The warnings a whole board names; one the window cannot read is left out, and a list longer than
+  /// [mostWarnings] is read as none, since it is no list the planner sends.
+  static List<PlanRepositoryWarning> readAll(Object? value) {
+    if (value is! List || value.length > mostWarnings) return const [];
+    return List.unmodifiable([for (final each in value) ?read(each)]);
+  }
+
+  static List<String>? _labels(Object? value, int most) {
+    if (value is! List || value.length > most) return null;
+    final read = <String>[];
+    for (final label in value) {
+      if (label is! String || !planningLabelName(label) || read.contains(label)) return null;
+      read.add(label);
+    }
+    return List.unmodifiable(read);
+  }
+
+  static final _repository = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
+  static final _kind = RegExp(r'^[A-Z][A-Za-z]{0,63}$');
+
+  /// The kind of a repository whose labels differ from the topic labels.
+  static const topicLabels = 'TopicLabels';
+
+  /// The most warnings the window reads of one board.
+  static const mostWarnings = 100;
+
+  /// How many topic labels there are, the most a list of them holds.
+  static const mostTopicLabels = 7;
+
+  /// How many default labels GitHub gives a repository, the most a list of them holds.
+  static const mostDefaultLabels = 8;
+
+  /// The repository's name.
+  final String repository;
+
+  /// The planner's name of what is wrong; one the window does not know is shown with its repository alone.
+  final String kind;
+
+  /// The topic labels the repository lacks.
+  final List<String> missing;
+
+  /// GitHub's default labels the repository still carries.
+  final List<String> defaults;
+
+  /// The topic labels the repository carries with another color or description.
+  final List<String> differing;
+
+  /// The change the store offers to set it right, or null when it offers none.
+  final PlanCorrection? correction;
+
+  /// What is wrong, in the screen's words.
+  String get words {
+    if (kind != topicLabels) return kind;
+    return [
+      'Its labels differ from the topic labels',
+      if (missing.isNotEmpty) 'it lacks ${missing.join(', ')}',
+      if (defaults.isNotEmpty) "it still carries GitHub's ${defaults.join(', ')}",
+      if (differing.isNotEmpty)
+        '${differing.join(', ')} ${differing.length == 1 ? 'has' : 'have'} another color or description',
+    ].join('; ');
+  }
+}
+
+/// One call a repository's Labels correction makes on its forge, as its preview names it.
+@immutable
+class PlanLabelCall {
+  /// Takes a call's parts; a [delete] has no color and no description.
+  const PlanLabelCall(this.action, this.label, {this.color, this.description});
+
+  /// Reads one call; null for one the window cannot read.
+  static PlanLabelCall? read(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final action = value['action'];
+    final label = value['label'];
+    final color = value['color'];
+    final description = value['description'];
+    if (action is! String || !actions.contains(action) || label is! String || !planningLabelName(label)) {
+      return null;
+    }
+    if (action == delete) return color == null && description == null ? PlanLabelCall(action, label) : null;
+    if (color is! String || !_color.hasMatch(color) || description is! String || description.runes.length > 100) {
+      return null;
+    }
+    return PlanLabelCall(action, label, color: color, description: description);
+  }
+
+  /// Reads a preview's calls; null when one of them cannot be read or there are more than [mostCalls], so a
+  /// correction is never confirmed over calls the person was not shown.
+  static List<PlanLabelCall>? readAll(Object? value) {
+    if (value is! List || value.length > mostCalls) return null;
+    final read = <PlanLabelCall>[];
+    for (final each in value) {
+      final call = PlanLabelCall.read(each);
+      if (call == null) return null;
+      read.add(call);
+    }
+    return List.unmodifiable(read);
+  }
+
+  static final _color = RegExp(r'^[0-9a-f]{6}$');
+
+  /// A default label deleted.
+  static const delete = 'Delete';
+
+  /// A missing topic label created.
+  static const create = 'Create';
+
+  /// A topic label's color and description set to the topic labels'.
+  static const update = 'Update';
+
+  /// Every action the window reads.
+  static const actions = {delete, create, update};
+
+  /// The most calls one correction makes: every default deleted and every topic label created or updated.
+  static const mostCalls = PlanRepositoryWarning.mostDefaultLabels + PlanRepositoryWarning.mostTopicLabels;
+
+  /// What the call does.
+  final String action;
+
+  /// The label it names.
+  final String label;
+
+  /// The color and the description it writes, null for a [delete].
+  final String? color, description;
+
+  /// The call in the screen's words.
+  String get words => switch (action) {
+    delete => 'Delete the label $label, which takes it off every issue that carries it',
+    create => 'Create the label $label, color $color: $description',
+    _ => 'Set the label $label to color $color: $description',
+  };
 }
 
 /// One state, with the machine's kind preserved even when unknown.
@@ -291,6 +529,7 @@ class PlanIssue {
       whatMustBeTrue = source.whatMustBeTrue,
       subAgents = source.subAgents,
       warnings = source.warnings,
+      labels = source.labels,
       // A moved issue's minutes are the planner's to say again, on the board read after the save.
       minutesLeft = state == source.state ? source.minutesLeft : null;
 
@@ -321,6 +560,7 @@ class PlanIssue {
       whatMustBeTrue = map['whatMustBeTrue'] is String ? map['whatMustBeTrue'] as String : null,
       subAgents = map['subAgents'] is List ? _planList(map['subAgents'], PlanWorker.from) : null,
       warnings = PlanWarning.read(map['warnings']),
+      labels = _planStrings(map['labels']),
       minutesLeft = _planMinutes(map['minutesLeft']);
 
   /// The issue's identifier.
@@ -383,6 +623,10 @@ class PlanIssue {
   /// What the store could not read in it, which its row shows; none when the planner named none.
   final List<PlanWarning> warnings;
 
+  /// Its labels on the tracker, the topic labels and any of the person's own, in the planner's order; none when the
+  /// planner named none.
+  final List<String> labels;
+
   /// For an issue left to build, the minutes expected of it less those its work took so far; null when not left to
   /// build, when nothing gives an expectation, or when the planner did not say.
   final double? minutesLeft;
@@ -426,6 +670,7 @@ class PlanStory {
       work = source.work,
       workReported = source.workReported,
       warnings = source.warnings,
+      labels = source.labels,
       // The figures known before the move stay shown until the planner's read after the save replaces them.
       open = source.open;
 
@@ -446,6 +691,7 @@ class PlanStory {
       work = map['work'] is Map<String, dynamic> ? PlanWork.from(map['work'] as Map<String, dynamic>) : null,
       workReported = map.containsKey('work'),
       warnings = PlanWarning.read(map['warnings']),
+      labels = _planStrings(map['labels']),
       open = PlanOpenWork.read(map['open']);
 
   /// Its identifier.
@@ -492,6 +738,10 @@ class PlanStory {
 
   /// What the store could not read in it, which its card shows; none when the planner named none.
   final List<PlanWarning> warnings;
+
+  /// Its labels on the tracker, the topic labels and any of the person's own, in the planner's order; none when the
+  /// planner named none.
+  final List<String> labels;
 
   /// Whether the watch supplied the ended outcome, including an explicitly cleared outcome.
   bool get endedReported => workReported;
@@ -622,6 +872,132 @@ class PlanRuleBreach {
   final String words;
 }
 
+/// The longest directory the planner takes, in bytes of UTF-8.
+const planningDirectoryMostBytes = 4095;
+
+/// The planner's words for a path longer than [planningDirectoryMostBytes].
+const planningDirectoryTooLong = 'The path is longer than 4095 bytes in UTF-8.';
+
+/// The planner's words for a path outside its rule otherwise.
+const planningDirectoryNotNormal = 'The path is not an absolute path in normal form.';
+
+/// Whether [path] is a directory as the planner takes one; see [planningDirectoryFault].
+bool planningDirectory(String path) => planningDirectoryFault(path) == null;
+
+/// Why [path] is no directory the planner takes, in the planner's own words, or null when it is one: an absolute path
+/// in normal form of at most 4095 bytes in UTF-8, with no `.` or `..` segment, no empty segment and no trailing
+/// separator but the root's; no control character (C0, C1), line or paragraph separator, bidirectional control or
+/// unpaired surrogate; no white space at either end, which is refused, never trimmed. On Linux it starts with `/`, on
+/// Windows it is a drive path `X:\` with `\` alone as its separator; a UNC or device path is refused.
+String? planningDirectoryFault(String path) {
+  if (utf8.encode(path).length > planningDirectoryMostBytes) return planningDirectoryTooLong;
+  if (path.isEmpty || path.runes.any(_unplain) || _blank(path.runes.first) || _blank(path.runes.last)) {
+    return planningDirectoryNotNormal;
+  }
+  final String rest;
+  final String separator;
+  if (path.startsWith('/')) {
+    rest = path.substring(1);
+    separator = '/';
+  } else if (RegExp(r'^[A-Za-z]:\\').hasMatch(path) && !path.contains('/')) {
+    rest = path.substring(3);
+    separator = r'\';
+  } else {
+    return planningDirectoryNotNormal;
+  }
+  if (rest.isEmpty) return null;
+  final normal = rest.split(separator).every((step) => step.isNotEmpty && step != '.' && step != '..');
+  return normal ? null : planningDirectoryNotNormal;
+}
+
+bool _unplain(int c) =>
+    c < 0x20 ||
+    (c >= 0x7f && c <= 0x9f) ||
+    c == 0x2028 ||
+    c == 0x2029 ||
+    (c >= 0x202a && c <= 0x202e) ||
+    (c >= 0x2066 && c <= 0x2069) ||
+    // An unpaired surrogate is answered as its own rune.
+    (c >= 0xd800 && c <= 0xdfff);
+
+bool _blank(int c) =>
+    c == 0x20 ||
+    (c >= 0x09 && c <= 0x0d) ||
+    c == 0x85 ||
+    c == 0xa0 ||
+    c == 0x1680 ||
+    (c >= 0x2000 && c <= 0x200a) ||
+    c == 0x2028 ||
+    c == 0x2029 ||
+    c == 0x202f ||
+    c == 0x205f ||
+    c == 0x3000;
+
+/// What keeps a project's stories and issues, as the planner names it.
+enum PlanningTrackerKind {
+  /// GitHub's tracker.
+  github,
+
+  /// The Git store, as Markdown files in the project's repository.
+  git,
+
+  /// A directory of this computer, which the person may choose.
+  local,
+}
+
+/// Where the planner keeps a project's stories and issues: GitHub's tracker, the Git store, or a directory of this
+/// computer the person may choose.
+@immutable
+class PlanningTracker {
+  /// Kept by GitHub's tracker.
+  const PlanningTracker.github() : kind = PlanningTrackerKind.github, items = null, defaultItems = null;
+
+  /// Kept by the Git store.
+  const PlanningTracker.git() : kind = PlanningTrackerKind.git, items = null, defaultItems = null;
+
+  /// Kept in [items], a directory of this computer, beside the project's [defaultItems].
+  const PlanningTracker.local(String this.items, String this.defaultItems) : kind = PlanningTrackerKind.local;
+
+  /// Reads the planner's `tracker`; null where it is absent or malformed: an unknown kind, a directory beside a kind
+  /// that keeps none, or a local one without both directories as [planningDirectory] takes them.
+  static PlanningTracker? from(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    return switch ((json['kind'], json['items'], json['default'])) {
+      ('github', null, null) => const PlanningTracker.github(),
+      ('git', null, null) => const PlanningTracker.git(),
+      ('local', final String items, final String standard)
+          when planningDirectory(items) && planningDirectory(standard) =>
+        PlanningTracker.local(items, standard),
+      _ => null,
+    };
+  }
+
+  /// What keeps them.
+  final PlanningTrackerKind kind;
+
+  /// The directory the planner uses for a local project, its default included; null for every other kind.
+  final String? items;
+
+  /// The local project's default directory, which a choice of null goes back to; null for every other kind.
+  final String? defaultItems;
+
+  /// Whether a local project keeps another directory than its default, so going back to the default means something.
+  bool get awayFromDefault => local && items != defaultItems;
+
+  /// Whether the planner keeps them in a directory of this computer.
+  bool get local => kind == PlanningTrackerKind.local;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningTracker && other.kind == kind && other.items == items && other.defaultItems == defaultItems;
+
+  @override
+  int get hashCode => Object.hash(kind, items, defaultItems);
+
+  @override
+  String toString() => local ? 'PlanningTracker.local($items, $defaultItems)' : 'PlanningTracker.${kind.name}()';
+}
+
 /// A workflow or a whole board reply; absent fields stay empty.
 class PlanningSnapshot {
   /// Applies destinations explicitly confirmed by the save answer.
@@ -632,11 +1008,14 @@ class PlanningSnapshot {
     Map<String, String> destinations,
   ) : states = source.states,
       phases = source.phases,
+      tracker = source.tracker,
       work = source.work,
       faults = source.faults,
       unlisted = source.unlisted,
       repositories = source.repositories,
       repositoriesReported = source.repositoriesReported,
+      repositoryWarnings = source.repositoryWarnings,
+      repositoryWarningsReported = source.repositoryWarningsReported,
       // A save may mend or break a rule; none is shown until the next whole board names them anew.
       rules = const [],
       rulesReported = false,
@@ -651,6 +1030,7 @@ class PlanningSnapshot {
   /// Reads a snapshot without deriving story states.
   PlanningSnapshot.from(Map<String, dynamic> map)
     : work = _planList(map['work'], PlanWorkRule.from),
+      tracker = PlanningTracker.from(map['tracker']),
       faults = _planStrings(map['faults']),
       unlisted = _planList(map['unlisted'], PlanUnlistedIssue.from),
       rules = [
@@ -661,6 +1041,8 @@ class PlanningSnapshot {
       reasons = map['reasons'] == true,
       repositories = _planStrings(map['repositories']),
       repositoriesReported = _planStringsReported(map['repositories']),
+      repositoryWarnings = PlanRepositoryWarning.readAll(map['repositoryWarnings']),
+      repositoryWarningsReported = map['repositoryWarnings'] is List,
       states = _planList(map['states'], PlanState.from),
       phases = _planList(map['phases'], PlanPhase.from),
       stories = _planList(map['stories'], PlanStory.from),
@@ -673,11 +1055,16 @@ class PlanningSnapshot {
   /// Combines the separate workflow and story reads without deriving any states.
   PlanningSnapshot.fromParts(PlanningSnapshot workflow, PlanningSnapshot board)
     : work = workflow.work,
+      // A whole board names it; a story list leaves the workflow's standing.
+      tracker = board.tracker ?? workflow.tracker,
       faults = workflow.faults,
       // A whole board names them; a story list leaves the last whole board's standing.
       unlisted = board.statesReported ? board.unlisted : workflow.unlisted,
       repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
       repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
+      // Only a whole board names them; a story list leaves the last whole board's standing.
+      repositoryWarnings = board.repositoryWarningsReported ? board.repositoryWarnings : workflow.repositoryWarnings,
+      repositoryWarningsReported = board.repositoryWarningsReported || workflow.repositoryWarningsReported,
       // Only a whole board names the breaches; a story list read beside the workflow names none.
       rules = board.rules,
       rulesReported = board.rulesReported,
@@ -695,10 +1082,13 @@ class PlanningSnapshot {
   /// [source] with the breaches a whole board named at its revision, since the breaches follow from the board alone.
   PlanningSnapshot.ruledBy(PlanningSnapshot source, PlanningSnapshot whole)
     : work = source.work,
+      tracker = source.tracker,
       faults = source.faults,
       unlisted = source.unlisted,
       repositories = source.repositories,
       repositoriesReported = source.repositoriesReported,
+      repositoryWarnings = source.repositoryWarnings,
+      repositoryWarningsReported = source.repositoryWarningsReported,
       rules = whole.rules,
       rulesReported = whole.rulesReported,
       reasons = source.reasons,
@@ -714,6 +1104,9 @@ class PlanningSnapshot {
   /// The work reported by the daemon.
   final List<PlanWorkRule> work;
 
+  /// Where the planner keeps the project's stories and issues; null when it did not say.
+  final PlanningTracker? tracker;
+
   /// The faults reported by the daemon.
   final List<String> faults;
 
@@ -722,6 +1115,12 @@ class PlanningSnapshot {
 
   /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
   final List<String> repositories;
+
+  /// What the store found wrong in the project's repositories themselves; empty when none were reported.
+  final List<PlanRepositoryWarning> repositoryWarnings;
+
+  /// Whether the planner sent the repositories' warnings, as a whole board does.
+  final bool repositoryWarningsReported;
 
   /// Each breach of the stories' rules the whole board named; empty when it named none or this is no whole board.
   final List<PlanRuleBreach> rules;
@@ -1048,6 +1447,114 @@ class PlanningStoppedRun {
 
   /// Each task at work, with the container it runs in.
   final List<({String task, String container})> tasks;
+}
+
+/// The correction of one warning on exactly one story, one issue or one repository, with the person's choice.
+@immutable
+class PlanningCorrection {
+  /// Takes the item or repository, the warning's kind and the choice; exactly one of [story], [issue] and
+  /// [repository] is given, and [choice] is left out only for a correction that offers none.
+  const PlanningCorrection({required this.warning, this.choice, this.story, this.issue, this.repository})
+    : assert(
+        (story == null ? 0 : 1) + (issue == null ? 0 : 1) + (repository == null ? 0 : 1) == 1,
+        'exactly one story, one issue or one repository',
+      );
+
+  /// The story it corrects, or null.
+  final String? story;
+
+  /// The issue it corrects, or null.
+  final String? issue;
+
+  /// The repository it corrects, or null.
+  final String? repository;
+
+  /// The kind of the warning it sets right.
+  final String warning;
+
+  /// The value picked among the correction's choices, or null for one that offers none.
+  final String? choice;
+
+  /// The id of the item, or the name of the repository, it corrects.
+  String get id => story ?? issue ?? repository!;
+
+  /// The correction as the planner reads it.
+  Map<String, dynamic> toMap() => {
+    'story': ?story,
+    'issue': ?issue,
+    'repository': ?repository,
+    'warning': warning,
+    'choice': ?choice,
+  };
+}
+
+/// What a correction would write, answered before it is saved, with the digest its save sends back.
+class PlanningCorrectionPreview {
+  /// Takes a preview's parts.
+  const PlanningCorrectionPreview({
+    required this.revision,
+    required this.digest,
+    required this.from,
+    required this.to,
+    this.story,
+    this.issue,
+    this.repository,
+    this.warning = '',
+    this.targets = const {},
+    this.calls = const [],
+  });
+
+  /// Reads a preview as the planner answers it.
+  PlanningCorrectionPreview.from(Map<String, dynamic> map)
+    : revision = _planText(map, 'revision'),
+      digest = _planText(map, 'digest'),
+      from = _planText(map, 'from'),
+      to = _planText(map, 'to'),
+      story = map['story'] is String ? map['story'] as String : null,
+      issue = map['issue'] is String ? map['issue'] as String : null,
+      repository = map['repository'] is String ? map['repository'] as String : null,
+      warning = _planText(map, 'warning'),
+      targets = planningTargets(map['targets']) ?? const {},
+      calls = PlanLabelCall.readAll(map['calls']) ?? const [];
+
+  /// The revision the preview was read at.
+  final String revision;
+
+  /// What the save sends back, so it saves only what was shown.
+  final String digest;
+
+  /// The value now, empty when none is told, and the one it is written with.
+  final String from, to;
+
+  /// The story, the issue or the repository it sets right, the others null, as the planner names them.
+  final String? story, issue, repository;
+
+  /// The kind of the warning it sets right, as the planner names it.
+  final String warning;
+
+  /// Every item the correction changes with the version it stands at, by id; the save sends them back as seen.
+  final Map<String, String> targets;
+
+  /// Every call a repository's Labels makes on its forge, in its order; empty for every other kind.
+  final List<PlanLabelCall> calls;
+
+  /// Whether it previews exactly [correction]: its item or repository, its warning and its choice, none for a
+  /// repository's Labels.
+  bool answers(PlanningCorrection correction) =>
+      story == correction.story &&
+      issue == correction.issue &&
+      repository == correction.repository &&
+      warning == correction.warning &&
+      to == (correction.choice ?? '');
+}
+
+/// The board's revision after a correction was saved; a correction writes no state, so it stops no run.
+class PlanningCorrectionSaved {
+  /// Reads the planner's answer.
+  PlanningCorrectionSaved.from(Map<String, dynamic> map) : revision = _planText(map, 'revision');
+
+  /// The revision after the save.
+  final String revision;
 }
 
 /// An issue a move carries, or one a warning names, with its state now and after the move.

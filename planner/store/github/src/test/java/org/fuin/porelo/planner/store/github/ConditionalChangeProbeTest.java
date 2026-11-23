@@ -551,6 +551,44 @@ class ConditionalChangeProbeTest {
     }
 
     @Test
+    void theFoldersTheProjectFileNamesReachADiscussionsBriefThroughTheBoard() {
+        // Harm: a discussion over a tracked project sends its agent to folders Porelo never made.
+        final GitHubStore store =
+                overGitHub(
+                        null,
+                        List.of(
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "example-project", "example"),
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "example-two", "lib"),
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "example-three", "three")),
+                        new Work(
+                                Map.of(
+                                        "Idea",
+                                        new org.fuin.porelo.planner.store.WorkRule(
+                                                List.of("Idea"),
+                                                "Finished",
+                                                null,
+                                                null,
+                                                org.fuin.porelo.planner.store.WorkRule.Per
+                                                        .REPOSITORY,
+                                                List.of("AGENT"),
+                                                "Build {story}: {issues}; {tasks}",
+                                                Map.of("codex", "model-a"))),
+                                List.of()));
+
+        assertThat(
+                        org.fuin.porelo.planner.core.IdeaDiscussion.offer(
+                                        store.refresh(), "An idea")
+                                .prompt())
+                .as("each repository beside the folder the project file names")
+                .contains(
+                        "`example-project`, read at `/workspace/example/`",
+                        "`example-two`, read at `/workspace/lib/`");
+    }
+
+    @Test
     void aSpentRateLimitOfTheWholeReadHoldsTheBackgroundReads() {
         // Harm: GitHub's GraphQL refusal of a spent limit is asked again at every poll.
         final GitHubStore store = overGitHub();
@@ -807,15 +845,32 @@ class ConditionalChangeProbeTest {
      * @param pages the REST item list, or null to look at none
      */
     private GitHubStore overGitHub(final GitHubChanges.@Nullable ItemPages pages) {
+        return overGitHub(
+                pages,
+                org.fuin.porelo.planner.store.ProjectRepository.named(REPOSITORIES),
+                new Work(Map.of(), List.of()));
+    }
+
+    /**
+     * A store opened as the planner opens one, for a project's repositories and work rules.
+     *
+     * @param pages the REST item list, or null to look at none
+     * @param repositories the repositories as the project's files name them
+     * @param work the work rules
+     */
+    private GitHubStore overGitHub(
+            final GitHubChanges.@Nullable ItemPages pages,
+            final List<org.fuin.porelo.planner.store.ProjectRepository> repositories,
+            final Work work) {
         final TrackedProject project =
                 new TrackedProject(
                         URI.create("https://github.com"),
                         "example-org",
                         "github",
                         "7",
-                        org.fuin.porelo.planner.store.ProjectRepository.named(REPOSITORIES),
+                        repositories,
                         WORKFLOW,
-                        new Work(Map.of(), List.of()),
+                        work,
                         "c0ffee0",
                         states -> null);
         final GitHubStoreOpener opener =
@@ -827,6 +882,10 @@ class ConditionalChangeProbeTest {
                                         ProjectWrites.class.getClassLoader(),
                                         new Class<?>[] {ProjectWrites.class},
                                         (proxy, method, args) -> {
+                                            // The organization's issue fields are a read.
+                                            if (method.getName().equals("issueFields")) {
+                                                return List.of();
+                                            }
                                             throw new AssertionError(
                                                     "A read called " + method.getName());
                                         }),

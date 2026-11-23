@@ -74,6 +74,45 @@ class ChangesTest {
     }
 
     @Test
+    void aRepositorysWarningLiftedAtTheSameRevisionIsToldOnce() throws Exception {
+        // Harm: a correction of a repository's labels changes no item and keeps the revision, so
+        // the window kept showing the warning it had just set right.
+        final Board plain =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(List.of("Idea"), List.of(), List.of()),
+                        List.of(),
+                        List.of(),
+                        new Work(Map.of(), List.of()),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("porelo-lib")));
+        store.board =
+                plain.withRepositories(
+                        List.of(
+                                new org.fuin.porelo.planner.store.RepositoryWarning(
+                                                "porelo-lib",
+                                                org.fuin.porelo.planner.store.RepositoryWarning
+                                                        .TOPIC_LABELS,
+                                                List.of("tests"),
+                                                List.of(),
+                                                List.of(),
+                                                null)
+                                        .offered()),
+                        List.of());
+        store.remote = store.board;
+        final Changes.Subscription one = changes.subscribe();
+        assertThat(one.first().repositoryWarnings()).as("the warning at once").hasSize(1);
+
+        store.remote = plain;
+        changes.poll();
+        assertThat(one.next(NOW).orElseThrow().repositoryWarnings())
+                .as("the board without it, at the same revision")
+                .isEmpty();
+        changes.poll();
+        assertThat(one.next(NOW)).as("told once").isEmpty();
+    }
+
+    @Test
     void thePlannersOwnSaveReachesEachSubscriberOnceAndItsPollNoMore() throws Exception {
         final Changes.Subscription one = changes.subscribe();
         final Board saved = boardAt("r2");

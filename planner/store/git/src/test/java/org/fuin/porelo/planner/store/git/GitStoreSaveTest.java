@@ -1221,6 +1221,34 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aNewIssueWithLabelsIsNotOfferedAndNothingIsWritten() throws Exception {
+        // Harm: an issue made without the labels asked, as the work format holds none.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+
+        assertThatThrownBy(
+                        () ->
+                                store.createIssue(
+                                        board.revision(),
+                                        new NewIssue(
+                                                OTHER,
+                                                "Labelled",
+                                                "It is there.\n",
+                                                "S",
+                                                Worker.AGENT,
+                                                null,
+                                                null,
+                                                null,
+                                                null,
+                                                List.of("tests"))))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThat(head(OWN)).as("the own repository is left alone").isEqualTo(own);
+        assertThat(head(OTHER)).as("nothing is written").isEqualTo(other);
+    }
+
+    @Test
     void anIdeaInTheOwnRepositoryTakesThePrefixItsIssuesUse() throws Exception {
         // project.yml names no prefix for the own repository; a wrong one would file it elsewhere.
         final GitStore store = store();

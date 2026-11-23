@@ -17,6 +17,7 @@ import java.util.Set;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.github.FieldNames;
 import org.junit.jupiter.api.Tag;
@@ -38,11 +39,30 @@ class LocalDirectoryStoresTest {
                 PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwxr-xr-x")));
     }
 
+    private Map<String, String> environment(final Path data) {
+        return Map.of(
+                "HOME",
+                temp.toString(),
+                "XDG_DATA_HOME",
+                data.toString(),
+                "XDG_STATE_HOME",
+                temp.resolve("state").toString());
+    }
+
+    private ItemsDirectories directories(final Path data) {
+        final Map<String, String> environment = environment(data);
+        return new ItemsDirectories(PrivateFiles.of(environment), environment);
+    }
+
     private LocalDirectoryStores stores(final Path data) {
-        final Map<String, String> environment =
-                Map.of("HOME", temp.toString(), "XDG_DATA_HOME", data.toString());
+        final Map<String, String> environment = environment(data);
         return new LocalDirectoryStores(
-                PrivateFiles.of(environment), environment, Clock.systemUTC());
+                PrivateFiles.of(environment), environment, Clock.systemUTC(), directories(data));
+    }
+
+    private static PlanningStore openKept(final LocalDirectoryStores stores) {
+        return stores.open(
+                "planning", LocalDirectoryStoreTest.PROJECT, () -> LocalDirectoryStoreTest.PROJECT);
     }
 
     private static PlanningStore open(final LocalDirectoryStores stores, final Path chosen) {
@@ -83,10 +103,15 @@ class LocalDirectoryStoresTest {
         // Harm: a mistyped or removed directory is made anew and the items seem lost.
         final Path data = data();
         final Path missing = temp.resolve("missing");
+        final PlanningStore store = open(stores(data), missing);
 
-        assertThatThrownBy(() -> open(stores(data), missing))
-                .as("a missing chosen directory is refused")
-                .isInstanceOf(StoreException.Unreadable.class)
+        assertThatThrownBy(store::board)
+                .as("a missing chosen directory is refused at the read, naming it")
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class)
+                .satisfies(
+                        e ->
+                                assertThat(((StoreException.ItemsDirectoryRefused) e).directory())
+                                        .isEqualTo(missing.toString()))
                 .hasMessageNotContaining(temp.toString());
         assertThat(missing).as("it is not made").doesNotExist();
     }
@@ -108,12 +133,114 @@ class LocalDirectoryStoresTest {
                                 PosixFilePermissions.fromString("rwxr-x---")));
 
         assertThat(open(stores(data), own).board().issues()).as("the account's own").isEmpty();
-        assertThatThrownBy(() -> open(stores(data), link))
+        assertThatThrownBy(() -> open(stores(data), link).board())
                 .as("a link")
-                .isInstanceOf(StoreException.Unreadable.class);
-        assertThatThrownBy(() -> open(stores(data), open))
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
+        assertThatThrownBy(() -> open(stores(data), open).board())
                 .as("a directory the group may read")
-                .isInstanceOf(StoreException.Unreadable.class);
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
+    }
+
+    @Test
+    void aKeptDirectoryIsOpenedAndAnsweredAsTheTracker() throws Exception {
+        // Harm: the person's choice is lost at the next start, or the window shows the wrong one.
+        final Path data = data();
+        final Path own =
+                Files.createDirectory(
+                        temp.resolve("own"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwx------")));
+        directories(data).keep("planning", own);
+
+        final PlanningStore store = openKept(stores(data));
+        store.createIssue(store.board().revision(), new NewIssue("engine", "Kept", "Kept", "S"));
+
+        assertThat(store.tracker())
+                .isEqualTo(
+                        Tracker.local(
+                                own.toString(),
+                                data.resolve("porelo-planner/items/planning").toString()));
+        try (var listed = Files.list(own)) {
+            assertThat(listed.count()).as("the item lies in the chosen directory").isPositive();
+        }
+        assertThat(data.resolve("porelo-planner/items/planning"))
+                .as("the default is not made")
+                .doesNotExist();
+    }
+
+    @Test
+    void aKeptDirectoryMovedAwayIsRefusedAtEveryReadAndTheDefaultIsNotUsed() throws Exception {
+        // Harm: a moved directory silently falls back to the default and the items seem lost.
+        final Path data = data();
+        final Path own =
+                Files.createDirectory(
+                        temp.resolve("own"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwx------")));
+        directories(data).keep("planning", own);
+        final PlanningStore store = openKept(stores(data));
+        assertThat(store.board().issues()).isEmpty();
+
+        Files.move(own, temp.resolve("moved"));
+
+        assertThatThrownBy(store::board)
+                .as("the held board is refused once the directory is gone")
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
+        assertThatThrownBy(() -> openKept(stores(data)).board())
+                .as("a store opened anew is refused too")
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class);
+        assertThat(data.resolve("porelo-planner/items/planning"))
+                .as("the default is not made")
+                .doesNotExist();
+    }
+
+    @Test
+    void anUnreadableKeptChoiceKeepsTheProjectButRefusesItsReads() throws Exception {
+        // Harm: a damaged state file drops the project, or its items are read from the default.
+        final Path data = data();
+        final Path own =
+                Files.createDirectory(
+                        temp.resolve("own"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwx------")));
+        directories(data).keep("planning", own);
+        Files.writeString(
+                temp.resolve("state/porelo-planner/planning/" + ItemsDirectories.FILE), "{");
+
+        final PlanningStore store = openKept(stores(data));
+
+        assertThat(store.tracker().kind()).isEqualTo(Tracker.Kind.LOCAL);
+        assertThatThrownBy(store::board)
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class)
+                .satisfies(
+                        e ->
+                                assertThat(((StoreException.ItemsDirectoryRefused) e).directory())
+                                        .isNull());
+        assertThat(data.resolve("porelo-planner/items/planning"))
+                .as("the default is not made")
+                .doesNotExist();
+    }
+
+    @Test
+    void aDefaultDirectoryOutsideTheRuleIsRefusedAndNeverTold() throws Exception {
+        // Harm: the window is shown a directory whose characters hide what it names.
+        final Path data =
+                Files.createDirectory(
+                        temp.resolve("data\u202e"),
+                        PosixFilePermissions.asFileAttribute(
+                                PosixFilePermissions.fromString("rwxr-xr-x")));
+
+        final PlanningStore store = openKept(stores(data));
+
+        assertThat(store.tracker()).isEqualTo(Tracker.LOCAL_REFUSED);
+        assertThatThrownBy(store::board)
+                .isInstanceOf(StoreException.ItemsDirectoryRefused.class)
+                .hasMessage(ItemsDirectories.NOT_NORMAL)
+                .satisfies(
+                        e ->
+                                assertThat(((StoreException.ItemsDirectoryRefused) e).directory())
+                                        .isNull());
+        assertThat(data.resolve("porelo-planner")).as("nothing is made").doesNotExist();
     }
 
     @Test

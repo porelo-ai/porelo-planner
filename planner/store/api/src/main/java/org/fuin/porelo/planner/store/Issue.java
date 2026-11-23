@@ -32,6 +32,8 @@ import org.jspecify.annotations.Nullable;
  *     repository; empty for a store that knows none
  * @param version its own stored edit basis, as its store keeps it; a value it takes from its parent
  *     issue, such as an inherited worker or risk, is not part of it
+ * @param labels its labels on the tracker, in the store's order, each once: the topic labels and
+ *     any label of the person's own; empty for a store that holds none
  */
 public record Issue(
         String id,
@@ -50,11 +52,13 @@ public record Issue(
         @Nullable String priority,
         List<Warning> warnings,
         List<Wait> waitsOn,
-        Version version) {
+        Version version,
+        List<String> labels) {
 
-    /** Checks the ids, the repository's name and the priority and copies the lists. */
+    /** Checks the ids, the repository's name, the priority and the labels and copies the lists. */
     public Issue {
         Ids.issue(id);
+        labels = TopicLabels.checked(id, labels);
         Ids.name(repository);
         blockedBy = List.copyOf(blockedBy);
         blockedBy.forEach(Ids::issue);
@@ -88,8 +92,8 @@ public record Issue(
     }
 
     /**
-     * An issue whose version is taken over its own stored values, for a store that keeps no edit
-     * basis of its own.
+     * An issue without labels whose version is taken over its own stored values, for a store that
+     * keeps no edit basis of its own.
      */
     public Issue(
             final String id,
@@ -125,22 +129,162 @@ public record Issue(
                 priority,
                 warnings,
                 waitsOn,
-                Version.of(
-                        "issue",
-                        id,
-                        repository,
-                        title,
-                        state,
-                        size,
-                        blockedBy,
-                        parent,
-                        link,
-                        text,
-                        worker,
-                        risk,
-                        estimate,
-                        minutes,
-                        priority));
+                List.of());
+    }
+
+    /**
+     * An issue whose version is taken over its own stored values, its labels among them, for a
+     * store that keeps no edit basis of its own; an issue without labels has the version it had
+     * before labels were kept.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues of the board it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     * @param estimate the minutes it is expected to take, if it was estimated
+     * @param minutes the minutes its work took so far, if the store keeps them
+     * @param priority its priority, or null
+     * @param warnings what the store could not read in it
+     * @param waitsOn the issues it waits on outside the board
+     * @param labels its labels, in the store's order
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk,
+            final @Nullable Double estimate,
+            final @Nullable Double minutes,
+            final @Nullable String priority,
+            final List<Warning> warnings,
+            final List<Wait> waitsOn,
+            final List<String> labels) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                labels.isEmpty()
+                        ? Version.of(
+                                "issue",
+                                id,
+                                repository,
+                                title,
+                                state,
+                                size,
+                                blockedBy,
+                                parent,
+                                link,
+                                text,
+                                worker,
+                                risk,
+                                estimate,
+                                minutes,
+                                priority)
+                        : Version.of(
+                                "issue",
+                                id,
+                                repository,
+                                title,
+                                state,
+                                size,
+                                blockedBy,
+                                parent,
+                                link,
+                                text,
+                                worker,
+                                risk,
+                                estimate,
+                                minutes,
+                                priority,
+                                labels),
+                labels);
+    }
+
+    /**
+     * An issue without labels with the version its store gives.
+     *
+     * @param id the issue's id
+     * @param repository the name of the repository that holds it
+     * @param title its title
+     * @param state its state
+     * @param size its size, if it has one yet
+     * @param blockedBy the ids of the issues of the board it waits on
+     * @param parent its parent's id, for a sub-issue
+     * @param link where a person reads it on the forge, if known
+     * @param text its whole text, title and head included
+     * @param worker who works it
+     * @param risk how much harm its change can do
+     * @param estimate the minutes it is expected to take, if it was estimated
+     * @param minutes the minutes its work took so far, if the store keeps them
+     * @param priority its priority, or null
+     * @param warnings what the store could not read in it
+     * @param waitsOn the issues it waits on outside the board
+     * @param version its own stored edit basis
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk,
+            final @Nullable Double estimate,
+            final @Nullable Double minutes,
+            final @Nullable String priority,
+            final List<Warning> warnings,
+            final List<Wait> waitsOn,
+            final Version version) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                version,
+                List.of());
     }
 
     /**
@@ -167,7 +311,8 @@ public record Issue(
                 priority,
                 warnings,
                 waitsOn,
-                version);
+                version,
+                labels);
     }
 
     /**
@@ -194,7 +339,8 @@ public record Issue(
                 priority,
                 warnings,
                 waitsOn,
-                version);
+                version,
+                labels);
     }
 
     /**
@@ -223,7 +369,8 @@ public record Issue(
                 priority,
                 warnings,
                 waitsOn,
-                version);
+                version,
+                labels);
     }
 
     /**
@@ -250,7 +397,36 @@ public record Issue(
                 priority,
                 warnings,
                 waits,
-                version);
+                version,
+                labels);
+    }
+
+    /**
+     * This issue carrying other labels, its version as it was.
+     *
+     * @param labels its labels, in the store's order
+     * @return the issue
+     */
+    public Issue withLabels(final List<String> labels) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                version,
+                labels);
     }
 
     /**

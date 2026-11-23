@@ -291,18 +291,16 @@ public final class NewIdeas {
         if (repository == null || !NAME.matcher(repository).matches()) {
             faults.add(
                     field
-                            + ".repository: The repository is no repository name; it must be one of "
-                            + String.join(", ", board.names())
-                            + ".");
+                            + ".repository: The repository is no repository name; "
+                            + faults.allowed(board));
         } else if (!board.names().contains(repository)) {
             // A well-formed name is safe to repeat, and tells the agent which name it got wrong.
             faults.add(
                     field
                             + ".repository: The repository "
                             + repository
-                            + " is no repository of the project; it must be one of "
-                            + String.join(", ", board.names())
-                            + ".");
+                            + " is no repository of the project; "
+                            + faults.allowed(board));
         } else if (!named.add(repository)) {
             faults.add(
                     field
@@ -370,6 +368,21 @@ public final class NewIdeas {
     private static final class Faults {
 
         private final List<String> list = new ArrayList<>();
+
+        private boolean namesTold;
+
+        /**
+         * The names a repository must be one of: listed in the first fault that needs them, since a
+         * project's names repeated in every one of a hundred faults would be a refusal of hundreds
+         * of kilobytes.
+         */
+        private String allowed(final Board board) {
+            if (namesTold) {
+                return "it must be one of the names given above.";
+            }
+            namesTold = true;
+            return "it must be one of " + String.join(", ", board.names()) + ".";
+        }
 
         private void add(final String fault) {
             if (!full()) {

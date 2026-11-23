@@ -1,2 +1,2 @@
-title: A warning on a story or an issue now carries the one correction its store offers, and a story whose state the workflow does not know, or which has none, is set to a state the person picks through a previewed and confirmed correction that moves none of its issues and, as a move does, names the issues that do not fit and stops the work running on the story.
+title: A warning on a story or an issue now carries the one correction its store offers, at most 64 choices each a name the window can send back, and a correction other than a move is previewed and saved through its own endpoints, writes no state and so neither waits on nor stops the work running on the story.
 type: added

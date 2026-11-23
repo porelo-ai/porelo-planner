@@ -246,15 +246,18 @@ public final class Changes {
         }
 
         /**
-         * What makes a frame new: its revision, its work generation and its faults, since a fault
-         * such as GitHub's spent rate limit comes and goes while the revision stays.
+         * What makes a frame new: its revision, its work generation, its faults and its
+         * repositories' warnings, since a fault such as GitHub's spent rate limit, or a warning a
+         * correction of a repository's labels lifts, comes and goes while the revision stays.
          */
         private static String identity(final Frame frame) {
             return frame.board().revision().value()
                     + "/"
                     + frame.work().generation()
                     + "/"
-                    + String.join("\n", frame.board().faults());
+                    + String.join("\n", frame.board().faults())
+                    + "/"
+                    + frame.board().repositoryWarnings();
         }
 
         /**

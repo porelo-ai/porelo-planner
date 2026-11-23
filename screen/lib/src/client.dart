@@ -272,6 +272,20 @@ abstract interface class PlanningSource {
     bool confirm = false,
   });
 
+  /// Answers what [correction] of a warning would write against the board as the planner holds it and the items it
+  /// changes with their versions, writing nothing. A Move is previewed by [previewMoves]
+  /// instead, as any move of the issue.
+  Future<PlanningCorrectionPreview> previewCorrection(String project, PlanningCorrection correction);
+
+  /// Saves [correction] only as the preview answered by [digest] showed it, sending its targets back as [seen]; a
+  /// correction writes no state, so it stops no run.
+  Future<PlanningCorrectionSaved> saveCorrection(
+    String project,
+    PlanningCorrection correction,
+    Map<String, String> seen, {
+    required String digest,
+  });
+
   /// Adds an idea as a new issue in state New of [repository], against the versions [seen]; [size] is one of
   /// `XS` to `XL`, or null when it is not known yet; [task] names the Porelo task that proposed it, null when a person
   /// did.
@@ -293,6 +307,17 @@ abstract interface class PlanningSource {
   /// answers the board's revision after the save, the same one when the story had that priority already.
   Future<String> setPriority(String project, String story, String priority, Map<String, String> seen);
 
+  /// Sets the topic labels [item], a story when [story] holds and an issue otherwise, carries after the save, each of
+  /// [planningTopicLabels], against the versions [seen]; a label of the person's own on it stays. It answers the
+  /// board's revision after the save, the same one when the item carried those labels already.
+  Future<String> setLabels(
+    String project,
+    String item,
+    List<String> labels,
+    Map<String, String> seen, {
+    required bool story,
+  });
+
   /// Reads one story and its source text.
   Future<PlanStoryDetail> getStory(String project, String story);
 
@@ -304,6 +329,13 @@ abstract interface class PlanningSource {
 
   /// Replaces a story's whole issue list, preserving its supplied order, against the versions [seen].
   Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen);
+
+  /// Keeps [directory], a path [planningDirectory] takes, as where the planner keeps local [project]'s stories and
+  /// issues, or the default directory again for null, against the versions [seen], which name no target; answers
+  /// where it keeps them now. A directory the planner cannot use is refused as `ItemsDirectoryRefused` in one of its
+  /// fixed phrases, naming it in `parameters['directory']` where it follows the rule, and a project not kept locally
+  /// as not offered.
+  Future<PlanningTracker> setItemsDirectory(String project, String? directory, Map<String, String> seen);
 
   /// Adds an issue the board offers as made outside the project to the project, against the versions [seen];
   /// answers the board's revision after the save.
@@ -387,6 +419,16 @@ class PlanningRework {
 
 /// The priorities a story may have, the highest first, as the planner names them.
 const planningPriorities = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
+
+/// The topic labels every repository of a project carries, the only labels the planner sets on an item.
+const planningTopicLabels = ['documentation', 'security', 'tests', 'build', 'dependencies', 'performance', 'usability'];
+
+/// The topic label [label] is, or null when it is none: a forge matches a label's name in any case, so `Tests` is the
+/// topic label `tests`.
+String? planningTopicLabelOf(String label) {
+  final folded = label.toLowerCase();
+  return planningTopicLabels.contains(folded) ? folded : null;
+}
 
 /// Whether [error] says the provider does not offer the call at all.
 bool planningUnsupported(Object error) => error is PlanningUnsupported || error is PlanningRefusal && error.notOffered;
