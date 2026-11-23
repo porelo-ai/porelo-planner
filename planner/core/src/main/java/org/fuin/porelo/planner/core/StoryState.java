@@ -152,6 +152,18 @@ public final class StoryState {
     }
 
     /**
+     * Whether an issue in a state stands in R or later, where it is built and waits for review or
+     * is closed; an unknown or rejecting state is not.
+     *
+     * @param issueState the issue's state
+     * @return whether it is in R or later
+     */
+    public boolean reviewOrLater(final String issueState) {
+        final int at = place(issueState);
+        return at >= 0 && reviewOrLater(at);
+    }
+
+    /**
      * The W state a story being built stands in: the furthest among its issues in W, so one issue
      * in Reworking makes the story Reworking, however many are still Implementing.
      */

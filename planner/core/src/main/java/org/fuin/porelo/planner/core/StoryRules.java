@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
@@ -27,7 +28,10 @@ public final class StoryRules {
     public enum Rule {
         /** An open issue past the workflow's first state stands in no story. */
         ISSUE_IN_NO_STORY("IssueInNoStory"),
-        /** A story's priority is below the highest priority of its open issues. */
+        /**
+         * A story's priority is below the highest priority of its issues still to be built: open
+         * and, where the workflow gives a story its state, before its review state.
+         */
         STORY_PRIORITY_BELOW_ISSUE("StoryPriorityBelowIssue");
 
         private final String spelled;
@@ -66,9 +70,10 @@ public final class StoryRules {
         final Map<String, Issue> issues = new HashMap<>();
         board.issues().forEach(issue -> issues.put(issue.id(), issue));
         final Map<String, List<String>> children = children(board);
+        final Optional<StoryState> rule = StoryState.of(workflow, List.of());
         final List<Breach> breaches = new ArrayList<>();
         for (final Story story : board.stories()) {
-            belowIssue(story, issues, children, workflow).ifPresent(breaches::add);
+            belowIssue(story, issues, children, workflow, rule).ifPresent(breaches::add);
         }
         if (board.stories().stream().anyMatch(story -> !story.issuesWhole())) {
             // A story whose issues are not all known may name any issue, so none is in no story.
@@ -130,20 +135,24 @@ public final class StoryRules {
         return index < 0 ? OptionalInt.empty() : OptionalInt.of(index);
     }
 
-    private static java.util.Optional<Breach> belowIssue(
+    private static Optional<Breach> belowIssue(
             final Story story,
             final Map<String, Issue> issues,
             final Map<String, List<String>> children,
-            final Workflow workflow) {
+            final Workflow workflow,
+            final Optional<StoryState> rule) {
         final OptionalInt own = rank(story.priority());
         if (own.isEmpty()) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         @Nullable String highest = null;
         int best = own.getAsInt();
         for (final String id : withSubIssues(story.issues(), children)) {
             final Issue issue = issues.get(id);
-            if (issue == null || workflow.closed().contains(issue.state())) {
+            // An issue in review or later is built: its priority no longer asks for its story's.
+            if (issue == null
+                    || workflow.closed().contains(issue.state())
+                    || rule.map(r -> r.reviewOrLater(issue.state())).orElse(false)) {
                 continue;
             }
             final OptionalInt rank = rank(issue.priority());
@@ -153,9 +162,9 @@ public final class StoryRules {
             }
         }
         if (highest == null) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
-        return java.util.Optional.of(
+        return Optional.of(
                 new Breach(
                         story.id(),
                         Rule.STORY_PRIORITY_BELOW_ISSUE,

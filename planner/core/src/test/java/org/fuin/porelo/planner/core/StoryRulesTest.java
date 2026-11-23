@@ -19,7 +19,18 @@ import org.junit.jupiter.api.Test;
 class StoryRulesTest {
 
     private static final List<String> STATES =
-            List.of("Idea", "Backlog", "Implementing", "Review", "Finished", "Rejected");
+            List.of(
+                    "Idea",
+                    "Backlog",
+                    "Implementing",
+                    "Reworking",
+                    "Review",
+                    "Rework",
+                    "Finished",
+                    "Rejected");
+
+    /** Measured as a live workflow is: Review is R, Implementing and Reworking are built in. */
+    private static final List<String> MEASURED = List.of("Implementing", "Reworking", "Review");
 
     private static final List<String> CLOSED = List.of("Finished", "Rejected");
 
@@ -157,20 +168,57 @@ class StoryRulesTest {
     }
 
     @Test
-    void anIssueInReviewAndASubIssueCountAsOpen() {
-        // Harm: urgent work still to be tested, or a part of an issue, hiding behind a low story.
+    void anIssueStillToBeBuiltAndASubIssueRankTheirStory() {
+        // Harm: urgent work, or a part of an issue, still to be built hiding behind a low story.
+        assertThat(
+                        breaches(
+                                List.of(story("ST1", "Low", "Implementing", "PL1")),
+                                issue("PL1", "Low", "Implementing"),
+                                sub("PL1.1", "PL1", "Backlog", "High")))
+                .as("the sub-issue PL1.1 is High under the Low story")
+                .containsExactly("ST1 StoryPriorityBelowIssue");
+        assertThat(
+                        breaches(
+                                List.of(story("ST1", "Low", "Reworking", "PL1")),
+                                issue("PL1", "High", "Reworking")))
+                .as("PL1 in Reworking is built in, though after Implementing")
+                .containsExactly("ST1 StoryPriorityBelowIssue");
+    }
+
+    @Test
+    void anIssueInReviewOrLaterRanksNoStory() {
+        // Harm: a story marked as below its priority for work already built, so the board shows
+        // breaches nobody can act on and the real ones are not read.
+        assertThat(
+                        breaches(
+                                List.of(story("ST1", "Low", "Review", "PL1", "PL2")),
+                                issue("PL1", "High", "Review"),
+                                issue("PL2", "Highest", "Rework")))
+                .as("PL1 waits for review, PL2 is reworked after it")
+                .isEmpty();
         assertThat(
                         breaches(
                                 List.of(story("ST1", "Low", "Review", "PL1")),
                                 issue("PL1", "Low", "Review"),
                                 sub("PL1.1", "PL1", "Review", "High")))
-                .as("the sub-issue PL1.1 is High under the Low story")
-                .containsExactly("ST1 StoryPriorityBelowIssue");
-        assertThat(
-                        breaches(
-                                List.of(story("ST1", "Low", "Review", "PL1")),
-                                issue("PL1", "High", "Review")))
-                .as("PL1 in Review is open")
+                .as("a sub-issue in Review ranks no story either")
+                .isEmpty();
+    }
+
+    @Test
+    void aWorkflowThatGivesNoStoryItsStateRanksEveryOpenIssue() {
+        // Harm: a workflow without measured states hiding every urgent open issue behind its story.
+        final Board board =
+                new Board(
+                        new Revision("r1"),
+                        new Workflow(STATES, List.of(), CLOSED),
+                        List.of(story("ST1", "Low", "Review", "PL1", "PL2")),
+                        List.of(
+                                issue("PL1", "High", "Review"),
+                                issue("PL2", "Highest", "Finished")),
+                        new Work(Map.of(), List.of()));
+        assertThat(spelled(StoryRules.of(board)))
+                .as("with no rule PL1 in Review is open; PL2 is closed")
                 .containsExactly("ST1 StoryPriorityBelowIssue");
     }
 
@@ -236,7 +284,7 @@ class StoryRulesTest {
     private static Board board(final List<Story> stories, final Issue... issues) {
         return new Board(
                 new Revision("r1"),
-                new Workflow(STATES, List.of(), CLOSED),
+                new Workflow(STATES, List.of(), CLOSED, MEASURED),
                 stories,
                 List.of(issues),
                 new Work(Map.of(), List.of()));
