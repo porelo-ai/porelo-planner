@@ -84,7 +84,7 @@ class _Source extends FakePlanningSource {
   }
 
   @override
-  Future<String> refreshProject(String project) async {
+  Future<String?> refreshProject(String project) async {
     if (refreshHeld case final held?) await held.future;
     return super.refreshProject(project);
   }

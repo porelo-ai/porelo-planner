@@ -74,6 +74,11 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public java.util.Optional<org.fuin.porelo.planner.store.Revision> held() {
+        return store.held();
+    }
+
+    @Override
     public java.time.Duration pollDelay(
             final java.time.Duration fetched, final java.time.Duration probed) {
         return store.pollDelay(fetched, probed);

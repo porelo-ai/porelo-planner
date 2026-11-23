@@ -130,6 +130,72 @@ class ChangesRegistryPaceTest {
         }
     }
 
+    @Test
+    void aStoreThatReadsAloneAnswersAReloadAtOnceBeforeItsFirstBoard() throws Exception {
+        // Harm: a reload before the first board of a large tracked project waits for the whole
+        // read, and the window reports the planner as not answering while the read goes on.
+        final java.util.concurrent.CountDownLatch reading =
+                new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        final PlanningStore first =
+                new PlanningStore() {
+                    /** Without a board held, a board is read whole. */
+                    @Override
+                    public Board board() {
+                        return refresh();
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        refreshes.incrementAndGet();
+                        reading.countDown();
+                        try {
+                            release.await(5, TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return boardAt("read");
+                    }
+
+                    @Override
+                    public Board poll() {
+                        return refresh();
+                    }
+
+                    @Override
+                    public boolean reloadsAlone() {
+                        return true;
+                    }
+
+                    @Override
+                    public java.util.Optional<org.fuin.porelo.planner.store.Revision> held() {
+                        return java.util.Optional.empty();
+                    }
+                };
+        final Projects projects = new Projects((project, repository, branch) -> first, 8);
+        try (ChangesRegistry registry =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor())) {
+            projects.put("alpha", "one", null);
+            final Changes.Subscription one = registry.subscribe("alpha");
+
+            final java.util.concurrent.CompletableFuture<String> answered =
+                    java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> registry.refresh("alpha"));
+
+            assertThat(answered.get(2, TimeUnit.SECONDS))
+                    .as("the reload's answer before any board, while the read is held")
+                    .isNull();
+            assertThat(reading.await(5, TimeUnit.SECONDS)).as("the whole read started").isTrue();
+            release.countDown();
+            one.close();
+        }
+    }
+
     private PlanningStore probed() {
         return new PlanningStore() {
             @Override

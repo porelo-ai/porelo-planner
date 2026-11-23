@@ -252,14 +252,14 @@ paths:
         Reads the project at once instead of waiting for the next poll. For a project kept in Git, the repositories
         are fetched and a new revision reaches every stream of the project before this call answers; a repository
         whose save is still pending is not fetched: it stands as the planner's own clone holds it until the save is
-        pushed. For a tracked project, it answers at once and the read's board follows on the stream, with `load`
-        events while the read runs and a failed `load` when it fails.
+        pushed. For a tracked project, it answers at once, before its first board too, and the read's board
+        follows on the stream, with `load` events while the read runs and a failed `load` when it fails.
       tags: [board]
       responses:
         '200':
           description: >-
             The revision after the fetch for a project kept in Git; the revision held when the read began for a
-            tracked project.
+            tracked project, null while it holds no board yet.
           content:
             application/json:
               schema:
@@ -3165,7 +3165,10 @@ components:
       required: [revision]
       properties:
         revision:
-          $ref: '#/components/schemas/Revision'
+          description: The revision, or null for a tracked project that holds no board yet.
+          oneOf:
+            - $ref: '#/components/schemas/Revision'
+            - type: 'null'
 
     StoryList:
       description: Stories at one revision.

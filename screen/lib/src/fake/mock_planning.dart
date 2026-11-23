@@ -103,7 +103,7 @@ class MockPlanningSource implements PlanningSource {
   final List<String> refreshes = [];
 
   @override
-  Future<String> refreshProject(String project) async {
+  Future<String?> refreshProject(String project) async {
     final current = board(project);
     refreshes.add(project);
     return current['revision'] as String? ?? '';

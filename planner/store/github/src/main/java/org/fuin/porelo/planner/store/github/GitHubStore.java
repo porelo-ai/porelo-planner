@@ -470,6 +470,15 @@ public final class GitHubStore implements PlanningStore {
         return true;
     }
 
+    /** The board held, never read for it, so a reload before the first board does not wait. */
+    @Override
+    public java.util.Optional<org.fuin.porelo.planner.store.Revision> held() {
+        final Snapshot current = snapshot;
+        return current != null
+                ? java.util.Optional.of(current.board().revision())
+                : java.util.Optional.empty();
+    }
+
     @Override
     public Duration pollDelay(final Duration fetched, final Duration probed) {
         return parts.probe().pace().delay(probed);

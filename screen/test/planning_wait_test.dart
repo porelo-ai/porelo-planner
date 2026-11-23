@@ -27,7 +27,7 @@ class _HeldReload extends MockPlanningSource {
   final load = ValueNotifier<PlanningLoad?>(null);
   final failed = ValueNotifier<PlanningRefusal?>(null);
   @override
-  Future<String> refreshProject(String project) async {
+  Future<String?> refreshProject(String project) async {
     await read.future;
     return super.refreshProject(project);
   }

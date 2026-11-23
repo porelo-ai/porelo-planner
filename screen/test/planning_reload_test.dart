@@ -9,7 +9,7 @@ class _Source extends Fake implements PlanningSource {
   final watches = <StreamController<PlanningSnapshot>>[];
 
   @override
-  Future<String> refreshProject(String project) {
+  Future<String?> refreshProject(String project) {
     final fetch = Completer<String>();
     fetches.add(fetch);
     return fetch.future;

@@ -254,8 +254,9 @@ abstract interface class PlanningSource {
   /// Reads a project's stories and revision.
   Future<PlanningSnapshot> stories(String project);
 
-  /// Has the provider fetch [project]'s repositories now instead of at its next poll; answers the revision after it.
-  Future<String> refreshProject(String project);
+  /// Has the provider fetch [project]'s repositories now instead of at its next poll; answers the revision after it,
+  /// or null for a tracked project that holds no board yet, whose read goes on and whose board comes on the watch.
+  Future<String?> refreshProject(String project);
 
   /// Answers what [moves] would do against the board at [revision] and what they can do harm by, writing nothing.
   Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision);

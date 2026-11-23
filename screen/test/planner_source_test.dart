@@ -461,6 +461,12 @@ void main() {
     planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, {'revision': 'r2'});
     expect(await source.refreshProject('demo'), 'r2', reason: 'the revision after the fetch');
     expect(planner.targets.last, 'POST /projects/demo/refresh', reason: 'the contract names this call');
+    planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, <String, dynamic>{'revision': null});
+    expect(
+      await source.refreshProject('demo'),
+      isNull,
+      reason: 'a read begun before the first board, answered at once',
+    );
     planner.routes['POST /projects/demo/refresh'] = () => _Reply(200, <String, dynamic>{});
     expect((await _refusal(source.refreshProject('demo'))).name, 'BadAnswer', reason: 'no revision, no fetch');
     planner.routes['POST /projects/demo/refresh'] = () =>

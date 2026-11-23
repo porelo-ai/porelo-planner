@@ -74,6 +74,17 @@ public interface PlanningStore {
     }
 
     /**
+     * Answers the revision of the board held now, without reading the source, so a reload of a
+     * store that reloads alone is answered at once even before its first board.
+     *
+     * @return the revision held, or empty while no board is held yet; a store that holds no board
+     *     of its own reads it
+     */
+    default java.util.Optional<Revision> held() {
+        return java.util.Optional.of(board().revision());
+    }
+
+    /**
      * Answers how long to wait before the next scheduled poll.
      *
      * @param fetched the interval of a store that fetches its whole source

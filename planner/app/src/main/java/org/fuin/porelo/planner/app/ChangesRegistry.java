@@ -151,10 +151,11 @@ public final class ChangesRegistry implements AutoCloseable {
      * Fetches a project's repositories now and tells a new revision to its followers.
      *
      * @param project the project's checked name
-     * @return the revision after the fetch
+     * @return the revision after the fetch; for a followed store that reloads alone the revision
+     *     held when the read began, or null while it holds no board yet
      * @throws Refusal {@code NoSuchProject} for a project not given
      */
-    public String refresh(final String project) {
+    public @Nullable String refresh(final String project) {
         final Followed known;
         synchronized (this) {
             known = followed.get(project);
@@ -167,8 +168,10 @@ public final class ChangesRegistry implements AutoCloseable {
             return known.changes().poll().revision().value();
         }
         // A whole read of a large project outlasts the window's wait, so the board kept is
-        // answered at once and the read goes on alone; its stream tells the window what it finds.
-        final String kept = store.board().revision().value();
+        // answered at once, none before the first, and the read goes on alone; its stream tells
+        // the window what it finds.
+        final @Nullable String kept =
+                store.held().map(org.fuin.porelo.planner.store.Revision::value).orElse(null);
         Thread.ofVirtual()
                 .name("planner-refresh")
                 .start(

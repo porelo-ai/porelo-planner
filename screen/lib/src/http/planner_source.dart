@@ -864,20 +864,26 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<String> refreshProject(String project) async {
+  Future<String?> refreshProject(String project) async {
     // A fetch changes no state, so it follows a changed repository as a read does; Reload depends on that.
     final given = await _told(project);
     final uri = _uri(project, const ['refresh']);
     Map<String, dynamic> answer;
+    // Its revision is checked here: null only for a tracked project that holds no board yet, whose read goes on and
+    // whose board comes on the watch.
     try {
-      answer = await _call('POST', uri, null);
+      answer = await _call('POST', uri, null, revision: false);
     } on PlanningRefusal catch (refusal) {
       if (refusal.name != 'NoSuchProject') rethrow;
       await _retell(project, given);
-      answer = await _call('POST', uri, null);
+      answer = await _call('POST', uri, null, revision: false);
     }
     await _stillBound(project, given);
-    return answer['revision'] as String;
+    final revision = answer['revision'];
+    if (!answer.containsKey('revision') || revision != null && (revision is! String || revision.trim().isEmpty)) {
+      throw const PlanningRefusal('BadAnswer', {}, 'the planner\'s answer is not a JSON object with a revision');
+    }
+    return revision as String?;
   }
 
   @override
