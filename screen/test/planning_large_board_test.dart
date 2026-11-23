@@ -5,7 +5,7 @@ import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/story_work_support.dart';
 
-const _states = ['Idea', 'Ready', 'Building', 'Review', 'Done'];
+const _states = ['New', 'Ready', 'Building', 'Review', 'Done'];
 
 /// A board of [count] stories with four issues each, spread over two phases' states.
 Map<String, dynamic> _board(int count) => {
@@ -23,7 +23,7 @@ Map<String, dynamic> _board(int count) => {
   'phases': [
     {
       'name': 'Plan',
-      'states': ['Idea', 'Ready'],
+      'states': ['New', 'Ready'],
     },
     {
       'name': 'Work',

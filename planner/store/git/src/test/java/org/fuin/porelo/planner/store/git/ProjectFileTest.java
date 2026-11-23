@@ -387,7 +387,7 @@ class ProjectFileTest {
         remote.files.put("porelo-project@c3:project.yml", TRACKED);
         assertThat(again.current().workflow().states())
                 .as("the workflow the planner carries, at a head without stories/workflow.yml")
-                .startsWith("Idea", "Accepted")
+                .startsWith("New", "Accepted")
                 .endsWith("Finished", "Rejected")
                 .hasSize(14);
         assertThat(again.current().work().faults())

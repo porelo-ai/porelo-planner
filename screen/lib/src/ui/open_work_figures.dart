@@ -40,7 +40,7 @@ enum PlanningStateKind {
 
 /// The states the planner's names place, beside what the state kind and the work rules say.
 const _named = {
-  'Idea': PlanningStateKind.idea,
+  'New': PlanningStateKind.idea,
   'Accepted': PlanningStateKind.idea,
   'In analysis': PlanningStateKind.analysis,
   'Analyzed': PlanningStateKind.analysis,

@@ -34,11 +34,13 @@ final class StoryFile {
      * @param ownRoot the project's own repository in the save's scratch directory
      * @param idea the idea
      * @param issues the new issues' references, each {@code <repository>#<id>}
+     * @param first the workflow's first state, the one a story without issues starts in
      * @return its head and path
      * @throws IllegalArgumentException when the repository keeps no stories or no number is left
      * @throws IOException when a file cannot be read or written
      */
-    static Written write(final Path ownRoot, final NewIdea idea, final List<String> issues)
+    static Written write(
+            final Path ownRoot, final NewIdea idea, final List<String> issues, final String first)
             throws IOException {
         final Path stories = ownRoot.resolve("stories");
         if (!Files.isRegularFile(stories.resolve("workflow.yml"), LinkOption.NOFOLLOW_LINKS)) {
@@ -56,7 +58,7 @@ final class StoryFile {
                 new StoryHead(
                         id,
                         idea.title(),
-                        issues.isEmpty() ? IdeaFile.STATE : null,
+                        issues.isEmpty() ? first : null,
                         idea.gain(),
                         idea.test(),
                         idea.priority(),

@@ -1788,7 +1788,7 @@ class _BoardViewState extends State<_BoardView> {
       barrierDismissible: false,
       builder: (_) => NewIssueDialog(board: board),
     );
-    if (mounted && id != null) setState(() => _added = 'Added $id in state Idea.');
+    if (mounted && id != null) setState(() => _added = 'Added $id in state New.');
   }
 
   Future<void> _stop(PlanStory story) async {

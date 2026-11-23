@@ -122,6 +122,15 @@ String _text(WidgetTester tester, String key) {
 }
 
 void main() {
+  // Harm: new issues disappear from the Idea filter when New is placed as an unknown state.
+  test('the New state belongs to the idea kind', () {
+    expect(
+      planningStateKind(PlanState.from({'name': 'New', 'kind': 'WAITING'}), const {}),
+      PlanningStateKind.idea,
+      reason: 'the workflow first state belongs in the Idea filter',
+    );
+  });
+
   final snapshot = PlanningSnapshot.from(_board());
   final filter = PlanningBoardFilter(
     snapshot.states,

@@ -23,12 +23,20 @@ import org.fuin.porelo.planner.store.git.stories.Workflow;
 
 /**
  * Writes a new issue's file in a save's copy of its repository: the next free number of the
- * repository's prefix, a head in state Idea and what must be true.
+ * repository's prefix, a head in the workflow's first state and what must be true.
  */
 final class IdeaFile {
 
-    /** The state a new issue is written in. */
-    static final String STATE = "Idea";
+    /**
+     * The state a new issue is written in: the workflow's first, New in a workflow the planner
+     * writes, whatever a project's own files name it.
+     *
+     * @param workflow the project's workflow
+     * @return its first state
+     */
+    static String state(final Workflow workflow) {
+        return workflow.states().getFirst();
+    }
 
     private static final String PRIORITY = "Medium";
 
@@ -58,8 +66,9 @@ final class IdeaFile {
      *
      * @param id the new issue's id
      * @param path its file, relative to the repository
+     * @param state the state it was written in
      */
-    record Written(String id, String path) {}
+    record Written(String id, String path, String state) {}
 
     /**
      * Writes the issue's file.
@@ -80,10 +89,6 @@ final class IdeaFile {
             final NewIssue issue,
             final Workflow workflow)
             throws IOException {
-        if (!workflow.states().contains(STATE)) {
-            throw new IllegalArgumentException(
-                    "the project's workflow has no state " + STATE + " for a new issue");
-        }
         // The heading repeats the title unquoted, so a line break there could add a head above it.
         if (BREAKS.matcher(issue.title()).find()) {
             throw new IllegalArgumentException(
@@ -103,7 +108,7 @@ final class IdeaFile {
                 new IssueHead(
                         id,
                         issue.title(),
-                        STATE,
+                        state(workflow),
                         issue.size() == null ? "-" : issue.size(),
                         PRIORITY,
                         rank(files, workflow),
@@ -134,7 +139,7 @@ final class IdeaFile {
                                         ? ""
                                         : "\nProposed by Porelo task `" + issue.task() + "`.\n")),
                 StandardCharsets.UTF_8);
-        return new Written(id, path);
+        return new Written(id, path, head.state());
     }
 
     /**

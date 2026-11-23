@@ -271,7 +271,7 @@ abstract interface class PlanningSource {
     bool confirm = false,
   });
 
-  /// Adds an idea as a new issue in state Idea of [repository], against the board at [revision]; [size] is one of
+  /// Adds an idea as a new issue in state New of [repository], against the board at [revision]; [size] is one of
   /// `XS` to `XL`, or null when it is not known yet; [task] names the Porelo task that proposed it, null when a person
   /// did.
   Future<PlanningIssueAdded> createIssue(

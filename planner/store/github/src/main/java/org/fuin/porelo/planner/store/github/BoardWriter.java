@@ -82,7 +82,7 @@ public interface BoardWriter {
     }
 
     /**
-     * Adds an issue in state Idea.
+     * Adds an issue in the workflow's first state.
      *
      * @param current the snapshot the store holds
      * @param revision the revision the window showed

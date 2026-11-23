@@ -211,7 +211,7 @@ void main() {
   // Prevents a person's own text being dropped while the issue's JSON head and What must be true are left out.
   test('a Markdown description leaves out the head and the What must be true shown above, and keeps the rest', () {
     const text =
-        '# AB1 — A title\n\n```json\n{ "id": "AB1",\n  "state": "Idea" }\n```\n\n**Why this size.** XS - one file.\n\n'
+        '# AB1 — A title\n\n```json\n{ "id": "AB1",\n  "state": "New" }\n```\n\n**Why this size.** XS - one file.\n\n'
         '**What must be true.** It holds,\nin two lines.\n\n## Plan\n\n- A step.\n\n```json\n{"kept": true}\n```\n';
     const rest = '**Why this size.** XS - one file.\n\n## Plan\n\n- A step.\n\n```json\n{"kept": true}\n```\n';
     expect(

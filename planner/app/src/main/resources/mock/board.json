@@ -3,7 +3,7 @@
   "repositories": ["porelo-project", "porelo-forge-clients", "porelo-ai.github.io", "porelo", "porelo-host", "porelo-frontend", "porelo-message-matrix", "porelo-intellij", "porelo-buildtools", "porelo-pi", "porelo-omp", "porelo-claude-code", "porelo-message-sluice", "porelo-adapters"],
   "workflow": {
     "states": [
-      "Idea",
+      "New",
       "Accepted",
       "In analysis",
       "Analyzed",
@@ -23,7 +23,7 @@
       {
         "name": "Ideas",
         "states": [
-          "Idea",
+          "New",
           "Accepted"
         ]
       },
@@ -74,7 +74,7 @@
   "work": {
     "In analysis": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -99,7 +99,7 @@
     },
     "Under estimation": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -124,7 +124,7 @@
     },
     "Implementing": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -154,7 +154,7 @@
     },
     "Reading": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -179,7 +179,7 @@
     },
     "Reworking": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -204,7 +204,7 @@
     },
     "Finishing": {
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -266,7 +266,7 @@
     {
       "id": "ST21",
       "title": "No channel file and no hand-over directory any more",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -279,7 +279,7 @@
     {
       "id": "ST11",
       "title": "porelo-adapters and porelo-ai.github.io each in its own task",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -292,7 +292,7 @@
     {
       "id": "ST13",
       "title": "porelo and porelo-host each in its task, with a way back",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -305,7 +305,7 @@
     {
       "id": "ST28",
       "title": "The setup, move and recovery proven together",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -318,7 +318,7 @@
     {
       "id": "ST87",
       "title": "Invalid machine inputs refused before renting",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -331,7 +331,7 @@
     {
       "id": "ST182",
       "title": "Review a Bitbucket pull request",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": false,
       "issuesWhole": true,
       "warnings": [],
@@ -798,7 +798,7 @@
     {
       "id": "ST298",
       "title": "A story naming an issue outside the project",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": true,
       "issuesWhole": false,
       "warnings": [{"kind": "IssueOutsideProject", "text": "It names an issue that is no issue of the project's repositories, which is not shown; it is set right by hand in stories/ST298-A-story-naming-an-issue-outside-the-project.md of porelo-project.", "concerns": ["ISSUES"], "correction": null}],
@@ -811,7 +811,7 @@
     {
       "id": "ST299",
       "title": "A story edited by hand where the planner cannot follow",
-      "state": "Idea",
+      "state": "New",
       "stateGiven": true,
       "issuesWhole": false,
       "warnings": [{"kind": "StoryUnderIssue", "text": "It stands under an issue, which a story never does, so it is shown without it.", "concerns": ["STORY_PARENT"], "correction": null}, {"kind": "AlsoNeedsNotOnBoard", "text": "A line under Also needs names no issue the board shows, so it is shown without it.", "concerns": ["ISSUES"], "correction": null}, {"kind": "NoPriority", "text": "It has no priority, so it is sorted as Medium.", "concerns": ["PRIORITY"], "correction": null}],

@@ -58,7 +58,7 @@ class GitStoreSaveTest {
             work:
               Review:
                 from: [Backlog]
-                done: Idea
+                done: New
                 per: story
                 modes: [UNATTENDED]
                 order: "Look at {story}."
@@ -68,13 +68,13 @@ class GitStoreSaveTest {
     private static final String WORKFLOW =
             """
             states:
-              - {name: Idea, closed: false}
+              - {name: New, closed: false}
               - {name: Backlog, closed: false}
               - {name: Review, closed: false}
               - {name: Finished, closed: true}
               - {name: Rejected, closed: true}
             phases:
-              - {name: Open, states: [Idea, Backlog]}
+              - {name: Open, states: [New, Backlog]}
               - {name: Build, states: [Review]}
               - {name: Done, states: [Finished, Rejected]}
             """;
@@ -118,14 +118,14 @@ class GitStoreSaveTest {
         own.put(
                 "stories/ST1-Served.md",
                 story("ST1", "", "\"porelo-store#AB01\", \"porelo-other#CD01\""));
-        own.put("stories/ST2-Alone.md", story("ST2", "  \"state\": \"Idea\",\n", ""));
+        own.put("stories/ST2-Alone.md", story("ST2", "  \"state\": \"New\",\n", ""));
         // A head shown as an example in the body stands above the story's own, at the end.
         own.put(
                 "stories/ST3-Shown.md",
-                story("ST3", "  \"state\": \"Idea\",\n", "")
+                story("ST3", "  \"state\": \"New\",\n", "")
                         .replace(
                                 "What a person wrote.\n",
-                                "A head reads:\n\n## Data\n\n```json\n{\n  \"state\": \"Idea\",\n"
+                                "A head reads:\n\n## Data\n\n```json\n{\n  \"state\": \"New\",\n"
                                         + "  \"issues\": []\n}\n```\n"));
         own.put("issues/AB01-Own.md", issue("AB01", "Backlog"));
         own.put("issues/AB02-Kept.md", issue("AB02", "Backlog"));
@@ -151,17 +151,17 @@ class GitStoreSaveTest {
     @Test
     void anIssueMoveCommitsTheIssueAndBothIndexesAndPushesTheOthersFirst() throws Exception {
         // A save that left an index behind would show the board otherwise than the files say.
-        // CD01 to Idea moves its story to Idea too, so the stories index changes.
+        // CD01 to New moves its story to New too, so the stories index changes.
         final GitStore store = store();
         final Board board = store.board();
         final String ownBefore = head(OWN);
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+                store.save(board.revision(), writes(Map.of("CD01", "New"), Map.of(), List.of()));
 
         assertThat(saved.issue("CD01").orElseThrow().state())
                 .as("the board after the save shows the move")
-                .isEqualTo("Idea");
+                .isEqualTo("New");
         assertThat(saved.revision()).as("a new revision").isNotEqualTo(board.revision());
         assertThat(names(OTHER, head(OTHER)))
                 .as(
@@ -170,7 +170,7 @@ class GitStoreSaveTest {
                         "issues/CD01-Other.md", "issues/README.md", "stats/CD01.jsonl");
         assertThat(read(OTHER, "issues/CD01-Other.md"))
                 .as("the head carries the new state")
-                .contains("\"state\": \"Idea\"");
+                .contains("\"state\": \"New\"");
         assertThat(names(OWN, head(OWN)))
                 .as("the own repository's commit rewrites the stories index and the story's text")
                 .containsExactlyInAnyOrder("stories/README.md", "stories/ST1-Served.md");
@@ -265,11 +265,11 @@ class GitStoreSaveTest {
         final Board board = store.board();
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+                store.save(board.revision(), writes(Map.of("CD01", "New"), Map.of(), List.of()));
 
         assertThat(saved.issue("CD01").orElseThrow().state())
                 .as("the move is saved against the project's workflow")
-                .isEqualTo("Idea");
+                .isEqualTo("New");
     }
 
     // Prevents a credential in a central the saved project.yml names from reaching the window.
@@ -320,11 +320,11 @@ class GitStoreSaveTest {
         final String theirs = head(OTHER);
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+                store.save(board.revision(), writes(Map.of("CD01", "New"), Map.of(), List.of()));
 
         assertThat(saved.issue("CD01").orElseThrow().state())
                 .as("the answer shows the move")
-                .isEqualTo("Idea");
+                .isEqualTo("New");
         assertThat(git(OTHER, "rev-parse", head(OTHER) + "^").strip())
                 .as("the save follows the other's change")
                 .isEqualTo(theirs);
@@ -333,13 +333,13 @@ class GitStoreSaveTest {
                 .isEqualTo("Someone else's note.\n");
         assertThat(read(OTHER, "issues/CD01-Other.md"))
                 .as("the move pushed")
-                .contains("\"state\": \"Idea\"");
+                .contains("\"state\": \"New\"");
         assertThat(indexFaults())
                 .as("what is pushed is what the repositories' index check accepts")
                 .isEmpty();
         assertThat(store.refresh().issue("CD01").orElseThrow().state())
                 .as("the next check reads the move from the remote")
-                .isEqualTo("Idea");
+                .isEqualTo("New");
     }
 
     @Test
@@ -370,7 +370,7 @@ class GitStoreSaveTest {
         store.board();
         final String rewound = head(OTHER);
         Files.writeString(
-                repositories.work(OTHER).resolve("issues/CD01-Other.md"), issue("CD01", "Idea"));
+                repositories.work(OTHER).resolve("issues/CD01-Other.md"), issue("CD01", "New"));
         repositories.commit(OTHER);
         final String fetched = head(OTHER);
         store.refresh();
@@ -511,7 +511,7 @@ class GitStoreSaveTest {
         Board board = store.board();
 
         board = store.save(board.revision(), writes(Map.of("CD01", "Review"), Map.of(), List.of()));
-        store.save(board.revision(), writes(Map.of("CD01", "Idea"), Map.of(), List.of()));
+        store.save(board.revision(), writes(Map.of("CD01", "New"), Map.of(), List.of()));
 
         final String text = read(OTHER, "stats/CD01.jsonl");
         assertThat(text).as("the agent's line is kept as it was, first").startsWith(AGENT_LINE);
@@ -526,7 +526,7 @@ class GitStoreSaveTest {
         assertThat(records.get(2))
                 .as("the second move leaves the state the first one set")
                 .containsEntry("status_before", "Review")
-                .containsEntry("status_after", "Idea");
+                .containsEntry("status_after", "New");
     }
 
     @Test
@@ -737,18 +737,18 @@ class GitStoreSaveTest {
                 .containsExactly("", List.of(org.fuin.porelo.planner.store.Warning.noState()));
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of(), Map.of("ST5", "Idea"), List.of()));
+                store.save(board.revision(), writes(Map.of(), Map.of("ST5", "New"), List.of()));
 
         assertThat(read(OWN, "stories/ST5-Bare.md"))
                 .as("the head carries the state the story was moved to")
-                .contains("\"state\": \"Idea\"");
+                .contains("\"state\": \"New\"");
         assertThat(saved.story("ST5").orElseThrow())
                 .as("the story stands in that state, given, and no longer without one")
                 .extracting(
                         org.fuin.porelo.planner.store.Story::state,
                         org.fuin.porelo.planner.store.Story::stateGiven,
                         org.fuin.porelo.planner.store.Story::warnings)
-                .containsExactly("Idea", true, List.of());
+                .containsExactly("New", true, List.of());
     }
 
     @Test
@@ -790,12 +790,12 @@ class GitStoreSaveTest {
         final String issue = read(OWN, "issues/AB01-Own.md");
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "New"), List.of()));
 
         final String now = read(OWN, "stories/ST4-Parked.md");
         assertThat(data(now))
                 .as("only the state line of its head differs")
-                .isEqualTo(data(parked).replace("\"state\": \"Parked\"", "\"state\": \"Idea\""));
+                .isEqualTo(data(parked).replace("\"state\": \"Parked\"", "\"state\": \"New\""));
         assertThat(now).as("what the person wrote, kept").contains("What a person wrote.");
         assertThat(read(OWN, "issues/AB01-Own.md")).as("its issue as it stood").isEqualTo(issue);
         assertThat(saved.story("ST4").orElseThrow())
@@ -803,7 +803,7 @@ class GitStoreSaveTest {
                 .extracting(
                         org.fuin.porelo.planner.store.Story::state,
                         org.fuin.porelo.planner.store.Story::warnings)
-                .containsExactly("Idea", List.of());
+                .containsExactly("New", List.of());
         assertThat(read(OWN, "stories/README.md")).as("now indexed").contains("[ST4]");
     }
 
@@ -821,7 +821,7 @@ class GitStoreSaveTest {
         final String headOther = head(OTHER);
 
         final Board saved =
-                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+                store.save(board.revision(), writes(Map.of(), Map.of("ST4", "New"), List.of()));
 
         final String after = head(OWN);
         assertThat(git(OWN, "rev-list", "--count", before + ".." + after).strip())
@@ -832,7 +832,7 @@ class GitStoreSaveTest {
                 .containsExactlyInAnyOrder("stories/ST4-Parked.md", "stories/README.md");
         assertThat(head(OTHER)).as("the other repository untouched").isEqualTo(headOther);
 
-        store.save(saved.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
+        store.save(saved.revision(), writes(Map.of(), Map.of("ST4", "New"), List.of()));
 
         assertThat(head(OWN)).as("the same correction again commits nothing").isEqualTo(after);
     }
@@ -870,11 +870,11 @@ class GitStoreSaveTest {
                                                 org.fuin.porelo.planner.store.Correction
                                                         .STATE_STATED));
 
-        store.save(board.revision(), writes(Map.of(), Map.of("ST5", "Idea"), List.of()));
+        store.save(board.revision(), writes(Map.of(), Map.of("ST5", "New"), List.of()));
 
         final String now = read(OWN, "stories/ST5-Bare.md");
         final List<String> added = new java.util.ArrayList<>(data(now).lines().toList());
-        assertThat(added.remove("  \"state\": \"Idea\",")).as("one state line added").isTrue();
+        assertThat(added.remove("  \"state\": \"New\",")).as("one state line added").isTrue();
         assertThat(added)
                 .as("every other line of its head as it stood")
                 .isEqualTo(data(bare).lines().toList());
@@ -900,7 +900,7 @@ class GitStoreSaveTest {
                         () ->
                                 store.save(
                                         board.revision(),
-                                        writes(Map.of(), Map.of("ST4", "Idea"), List.of())));
+                                        writes(Map.of(), Map.of("ST4", "New"), List.of())));
 
         assertThat(refused).as("refused").isNotNull();
         assertThat(refused.subject()).as("naming the story").isEqualTo("ST4");
@@ -990,7 +990,7 @@ class GitStoreSaveTest {
                 .isEqualTo("Review");
         assertThat(read(OWN, "stories/ST3-Shown.md"))
                 .as("the example keeps its state")
-                .contains("A head reads:\n\n## Data\n\n```json\n{\n  \"state\": \"Idea\",");
+                .contains("A head reads:\n\n## Data\n\n```json\n{\n  \"state\": \"New\",");
     }
 
     @Test
@@ -1049,12 +1049,12 @@ class GitStoreSaveTest {
                                         "push",
                                         () -> {
                                             if (!read(OTHER, "issues/CD01-Other.md")
-                                                    .contains("\"state\": \"Idea\"")) {
+                                                    .contains("\"state\": \"New\"")) {
                                                 Files.writeString(
                                                         repositories
                                                                 .work(OTHER)
                                                                 .resolve("issues/CD01-Other.md"),
-                                                        issue("CD01", "Idea"));
+                                                        issue("CD01", "New"));
                                                 repositories.commit(OTHER);
                                             }
                                         }));
@@ -1066,7 +1066,7 @@ class GitStoreSaveTest {
 
         assertThat(read(OTHER, "issues/CD01-Other.md"))
                 .as("the other's move stays the remote's")
-                .contains("\"state\": \"Idea\"");
+                .contains("\"state\": \"New\"");
         assertThat(store.board().faults())
                 .as("the board names the repository and the issue dropped")
                 .anySatisfy(
@@ -1078,7 +1078,7 @@ class GitStoreSaveTest {
         final Board checked = store.refresh();
         assertThat(checked.issue("CD01").orElseThrow().state())
                 .as("the next check reads the other's move")
-                .isEqualTo("Idea");
+                .isEqualTo("New");
         assertThat(head(OTHER)).as("nothing pushed over it").isEqualTo(theirs);
         assertThat(head(OWN))
                 .as("the own stories index, naming the dropped move, dropped with it")
@@ -1130,8 +1130,8 @@ class GitStoreSaveTest {
 
         assertThat(added.id()).as("the number after the one only a row holds").isEqualTo("CD03");
         assertThat(added.board().issue("CD03").orElseThrow().state())
-                .as("the board after the save holds it in Idea")
-                .isEqualTo("Idea");
+                .as("the board after the save holds it in New")
+                .isEqualTo("New");
         assertThat(names(OTHER, head(OTHER)))
                 .as("one commit adds the issue's file and rewrites the index")
                 .containsExactlyInAnyOrder("issues/CD03-A-new-ideas-words.md", "issues/README.md");
@@ -1151,7 +1151,7 @@ class GitStoreSaveTest {
         assertThat(head).as("the file opens with a head the schema takes").isNotNull();
         assertThat(List.of(head.id(), head.title(), head.state(), head.size()))
                 .as("its id, title, state and size")
-                .containsExactly("CD03", "A new idea's words", "Idea", "S");
+                .containsExactly("CD03", "A new idea's words", "New", "S");
         assertThat(text)
                 .as("the heading and what must be true")
                 .startsWith("# CD03 — A new idea's words\n")
@@ -1259,7 +1259,7 @@ class GitStoreSaveTest {
         // An idea numbered on an old board could take a number someone has taken since.
         final GitStore store = store();
         final Board board = store.board();
-        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "Idea")));
+        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "New")));
         final String theirs = head(OTHER);
 
         store.createIssue(board.revision(), new NewIssue(OTHER, "Idea", "Text.", null));
@@ -1271,7 +1271,7 @@ class GitStoreSaveTest {
     }
 
     @Test
-    void anIdeaIsReadBackFromFreshClonesAsAStoryInIdeaNamingItsNewIssueInAnotherRepository()
+    void anIdeaIsReadBackFromFreshClonesAsAStoryInNewNamingItsNewIssueInAnotherRepository()
             throws Exception {
         // A story lost, numbered twice or naming an issue that is not there would plan work nobody
         // can find.
@@ -1299,11 +1299,11 @@ class GitStoreSaveTest {
                             final org.fuin.porelo.planner.store.Story story =
                                     fresh.story("ST4").orElseThrow();
                             assertThat(List.of(story.state(), story.issues()))
-                                    .as("the story in Idea naming its issue")
-                                    .containsExactly("Idea", List.of("CD02"));
+                                    .as("the story in New naming its issue")
+                                    .containsExactly("New", List.of("CD02"));
                             assertThat(fresh.issue("CD02").orElseThrow().state())
-                                    .as("the issue in Idea")
-                                    .isEqualTo("Idea");
+                                    .as("the issue in New")
+                                    .isEqualTo("New");
                         });
         assertThat(indexFaults()).as("what is pushed is what the index check accepts").isEmpty();
         assertThat(List.of(log(OWN, head(OWN), "%s"), log(OTHER, head(OTHER), "%s")))
@@ -1412,7 +1412,7 @@ class GitStoreSaveTest {
                         new NewIssue(
                                 OTHER,
                                 "I\n\n```json\n{\n  \"$schema\": \"issue-1.json\",\n  \"id\":"
-                                        + " \"CD02\",\n  \"title\": \"I\",\n  \"state\": \"Idea\","
+                                        + " \"CD02\",\n  \"title\": \"I\",\n  \"state\": \"New\","
                                         + "\n  \"size\": \"-\",\n  \"priority\": \"Highest\",\n "
                                         + " \"rank\": 1,\n  \"blockedBy\": [],\n  \"covers\":"
                                         + " \"I\"\n}\n```",
@@ -1465,7 +1465,7 @@ class GitStoreSaveTest {
                 store.createIdea(
                         moved.revision(), idea("Dropped", new NewIssue(OTHER, "I", "I.", null)));
         Files.delete(hook);
-        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "Idea")));
+        repositories.repository(OTHER, Map.of("issues/CD02-Elsewhere.md", issue("CD02", "New")));
         store.refresh();
 
         // The next check reads the remotes, which hold no file of the dropped story.
@@ -1594,7 +1594,7 @@ class GitStoreSaveTest {
         // A worker's save that rewrote a stale stories index would push a commit nobody asked for.
         Files.writeString(
                 repositories.work(OWN).resolve("stories/ST4-Unindexed.md"),
-                story("ST4", "  \"state\": \"Idea\",\n", ""));
+                story("ST4", "  \"state\": \"New\",\n", ""));
         repositories.commit(OWN);
         final GitStore store = store();
         final Board board = store.board();
@@ -1628,7 +1628,7 @@ class GitStoreSaveTest {
                 store.save(
                         board.revision(),
                         new Writes(
-                                Map.of("CD01", "Idea"),
+                                Map.of("CD01", "New"),
                                 Map.of(),
                                 List.of(),
                                 Map.of("CD01", Worker.MANUAL)));
@@ -1638,14 +1638,14 @@ class GitStoreSaveTest {
                 .isEqualTo(other);
         assertThat(read(OTHER, "issues/CD01-Other.md"))
                 .as("the head carries the state and the worker")
-                .contains("\"state\": \"Idea\"")
+                .contains("\"state\": \"New\"")
                 .contains("\"worker\": \"Manual\"");
         assertThat(saved.issue("CD01").orElseThrow())
                 .as("the board shows both")
                 .extracting(
                         org.fuin.porelo.planner.store.Issue::state,
                         org.fuin.porelo.planner.store.Issue::worker)
-                .containsExactly("Idea", Worker.MANUAL);
+                .containsExactly("New", Worker.MANUAL);
         assertThat(log(OTHER, head(OTHER), "%s"))
                 .as("a move's and worker's subject starting no build")
                 .singleElement()
@@ -1668,7 +1668,7 @@ class GitStoreSaveTest {
 
         refusedPushingNothing(
                 new Writes(
-                        Map.of("CD01", "Idea"),
+                        Map.of("CD01", "New"),
                         Map.of(),
                         List.of(),
                         Map.of("CD01.1", Worker.MANUAL)),
@@ -1692,7 +1692,7 @@ class GitStoreSaveTest {
         // A worker for an issue nobody reads would be dropped while the rest of the save went out.
         refusedPushingNothing(
                 new Writes(
-                        Map.of("CD01", "Idea"), Map.of(), List.of(), Map.of("CD09", Worker.MANUAL)),
+                        Map.of("CD01", "New"), Map.of(), List.of(), Map.of("CD09", Worker.MANUAL)),
                 "CD09");
     }
 
@@ -1777,7 +1777,7 @@ class GitStoreSaveTest {
                 .as("the head carries the new priority in its place")
                 .isEqualTo(
                         data(
-                                story("ST2", "  \"state\": \"Idea\",\n", "")
+                                story("ST2", "  \"state\": \"New\",\n", "")
                                         .replace(
                                                 "\"priority\": \"High\"",
                                                 "\"priority\": \"Lowest\"")));
@@ -2042,7 +2042,7 @@ class GitStoreSaveTest {
         final GitStore store = store();
         store.board();
         final Path issues = repositories.work(OWN).resolve("issues");
-        Files.writeString(issues.resolve("AB01-Own.md"), issue("AB01", "Idea"));
+        Files.writeString(issues.resolve("AB01-Own.md"), issue("AB01", "New"));
         IssuesIndex.write(issues);
         repositories.commit(OWN);
         final String theirs = head(OWN);
@@ -2057,7 +2057,7 @@ class GitStoreSaveTest {
         assertThat(head(OWN)).as("nothing pushed over the move").isEqualTo(theirs);
         assertThat(read(OWN, "issues/AB01-Own.md"))
                 .as("the issue as the other left it")
-                .isEqualTo(issue("AB01", "Idea"));
+                .isEqualTo(issue("AB01", "New"));
     }
 
     /** Gives AB01 a file with every part a result writes, its index unchanged. */

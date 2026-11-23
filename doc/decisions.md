@@ -126,7 +126,7 @@ until it is stopped.
 
 The window hands a discussion's idea in with the offer it belongs to, and the planner saves one story per offer, so a
 retried hand-in makes nothing twice. Accepted risk: an issue already pushed in another repository when the own
-repository's save is dropped stays there as an ordinary issue in Idea, with no story naming it. It costs a person one
+repository's save is dropped stays there as an ordinary issue in the workflow's first state, with no story naming it. It costs a person one
 issue to reject, and stays because taking a pushed commit back is a force push; a store that saves all repositories
 at once would change the answer.
 

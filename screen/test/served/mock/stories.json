@@ -14,7 +14,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -196,7 +196,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -256,7 +256,7 @@
   }, {
     "id" : "ST21",
     "title" : "No channel file and no hand-over directory any more",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -267,7 +267,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -324,7 +324,7 @@
   }, {
     "id" : "ST11",
     "title" : "porelo-adapters and porelo-ai.github.io each in its own task",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -335,7 +335,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -392,7 +392,7 @@
   }, {
     "id" : "ST13",
     "title" : "porelo and porelo-host each in its task, with a way back",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -403,7 +403,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -460,7 +460,7 @@
   }, {
     "id" : "ST28",
     "title" : "The setup, move and recovery proven together",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -471,7 +471,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -528,7 +528,7 @@
   }, {
     "id" : "ST87",
     "title" : "Invalid machine inputs refused before renting",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -539,7 +539,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -596,7 +596,7 @@
   }, {
     "id" : "ST182",
     "title" : "Review a Bitbucket pull request",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : false,
     "misfits" : [ ],
     "derivedState" : null,
@@ -607,7 +607,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -675,7 +675,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -743,7 +743,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -811,7 +811,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -898,7 +898,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -969,7 +969,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1037,7 +1037,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1124,7 +1124,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1195,7 +1195,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1263,7 +1263,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1635,7 +1635,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1864,7 +1864,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -1944,7 +1944,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2107,7 +2107,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2178,7 +2178,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2265,7 +2265,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2469,7 +2469,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2654,7 +2654,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2744,7 +2744,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -2815,7 +2815,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3016,7 +3016,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3103,7 +3103,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3190,7 +3190,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3315,7 +3315,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3421,7 +3421,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3492,7 +3492,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3560,7 +3560,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3666,7 +3666,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -3754,7 +3754,7 @@
         "holds" : true,
         "correction" : {
           "kind" : "Move",
-          "states" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
+          "states" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
         }
       } ]
     }, {
@@ -4297,7 +4297,7 @@
     "work" : null,
     "open" : {
       "states" : [ {
-        "name" : "Idea",
+        "name" : "New",
         "issues" : 0
       }, {
         "name" : "Accepted",
@@ -4356,13 +4356,13 @@
       "holds" : true,
       "correction" : {
         "kind" : "StateStated",
-        "states" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
+        "states" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
       }
     } ]
   }, {
     "id" : "ST298",
     "title" : "A story naming an issue outside the project",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : true,
     "misfits" : [ ],
     "derivedState" : null,
@@ -4381,7 +4381,7 @@
   }, {
     "id" : "ST299",
     "title" : "A story edited by hand where the planner cannot follow",
-    "state" : "Idea",
+    "state" : "New",
     "stateGiven" : true,
     "misfits" : [ ],
     "derivedState" : null,
@@ -4410,7 +4410,7 @@
   } ],
   "open" : {
     "states" : [ {
-      "name" : "Idea",
+      "name" : "New",
       "issues" : 0
     }, {
       "name" : "Accepted",

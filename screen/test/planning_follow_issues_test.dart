@@ -35,10 +35,10 @@ Map<String, dynamic> _story(String id, String state, List<Map<String, dynamic>> 
   'issues': issues,
 };
 
-/// ST1 given Idea over an issue in Backlog; ST2 given Backlog over an issue at work; ST3 given Backlog with no issue.
+/// ST1 given New over an issue in Backlog; ST2 given Backlog over an issue at work; ST3 given Backlog with no issue.
 Map<String, dynamic> _board() => {
   'states': [
-    {'name': 'Idea', 'kind': 'WAITING'},
+    {'name': 'New', 'kind': 'WAITING'},
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Implementing', 'kind': 'WORKING'},
     {'name': 'Review', 'kind': 'WAITING'},
@@ -46,13 +46,13 @@ Map<String, dynamic> _board() => {
   'phases': [
     {
       'name': 'All',
-      'states': ['Idea', 'Backlog', 'Implementing', 'Review'],
+      'states': ['New', 'Backlog', 'Implementing', 'Review'],
     },
   ],
   'work': <dynamic>[],
   'faults': <dynamic>[],
   'stories': [
-    _story('ST1', 'Idea', [_issue('PL1', 'Backlog')], 'Backlog'),
+    _story('ST1', 'New', [_issue('PL1', 'Backlog')], 'Backlog'),
     _story('ST2', 'Backlog', [_issue('PL2', 'Implementing')], 'Implementing'),
     _story('ST3', 'Backlog', [], null),
   ],
@@ -154,7 +154,7 @@ void main() {
       reason: 'only the offered state is sent',
     );
     final shown = board.stories.firstWhere((story) => story.id == 'ST1');
-    expect((shown.state, shown.stateGiven), ('Idea', true), reason: 'the story keeps its given state');
+    expect((shown.state, shown.stateGiven), ('New', true), reason: 'the story keeps its given state');
   });
 
   // Harm: the mock board the window's tests run on lets a follow through that the planner refuses, so a window that

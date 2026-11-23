@@ -696,7 +696,8 @@ public final class GitStore implements PlanningStore {
             addedWorkers.put(idea.repository(), idea.worker());
         }
         final NewIdea newStory = edits.story();
-        final StoryFile.Written story = newStory == null ? null : story(newStory, added, scratch);
+        final StoryFile.Written story =
+                newStory == null ? null : story(snapshot, newStory, added, scratch);
         // Written before the indexes, which read the heads; a worker leaves every index alone.
         workers.forEach(
                 (name, heads) ->
@@ -861,7 +862,7 @@ public final class GitStore implements PlanningStore {
                                 own(repository(name)) ? null : project(of(snapshot.parts(), own)));
                 final IdeaFile.Written issue = added.get(name);
                 if (issue != null) {
-                    readsBack(name, part, issue.id(), of(addedWorkers, name));
+                    readsBack(name, part, issue, of(addedWorkers, name));
                 }
                 if (story != null && name.equals(own)) {
                     storyReadsBack(name, part, story);
@@ -989,7 +990,10 @@ public final class GitStore implements PlanningStore {
      * a reference the story's schema would refuse refused before anything is committed.
      */
     private StoryFile.Written story(
-            final NewIdea idea, final Map<String, IdeaFile.Written> added, final Path scratch) {
+            final Snapshot snapshot,
+            final NewIdea idea,
+            final Map<String, IdeaFile.Written> added,
+            final Path scratch) {
         final String own = repositories.get(0).name();
         final List<String> references = new ArrayList<>();
         try {
@@ -998,7 +1002,11 @@ public final class GitStore implements PlanningStore {
                         StoryHead.reference(
                                 issue.repository(), of(added, issue.repository()).id()));
             }
-            return StoryFile.write(scratch.resolve(own), idea, references);
+            return StoryFile.write(
+                    scratch.resolve(own),
+                    idea,
+                    references,
+                    IdeaFile.state(project(of(snapshot.parts(), own))));
         } catch (final IllegalArgumentException e) {
             throw new StoreException.NotSavable("", local(e, scratch));
         } catch (final IOException e) {
@@ -1057,12 +1065,16 @@ public final class GitStore implements PlanningStore {
      * was written with.
      */
     private static void readsBack(
-            final String name, final Part part, final String id, final Worker worker) {
+            final String name,
+            final Part part,
+            final IdeaFile.Written written,
+            final Worker worker) {
+        final String id = written.id();
         if (part.issues().stream()
                 .noneMatch(
                         issue ->
                                 issue.id().equals(id)
-                                        && issue.state().equals(IdeaFile.STATE)
+                                        && issue.state().equals(written.state())
                                         && issue.worker() == worker)) {
             throw new StoreException.Unreadable(
                     name, "the new issue " + id + " does not read back from its commit");

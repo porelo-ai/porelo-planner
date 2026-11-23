@@ -67,6 +67,8 @@ repositories:
 EOF
     st_copy "$OWN" stories/workflow.yml planner/app/src/test/resources/work/porelo-sample/stories/workflow.yml
     st_copy "$OWN" issues/workflow.yml planner/app/src/test/resources/work/porelo-sample/issues/workflow.yml
+    sed -i 's/\<Idea\>/New/g' "$ST_DIR/work/$ALPHA/issues/workflow.yml" \
+        "$ST_DIR/work/$OWN/stories/workflow.yml" "$ST_DIR/work/$OWN/issues/workflow.yml"
     printf "# Issues\n\nThe project's own issues.\n" | st_write "$OWN" issues/README.md
     st_write "$OWN" stories/work.yml <<'EOF'
 work:
@@ -157,10 +159,10 @@ step_4() {
     [[ -f $dir/stats/AB01.jsonl ]] || st_no "AB01's stage record stats/AB01.jsonl" "no file" || return 1
     record=$(tail -n 1 "$dir/stats/AB01.jsonl" | jq -r '"\(.stage) \(.status_before) \(.status_after)"' 2>&1) || true
     st_is "AB01's last stage record" "move Analyzed Estimated" "$record" || return 1
-    st_is "AB03's head" Idea "$(head_state "$dir" AB03)" || return 1
+    st_is "AB03's head" New "$(head_state "$dir" AB03)" || return 1
     st_is "AB03's title" "$IDEA_TITLE" \
         "$(st_head "$(find "$dir/issues" -maxdepth 1 -name 'AB03-*.md' | head -n 1)" | jq -r '.title')" || return 1
-    st_is "the rows of AB01 and AB03 in issues/README.md" "Estimated Idea" \
+    st_is "the rows of AB01 and AB03 in issues/README.md" "Estimated New" \
         "$(st_section "$dir/issues/README.md" ab01) $(st_section "$dir/issues/README.md" ab03)" || return 1
     subjects=$(git -C "$dir" log --format=%s "$FIXTURE_HEAD..HEAD")
     [[ -n $subjects ]] || st_no "the planner's commits since the fixture" "none" || return 1

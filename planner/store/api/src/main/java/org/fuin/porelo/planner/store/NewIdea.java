@@ -3,8 +3,9 @@ package org.fuin.porelo.planner.store;
 import java.util.List;
 
 /**
- * An idea the planner has checked: a new story in state Idea in the project's own repository and a
- * new issue in state Idea in each repository it names, their numbers given by the store.
+ * An idea the planner has checked: a new story in the workflow's first state in the project's own
+ * repository and a new issue in that state in each repository it names, their numbers given by the
+ * store.
  *
  * @param title the story's title, one line
  * @param gain what a user gains, one line

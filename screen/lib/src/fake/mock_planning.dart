@@ -250,7 +250,7 @@ class MockPlanningSource implements PlanningSource {
           'id': id,
           'repository': repository,
           'title': title,
-          'state': 'Idea',
+          'state': 'New',
           'size': size,
           'blockedBy': <String>[],
           'waitsOn': <Map<String, dynamic>>[],

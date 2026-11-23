@@ -321,7 +321,7 @@ paths:
       description: >-
         Makes a story in the project's own repository in one of two ways, told apart by the body's members. A
         StoryRequest saves an idea a person, or an agent acting for them, wrote without a discussion: one story in
-        state Idea and an issue in state Idea in each repository the idea names, in one save against the board at the
+        the workflow's first state and an issue in that state in each repository the idea names, in one save against the board at the
         given revision, as a discussion's hand-in is saved. The idea is checked against the idea format before
         anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
         stands answers PartlySaved, naming the repositories that hold their part; a run whose story is gone is dropped
@@ -587,7 +587,7 @@ paths:
       summary: Hand in the idea a discussion wrote
       description: >-
         Saves the idea a discussion's task wrote, which the window hands in with the discussion's offer when the task
-        ends: one story in state Idea in the project's own repository and an issue in state Idea in each repository the
+        ends: one story in the workflow's first state in the project's own repository and an issue in that state in each repository the
         idea names, in one save against the board the planner reads; the request carries no revision. The idea is
         checked before anything is saved, and a malformed idea makes nothing. One offer makes one story: a second
         hand-in of a saved offer answers the same story and writes nothing, even for another idea; a hand-in of an
@@ -3037,7 +3037,7 @@ components:
     IdeaStory:
       description: >-
         A new story's title, what a user gains, its test and its priority, saved in the project's own repository; its
-        state is the one the request that carries it gives it: Idea for an idea, its issues' for a story over issues
+        state is the one the request that carries it gives it: the workflow's first state for an idea, its issues' for a story over issues
         that stand.
       type: object
       additionalProperties: false
@@ -3061,7 +3061,7 @@ components:
         priority:
           $ref: '#/components/schemas/Priority'
     IdeaIssue:
-      description: One issue of the idea, saved in state Idea in its repository.
+      description: One issue of the idea, saved in the workflow's first state in its repository.
       type: object
       additionalProperties: false
       required: [repository, title, mustBeTrue, worker]

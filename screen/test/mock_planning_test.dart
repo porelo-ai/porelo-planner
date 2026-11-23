@@ -108,7 +108,7 @@ void main() {
     expect(issues.map((issue) => issue.id), containsAll(['B900', 'B901']));
     final created = issues.singleWhere((issue) => issue.id == added.id);
     expect(created.title, 'New idea');
-    expect(created.state, 'Idea');
+    expect(created.state, 'New');
     expect(created.size, 'M');
     expect(created.worker, IssueWorker.manual);
     expect((await source.getIssue('demo', added.id)).whatMustBeTrue, ['It works.']);

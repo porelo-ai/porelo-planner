@@ -313,7 +313,7 @@ store-issue)
     fi
     record=$(show "stats/$2.jsonl" 2>/dev/null | tail -n 1 | jq -r '.status_after' || true)
     # A new issue gets its stage records with its first move; until then it has none.
-    if [[ -z $record && $want == Idea ]]; then
+    if [[ -z $record && $want == New ]]; then
         printf '%s: stats/%s.jsonl not there yet, as for an issue never moved\n' "$PROBE" "$2"
     else
         [[ $record == "$want" ]] || fail "store-issue $2" "stats/$2.jsonl ends in $want" "${record:-no record}"

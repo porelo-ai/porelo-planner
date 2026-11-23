@@ -206,7 +206,7 @@ public final class ProjectFile {
     static final String TRACKED_WORKFLOW =
             """
             states:
-              - {name: Idea, closed: false}
+              - {name: New, closed: false}
               - {name: Accepted, closed: false}
               - {name: In analysis, closed: false}
               - {name: Analyzed, closed: false}
@@ -221,7 +221,7 @@ public final class ProjectFile {
               - {name: Finished, closed: true, measured: true}
               - {name: Rejected, closed: true}
             phases:
-              - {name: Ideas, states: [Idea, Accepted]}
+              - {name: Ideas, states: [New, Accepted]}
               - {name: Analysis, states: [In analysis, Analyzed]}
               - {name: Estimation, states: [Under estimation, Estimated]}
               - {name: Backlog, states: [Backlog]}
@@ -237,7 +237,7 @@ public final class ProjectFile {
             """
             work:
               In analysis:
-                from: [Idea, Accepted]
+                from: [New, Accepted]
                 done: Analyzed
                 per: repository
                 modes: [UNATTENDED, AGENT]

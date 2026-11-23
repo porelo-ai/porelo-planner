@@ -5,7 +5,7 @@ library;
 
 /// The states in workflow order; a state a rule works in is WORKING, a closed one CLOSED, every other WAITING.
 const poreloStates = [
-  {'name': 'Idea', 'kind': 'WAITING'},
+  {'name': 'New', 'kind': 'WAITING'},
   {'name': 'Accepted', 'kind': 'WAITING'},
   {'name': 'In analysis', 'kind': 'WORKING'},
   {'name': 'Analyzed', 'kind': 'WAITING'},
@@ -35,7 +35,7 @@ Map<String, dynamic> _rule(String state, List<String> from, String done, {String
 
 /// The work rules, as the planner serves them.
 final poreloWork = [
-  _rule('In analysis', ['Idea', 'Accepted'], 'Analyzed'),
+  _rule('In analysis', ['New', 'Accepted'], 'Analyzed'),
   _rule('Under estimation', ['Analyzed'], 'Estimated'),
   _rule('Implementing', ['Backlog', 'Rework'], 'Review', then: 'Reading'),
   _rule('Reading', ['Implementing', 'Reworking', 'Review'], 'Review', blocked: 'Reworking'),

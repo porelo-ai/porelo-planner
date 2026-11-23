@@ -1316,7 +1316,8 @@ public class BoardController {
     }
 
     /**
-     * Saves the idea a discussion wrote as a story in state Idea with its issues, once per offer.
+     * Saves the idea a discussion wrote as a story in the workflow's first state with its issues,
+     * once per offer.
      *
      * @param project the project's name
      * @param request the request, whose body is the offer and the idea

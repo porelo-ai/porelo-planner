@@ -115,7 +115,7 @@ void main() {
       ('demo', 'repo', 'An idea', 'It holds.', null, 'r1'),
     ], reason: 'one call, the board revision');
     expect(find.byKey(const Key('new-issue-create')), findsNothing, reason: 'the form closes once it is written');
-    expect(find.text('Added I3 in state Idea.'), findsOneWidget, reason: 'the person learns the new id');
+    expect(find.text('Added I3 in state New.'), findsOneWidget, reason: 'the person learns the new id');
   });
 
   // Harm: a repository without an issue on the board could get no idea at all, and one chosen is the one written to.
@@ -259,6 +259,6 @@ void main() {
     source.answer.complete();
     await settle(tester);
 
-    expect(find.text('Added I3 in state Idea.'), findsOneWidget, reason: 'the answer is shown once it comes');
+    expect(find.text('Added I3 in state New.'), findsOneWidget, reason: 'the answer is shown once it comes');
   });
 }

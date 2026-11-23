@@ -1,7 +1,7 @@
 {
   "revision" : "mock@1",
   "states" : [ {
-    "name" : "Idea",
+    "name" : "New",
     "kind" : "WAITING"
   }, {
     "name" : "Accepted",
@@ -48,7 +48,7 @@
   } ],
   "phases" : [ {
     "name" : "Ideas",
-    "states" : [ "Idea", "Accepted" ]
+    "states" : [ "New", "Accepted" ]
   }, {
     "name" : "Analysis",
     "states" : [ "In analysis", "Analyzed" ]
@@ -67,7 +67,7 @@
   } ],
   "work" : [ {
     "state" : "In analysis",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : null,
@@ -79,7 +79,7 @@
     }
   }, {
     "state" : "Under estimation",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : null,
@@ -91,7 +91,7 @@
     }
   }, {
     "state" : "Implementing",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : null,
@@ -103,7 +103,7 @@
     }
   }, {
     "state" : "Reading",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : "Reworking",
@@ -115,7 +115,7 @@
     }
   }, {
     "state" : "Reworking",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : null,
@@ -127,7 +127,7 @@
     }
   }, {
     "state" : "Finishing",
-    "from" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
+    "from" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ],
     "done" : "Review",
     "then" : null,
     "blocked" : null,

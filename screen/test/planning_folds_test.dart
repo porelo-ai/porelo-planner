@@ -92,14 +92,14 @@ void main() {
       const [],
       board: {
         'states': [
-          {'name': 'Idea', 'kind': 'WAITING'},
+          {'name': 'New', 'kind': 'WAITING'},
           {'name': 'Ready', 'kind': 'WAITING'},
           {'name': 'Finished', 'kind': 'CLOSED'},
         ],
         'phases': [
           {
             'name': 'Ideas',
-            'states': ['Idea'],
+            'states': ['New'],
           },
           {
             'name': 'Work',
@@ -110,7 +110,7 @@ void main() {
             'states': ['Finished'],
           },
         ],
-        'stories': [_story('S1', 'Idea'), _story('S2', 'Ready')],
+        'stories': [_story('S1', 'New'), _story('S2', 'Ready')],
         'revision': 'r2',
       },
     );

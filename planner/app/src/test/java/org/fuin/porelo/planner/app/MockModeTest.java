@@ -344,9 +344,9 @@ class MockModeTest {
                     .isEqualTo(story);
             final JsonNode saved =
                     json(call(runtime, "GET", "/projects/any/stories/" + story, null)).get("story");
-            assertThat(saved.path("state").asString()).as("the story's state").isEqualTo("Idea");
+            assertThat(saved.path("state").asString()).as("the story's state").isEqualTo("New");
             assertThat(saved.path("issues"))
-                    .as("its one issue, in Idea in the repository named")
+                    .as("its one issue, in New in the repository named")
                     .singleElement()
                     .satisfies(
                             issue -> {
@@ -355,7 +355,7 @@ class MockModeTest {
                                         .isEqualTo("porelo");
                                 assertThat(issue.path("state").asString())
                                         .as("its state")
-                                        .isEqualTo("Idea");
+                                        .isEqualTo("New");
                             });
             final List<String> stories = new ArrayList<>();
             json(call(runtime, "GET", "/projects/any/stories", null))

@@ -5,7 +5,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
 {
   "states": [
     {
-      "name": "Idea",
+      "name": "New",
       "kind": "WAITING"
     },
     {
@@ -69,7 +69,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "name": "Ideas",
       "states": [
-        "Idea",
+        "New",
         "Accepted"
       ]
     },
@@ -313,7 +313,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST21",
       "title": "No channel file and no hand-over directory any more",
-      "state": "Idea",
+      "state": "New",
       "priority": "Highest",
       "link": "https://example.org/stories/ST21",
       "issues": [],
@@ -323,7 +323,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST11",
       "title": "porelo-adapters and porelo-ai.github.io each in its own task",
-      "state": "Idea",
+      "state": "New",
       "priority": "Highest",
       "link": "https://example.org/stories/ST11",
       "description": "",
@@ -333,7 +333,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST13",
       "title": "porelo and porelo-host each in its task, with a way back",
-      "state": "Idea",
+      "state": "New",
       "priority": "Highest",
       "link": "https://example.org/stories/ST13",
       "description": "",
@@ -343,7 +343,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST28",
       "title": "The setup, move and recovery proven together",
-      "state": "Idea",
+      "state": "New",
       "priority": "Highest",
       "link": "https://example.org/stories/ST28",
       "issues": [],
@@ -353,7 +353,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST87",
       "title": "Invalid machine inputs refused before renting",
-      "state": "Idea",
+      "state": "New",
       "priority": "Medium",
       "link": "https://example.org/stories/ST87",
       "description": "",
@@ -363,7 +363,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST182",
       "title": "Review a Bitbucket pull request",
-      "state": "Idea",
+      "state": "New",
       "priority": "Low",
       "link": "https://example.org/stories/ST182",
       "issues": [],
@@ -2942,7 +2942,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "id": "ST298",
       "stateGiven": true,
       "title": "A story naming an issue outside the project",
-      "state": "Idea",
+      "state": "New",
       "priority": "Medium",
       "link": "https://example.org/stories/ST298",
       "issues": [],
@@ -2960,7 +2960,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
       "id": "ST299",
       "stateGiven": true,
       "title": "A story edited by hand where the planner cannot follow",
-      "state": "Idea",
+      "state": "New",
       "priority": "Medium",
       "link": "https://example.org/stories/ST299",
       "issues": [],
@@ -3003,7 +3003,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "In analysis",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -3027,7 +3027,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "Under estimation",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -3051,7 +3051,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "Implementing",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -3075,7 +3075,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "Reading",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -3099,7 +3099,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "Reworking",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",
@@ -3123,7 +3123,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "state": "Finishing",
       "from": [
-        "Idea",
+        "New",
         "Accepted",
         "Analyzed",
         "Estimated",

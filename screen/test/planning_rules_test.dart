@@ -17,7 +17,7 @@ Map<String, dynamic> _issue(String id, String state) => {
 /// ST1 ranked below its issue PL1, ST2 sound, and PL9 in Backlog in no story; the board names both breaches.
 Map<String, dynamic> _board({bool rules = true}) => {
   'states': [
-    {'name': 'Idea', 'kind': 'WAITING'},
+    {'name': 'New', 'kind': 'WAITING'},
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Review', 'kind': 'WAITING'},
     {'name': 'Finished', 'kind': 'CLOSED'},
@@ -25,7 +25,7 @@ Map<String, dynamic> _board({bool rules = true}) => {
   'phases': [
     {
       'name': 'All',
-      'states': ['Idea', 'Backlog', 'Review', 'Finished'],
+      'states': ['New', 'Backlog', 'Review', 'Finished'],
     },
   ],
   'stories': [

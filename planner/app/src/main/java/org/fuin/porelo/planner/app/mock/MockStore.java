@@ -841,7 +841,7 @@ public final class MockStore implements PlanningStore {
                             id,
                             issue.repository(),
                             issue.title(),
-                            "Idea",
+                            board.workflow().states().getFirst(),
                             issue.size(),
                             List.of(),
                             null,
@@ -865,7 +865,7 @@ public final class MockStore implements PlanningStore {
                 new Story(
                         id,
                         idea.title(),
-                        "Idea",
+                        board.workflow().states().getFirst(),
                         false,
                         idea.priority(),
                         null,
