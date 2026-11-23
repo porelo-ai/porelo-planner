@@ -792,9 +792,11 @@ class GitStoreSaveTest {
         final Board saved =
                 store.save(board.revision(), writes(Map.of(), Map.of("ST4", "Idea"), List.of()));
 
-        assertThat(read(OWN, "stories/ST4-Parked.md"))
-                .as("only the state line differs")
-                .isEqualTo(parked.replace("\"state\": \"Parked\"", "\"state\": \"Idea\""));
+        final String now = read(OWN, "stories/ST4-Parked.md");
+        assertThat(data(now))
+                .as("only the state line of its head differs")
+                .isEqualTo(data(parked).replace("\"state\": \"Parked\"", "\"state\": \"Idea\""));
+        assertThat(now).as("what the person wrote, kept").contains("What a person wrote.");
         assertThat(read(OWN, "issues/AB01-Own.md")).as("its issue as it stood").isEqualTo(issue);
         assertThat(saved.story("ST4").orElseThrow())
                 .as("in the state picked, the warning gone")
@@ -840,8 +842,17 @@ class GitStoreSaveTest {
             throws Exception {
         // Harm: giving a story without a state its state rewrites more of the person's head than
         // the one line it adds.
-        final String bare = story("ST5", "", "\"porelo-store#AB01\"");
-        repositories.repository(OWN, Map.of("stories/ST5-Bare.md", bare, "stories/work.yml", WORK));
+        // Its one issue stands outside the workflow, so no state can be told from it.
+        final String bare = story("ST5", "", "\"porelo-store#AB03\"");
+        repositories.repository(
+                OWN,
+                Map.of(
+                        "issues/AB03-Parked.md",
+                        issue("AB03", "Parked"),
+                        "stories/ST5-Bare.md",
+                        bare,
+                        "stories/work.yml",
+                        WORK));
         final GitStore store = store();
         final Board board = store.board();
         assertThat(board.story("ST5").orElseThrow().warnings())
@@ -862,9 +873,12 @@ class GitStoreSaveTest {
         store.save(board.revision(), writes(Map.of(), Map.of("ST5", "Idea"), List.of()));
 
         final String now = read(OWN, "stories/ST5-Bare.md");
-        final List<String> added = new java.util.ArrayList<>(now.lines().toList());
+        final List<String> added = new java.util.ArrayList<>(data(now).lines().toList());
         assertThat(added.remove("  \"state\": \"Idea\",")).as("one state line added").isTrue();
-        assertThat(added).as("every other line as it stood").isEqualTo(bare.lines().toList());
+        assertThat(added)
+                .as("every other line of its head as it stood")
+                .isEqualTo(data(bare).lines().toList());
+        assertThat(now).as("what the person wrote, kept").contains("What a person wrote.");
         assertThat(now.endsWith("\n"))
                 .as("its last line break kept")
                 .isEqualTo(bare.endsWith("\n"));
