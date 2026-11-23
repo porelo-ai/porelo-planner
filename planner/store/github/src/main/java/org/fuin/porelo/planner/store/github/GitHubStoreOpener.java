@@ -118,8 +118,46 @@ public final class GitHubStoreOpener implements TrackedStores {
                 conditional,
                 issuePages,
                 executor,
+                clock,
+                lockWait,
+                ItemsBoardReader.DEADLINE);
+    }
+
+    /**
+     * Makes the opener above with its own limit on GitHub's silence during a project's read.
+     *
+     * @param tokens gives the person's token for the forge
+     * @param queries the GraphQL reads of a project
+     * @param writes the calls a write to a project is made of
+     * @param conditional the conditional reads that ask whether a project changed
+     * @param issuePages the pages of a repository's open issues, read so the board names those that
+     *     are no items of the project
+     * @param executor runs a project's conditional reads side by side, and a look after a read or
+     *     save beside the caller
+     * @param clock tells the time a wait of GitHub's ends by
+     * @param lockWait how long a call waits for another on the same project
+     * @param readSilence how long GitHub may leave a project's read without an answer
+     */
+    public GitHubStoreOpener(
+            final TokenSource tokens,
+            final ProjectQueries queries,
+            final ProjectWrites writes,
+            final ConditionalReads conditional,
+            final RepositoryIssues.Pages issuePages,
+            final Executor executor,
+            final InstantSource clock,
+            final Duration lockWait,
+            final Duration readSilence) {
+        this(
+                tokens,
+                queries,
+                writes,
+                conditional,
+                issuePages,
+                executor,
                 new GitHubPace(clock),
-                lockWait);
+                lockWait,
+                readSilence);
     }
 
     private GitHubStoreOpener(
@@ -130,7 +168,8 @@ public final class GitHubStoreOpener implements TrackedStores {
             final RepositoryIssues.Pages issuePages,
             final Executor executor,
             final GitHubPace pace,
-            final Duration lockWait) {
+            final Duration lockWait,
+            final Duration readSilence) {
         this(
                 tokens,
                 states ->
@@ -139,7 +178,8 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 pace.watching(issuePages),
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
-                                states),
+                                states,
+                                readSilence),
                 touched ->
                         new FieldsBoardWriter(
                                 touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),

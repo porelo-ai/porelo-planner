@@ -118,8 +118,9 @@ public class StoreConfiguration {
         TrackedWait.class,
         TrackedUnlisted.class
     })
-    public GitProjects gitProjects() {
-        return gitProjects(System.getenv());
+    public GitProjects gitProjects(
+            @Value("${planner.github.read-silence:60s}") final Duration readSilence) {
+        return gitProjects(System.getenv(), readSilence);
     }
 
     /**
@@ -129,6 +130,18 @@ public class StoreConfiguration {
      * @return the opener
      */
     static GitProjects gitProjects(final Map<String, String> environment) {
+        return gitProjects(environment, Duration.ofSeconds(60));
+    }
+
+    /**
+     * Opens projects with a given environment and limit on GitHub's silence during a read.
+     *
+     * @param environment the environment, which holds the person's Git login
+     * @param readSilence how long GitHub may leave a tracked project's read without an answer
+     * @return the opener
+     */
+    static GitProjects gitProjects(
+            final Map<String, String> environment, final Duration readSilence) {
         return new GitProjects(
                 environment,
                 new GitProjects.Settings(
@@ -142,7 +155,7 @@ public class StoreConfiguration {
                         4),
                 Clock.systemUTC(),
                 Executors.newVirtualThreadPerTaskExecutor(),
-                tracked(environment));
+                tracked(environment, readSilence));
     }
 
     /** GitHub's API, to which the client adds each call's path. */
@@ -151,7 +164,8 @@ public class StoreConfiguration {
     /**
      * Opens a project a GitHub project keeps, with the token Porelo's vault lends for its forge.
      */
-    private static TrackedStores tracked(final Map<String, String> environment) {
+    private static TrackedStores tracked(
+            final Map<String, String> environment, final Duration readSilence) {
         final ForgeTokens tokens = ForgeTokens.of(environment);
         // GitHub's answers are never followed elsewhere, so the token goes to GitHub's API alone.
         final HttpClient http =
@@ -171,7 +185,8 @@ public class StoreConfiguration {
                         Clock.systemUTC(),
                         // A save waits for a whole read under way rather than being refused as
                         // busy.
-                        Duration.ofMinutes(2))
+                        Duration.ofMinutes(2),
+                        readSilence)
                 .keepingCopies(() -> boardCopies(environment))
                 .lookingForChanges(
                         GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));

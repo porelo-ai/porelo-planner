@@ -177,20 +177,22 @@ public final class ItemsBoardReader implements BoardReader {
      * @param tokens the person's token, asked for once a read
      * @param refusals turns a failure of a read into the store's refusal
      * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param silence how long GitHub may leave the project's read without an answer
      */
     public ItemsBoardReader(
             final ProjectQueries queries,
             final RepositoryIssues.Pages issuePages,
             final TokenSource tokens,
             final AccessRefusals refusals,
-            final StoryStates states) {
+            final StoryStates states,
+            final Duration silence) {
         this(
                 queries,
                 tokens,
                 refusals,
                 states,
                 InstantSource.system(),
-                DEADLINE,
+                silence,
                 Thread::sleep,
                 issuePages);
     }
