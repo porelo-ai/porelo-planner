@@ -20,8 +20,13 @@ final class ItemVersions {
 
     /**
      * The item's version over its project item id, its field values, its parent, sub-issues and
-     * blockers with the count of blockers not seen, its labels, its issue type, whether it is open
-     * and why it closed, whether it is archived, its title and its body.
+     * blockers with the count of blockers not seen and GitHub's counts of both, whether labels or
+     * values lie past the page read, its labels, its issue type, whether it is open and why it
+     * closed, whether it is archived, its title and its body.
+     *
+     * <p>Past a list's first page only its length is told: an entry swapped there for another
+     * leaves the version equal. Labels and field values have no count from GitHub's read, only
+     * whether more lie past the page, so only the first of them past it changes the version.
      *
      * @param item the item as GitHub gave it
      * @return its version
@@ -40,6 +45,12 @@ final class ItemVersions {
                 item.subIssueIds(),
                 item.blockedByIds().stream().sorted().toList(),
                 item.unseenBlockers(),
+                // A list past its first page is told by GitHub's counts and whether more lie past
+                // the page, since the ids read are the first page's alone. The blocker count
+                // repeats the unseen blockers while the list fits one page; past it they are none.
+                item.subIssueCount(),
+                item.blockerCount(),
+                item.partial(),
                 item.labels().stream().sorted().toList(),
                 item.issueType(),
                 item.open(),
@@ -86,6 +97,9 @@ final class ItemVersions {
                         List.of(),
                         ItemsBoardReader.unseen(issue.blockedBy()),
                         issue.issueType(),
-                        issue.closedAt()));
+                        issue.closedAt(),
+                        issue.subIssues().totalCount(),
+                        issue.blockedBy().totalCount(),
+                        ItemsBoardReader.partial(now.valuesPage(), issue)));
     }
 }

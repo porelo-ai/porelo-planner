@@ -37,6 +37,9 @@ import org.jspecify.annotations.Nullable;
  * @param issueType the name of its issue type, which makes it a story when it is {@link
  *     IssueMapping#STORY_TYPE}, or null when it has none
  * @param closedAt when GitHub last closed it, or null while it was never closed
+ * @param subIssueCount how many sub-issues GitHub counts, which may be more than it names
+ * @param blockerCount how many blockers GitHub counts, which may be more than it names
+ * @param partial whether its labels or its field values lie past the one page read of them
  */
 public record ItemView(
         String itemId,
@@ -58,7 +61,10 @@ public record ItemView(
         List<Blocker> blockers,
         int unseenBlockers,
         @Nullable String issueType,
-        @Nullable Instant closedAt) {
+        @Nullable Instant closedAt,
+        int subIssueCount,
+        int blockerCount,
+        boolean partial) {
 
     /**
      * An issue that blocks the item's, as GitHub names it.
@@ -79,6 +85,82 @@ public record ItemView(
         if (unseenBlockers < 0) {
             throw new IllegalArgumentException("An item counts no blockers below none");
         }
+        if (subIssueCount < 0 || blockerCount < 0) {
+            throw new IllegalArgumentException(
+                    "An item counts no sub-issues or blockers below none");
+        }
+    }
+
+    /**
+     * An item whose lists were read whole: GitHub counts the sub-issues and blockers it names, and
+     * no label or value lies past the page read.
+     *
+     * @param itemId the project item's node id
+     * @param issueId the issue's node id
+     * @param repository the name of the repository that holds the issue
+     * @param number the issue's number in its repository
+     * @param title its title
+     * @param body its body
+     * @param open whether GitHub has it open
+     * @param stateReason why GitHub closed it, or null while open
+     * @param fields the project values and the issue's Priority option by field name
+     * @param labels its labels' names
+     * @param parentIssueId the node id of its GitHub parent issue, or null
+     * @param subIssueIds the node ids of its GitHub sub-issues
+     * @param blockedByIds the node ids of the issues it is blocked by
+     * @param link where a person reads it
+     * @param updatedAt when GitHub last changed it
+     * @param archived whether the item is archived in the project
+     * @param blockers the issues it is blocked by, each with its repository and number
+     * @param unseenBlockers how many more blockers GitHub counts than it names
+     * @param issueType the name of its issue type, or null when it has none
+     * @param closedAt when GitHub last closed it, or null while it was never closed
+     */
+    public ItemView(
+            final String itemId,
+            final String issueId,
+            final String repository,
+            final int number,
+            final String title,
+            final String body,
+            final boolean open,
+            final @Nullable String stateReason,
+            final Map<String, String> fields,
+            final List<String> labels,
+            final @Nullable String parentIssueId,
+            final List<String> subIssueIds,
+            final List<String> blockedByIds,
+            final URI link,
+            final Instant updatedAt,
+            final boolean archived,
+            final List<Blocker> blockers,
+            final int unseenBlockers,
+            final @Nullable String issueType,
+            final @Nullable Instant closedAt) {
+        this(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                link,
+                updatedAt,
+                archived,
+                blockers,
+                unseenBlockers,
+                issueType,
+                closedAt,
+                subIssueIds.size(),
+                blockedByIds.size() + unseenBlockers,
+                false);
     }
 
     /**
@@ -234,7 +316,10 @@ public record ItemView(
                 blockers,
                 unseenBlockers,
                 type,
-                closedAt);
+                closedAt,
+                subIssueCount,
+                blockerCount,
+                partial);
     }
 
     /**
@@ -264,7 +349,10 @@ public record ItemView(
                 blockers,
                 unseenBlockers,
                 issueType,
-                at);
+                at,
+                subIssueCount,
+                blockerCount,
+                partial);
     }
 
     /**

@@ -1665,7 +1665,20 @@ public final class ItemsBoardReader implements BoardReader {
                         .toList(),
                 unseen(issue.blockedBy()),
                 issue.issueType(),
-                issue.closedAt());
+                issue.closedAt(),
+                issue.subIssues().totalCount(),
+                issue.blockedBy().totalCount(),
+                partial(item.valuesPage(), issue));
+    }
+
+    /**
+     * Whether an item's labels or field values lie past the one page read of them, told as one, as
+     * the board's copy keeps it.
+     */
+    static boolean partial(
+            final GitHubGraphQl.PageInfo values, final GitHubGraphQl.BoardIssue issue) {
+        return Boolean.TRUE.equals(values.hasNextPage())
+                || Boolean.TRUE.equals(issue.labelsPage().hasNextPage());
     }
 
     /**

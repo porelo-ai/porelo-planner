@@ -1,0 +1,2 @@
+title: A sub-issue or blocker added or removed on GitHub past the first page, or the first label or field value past it, now changes the item's version, so a write made against the board read before it is refused as changed.
+type: fixed
