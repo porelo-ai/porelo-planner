@@ -76,6 +76,11 @@ remote() {
     "${SSH[@]}" "$vm" bash -s -- "$@"
 }
 
+# Asks the story's shared ground for the machine's leftovers; the signing functions it sources come ahead of it.
+leftovers() {
+    cat -- "$ROOT/tool/planner-sign.sh" "$HERE/story-test.sh" | remote leftovers
+}
+
 # Waits for the story's run to let go of its lock, removes the run directory, and names anything left.
 # shellcheck disable=SC2329 # called by the EXIT trap
 finish() {
@@ -98,7 +103,7 @@ if [ -d "$dir" ]; then
 fi
 [ ! -e "$dir" ] || { echo "left behind: $dir" >&2; exit 3; }
 EOF
-        if left=$(remote leftovers <"$HERE/story-test.sh"); then
+        if left=$(leftovers); then
             printf '%s: the machine is clean: no run directory, no key or host line of a run, no planner\n' "$NAME"
         else
             printf '%s: left behind on the machine:\n%s\n' "$NAME" "$left" >&2
@@ -115,7 +120,7 @@ trap 'exit 129' HUP
 printf '%s: %s at %s on %s\n' "$NAME" "$story" "$commit" "${vm#*@}"
 printf '%s: executable sha256 %s\n' "$NAME" "$(sha256sum "$exe" | cut -d' ' -f1)"
 
-left=$(remote leftovers <"$HERE/story-test.sh") || die "the machine holds an earlier run's leftovers:
+left=$(leftovers) || die "the machine holds an earlier run's leftovers:
 $left"
 
 STAGE=$(mktemp -d)

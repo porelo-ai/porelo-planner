@@ -23,8 +23,12 @@
 
 set -euo pipefail
 
-# shellcheck source=../planner-sign.sh
-source "${BASH_SOURCE[0]%/*}/../planner-sign.sh"
+# Sent on standard input, as run-on-vm.sh does to look for leftovers, the script has no path of its own: the signing
+# functions then come ahead of it on the same input.
+if ! declare -F ps_sign >/dev/null; then
+    # shellcheck source=../planner-sign.sh
+    source "${BASH_SOURCE[0]%/*}/../planner-sign.sh"
+fi
 
 readonly ST_MARK_PREFIX=porelo-story-test
 ST_NAME=${0##*/}
