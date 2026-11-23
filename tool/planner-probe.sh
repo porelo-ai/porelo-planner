@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Reads what the planner, its Git store and the forge show after one step of a real run, and checks
-# it against what the step must have made. It reads only: no call that saves, moves or starts, and a
-# clone it needs lives in a temporary directory it removes.
+# Reads what the planner and the forge show after one step of a real run, and checks it against what
+# the step must have made. Every check of a story or an issue asks the planner's API, so it holds for
+# a project in a Git store, a local items folder or GitHub alike; no check reads a store's files. It
+# reads only: no call that saves, moves or starts, and a clone it needs lives in a temporary
+# directory it removes.
 #
 # Usage: planner-probe.sh <check> [arguments]
 #
@@ -11,17 +13,13 @@
 #   story-state <story> <state>          the board shows the story in this state
 #   issue-state <issue> <state>          the board shows the issue in this state, needing nobody
 #   issues <story>                       prints each issue of the story with its state
+#   issues-in <state>                    prints the id of each issue the board shows in this state,
+#                                        one per line, the stories' issues first; none is no failure
 #   work <story> none|offered|started|ended
 #                                        the story's run: no record, offers not yet started, a task
 #                                        at work, or every started task ended and none at work
 #   attention <issue> <reason>           the issue's attention reason, NONE when nobody must act
 #   events <seconds>                     the changes stream sends a board within this time
-#   store-issue <clone-url> <issue> <state>
-#                                        the issue's file on the branch's tip says this state, its
-#                                        stage records end in it and the commit that set it starts no build;
-#                                        a closed issue has no file, only its unlinked index row
-#   store-story <clone-url> <story> <issue> <state>
-#                                        the story's file lists the issue in this state
 #   forge-head <clone-url>               prints the branch's tip as the forge has it
 #   forge-moved <clone-url> <commit>     the branch's tip is no longer this commit; prints the commits since
 #   forge-commit <clone-url> <commit>    the forge holds this commit, on whichever ref; prints its author and subject,
@@ -33,7 +31,7 @@
 #   PLANNER_URL           the planner's address; read from the address file when unset
 #   PLANNER_ADDRESS_FILE  the address file; $XDG_RUNTIME_DIR/porelo-planner/planner.json when unset
 #   PLANNER_TOKEN         the token calls are signed under, never sent; read from the address file when unset
-#   PLANNER_BRANCH        the store's branch; main when unset
+#   PLANNER_BRANCH        the branch forge-moved clones; main when unset
 #   PORELO                Porelo's executable for 'records'; porelo on the PATH when unset
 #   PORELO_PROJECT        Porelo's project for 'records'; PLANNER_PROJECT when unset
 #
@@ -158,12 +156,24 @@ api() {
     get "/projects/$PROJECT$1"
 }
 
+# An item's id in either form the API takes: the Git store's (a story ST and its number, an issue
+# a capital prefix and its number, a sub-issue's number after a dot) or a tracker reference,
+# <repository>#<number>, as a local items folder and GitHub name theirs.
+readonly TRACKER_ID='[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}'
+readonly STORY_PATTERN="^(ST[0-9]{1,5}|$TRACKER_ID)\$"
+readonly ISSUE_PATTERN="^([A-Z]{1,4}[0-9]{1,5}(\\.[0-9]{1,3})?|$TRACKER_ID)\$"
+
 story_arg() {
-    [[ $1 =~ ^ST[0-9]{1,5}$ ]] || die "$1 is not a story id"
+    [[ $1 =~ $STORY_PATTERN && $1 != *..* ]] || die "$1 is not a story id"
 }
 
 issue_arg() {
-    [[ $1 =~ ^[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?$ ]] || die "$1 is not an issue id"
+    [[ $1 =~ $ISSUE_PATTERN && $1 != *..* ]] || die "$1 is not an issue id"
+}
+
+# An id as one segment of a path: a tracker reference's # is sent as %23.
+segment() {
+    printf '%s' "${1//#/%23}"
 }
 
 url_arg() {
@@ -187,26 +197,6 @@ clone() {
         -- "$url" "$CLONE/repo.git" || die "cannot clone $url at $BRANCH"
 }
 
-show() {
-    git --git-dir "$CLONE/repo.git" show "$BRANCH:$1"
-}
-
-file_of() {
-    local dir=$1 id=$2 name
-    name=$(git --git-dir "$CLONE/repo.git" ls-tree --name-only "$BRANCH" -- "$dir/" |
-        grep -E "^$dir/${id}(-[^/]*)?\.md$" || true)
-    [[ $(printf '%s\n' "$name" | grep -c . || true) == 1 ]] || fail "$id's file" "one file $dir/$id-*.md" "${name:-none}"
-    printf '%s' "$name"
-}
-
-# Whether the issue has no file and its index row stands unlinked, as the store settles a closed one.
-settled_row() {
-    local id=$1
-    [[ -z $(git --git-dir "$CLONE/repo.git" ls-tree --name-only "$BRANCH" -- issues/ |
-        grep -E "^issues/${id}(-[^/]*)?\.md$" || true) ]] || return 1
-    show issues/README.md | grep -qF "<a id=\"${id,,}\"></a>${id} " || return 1
-}
-
 check=${1:-}
 [[ -n $check ]] || die "usage: $PROBE <check> [arguments]; see the head of the script"
 shift
@@ -225,20 +215,20 @@ faults)
 story-id)
     title=${1:?story-id needs a title}
     ids=$(api /stories | jq -r --arg t "$title" '[.stories[] | select(.title == $t) | .id] | join(" ")')
-    [[ $ids =~ ^ST[0-9]+$ ]] || fail "story-id" "one story titled '$title'" "${ids:-none}"
+    [[ $ids =~ $STORY_PATTERN ]] || fail "story-id" "one story titled '$title'" "${ids:-none}"
     printf '%s\n' "$ids"
     ;;
 story-state)
     story_arg "${1:-}"
     want=${2:?story-state needs a state}
-    got=$(api "/stories/$1" | jq -r '.story.state')
+    got=$(api "/stories/$(segment "$1")" | jq -r '.story.state')
     [[ $got == "$want" ]] || fail "story-state $1" "$want" "$got"
     pass "$1 stands in $want"
     ;;
 issue-state)
     issue_arg "${1:-}"
     want=${2:?issue-state needs a state}
-    reply=$(api "/issues/$1")
+    reply=$(api "/issues/$(segment "$1")")
     got=$(jq -r '.issue.state' <<<"$reply")
     [[ $got == "$want" ]] || fail "issue-state $1" "$want" "$got"
     raised=$(jq -r '(.issue.needsYou | tostring) + " " + .issue.attention' <<<"$reply")
@@ -247,12 +237,22 @@ issue-state)
     ;;
 issues)
     story_arg "${1:-}"
-    api "/stories/$1/issues" | jq -r '.issues[] | "\(.id) \(.repository) \(.state) worker=\(.worker) atWork=\(.atWork) attention=\(.attention)"'
+    api "/stories/$(segment "$1")/issues" | jq -r '.issues[] | "\(.id) \(.repository) \(.state) worker=\(.worker) atWork=\(.atWork) attention=\(.attention)"'
+    ;;
+issues-in)
+    [[ -n ${1:-} ]] || die "issues-in needs a state"
+    want=$1
+    # The stories' issues first, then those in no story, each once.
+    {
+        api /stories | jq -r --arg s "$want" '.stories[].issues[]? | select(.state == $s) | .id'
+        api '/issues?story=none' | jq -r --arg s "$want" '.issues[] | select(.state == $s) | .id'
+    } |
+        awk '!seen[$0]++'
     ;;
 work)
     story_arg "${1:-}"
     want=${2:?work needs none, offered, started or ended}
-    reply=$(api "/stories/$1/work")
+    reply=$(api "/stories/$(segment "$1")/work")
     got=$(jq -r '
         if .work == null then "none"
         elif (.work.tasks | length) == 0 then "offered"
@@ -266,7 +266,7 @@ work)
 attention)
     issue_arg "${1:-}"
     want=${2:?attention needs a reason}
-    got=$(api "/issues/$1" | jq -r '.issue.attention')
+    got=$(api "/issues/$(segment "$1")" | jq -r '.issue.attention')
     [[ $got == "$want" ]] || fail "attention $1" "$want" "$got"
     pass "$1's attention is $want"
     ;;
@@ -296,43 +296,6 @@ events)
     rm -f "$stream"
     [[ $got -ge 1 ]] || fail "events" "one board event within ${seconds}s" "none"
     pass "the changes stream of $PROJECT sends a board"
-    ;;
-store-issue)
-    url_arg "${1:-}"
-    issue_arg "${2:-}"
-    want=${3:?store-issue needs a state}
-    clone "$1"
-    if settled_row "$2"; then
-        # A closed issue's file goes; its index row, unlinked, is all that is left of it.
-        file=issues/README.md
-        printf '%s: %s is settled: no file, its row in %s stands without a link\n' "$PROBE" "$2" "$file"
-    else
-        file=$(file_of issues "$2")
-        got=$(show "$file" | awk '/^```json$/{on=1;next} /^```$/{if(on)exit} on' | jq -r '.state')
-        [[ $got == "$want" ]] || fail "store-issue $2" "$file says $want" "$got"
-    fi
-    record=$(show "stats/$2.jsonl" 2>/dev/null | tail -n 1 | jq -r '.status_after' || true)
-    # A new issue gets its stage records with its first move; until then it has none.
-    if [[ -z $record && $want == New ]]; then
-        printf '%s: stats/%s.jsonl not there yet, as for an issue never moved\n' "$PROBE" "$2"
-    else
-        [[ $record == "$want" ]] || fail "store-issue $2" "stats/$2.jsonl ends in $want" "${record:-no record}"
-    fi
-    subject=$(git --git-dir "$CLONE/repo.git" log -1 --format=%s "$BRANCH" -- "$file")
-    [[ $subject == *'[skip ci]' ]] || fail "store-issue $2" "the commit that set it ends with [skip ci]" "$subject"
-    pass "$file says $want, its stage records end in it, set by '$subject'"
-    ;;
-store-story)
-    url_arg "${1:-}"
-    story_arg "${2:-}"
-    issue_arg "${3:-}"
-    want=${4:?store-story needs a state}
-    clone "$1"
-    file=$(file_of stories "$2")
-    line=$(show "$file" | grep -E "#$3\]\(" || true)
-    [[ $line == *"($want)" ]] || fail "store-story $2" "$file lists $3 ($want)" "${line:-no line for $3}"
-    show stories/README.md | grep -q -E "\b$2\b" || fail "store-story $2" "stories/README.md lists $2" "no row"
-    pass "$file lists $3 in $want, and the stories index names $2"
     ;;
 forge-head)
     url_arg "${1:-}"
