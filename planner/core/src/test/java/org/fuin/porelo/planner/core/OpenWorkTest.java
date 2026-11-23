@@ -153,7 +153,6 @@ class OpenWorkTest {
                                         "own#100",
                                         "A story",
                                         "Analyzed",
-                                        false,
                                         "High",
                                         null,
                                         List.of("own#1", "own#2", "own#3"),
@@ -259,7 +258,7 @@ class OpenWorkTest {
                 WORKFLOW,
                 List.of(
                         new Story(
-                                "own#100", "A story", "Backlog", false, "High", null, ids, "", null,
+                                "own#100", "A story", "Backlog", "High", null, ids, "", null,
                                 whole)),
                 List.copyOf(issues),
                 new Work(Map.of("Implementing", rule()), List.of()),

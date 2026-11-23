@@ -158,7 +158,7 @@ class AnswerRecordsTest {
         assertThat(writtenNull)
                 .as("the required fields written as null when null")
                 .contains(
-                        "Story.misfits",
+                        "Story.closedAt",
                         "Story.work",
                         "Issue.parent",
                         "PlanWorkTask.ended",

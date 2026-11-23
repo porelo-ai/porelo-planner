@@ -59,7 +59,6 @@ public class Problems {
         final HttpStatus status =
                 switch (refused.name()) {
                     case "NoSuchStory", "NoSuchIssue", "NotUnlisted" -> HttpStatus.NOT_FOUND;
-                    case "StoryStateMismatch" -> HttpStatus.CONFLICT;
                     default -> HttpStatus.UNPROCESSABLE_CONTENT;
                 };
         return problem(

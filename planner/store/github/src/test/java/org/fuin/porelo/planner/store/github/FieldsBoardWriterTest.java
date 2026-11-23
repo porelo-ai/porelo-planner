@@ -152,9 +152,11 @@ class FieldsBoardWriterTest {
                 idOf(item),
                 item.repository(),
                 item.title(),
-                // An issue without a Status stands in the workflow's first state, as the board
-                // reads it.
-                item.fields().getOrDefault(FieldNames.STATUS, WORKFLOW.states().get(0)),
+                // As the board reads it: a closed issue in the closed state its reason gives, an
+                // open one without a Status in the workflow's first state.
+                item.open()
+                        ? item.fields().getOrDefault(FieldNames.STATUS, WORKFLOW.states().get(0))
+                        : IssueMapping.closedState(item.stateReason(), WORKFLOW),
                 null,
                 List.of(),
                 null,
@@ -173,7 +175,6 @@ class FieldsBoardWriterTest {
                                 idOf(item),
                                 item.title(),
                                 "Idea",
-                                false,
                                 "High",
                                 null,
                                 List.of(),
@@ -202,6 +203,10 @@ class FieldsBoardWriterTest {
     }
 
     /** An issue as GitHub's read by id gives it, with the field values the item holds. */
+    private static @Nullable String upper(final @Nullable String reason) {
+        return reason == null ? null : reason.toUpperCase(java.util.Locale.ROOT);
+    }
+
     private static IssueOnBoard onBoard(final ItemView item) {
         final List<ItemValue> values = new ArrayList<>();
         item.fields()
@@ -230,7 +235,8 @@ class FieldsBoardWriterTest {
                         item.title(),
                         item.body(),
                         item.open() ? "OPEN" : "CLOSED",
-                        null,
+                        // GitHub's GraphQL names the reason in capitals.
+                        upper(item.stateReason()),
                         item.updatedAt(),
                         OWNER + "/" + item.repository(),
                         item.labels(),
@@ -244,7 +250,7 @@ class FieldsBoardWriterTest {
                         none,
                         new GitHubGraphQl.PageInfo(false, null),
                         item.issueType(),
-                        null),
+                        item.closedAt()),
                 item.itemId(),
                 values,
                 new GitHubGraphQl.PageInfo(false, null));
@@ -611,8 +617,7 @@ class FieldsBoardWriterTest {
                 .save(
                         snapshot(one, two),
                         SHOWN,
-                        new Writes(
-                                Map.of("PL1", "Backlog", "LB2", "Backlog"), Map.of(), List.of()));
+                        new Writes(Map.of("PL1", "Backlog", "LB2", "Backlog"), Map.of()));
 
         assertThat(github.mutations).as("the mutations sent").hasSize(1);
         assertThat(github.mutations.get(0))
@@ -635,8 +640,7 @@ class FieldsBoardWriterTest {
                 .as("shown in the first state")
                 .isEqualTo("Idea");
 
-        github.writer()
-                .save(snapshot, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of(), List.of()));
+        github.writer().save(snapshot, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of()));
 
         assertThat(github.mutations)
                 .as("only the moved issue's Status")
@@ -655,10 +659,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(one),
                                                 new Revision("older"),
-                                                new Writes(
-                                                        Map.of("PL1", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
                 .as("a save against a revision the board no longer holds")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(github.mutations).as("the mutations sent").isEmpty();
@@ -678,10 +679,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(one),
                                                 SHOWN,
-                                                new Writes(
-                                                        Map.of("PL1", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
                 .as("a save over an item whose Status a person changed")
                 .isInstanceOfSatisfying(
                         StoreException.StaleRevision.class,
@@ -746,7 +744,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(items.toArray(ItemView[]::new)),
                                                 SHOWN,
-                                                new Writes(moves, Map.of(), List.of())))
+                                                new Writes(moves, Map.of())))
                 .as("a save whose second mutation fails")
                 .isInstanceOfSatisfying(
                         StoreException.PartlySaved.class,
@@ -790,8 +788,7 @@ class FieldsBoardWriterTest {
                                                 SHOWN,
                                                 new Writes(
                                                         ordered("PL1", "Backlog", "LB2", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                        Map.of())))
                 .as("a mutation whose second part GitHub refused")
                 .isInstanceOfSatisfying(
                         StoreException.PartlySaved.class,
@@ -818,8 +815,7 @@ class FieldsBoardWriterTest {
                 .save(
                         snapshot(open, closed),
                         SHOWN,
-                        new Writes(
-                                ordered("PL1", "Rejected", "PL2", "Backlog"), Map.of(), List.of()));
+                        new Writes(ordered("PL1", "Rejected", "PL2", "Backlog"), Map.of()));
 
         assertThat(github.updates)
                 .as("the open states written")
@@ -829,9 +825,25 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void anIssueGitHubClosedUnderAnOpenStateStaysClosedOnAMoveToAnotherOpenState() {
-        // Harm: an issue a merge or a person closed while its state was open reopened by the
-        // planner on the next move, a stage result's included, with nobody asking for it.
+    void aMoveToAClosedStateIsTheCloseWithItsReasonAloneInOneCall() {
+        // Harm: a close written as a Status and a close, two writes a cut-off leaves half done,
+        // so the board and GitHub's own lists disagree.
+        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(open);
+
+        github.writer()
+                .save(snapshot(open), SHOWN, new Writes(ordered("PL1", "Rejected"), Map.of()));
+
+        assertThat(github.mutations).as("no field written").isEmpty();
+        assertThat(github.updates)
+                .as("the one close, as not planned")
+                .containsExactly("example-project#1 Opening[open=false, notPlanned=true]");
+    }
+
+    @Test
+    void aClosedIssueMovedToAnOpenStateIsReopenedWithItsStatus() {
+        // Harm: an issue moved back to work that stays closed on GitHub, so the board reads it
+        // closed again and the person's move is lost.
         final ItemView closed = item("PL1", "example-project", 1, false, "", state("Backlog"));
         final ItemView unstated = item("PL2", "example-project", 2, false, "", Map.of());
         final GitHub github = new GitHub().holding(closed, unstated);
@@ -840,7 +852,7 @@ class FieldsBoardWriterTest {
                 .save(
                         snapshot(closed, unstated),
                         SHOWN,
-                        new Writes(ordered("PL1", "Idea", "PL2", "Backlog"), Map.of(), List.of()));
+                        new Writes(ordered("PL1", "Idea", "PL2", "Backlog"), Map.of()));
 
         assertThat(github.mutations)
                 .as("both Status values written")
@@ -848,7 +860,11 @@ class FieldsBoardWriterTest {
                         List.of(
                                 FieldValue.option("PVTI_PL1", "F_Status", "O_Idea"),
                                 FieldValue.option("PVTI_PL2", "F_Status", "O_Backlog")));
-        assertThat(github.updates).as("neither reopened").isEmpty();
+        assertThat(github.updates)
+                .as("both reopened")
+                .containsExactly(
+                        "example-project#1 Opening[open=true, notPlanned=false]",
+                        "example-project#2 Opening[open=true, notPlanned=false]");
     }
 
     @Test
@@ -887,7 +903,6 @@ class FieldsBoardWriterTest {
                                                 "ST1",
                                                 closed.title(),
                                                 "Finished",
-                                                false,
                                                 "High",
                                                 null,
                                                 List.of("PL1"),
@@ -899,8 +914,7 @@ class FieldsBoardWriterTest {
                         Map.of("ST1", closed, "PL1", done),
                         CONFIG);
 
-        github.writer()
-                .save(current, SHOWN, new Writes(Map.of(), Map.of("ST1", "Backlog"), List.of()));
+        github.writer().save(current, SHOWN, new Writes(Map.of(), Map.of("ST1", "Backlog")));
 
         assertThat(github.updates)
                 .as("reopened, as it is moved out of the state it was shown in")
@@ -908,20 +922,23 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void aStageResultOnAnIssueGitHubClosedLeavesItClosed() {
+    void aStageResultOnAnIssueGitHubClosedIsRefusedAndLeavesItClosed() {
         // Harm: a run's stage result on an issue a merge closed while it was in work reopens
         // the issue nobody asked to reopen.
         final ItemView closed = item("PL1", "example-project", 1, false, BODY, state("Analysis"));
         final GitHub github = new GitHub().holding(closed);
 
-        github.writer().saveResult(snapshot(closed), analysis(), stage("task-1:2", "implement"));
-
-        assertThat(github.mutations.get(0))
-                .as("its next state written")
-                .contains(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"));
-        assertThat(github.updates)
-                .as("its body written, never reopened")
-                .containsExactly("example-project#1 null");
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .saveResult(
+                                                snapshot(closed),
+                                                analysis(),
+                                                stage("task-1:2", "implement")))
+                .as("it stands closed, not in the state the stage completes")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.mutations).as("nothing written").isEmpty();
+        assertThat(github.updates).as("never reopened").isEmpty();
     }
 
     @Test
@@ -938,17 +955,9 @@ class FieldsBoardWriterTest {
                 .save(
                         snapshot(none, rejected, first, second),
                         SHOWN,
-                        new Writes(
-                                Map.of(),
-                                ordered("ST1", "Finished", "ST2", "Finished"),
-                                List.of()));
+                        new Writes(Map.of(), ordered("ST1", "Finished", "ST2", "Finished")));
 
-        assertThat(github.mutations)
-                .as("each story's Status")
-                .flatMap(values -> values)
-                .containsExactlyInAnyOrder(
-                        FieldValue.option("PVTI_ST1", "F_Status", "O_Finished"),
-                        FieldValue.option("PVTI_ST2", "F_Status", "O_Finished"));
+        assertThat(github.mutations).as("no Status written").isEmpty();
         assertThat(github.updates)
                 .as("each story closed as done")
                 .containsExactlyInAnyOrder(
@@ -984,27 +993,6 @@ class FieldsBoardWriterTest {
     }
 
     @Test
-    void aMoveToAClosedStateWritesTheStatusBeforeItClosesTheIssue() {
-        // Harm: a save cut off after the close leaves an issue closed on GitHub that the board
-        // still shows in its old state, as a story's Finished cut off midway did.
-        final ItemView open = item("PL1", "example-project", 1, true, "", state("Backlog"));
-        final GitHub github = new GitHub().holding(open);
-
-        github.writer()
-                .save(
-                        snapshot(open),
-                        SHOWN,
-                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
-
-        assertThat(github.calls)
-                .as("the writes, in order")
-                .containsSubsequence("setFieldValues", "updateIssue");
-        assertThat(github.calls.indexOf("updateIssue"))
-                .as("the close after the Status")
-                .isGreaterThan(github.calls.lastIndexOf("setFieldValues"));
-    }
-
-    @Test
     void aCloseThatFailsOnceOnGitHubsSideIsAskedAgainBeforeItIsRefused() {
         // Harm: one passing failure of GitHub's answers PartlySaved, and the person's move of a
         // story with many issues stops halfway.
@@ -1014,10 +1002,7 @@ class FieldsBoardWriterTest {
         github.failsOnce = true;
 
         github.writer()
-                .save(
-                        snapshot(open),
-                        SHOWN,
-                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
+                .save(snapshot(open), SHOWN, new Writes(ordered("PL1", "Finished"), Map.of()));
 
         assertThat(github.updates)
                 .as("the issue closed")
@@ -1041,10 +1026,7 @@ class FieldsBoardWriterTest {
         }
 
         github.writer(github, LimitFactors.parse("retries=2.0"))
-                .save(
-                        snapshot(one),
-                        SHOWN,
-                        new Writes(ordered("PL1", "Backlog"), Map.of(), List.of()));
+                .save(snapshot(one), SHOWN, new Writes(ordered("PL1", "Backlog"), Map.of()));
 
         assertThat(github.mutations)
                 .as("the mutation asked five times: the fifth of six tries answered")
@@ -1069,10 +1051,7 @@ class FieldsBoardWriterTest {
         github.failsOnce = true;
 
         github.writer()
-                .save(
-                        snapshot(open),
-                        SHOWN,
-                        new Writes(ordered("PL1", "Finished"), Map.of(), List.of()));
+                .save(snapshot(open), SHOWN, new Writes(ordered("PL1", "Finished"), Map.of()));
 
         assertThat(github.updates).as("the issue closed").hasSize(1);
         assertThat(github.waits).as("the waits").containsExactly(Duration.ofSeconds(3));
@@ -1091,17 +1070,13 @@ class FieldsBoardWriterTest {
         final GitHub github = new GitHub().holding(items.toArray(ItemView[]::new));
 
         github.writer()
-                .save(
-                        snapshot(items.toArray(ItemView[]::new)),
-                        SHOWN,
-                        new Writes(moves, Map.of(), List.of()));
+                .save(snapshot(items.toArray(ItemView[]::new)), SHOWN, new Writes(moves, Map.of()));
 
         assertThat(github.updates).as("the issues closed").hasSize(8);
-        // One batch of values and eight closes: the first five go at once, the other four wait.
+        // Eight closes and no values: the first five go at once, the other three wait.
         assertThat(github.waits)
                 .as("the waits between writes")
-                .containsExactly(
-                        WritePace.SPACING, WritePace.SPACING, WritePace.SPACING, WritePace.SPACING);
+                .containsExactly(WritePace.SPACING, WritePace.SPACING, WritePace.SPACING);
     }
 
     @Test
@@ -1117,10 +1092,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(open),
                                                 SHOWN,
-                                                new Writes(
-                                                        ordered("PL1", "Finished"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(ordered("PL1", "Finished"), Map.of())))
                 .as("a close GitHub refused")
                 .isInstanceOf(StoreException.class);
         assertThat(github.calls.stream().filter("updateIssue"::equals).count())
@@ -1159,7 +1131,6 @@ class FieldsBoardWriterTest {
                                                 new Writes(
                                                         Map.of("PL1", "Backlog"),
                                                         Map.of(),
-                                                        List.of(),
                                                         Map.of(
                                                                 "PL1",
                                                                 org.fuin.porelo.planner.store.Worker
@@ -1684,8 +1655,7 @@ class FieldsBoardWriterTest {
             final Map<String, String> issues,
             final Map<String, Writes.Reason> issueReasons,
             final Map<String, Writes.Reason> storyReasons) {
-        return new Writes(
-                issues, Map.of(), List.of(), Map.of(), Map.of(), issueReasons, storyReasons);
+        return new Writes(issues, Map.of(), Map.of(), Map.of(), issueReasons, storyReasons);
     }
 
     @Test
@@ -1726,11 +1696,7 @@ class FieldsBoardWriterTest {
         final ItemView one = item("PL1", "example-project", 1, true, "", state("Backlog"));
         final GitHub github = new GitHub().holding(one);
 
-        github.writer()
-                .save(
-                        snapshot(one),
-                        SHOWN,
-                        new Writes(Map.of("PL1", "Finished"), Map.of(), List.of()));
+        github.writer().save(snapshot(one), SHOWN, new Writes(Map.of("PL1", "Finished"), Map.of()));
 
         assertThat(github.calls).doesNotContain("createIssueComment", "issueComments");
     }
@@ -1943,10 +1909,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(item),
                                                 SHOWN,
-                                                new Writes(
-                                                        Map.of("PL1", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
                 .as("a save over an item whose " + change)
                 .isInstanceOfSatisfying(
                         StoreException.StaleRevision.class,
@@ -2167,10 +2130,7 @@ class FieldsBoardWriterTest {
                 .save(
                         snapshot(finished, rejected),
                         SHOWN,
-                        new Writes(
-                                ordered("PL1", "Rejected", "PL2", "Finished"),
-                                Map.of(),
-                                List.of()));
+                        new Writes(ordered("PL1", "Rejected", "PL2", "Finished"), Map.of()));
 
         assertThat(github.updates)
                 .as("the reasons written")
@@ -2207,10 +2167,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 snapshot(one),
                                                 SHOWN,
-                                                new Writes(
-                                                        Map.of("PL1", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
                 .as("a first call GitHub took without answering")
                 .isInstanceOf(StoreException.PartlySaved.class);
     }
@@ -3657,8 +3614,7 @@ class FieldsBoardWriterTest {
                         Map.of("PL1", accepted),
                         CONFIG);
 
-        github.writer()
-                .save(current, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of(), List.of()));
+        github.writer().save(current, SHOWN, new Writes(Map.of("PL1", "Backlog"), Map.of()));
 
         assertThat(github.mutations)
                 .as("its Status written")
@@ -3672,10 +3628,7 @@ class FieldsBoardWriterTest {
                                         .save(
                                                 current,
                                                 SHOWN,
-                                                new Writes(
-                                                        Map.of("PL9", "Backlog"),
-                                                        Map.of(),
-                                                        List.of())))
+                                                new Writes(Map.of("PL9", "Backlog"), Map.of())))
                 .as("an issue not on the board")
                 .isInstanceOf(StoreException.NoSuchIssue.class);
     }
@@ -3719,7 +3672,8 @@ class FieldsBoardWriterTest {
                 item.archived(),
                 item.blockers(),
                 item.unseenBlockers(),
-                item.issueType());
+                item.issueType(),
+                null);
     }
 
     /** The body a story made by {@link #overTwo()} is given, without the request's marker. */

@@ -57,12 +57,7 @@ class MoveReasonsTest {
         // Harm: the issues a story's move closes lose why, or one closed long before gets a
         // sentence about other work.
         final Moves.Planned planned =
-                Moves.check(
-                        READY,
-                        List.of(reason(story("ST1", "Finished"), WHY)),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                Moves.check(READY, List.of(reason(story("ST1", "Finished"), WHY)), NO_RUNS);
         final Writes.Reason kept = new Writes.Reason("Finished", WHY);
         assertThat(planned.storyReasons())
                 .as("the story, whose shown state the move changes")
@@ -81,12 +76,10 @@ class MoveReasonsTest {
                 Moves.check(
                         READY,
                         List.of(reason(story("ST2", "Rejected"), "Not wanted any more.")),
-                        true,
-                        DERIVE,
                         NO_RUNS);
         assertThat(planned.issueReasons())
-                .as("the least advanced issue the move carries")
-                .containsOnlyKeys("PL3");
+                .as("each open issue the move closes")
+                .containsOnlyKeys("PL3", "PL4");
         assertThat(planned.storyReasons()).containsOnlyKeys("ST2");
     }
 
@@ -104,8 +97,6 @@ class MoveReasonsTest {
                 Moves.check(
                         board,
                         List.of(reason(story("ST5", "Rejected"), "Not wanted any more.")),
-                        true,
-                        DERIVE,
                         NO_RUNS);
         assertThat(planned.storyReasons()).containsOnlyKeys("ST5");
         assertThat(planned.issueReasons())
@@ -121,8 +112,6 @@ class MoveReasonsTest {
                 Moves.check(
                         READY,
                         List.of(reason(story("ST1", "Finished"), WHY), issue("PL1.1", "Finished")),
-                        false,
-                        DERIVE,
                         NO_RUNS);
         assertThat(none.issueReasons())
                 .as("PL1.1 moved by itself without one")
@@ -133,8 +122,6 @@ class MoveReasonsTest {
                         List.of(
                                 reason(story("ST1", "Finished"), WHY),
                                 reason(issue("PL1.1", "Finished"), "Its own.")),
-                        false,
-                        DERIVE,
                         NO_RUNS);
         assertThat(own.issueReasons().get("PL1.1"))
                 .as("its own sentence")
@@ -145,21 +132,11 @@ class MoveReasonsTest {
     void aReasonIsTrimmedAndABlankOneIsNone() {
         // Harm: a stray space or an empty field written as a comment nobody meant.
         final Moves.Planned trimmed =
-                Moves.check(
-                        READY,
-                        List.of(reason(issue("PL4", "Finished"), "  Done.\t")),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                Moves.check(READY, List.of(reason(issue("PL4", "Finished"), "  Done.\t")), NO_RUNS);
         assertThat(trimmed.issueReasons().get("PL4"))
                 .isEqualTo(new Writes.Reason("Finished", "Done."));
         final Moves.Planned blank =
-                Moves.check(
-                        READY,
-                        List.of(reason(issue("PL4", "Finished"), " \t ")),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                Moves.check(READY, List.of(reason(issue("PL4", "Finished"), " \t ")), NO_RUNS);
         assertThat(blank.issueReasons()).as("a blank reason is none").isEmpty();
         assertThat(blank.issues()).as("and the move is saved as without one").hasSize(1);
     }
@@ -170,12 +147,7 @@ class MoveReasonsTest {
         // length of its encoding.
         final String wide = "\uD83D\uDE00".repeat(Moves.MOST_REASON);
         final Moves.Planned planned =
-                Moves.check(
-                        READY,
-                        List.of(reason(issue("PL4", "Finished"), wide)),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                Moves.check(READY, List.of(reason(issue("PL4", "Finished"), wide)), NO_RUNS);
         assertThat(planned.issueReasons().get("PL4").text()).isEqualTo(wide);
         assertThat(refused(reason(issue("PL4", "Finished"), "a".repeat(Moves.MOST_REASON + 1))))
                 .as("281 characters")
@@ -216,27 +188,19 @@ class MoveReasonsTest {
         assertThat(refused(reason(issue("PL3", "Review"), WHY)))
                 .as("an open target")
                 .contains("only with a move into a closed state");
-        assertThat(refused(reason(story("ST2", "Review"), WHY)))
-                .as("a story's open target")
+        assertThat(refused(reason(story("ST3", "Review"), WHY)))
+                .as("a story reopened")
                 .contains("only with a move into a closed state");
         assertThat(refused(reason(issue("PL5", "Finished"), WHY)))
                 .as("an issue that stands there already")
                 .contains("in that state already");
-        assertThat(refused(new Moves.Move(true, "ST3", "Finished", true, WHY)))
-                .as("a story that follows its issues")
-                .contains("closes nothing");
     }
 
     @Test
     void aStoryShownInItsTargetAlreadyStillKeepsItsReasonSoAFailedCommentIsWrittenAgain() {
         // Harm: a save whose comment failed after the close can never write it.
         final Moves.Planned planned =
-                Moves.check(
-                        READY,
-                        List.of(reason(story("ST3", "Finished"), WHY)),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                Moves.check(READY, List.of(reason(story("ST3", "Finished"), WHY)), NO_RUNS);
         assertThat(planned.issues()).as("no state changes").isEmpty();
         assertThat(planned.storyReasons()).containsOnlyKeys("ST3");
         assertThat(planned.issueReasons())
@@ -248,11 +212,7 @@ class MoveReasonsTest {
         assertThat(planned.none()).as("still saved, for the reason").isFalse();
         final Moves.Planned rejected =
                 Moves.check(
-                        READY,
-                        List.of(reason(story("ST4", "Rejected"), "Not wanted.")),
-                        false,
-                        DERIVE,
-                        NO_RUNS);
+                        READY, List.of(reason(story("ST4", "Rejected"), "Not wanted.")), NO_RUNS);
         assertThat(rejected.storyReasons()).containsOnlyKeys("ST4");
         assertThat(rejected.issueReasons())
                 .as("its issue standing rejected keeps the reason, for a comment that failed")
@@ -267,14 +227,12 @@ class MoveReasonsTest {
                 Moves.preview(
                         READY,
                         List.of(story("ST1", "Finished")),
-                        DERIVE,
                         (issues, stories) -> List.of(),
                         NO_RUNS);
         final MovePreview with =
                 Moves.preview(
                         READY,
                         List.of(reason(story("ST1", "Finished"), WHY)),
-                        DERIVE,
                         (issues, stories) -> List.of(),
                         NO_RUNS);
         assertThat(with.digest("https://example.org/a.git", null))
@@ -285,8 +243,7 @@ class MoveReasonsTest {
                         () ->
                                 Moves.preview(
                                         READY,
-                                        List.of(reason(story("ST1", "Review"), WHY)),
-                                        DERIVE,
+                                        List.of(reason(story("ST3", "Review"), WHY)),
                                         (issues, stories) -> List.of(),
                                         NO_RUNS));
         assertThat(refused).as("the preview refuses it too").isNotNull();
@@ -296,26 +253,15 @@ class MoveReasonsTest {
     private static String refused(final Moves.Move move) {
         final Moves.Refused refused =
                 catchThrowableOfType(
-                        Moves.Refused.class,
-                        () -> Moves.check(READY, List.of(move), true, DERIVE, NO_RUNS));
+                        Moves.Refused.class, () -> Moves.check(READY, List.of(move), NO_RUNS));
         assertThat(refused).as("refused: " + move).isNotNull();
         assertThat(refused.name()).isEqualTo("MoveNotAllowed");
         assertThat(refused.parameters()).containsEntry("item", move.id());
         return refused.getMessage();
     }
 
-    private static final Moves.StoryState DERIVE = MoveReasonsTest::derive;
-
-    private static @Nullable String derive(final List<String> states) {
-        final List<String> open = states.stream().filter(state -> !CLOSED.contains(state)).toList();
-        final List<String> candidates = open.isEmpty() ? states : open;
-        return candidates.stream()
-                .min((a, b) -> STATES.indexOf(a) - STATES.indexOf(b))
-                .orElse(null);
-    }
-
     private static Moves.Move reason(final Moves.Move move, final String reason) {
-        return new Moves.Move(move.story(), move.id(), move.to(), move.follow(), reason);
+        return new Moves.Move(move.story(), move.id(), move.to(), reason);
     }
 
     private static Moves.Move story(final String id, final String to) {
@@ -339,7 +285,7 @@ class MoveReasonsTest {
     }
 
     private static Story story(final String id, final String state, final String... issues) {
-        return new Story(id, "A story", state, false, "High", null, List.of(issues), "", null);
+        return new Story(id, "A story", state, "High", null, List.of(issues), "", null);
     }
 
     private static Issue issue(final String id, final String state, final @Nullable String parent) {

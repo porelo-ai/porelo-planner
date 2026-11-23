@@ -124,7 +124,7 @@ void main() {
     await settle(tester);
     expect(find.byKey(const Key('planning-catching-up')), findsOneWidget);
     expect(board.live, isFalse);
-    board.move('S1', 'Review');
+    board.move('S1', 'Finished');
     expect(board.pending, isEmpty);
     expect(board.startUnavailable(board.stories.first), isNotNull);
     source.reconnect('demo', false);
@@ -137,7 +137,7 @@ void main() {
     expect(find.byKey(const Key('planning-catching-up')), findsNothing);
     expect(board.live, isTrue);
     expect(board.startUnavailable(board.stories.first), isNull);
-    board.move('S1', 'Review');
+    board.move('S1', 'Finished');
     expect(board.pending.keys, ['S1']);
   });
 
@@ -153,7 +153,7 @@ void main() {
     expect(source.changes.listening, isFalse);
     expect(find.byKey(const Key('planning-catching-up')), findsNothing);
     expect(boards.selected!.live, isFalse);
-    boards.selected!.move('S1', 'Review');
+    boards.selected!.move('S1', 'Finished');
     expect(boards.selected!.pending, isEmpty);
     expect(boards.selected!.startUnavailable(boards.selected!.stories.first), isNotNull);
     expect(find.byKey(const Key('planning-card S1')), findsOneWidget);
@@ -251,7 +251,7 @@ void main() {
     expect(board.snapshot!.revision, 'r1', reason: 'the streamed board is held back during the reload');
     expect(board.live, isFalse, reason: 'a held-back board does not make the watch live');
     expect(board.catchingUp, isTrue, reason: 'catching up ends only with a board that is shown');
-    board.move('S1', 'Review');
+    board.move('S1', 'Finished');
     expect(board.pending, isEmpty, reason: 'no move is offered on a board that is not shown');
 
     read.complete();

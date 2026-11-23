@@ -2,49 +2,64 @@
   "revision" : "mock@1",
   "states" : [ {
     "name" : "New",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Accepted",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "In analysis",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : false
   }, {
     "name" : "Analyzed",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Under estimation",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : false
   }, {
     "name" : "Estimated",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Backlog",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Implementing",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Reading",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Review",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : true
   }, {
     "name" : "Rework",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Reworking",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Finishing",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Finished",
-    "kind" : "CLOSED"
+    "kind" : "CLOSED",
+    "measured" : true
   }, {
     "name" : "Rejected",
-    "kind" : "CLOSED"
+    "kind" : "CLOSED",
+    "measured" : false
   } ],
   "phases" : [ {
     "name" : "Ideas",

@@ -267,11 +267,7 @@ class GitHubStoreTest {
         final GitHubStore store =
                 store(GitHubStore.Parts.reading(config -> snapshot("one"), states -> null));
 
-        assertThatThrownBy(
-                        () ->
-                                store.save(
-                                        new Revision("one"),
-                                        new Writes(Map.of(), Map.of(), List.of())))
+        assertThatThrownBy(() -> store.save(new Revision("one"), new Writes(Map.of(), Map.of())))
                 .as("a move on a store without a writer")
                 .isInstanceOf(UnsupportedOperationException.class);
         assertThat(store.textFormat())
@@ -333,11 +329,7 @@ class GitHubStoreTest {
                                         }));
         store.board();
 
-        assertThatThrownBy(
-                        () ->
-                                store.save(
-                                        new Revision("r1"),
-                                        new Writes(Map.of(), Map.of(), List.of())))
+        assertThatThrownBy(() -> store.save(new Revision("r1"), new Writes(Map.of(), Map.of())))
                 .as("a save refused after its first part was written")
                 .isInstanceOf(StoreException.PartlySaved.class);
         assertThat(store.board().revision())
@@ -482,11 +474,7 @@ class GitHubStoreTest {
                                         }));
         store.board();
 
-        assertThatThrownBy(
-                        () ->
-                                store.save(
-                                        new Revision("r1"),
-                                        new Writes(Map.of(), Map.of(), List.of())))
+        assertThatThrownBy(() -> store.save(new Revision("r1"), new Writes(Map.of(), Map.of())))
                 .as("a save written whose following read GitHub refused")
                 .isInstanceOf(StoreException.PartlySaved.class)
                 .isNotInstanceOf(StoreException.NoForgeAccess.class);
@@ -602,11 +590,7 @@ class GitHubStoreTest {
                                         }));
         store.board();
 
-        assertThatThrownBy(
-                        () ->
-                                store.save(
-                                        new Revision("r1"),
-                                        new Writes(Map.of(), Map.of(), List.of())))
+        assertThatThrownBy(() -> store.save(new Revision("r1"), new Writes(Map.of(), Map.of())))
                 .as("a save over an item a person changed")
                 .isInstanceOfSatisfying(
                         StoreException.StaleRevision.class,

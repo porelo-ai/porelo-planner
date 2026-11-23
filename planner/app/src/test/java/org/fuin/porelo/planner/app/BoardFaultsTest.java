@@ -63,7 +63,6 @@ class BoardFaultsTest {
                         "porelo-store#1",
                         "A story",
                         "Idea",
-                        false,
                         "High",
                         null,
                         List.of("porelo-store#2"),
@@ -183,14 +182,12 @@ class BoardFaultsTest {
                         List.of("Idea", "Backlog", "Finished"),
                         List.of(new Workflow.Phase("All", List.of("Idea", "Backlog", "Finished"))),
                         List.of("Finished"));
-        final Story empty =
-                new Story("ST1", "A story", "Idea", false, "High", null, List.of(), "", null);
+        final Story empty = new Story("ST1", "A story", "Idea", "High", null, List.of(), "", null);
         final Story low =
                 new Story(
                         "ST2",
                         "A story",
                         "Backlog",
-                        false,
                         "Low",
                         null,
                         List.of("porelo-store#1"),
@@ -211,9 +208,7 @@ class BoardFaultsTest {
         assertThat(event.path("rules").toString())
                 .as("each breach with its item, its rule and the planner's words")
                 .isEqualTo(
-                        "[{\"item\":\"ST1\",\"rule\":\"StoryWithoutIssueOrState\","
-                                + "\"words\":\"ST1 has no issue and no given state.\"},"
-                                + "{\"item\":\"ST2\",\"rule\":\"StoryPriorityBelowIssue\","
+                        "[{\"item\":\"ST2\",\"rule\":\"StoryPriorityBelowIssue\","
                                 + "\"words\":\"ST2 has a lower priority than its open issue"
                                 + " porelo-store#1.\"},"
                                 + "{\"item\":\"porelo-store#2\",\"rule\":\"IssueInNoStory\","
@@ -250,11 +245,7 @@ class BoardFaultsTest {
     }
 
     private static org.fuin.porelo.planner.app.answers.Board boardOf(final Board board) {
-        return BoardController.boardOf(
-                board,
-                new WorkRun.Snapshot(0, Map.of()),
-                states -> states.isEmpty() ? null : "Idea",
-                false);
+        return BoardController.boardOf(board, new WorkRun.Snapshot(0, Map.of()), false);
     }
 
     /** The mapper the app's Spring Boot sets up, which writes the stream's events. */

@@ -30,9 +30,9 @@ import org.junit.jupiter.api.Test;
 class GitStoreTest {
 
     private static final String WORKFLOW_TEXT =
-            "states:\n  - {name: Idea, closed: false}\n  - {name: Backlog, closed: false}\n"
-                    + "  - {name: Finished, closed: true}\nphases:\n"
-                    + "  - {name: Open, states: [Idea, Backlog]}\n";
+            "states:\n  - {name: Idea, closed: false}\n  - {name: Backlog, closed: false, measured: true}\n"
+                    + "  - {name: Rework, closed: false}\n  - {name: Finished, closed: true}\n"
+                    + "phases:\n  - {name: Open, states: [Idea, Backlog, Rework]}\n";
 
     private static final Workflow WORKFLOW = Workflow.read(WORKFLOW_TEXT);
 
@@ -45,13 +45,8 @@ class GitStoreTest {
     /** An issue's state set right by a move into an open state, none entered by work alone. */
     private static final org.fuin.porelo.planner.store.Correction MOVE =
             new org.fuin.porelo.planner.store.Correction(
-                    org.fuin.porelo.planner.store.Correction.MOVE, List.of("Idea", "Backlog"));
-
-    /** A story's state set right by its stated state alone. */
-    private static final org.fuin.porelo.planner.store.Correction STATED =
-            new org.fuin.porelo.planner.store.Correction(
-                    org.fuin.porelo.planner.store.Correction.STATE_STATED,
-                    List.of("Idea", "Backlog"));
+                    org.fuin.porelo.planner.store.Correction.MOVE,
+                    List.of("Idea", "Backlog", "Rework"));
 
     /** Where the copies of an id stand that the parts give no file for. */
     private static final List<String> ROWS = List.of("the index of store", "the index of other");
@@ -244,7 +239,7 @@ class GitStoreTest {
                                 store.save(
                                         new org.fuin.porelo.planner.store.Revision("any"),
                                         new org.fuin.porelo.planner.store.Writes(
-                                                Map.of("PL1", "Backlog"), Map.of(), List.of())))
+                                                Map.of("PL1", "Backlog"), Map.of())))
                 .as("the save of a project held by another")
                 .isInstanceOf(StoreException.Busy.class);
         assertThat(waits)
@@ -367,9 +362,9 @@ class GitStoreTest {
     }
 
     @Test
-    void aStoryNotWholeNeverFollowsTheIssuesShownIntoAClose() {
-        // Harm: a story without a stated state shown Finished, its work done, while an issue it
-        // names that the board cannot read may still be open.
+    void anOpenStoryNeverFollowsItsIssuesIntoAClose() {
+        // Harm: a story shown Finished, its work taken for tested, while nobody closed it, or
+        // while an issue it names that the board cannot read may still be open.
         final Board board =
                 store(
                                 List.of(
@@ -380,14 +375,14 @@ class GitStoreTest {
                         .board();
 
         assertThat(board.stories())
-                .as("the story not whole in the workflow's last open state, the whole one finished")
+                .as("each open story in the workflow's last open state, whole or not")
                 .extracting(
                         org.fuin.porelo.planner.store.Story::id,
                         org.fuin.porelo.planner.store.Story::issuesWhole,
                         org.fuin.porelo.planner.store.Story::state)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("ST1", false, "Backlog"),
-                        org.assertj.core.groups.Tuple.tuple("ST2", true, "Finished"));
+                        org.assertj.core.groups.Tuple.tuple("ST2", true, "Backlog"));
     }
 
     @Test
@@ -415,26 +410,21 @@ class GitStoreTest {
                 .extracting(
                         org.fuin.porelo.planner.store.Story::id,
                         org.fuin.porelo.planner.store.Story::state,
-                        org.fuin.porelo.planner.store.Story::stateGiven,
                         org.fuin.porelo.planner.store.Story::issues,
                         org.fuin.porelo.planner.store.Story::issuesWhole,
                         org.fuin.porelo.planner.store.Story::warnings)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(
-                                "ST1", "Backlog", false, List.of("XY1", "XY2"), true, List.of()),
+                                "ST1", "Backlog", List.of("XY1", "XY2"), true, List.of()),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST2",
                                 "",
-                                false,
                                 List.of("XY1"),
                                 true,
-                                List.of(
-                                        org.fuin.porelo.planner.store.Warning.noState()
-                                                .offering(STATED))),
+                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST3",
                                 "Backlog",
-                                false,
                                 List.of("XY2"),
                                 false,
                                 List.of(
@@ -443,23 +433,20 @@ class GitStoreTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST4",
                                 "Parked",
-                                true,
                                 List.of(),
                                 true,
                                 List.of(
-                                        org.fuin.porelo.planner.store.Warning.stateOutsideWorkflow()
-                                                .offering(STATED))),
+                                        org.fuin.porelo.planner.store.Warning
+                                                .stateOutsideWorkflow())),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST5",
                                 "Idea",
-                                true,
                                 List.of(),
                                 true,
                                 List.of(org.fuin.porelo.planner.store.Warning.idTwice())),
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST5",
                                 "Idea",
-                                true,
                                 List.of(),
                                 true,
                                 List.of(org.fuin.porelo.planner.store.Warning.idTwice())));
@@ -491,9 +478,7 @@ class GitStoreTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "ST1",
                                 "",
-                                List.of(
-                                        org.fuin.porelo.planner.store.Warning.noState()
-                                                .offering(STATED))),
+                                List.of(org.fuin.porelo.planner.store.Warning.noState())),
                         org.assertj.core.groups.Tuple.tuple("ST2", "Backlog", List.of()));
     }
 

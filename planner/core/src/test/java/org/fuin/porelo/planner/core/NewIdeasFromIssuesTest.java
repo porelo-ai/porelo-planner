@@ -71,7 +71,7 @@ class NewIdeasFromIssuesTest {
 
     private static Story story(
             final String id, final String title, final String body, final String... issues) {
-        return new Story(id, title, "Idea", false, "High", null, List.of(issues), body, null);
+        return new Story(id, title, "Idea", "High", null, List.of(issues), body, null);
     }
 
     private static Issue issue(final String id, final String state, final String parent) {

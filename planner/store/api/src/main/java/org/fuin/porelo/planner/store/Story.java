@@ -1,17 +1,19 @@
 package org.fuin.porelo.planner.store;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A story as its head and body state it.
+ * A story as its store holds it. An open story has no state of its own: it stands where its issues
+ * stand, and it ends by being closed.
  *
  * @param id the story's id, {@code ST} and a number, or a tracker reference {@code
  *     <repository>#<number>}
  * @param title its title
- * @param state its state, one of the workflow's
- * @param stateGiven whether its head states the state, rather than its issues giving it
+ * @param state its state, one of the workflow's: while it is open, the one its issues give it,
+ *     never a closed one; once closed, the closed state it was closed into
  * @param priority its priority
  * @param size the size given when it was estimated, {@code XS} to {@code XL}, or null when its head
  *     gives none; its own, never added up from its issues' sizes
@@ -20,6 +22,8 @@ import org.jspecify.annotations.Nullable;
  * @param link where a person reads it on the forge, if known
  * @param issuesWhole whether {@code issues} holds every issue its head names; false when the store
  *     left one out, so nothing is read from its issues as if they were all
+ * @param closedAt when it was closed as completed, the day its test passed, or null while it is not
+ *     closed so or its store keeps no such time
  * @param warnings what the store could not read in it; its state may be none of the workflow's, or
  *     empty, only with a warning about the state; a warning's correction stands only while no other
  *     of them holds the story back
@@ -30,13 +34,13 @@ public record Story(
         String id,
         String title,
         String state,
-        boolean stateGiven,
         String priority,
         @Nullable String size,
         List<String> issues,
         String description,
         @Nullable URI link,
         boolean issuesWhole,
+        @Nullable Instant closedAt,
         List<Warning> warnings,
         Version version) {
 
@@ -53,53 +57,79 @@ public record Story(
     }
 
     /**
-     * A story without warnings.
+     * A story whose version is taken over its own stored values, for a store that keeps no edit
+     * basis of its own; a state its issues give is left out of it.
      *
      * @param id the story's id
      * @param title its title
      * @param state its state
-     * @param stateGiven whether its head states the state
+     * @param stateStored whether its store keeps the state as the story's own, as a closed story's;
+     *     false for a state its issues give
      * @param priority its priority
      * @param size its size, or null
      * @param issues the ids of the issues it needs, in its order
      * @param description its body
      * @param link where a person reads it, if known
      * @param issuesWhole whether {@code issues} holds every issue its head names
+     * @param closedAt when it was closed as completed, or null
+     * @param warnings what the store could not read in it
      */
     public Story(
             final String id,
             final String title,
             final String state,
-            final boolean stateGiven,
+            final boolean stateStored,
             final String priority,
             final @Nullable String size,
             final List<String> issues,
             final String description,
             final @Nullable URI link,
-            final boolean issuesWhole) {
+            final boolean issuesWhole,
+            final @Nullable Instant closedAt,
+            final List<Warning> warnings) {
         this(
                 id,
                 title,
                 state,
-                stateGiven,
                 priority,
                 size,
                 issues,
                 description,
                 link,
                 issuesWhole,
-                List.of());
+                closedAt,
+                warnings,
+                Version.of(
+                        "story",
+                        id,
+                        title,
+                        stateStored ? state : null,
+                        priority,
+                        size,
+                        issues,
+                        description,
+                        link));
     }
 
     /**
-     * A story whose version is taken over its own stored values, for a store that keeps no edit
-     * basis of its own; a state its issues give is left out.
+     * An open story whose state its issues give, without a closing time, its version taken over its
+     * own stored values.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state the state its issues give
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     * @param warnings what the store could not read in it
      */
     public Story(
             final String id,
             final String title,
             final String state,
-            final boolean stateGiven,
             final String priority,
             final @Nullable String size,
             final List<String> issues,
@@ -111,24 +141,65 @@ public record Story(
                 id,
                 title,
                 state,
-                stateGiven,
+                false,
                 priority,
                 size,
                 issues,
                 description,
                 link,
                 issuesWhole,
-                warnings,
-                Version.of(
-                        "story",
-                        id,
-                        title,
-                        stateGiven ? state : null,
-                        priority,
-                        size,
-                        issues,
-                        description,
-                        link));
+                null,
+                warnings);
+    }
+
+    /**
+     * An open story whose state its issues give, without warnings or a closing time.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state the state its issues give
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     * @param issuesWhole whether {@code issues} holds every issue its head names
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole) {
+        this(id, title, state, priority, size, issues, description, link, issuesWhole, List.of());
+    }
+
+    /**
+     * An open story whose issues are every one its head names.
+     *
+     * @param id the story's id
+     * @param title its title
+     * @param state the state its issues give
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, if known
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link) {
+        this(id, title, state, priority, size, issues, description, link, true);
     }
 
     /**
@@ -142,13 +213,13 @@ public record Story(
                 id,
                 title,
                 state,
-                stateGiven,
                 priority,
                 size,
                 issues,
                 description,
                 link,
                 issuesWhole,
+                closedAt,
                 warnings,
                 version);
     }
@@ -164,40 +235,14 @@ public record Story(
                 id,
                 title,
                 state,
-                stateGiven,
                 priority,
                 size,
                 issues,
                 description,
                 link,
                 issuesWhole,
+                closedAt,
                 warnings,
                 version);
-    }
-
-    /**
-     * A story whose issues are every one its head names.
-     *
-     * @param id the story's id
-     * @param title its title
-     * @param state its state
-     * @param stateGiven whether its head states the state
-     * @param priority its priority
-     * @param size its size, or null
-     * @param issues the ids of the issues it needs, in its order
-     * @param description its body
-     * @param link where a person reads it, if known
-     */
-    public Story(
-            final String id,
-            final String title,
-            final String state,
-            final boolean stateGiven,
-            final String priority,
-            final @Nullable String size,
-            final List<String> issues,
-            final String description,
-            final @Nullable URI link) {
-        this(id, title, state, stateGiven, priority, size, issues, description, link, true);
     }
 }

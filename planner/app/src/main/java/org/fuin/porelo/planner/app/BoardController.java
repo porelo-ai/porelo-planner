@@ -45,7 +45,6 @@ import org.fuin.porelo.planner.app.answers.WorkerSaved;
 import org.fuin.porelo.planner.core.Corrections;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
-import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
@@ -154,32 +153,13 @@ public class BoardController {
      * @param story the story's id, or null
      * @param issue the issue's id, or null
      * @param to the state it moves to
-     * @param follow for a story, true when it gives up its given state for the one its issues give
      * @param reason the person's one sentence why the item is closed, or null
      */
     public record MoveBody(
             @Nullable String story,
             @Nullable String issue,
             @Nullable String to,
-            @Nullable Boolean follow,
             @Nullable String reason) {
-
-        /**
-         * One move without a reason.
-         *
-         * @param story the story's id, or null
-         * @param issue the issue's id, or null
-         * @param to the state it moves to
-         * @param follow for a story, true when it gives up its given state for the one its issues
-         *     give
-         */
-        public MoveBody(
-                final @Nullable String story,
-                final @Nullable String issue,
-                final @Nullable String to,
-                final @Nullable Boolean follow) {
-            this(story, issue, to, follow, null);
-        }
 
         /**
          * One plain move.
@@ -192,7 +172,7 @@ public class BoardController {
                 final @Nullable String story,
                 final @Nullable String issue,
                 final @Nullable String to) {
-            this(story, issue, to, null, null);
+            this(story, issue, to, null);
         }
     }
 
@@ -508,13 +488,7 @@ public class BoardController {
         final Moves.Planned planned;
         final Board saved;
         try {
-            planned =
-                    Moves.check(
-                            board,
-                            moves,
-                            Boolean.TRUE.equals(body.confirm()),
-                            store::storyState,
-                            runs);
+            planned = Moves.check(board, moves, runs);
             if (planned.none()) {
                 // Nothing changes, so no repository is locked or asked.
                 return new Moved(board.revision().value(), planned.moved(), List.of());
@@ -651,16 +625,8 @@ public class BoardController {
         final Board moved;
         try {
             final Moves.Planned planned =
-                    Moves.check(
-                            made,
-                            List.of(new Moves.Move(false, added.id(), state, false)),
-                            body.confirm(),
-                            store::storyState,
-                            runs);
-            moved =
-                    store.save(
-                            made.revision(),
-                            new Writes(planned.issues(), planned.stories(), planned.unstated()));
+                    Moves.check(made, List.of(new Moves.Move(false, added.id(), state)), runs);
+            moved = store.save(made.revision(), new Writes(planned.issues(), planned.stories()));
         } catch (final RuntimeException e) {
             throw new StoreException.PartlySaved(
                     issue.repository(),
@@ -753,7 +719,6 @@ public class BoardController {
                                             story.id(),
                                             story.title(),
                                             story.state(),
-                                            story.stateGiven(),
                                             story.priority(),
                                             story.size(),
                                             under,
@@ -775,12 +740,7 @@ public class BoardController {
                         board.owner(),
                         board.unlisted());
         try {
-            Moves.check(
-                    withNew,
-                    List.of(new Moves.Move(false, placeholder, state)),
-                    confirm,
-                    store::storyState,
-                    runs);
+            Moves.check(withNew, List.of(new Moves.Move(false, placeholder, state)), runs);
         } catch (final Moves.Refused refused) {
             final Map<String, String> parameters = new LinkedHashMap<>(refused.parameters());
             parameters.put("item", "");
@@ -917,13 +877,7 @@ public class BoardController {
             if (to == null || !STATE.matcher(to).matches()) {
                 throw notAllowed(id, "", "The destination must be a state's name.");
             }
-            moves.add(
-                    new Moves.Move(
-                            story != null,
-                            id,
-                            to,
-                            Boolean.TRUE.equals(move.follow()),
-                            move.reason()));
+            moves.add(new Moves.Move(story != null, id, to, move.reason()));
         }
         return moves;
     }
@@ -1010,7 +964,8 @@ public class BoardController {
                                         new State(
                                                 state,
                                                 State.KindEnum.fromValue(
-                                                        kind(workflow, checked, state))))
+                                                        kind(workflow, checked, state)),
+                                                workflow.measured().contains(state)))
                         .toList(),
                 workflow.phases().stream()
                         .map(phase -> new Phase(phase.name(), phase.states()))
@@ -1025,15 +980,11 @@ public class BoardController {
      *
      * @param board the board
      * @param snapshot the local work generation
-     * @param derive derives a story's state from its issues, as the board's store does
      * @param reasons whether the board's store keeps a move's reason
      * @return the workflow's answer and every story in one
      */
     static org.fuin.porelo.planner.app.answers.Board boardOf(
-            final Board board,
-            final WorkRun.Snapshot snapshot,
-            final Moves.StoryState derive,
-            final boolean reasons) {
+            final Board board, final WorkRun.Snapshot snapshot, final boolean reasons) {
         final org.fuin.porelo.planner.app.answers.Workflow workflow = workflowOf(board, reasons);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
         return new org.fuin.porelo.planner.app.answers.Board(
@@ -1045,11 +996,11 @@ public class BoardController {
                 workflow.faults(),
                 reasons,
                 board.stories().stream()
-                        .map(story -> story(board, story, snapshot, derive, counter))
+                        .map(story -> story(board, story, snapshot, counter))
                         .toList(),
                 board.unlisted().stream().map(BoardController::unlistedIssue).toList(),
                 open(counter.board()),
-                StoryRules.of(board, derive).stream()
+                StoryRules.of(board).stream()
                         .map(
                                 breach ->
                                         new RuleBreach(
@@ -1100,14 +1051,7 @@ public class BoardController {
                                                     states == null
                                                             || states.isEmpty()
                                                             || states.contains(story.state()))
-                                    .map(
-                                            story ->
-                                                    story(
-                                                            board,
-                                                            story,
-                                                            snapshot,
-                                                            work.derive(),
-                                                            counter))
+                                    .map(story -> story(board, story, snapshot, counter))
                                     .toList(),
                             open(counter.board()));
                 });
@@ -1127,15 +1071,13 @@ public class BoardController {
         final Projects.Given given = projects.given(name(project));
         final String format = given.store().textFormat().name();
         final WorkRun work = given.work();
-        return work.view(
-                (board, snapshot) -> storyDetail(board, snapshot, checked, work.derive(), format));
+        return work.view((board, snapshot) -> storyDetail(board, snapshot, checked, format));
     }
 
     private static StoryReply storyDetail(
             final Board board,
             final WorkRun.Snapshot snapshot,
             final String checked,
-            final Moves.StoryState derive,
             final String format) {
         final Story story = found(board, checked);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
@@ -1146,9 +1088,7 @@ public class BoardController {
                         story.id(),
                         story.title(),
                         story.state(),
-                        story.stateGiven(),
-                        Misfits.of(board, story, derive),
-                        Misfits.derivedState(board, story, derive),
+                        closedAt(story),
                         story.priority(),
                         story.size(),
                         story.link(),
@@ -1626,16 +1566,13 @@ public class BoardController {
             final Board board,
             final Story story,
             final WorkRun.Snapshot snapshot,
-            final Moves.StoryState derive,
             final OpenWork.Counter counter) {
         return new org.fuin.porelo.planner.app.answers.Story(
                 story.version().value(),
                 story.id(),
                 story.title(),
                 story.state(),
-                story.stateGiven(),
-                Misfits.of(board, story, derive),
-                Misfits.derivedState(board, story, derive),
+                closedAt(story),
                 story.priority(),
                 story.size(),
                 story.link(),
@@ -1643,6 +1580,12 @@ public class BoardController {
                 WorkAnswers.work(board, snapshot.runs().get(story.id())),
                 storyOpen(counter.story(story)),
                 WorkAnswers.warnings(story.warnings()));
+    }
+
+    /** The day a story's test passed, as the time it closed as done, or null while it is not. */
+    private static @Nullable String closedAt(final Story story) {
+        final java.time.Instant at = story.closedAt();
+        return at == null ? null : at.toString();
     }
 
     private static org.fuin.porelo.planner.app.answers.@Nullable OpenWork storyOpen(

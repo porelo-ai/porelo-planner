@@ -321,7 +321,8 @@ class GitHubStoreLookTest {
                             held.number,
                             held.title,
                             "A body",
-                            "OPEN",
+                            // Finished is a close on GitHub, as a person or the planner makes it.
+                            "O_finished".equals(held.option) ? "CLOSED" : "OPEN",
                             null,
                             held.at,
                             REPOSITORY,
@@ -424,7 +425,7 @@ class GitHubStoreLookTest {
     }
 
     private static void save(final GitHubStore store) {
-        store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(store.board().revision(), new Writes(Map.of(), Map.of()));
     }
 
     private List<String> heldInCopy() {

@@ -76,7 +76,7 @@ public final class GitStore implements PlanningStore {
                     "stories/(ST[0-9]+)(?:-[^/]*)?\\.md|issues/(?:[^/]+/)?([A-Z]{1,3}[0-9]{2,3})-[^/]*\\.md");
 
     /** The writes of a save that only adds. */
-    private static final Writes NO_WRITES = new Writes(Map.of(), Map.of(), List.of());
+    private static final Writes NO_WRITES = new Writes(Map.of(), Map.of());
 
     private final List<Repository> repositories;
 
@@ -356,7 +356,7 @@ public final class GitStore implements PlanningStore {
     public Board saveResult(final StageResult result) {
         final Map<String, String> moves = new LinkedHashMap<>();
         result.issues().forEach(issue -> moves.put(issue.id(), issue.to()));
-        final Writes writes = new Writes(moves, Map.of(), List.of());
+        final Writes writes = new Writes(moves, Map.of());
         final String own = repositories.get(0).name();
         for (int attempt = 1; ; attempt++) {
             // A hand-in waits a bounded time, so a long check answers it try later, never hangs it.
@@ -552,10 +552,10 @@ public final class GitStore implements PlanningStore {
         if (workflow == null) {
             throw new IllegalStateException("No board was read yet");
         }
-        // An issue in a state the workflow does not know gives a story none.
-        final List<String> known =
-                issueStates.stream().filter(state -> workflow.states().contains(state)).toList();
-        return known.isEmpty() ? null : workflow.storyState(null, known);
+        // An issue in a state the workflow does not know is left out, as the rule leaves it.
+        return workflow.storyState(
+                null,
+                issueStates.stream().filter(state -> workflow.states().contains(state)).toList());
     }
 
     /** Each written issue's file and new state, by repository; every issue checked savable. */
@@ -703,12 +703,52 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
-    /** Each written story's file and its new stated state, empty where it goes. */
+    /**
+     * Whether the story names no issue that is not rejected, as the board read before the save
+     * holds them, and so has none whose state it could follow.
+     */
+    private static boolean withoutIssues(
+            final Snapshot snapshot,
+            final String id,
+            final org.fuin.porelo.planner.store.git.stories.@Nullable Workflow workflow) {
+        final Board board = snapshot.board();
+        return board.story(id)
+                .map(
+                        story ->
+                                story.issues().stream()
+                                        .map(board::issue)
+                                        .flatMap(Optional::stream)
+                                        .noneMatch(
+                                                issue ->
+                                                        workflow == null
+                                                                || !workflow.states()
+                                                                        .contains(issue.state())
+                                                                || !workflow.rejected(
+                                                                        issue.state())))
+                .orElse(false);
+    }
+
+    /**
+     * Each written story's file and its new stated state: a closed state is stated, which closes
+     * it; an open one removes the stated state, which reopens it to follow its issues. A story
+     * without issues left, or with only rejected ones, has none to follow, so its head states the
+     * open state it is moved to.
+     */
     private Map<String, String> storyHeads(final Snapshot snapshot, final Writes writes) {
         final Part own = of(snapshot.parts(), repositories.get(0).name());
+        final org.fuin.porelo.planner.store.Workflow workflow = snapshot.board().workflow();
         final Map<String, String> files = new LinkedHashMap<>();
-        final Map<String, String> states = new LinkedHashMap<>(writes.stories());
-        writes.unstated().forEach(id -> states.put(id, ""));
+        final Map<String, String> states = new LinkedHashMap<>();
+        writes.stories()
+                .forEach(
+                        (id, state) ->
+                                states.put(
+                                        id,
+                                        workflow.closed().contains(state)
+                                                        || withoutIssues(
+                                                                snapshot, id, own.workflow())
+                                                ? state
+                                                : ""));
         for (final Map.Entry<String, String> write : states.entrySet()) {
             final String id = write.getKey();
             final String path = own.paths().get(Part.story(id));
@@ -1649,6 +1689,9 @@ public final class GitStore implements PlanningStore {
             found.addAll(of(parts, repository.name()).issues());
         }
         faults.addAll(pushFaults(parts));
+        if (read.storyRule().isEmpty()) {
+            faults.add(org.fuin.porelo.planner.core.StoryState.NO_RULE);
+        }
         // Every issue read is shown: one the planner cannot place carries why, never left out.
         final Map<String, Long> ids =
                 found.stream()
@@ -1665,7 +1708,7 @@ public final class GitStore implements PlanningStore {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
         }
         // A state is set right by a move into a state the person picks; an id twice only by hand.
-        final Correction move = Correction.ofState(false, workflow, work);
+        final Correction move = Correction.ofState(workflow, work);
         for (final Issue issue : found) {
             final List<Warning> warnings = new ArrayList<>(issue.warnings());
             if (!read.states().contains(issue.state())) {
@@ -1697,7 +1740,6 @@ public final class GitStore implements PlanningStore {
                                             org.fuin.porelo.planner.store.git.stories.Story::id,
                                             java.util.stream.Collectors.counting()));
             final List<Story> stories = new ArrayList<>();
-            final Correction stated = Correction.ofState(true, workflow, work);
             for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
                 stories.add(
                         story(
@@ -1705,7 +1747,6 @@ public final class GitStore implements PlanningStore {
                                 byReference,
                                 read,
                                 storyIds.getOrDefault(story.id(), 0L) > 1,
-                                stated,
                                 places(ownPart, own, Part.story(story.id()))));
             }
             return new Board(
@@ -1723,12 +1764,7 @@ public final class GitStore implements PlanningStore {
 
     private static Workflow workflow(
             final org.fuin.porelo.planner.store.git.stories.Workflow read) {
-        return new Workflow(
-                read.states(),
-                read.phases().stream()
-                        .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
-                        .toList(),
-                read.states().stream().filter(read::closed).toList());
+        return read.board();
     }
 
     /** Where each copy of an issue's id is kept, in the project's order of repositories. */
@@ -1754,19 +1790,21 @@ public final class GitStore implements PlanningStore {
 
     /**
      * A story as the board shows it: its issues by repository and id, and its state as the stories
-     * index gives it from its issues in states the workflow knows. What cannot be read in it is
-     * named by its warnings, never by leaving it out.
+     * index gives it from its issues in states the workflow knows. A story ends by being closed: a
+     * closed state its head states stands; while open it follows its issues, never into a close.
+     * What cannot be read in it is named by its warnings, never by leaving it out.
      */
     private Story story(
             final org.fuin.porelo.planner.store.git.stories.Story story,
             final Map<String, List<Issue>> issues,
             final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
             final boolean twice,
-            final @Nullable Correction correction,
             final List<String> places) {
         final List<Warning> warnings = new ArrayList<>();
         final List<String> ids = new ArrayList<>();
         final List<String> states = new ArrayList<>();
+        // The id of each issue whose state is in states, for the warning naming those behind.
+        final List<String> behindIds = new ArrayList<>();
         boolean dropped = false;
         boolean outside = false;
         for (final String reference : story.issues()) {
@@ -1784,6 +1822,7 @@ public final class GitStore implements PlanningStore {
             for (final Issue issue : found) {
                 if (workflow.states().contains(issue.state())) {
                     states.add(issue.state());
+                    behindIds.add(issue.id());
                 } else {
                     outside = true;
                 }
@@ -1797,49 +1836,53 @@ public final class GitStore implements PlanningStore {
             warnings.add(Warning.idTwice(places));
         }
         final String given = story.state();
+        // With issues the rule reads only their states, never the stated one; it never closes it.
+        final String derived =
+                states.isEmpty() || (outside && states.stream().allMatch(workflow::closed))
+                        ? null
+                        : workflow.storyState(null, states);
         final String state;
-        if (given != null) {
+        // Whether the state is the one its head gives, rather than one its issues give.
+        final boolean stored;
+        if (given != null && workflow.states().contains(given) && workflow.closed(given)) {
+            // Closed by a move, it stays closed whatever its issues say until a move reopens it.
             state = given;
+            stored = true;
+        } else if (derived != null) {
+            state = derived;
+            stored = false;
+            workflow.storyRule()
+                    .flatMap(rule -> rule.behind(derived, behindIds, states))
+                    .ifPresent(warnings::add);
+        } else if (given != null) {
+            // Without issues that tell a state, the state its head states stands.
+            state = given;
+            stored = true;
             if (!workflow.states().contains(given)) {
-                warnings.add(Warning.stateOutsideWorkflow().offering(correction));
+                warnings.add(Warning.stateOutsideWorkflow());
             }
-        } else if (states.isEmpty() || outside && states.stream().allMatch(workflow::closed)) {
+        } else {
             // Its issues give no state the workflow knows, and it states none; or the ones that
             // do are all closed while another stands outside the workflow, which counts as open.
             state = "";
-            warnings.add(Warning.noState().offering(correction));
-        } else {
-            // With issues the rule reads only their states, never the stated one.
-            final String derived =
-                    java.util.Objects.requireNonNull(workflow.storyState(null, states));
-            // An issue it lacks may be open, so it never follows the issues shown into a close.
-            state = dropped && workflow.closed(derived) ? lastOpen(workflow, derived) : derived;
+            stored = false;
+            warnings.add(Warning.noState());
         }
+        // A state its head gives is its own stored value, so it counts toward its version; one its
+        // issues give does not.
         return new Story(
                 story.id(),
                 story.title(),
                 state,
-                given != null,
+                stored,
                 story.priority(),
                 story.size(),
                 ids,
                 story.body(),
                 null,
                 !dropped,
+                null,
                 warnings);
-    }
-
-    /** The workflow's last state that is not closed, or {@code otherwise} when every one is. */
-    private static String lastOpen(
-            final org.fuin.porelo.planner.store.git.stories.Workflow workflow,
-            final String otherwise) {
-        final List<String> states = workflow.states();
-        for (int i = states.size() - 1; i >= 0; i--) {
-            if (!workflow.closed(states.get(i))) {
-                return states.get(i);
-            }
-        }
-        return otherwise;
     }
 
     private static <T> T of(final Map<String, T> map, final String repository) {

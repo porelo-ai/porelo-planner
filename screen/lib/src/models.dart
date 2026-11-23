@@ -75,13 +75,19 @@ class PlanWarning {
 /// One state, with the machine's kind preserved even when unknown.
 class PlanState {
   /// Reads the configured state and preserves unknown kinds for display.
-  PlanState.from(Map<String, dynamic> map) : name = _planText(map, 'name'), kind = _planText(map, 'kind');
+  PlanState.from(Map<String, dynamic> map)
+    : name = _planText(map, 'name'),
+      kind = _planText(map, 'kind'),
+      measured = map['measured'] == true;
 
   /// The name reported by the daemon.
   final String name;
 
   /// The kind reported by the daemon.
   final String kind;
+
+  /// Whether moving an issue into it needs a stage record; the planner derives an open story's state from these.
+  final bool measured;
 }
 
 /// A configured column and the names of its states.
@@ -398,23 +404,12 @@ class PlanIssue {
 /// One story, whose state is always the machine's answer.
 class PlanStory {
   /// Applies destinations explicitly confirmed by the save answer.
-  ///
-  /// A story that [followed] its issues again stands in its [destination] with no state of its own.
-  PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination, {bool followed = false})
+  PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination)
     : id = source.id,
       title = source.title,
       state = destination ?? source.state,
-      // A story without issues saved to a destination states it, as the planner writes it.
-      stateGiven = !followed && (destination != null || source.stateGiven),
-      // Misfits read before a move of the story or its issues are unknown until the board read after the save.
-      misfits = followed
-          ? const []
-          : destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
-          ? null
-          : source.misfits,
-      derivedState = followed || destination != null || source.issues.any((issue) => moves.containsKey(issue.id))
-          ? null
-          : source.derivedState,
+      // The day it was closed is known again only from the planner's read after a move of the story itself.
+      closedAt = destination == null ? source.closedAt : null,
       priority = source.priority,
       size = source.size,
       description = source.description,
@@ -433,9 +428,7 @@ class PlanStory {
     : id = _planText(map, 'id'),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
-      stateGiven = map['stateGiven'] == true,
-      misfits = map['misfits'] is List ? _planStrings(map['misfits']) : null,
-      derivedState = map['derivedState'] is String ? map['derivedState'] as String : null,
+      closedAt = map['closedAt'] is String ? DateTime.tryParse(map['closedAt'] as String) : null,
       priority = map['priority'] is String ? map['priority'] as String : null,
       size = _planText(map, 'size'),
       description = _withoutMarker(_planText(map, 'description')),
@@ -457,14 +450,8 @@ class PlanStory {
   /// Its reported state.
   final String state;
 
-  /// Whether its state was given to it rather than derived from its issues; false when unsaid.
-  final bool stateGiven;
-
-  /// The ids of its issues that do not fit its given state, in its order; empty when they fit, null when unknown.
-  final List<String>? misfits;
-
-  /// For a given state, the state its issues give, to which it can follow them again; null when not offered.
-  final String? derivedState;
+  /// When it was closed as Finished, the day its test passed; null while it is open, rejected or unsaid.
+  final DateTime? closedAt;
 
   /// Its reported priority, empty when unsaid.
   final String? priority;
@@ -507,46 +494,43 @@ class PlanStory {
   /// The first recorded outcome requiring attention, if any.
   WorkEnded? get ended => work?.ended;
 
-  /// The issues a move of this story to [to] changes, as the daemon chooses them: for a move to a closed state other
-  /// than Rejected, which completes the story, those in the state the last of the work rules [work] leads to, where
-  /// finished work waits for its test; otherwise those in the earliest open state in workflow order, or in the
-  /// earliest closed state when all are closed. Null when that cannot be told: the issues were not reported, or one
-  /// stands in a state outside the workflow.
-  List<PlanIssue>? leastAdvancedIssues(List<PlanState> states, List<PlanWorkRule> work, String to) {
+  /// The issues a move of this story to [to] closes with it, as the planner carries them: none for a reopen, those in
+  /// the last done state for the first closed state, and every open one for a later closed state; an issue held back
+  /// by a warning, its own or a parent's among the story's, is never carried. Null when its issues are not all known
+  /// in the workflow.
+  List<PlanIssue>? closedIssues(List<PlanState> states, List<PlanWorkRule> work, String to) {
     int place(PlanIssue issue) => states.indexWhere((state) => state.name == issue.state);
     if (!issuesReported || issues.any((issue) => place(issue) < 0)) return null;
-    if (issues.isEmpty) return const [];
+    if (!states.any((state) => state.name == to && state.kind == 'CLOSED')) return const [];
     if (_completes(states, to)) {
       final done = _lastDone(states, work);
       return [
         for (final issue in issues)
-          if (issue.state == done) issue,
+          if (issue.state == done && !_held(issue)) issue,
       ];
     }
-    final open = issues.where((issue) => states[place(issue)].kind != 'CLOSED').toList();
-    final candidates = open.isEmpty ? issues : open;
-    final earliest = candidates.map(place).reduce((a, b) => a < b ? a : b);
     return [
-      for (final issue in candidates)
-        if (place(issue) == earliest) issue,
+      for (final issue in issues)
+        if (states[place(issue)].kind != 'CLOSED' && !_held(issue)) issue,
     ];
   }
 
-  /// Whether a move to [to] completes this story and its issues, with [moves] applied, then give [to]: all closed,
-  /// [to] the earliest of their states, so it stands there with no state of its own, as the planner leaves it.
-  bool fitsCompleted(List<PlanState> states, Map<String, String> moves, String to) {
-    if (!issuesReported || issues.isEmpty || !_completes(states, to)) return false;
-    final after = [for (final issue in issues) moves[issue.id] ?? issue.state];
-    final closed = [
-      for (final state in states)
-        if (state.kind == 'CLOSED') state.name,
-    ];
-    if (after.any((state) => !closed.contains(state))) return false;
-    return after.map(closed.indexOf).reduce((a, b) => a < b ? a : b) == closed.indexOf(to);
+  /// Whether a warning holds [issue] back, its own or one of a parent the story holds too, as the planner leaves such
+  /// an issue to its own move.
+  bool _held(PlanIssue issue) {
+    final seen = <String>{};
+    PlanIssue? at = issue;
+    while (at != null && seen.add(at.id)) {
+      if (PlanWarning.holding(at.warnings)) return true;
+      final parent = at.parent;
+      at = parent == null ? null : issues.where((other) => other.id == parent).firstOrNull;
+    }
+    return false;
   }
 
+  /// Whether [to] completes the work: the workflow's first closed state, whatever a later one is named.
   static bool _completes(List<PlanState> states, String to) =>
-      to != 'Rejected' && states.any((state) => state.name == to && state.kind == 'CLOSED');
+      states.where((state) => state.kind == 'CLOSED').firstOrNull?.name == to;
 
   /// The state the last of the work rules leads to in workflow order, or null when there is none.
   static String? _lastDone(List<PlanState> states, List<PlanWorkRule> work) {
@@ -631,28 +615,24 @@ class PlanningSnapshot {
     PlanningSnapshot source,
     this.revision,
     Map<String, String> moves,
-    Map<String, String> destinations, {
-    Set<String> followed = const {},
-  }) : states = source.states,
-       phases = source.phases,
-       work = source.work,
-       faults = source.faults,
-       unlisted = source.unlisted,
-       repositories = source.repositories,
-       repositoriesReported = source.repositoriesReported,
-       // A save may mend or break a rule; none is shown until the next whole board names them anew.
-       rules = const [],
-       rulesReported = false,
-       reasons = source.reasons,
-       statesReported = source.statesReported,
-       phasesReported = source.phasesReported,
-       storiesReported = source.storiesReported,
-       // The figures known before the save stay shown until the planner's read after it replaces them.
-       open = source.open,
-       stories = [
-         for (final story in source.stories)
-           PlanStory.withMoves(story, moves, destinations[story.id], followed: followed.contains(story.id)),
-       ];
+    Map<String, String> destinations,
+  ) : states = source.states,
+      phases = source.phases,
+      work = source.work,
+      faults = source.faults,
+      unlisted = source.unlisted,
+      repositories = source.repositories,
+      repositoriesReported = source.repositoriesReported,
+      // A save may mend or break a rule; none is shown until the next whole board names them anew.
+      rules = const [],
+      rulesReported = false,
+      reasons = source.reasons,
+      statesReported = source.statesReported,
+      phasesReported = source.phasesReported,
+      storiesReported = source.storiesReported,
+      // The figures known before the save stay shown until the planner's read after it replaces them.
+      open = source.open,
+      stories = [for (final story in source.stories) PlanStory.withMoves(story, moves, destinations[story.id])];
 
   /// Reads a snapshot without deriving story states.
   PlanningSnapshot.from(Map<String, dynamic> map)
@@ -935,18 +915,14 @@ bool planningReasonRefuses(int c) =>
 
 /// One story destination in an atomic board save.
 class PlanningStoryMove extends PlanningMove {
-  /// Keeps the daemon's story identifier and destination; [follow] hands a given story back to its issues.
-  const PlanningStoryMove(this.story, this.to, {this.follow = false, this.reason});
+  /// Keeps the daemon's story identifier and destination: a closed state closes it, an open one reopens it.
+  const PlanningStoryMove(this.story, this.to, {this.reason});
 
   @override
   final String? reason;
 
   @override
-  PlanningStoryMove withReason(String? reason) =>
-      PlanningStoryMove(story, to, follow: follow, reason: planningReason(reason));
-
-  /// Whether the story gives up its given state for [to], the state its issues give.
-  final bool follow;
+  PlanningStoryMove withReason(String? reason) => PlanningStoryMove(story, to, reason: planningReason(reason));
 
   /// The story to move.
   final String story;
@@ -963,12 +939,7 @@ class PlanningStoryMove extends PlanningMove {
   /// The wire fields.
   @override
   /// Serializes the complete record with its stable identity.
-  Map<String, dynamic> toMap() => {
-    'story': story,
-    'to': to,
-    if (follow) 'follow': true,
-    'reason': ?planningReason(reason),
-  };
+  Map<String, dynamic> toMap() => {'story': story, 'to': to, 'reason': ?planningReason(reason)};
 }
 
 /// One issue destination sent as part of an atomic issue move.
@@ -1109,9 +1080,6 @@ class PlanningMoveWarning {
 
   /// A move forward past waiting states.
   static const skipsStates = 'SKIPS_STATES';
-
-  /// A story that would stand where its issues do not fit.
-  static const storyMismatch = 'STORY_MISMATCH';
 
   /// The kind, one of the constants above; another is shown as it is named.
   final String kind;

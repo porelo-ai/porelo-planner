@@ -36,8 +36,6 @@ class MovePreviewTest {
     private static final Work WORK =
             new Work(Map.of("Implementing", rule("Reading"), "Reading", rule(null)), List.of());
 
-    private static final Moves.StoryState DERIVE = MovePreviewTest::derive;
-
     private static final MovePreview.Running NOTHING_RUNS = (issues, stories) -> List.of();
 
     /** The work record holds no run of this planner. */
@@ -65,28 +63,31 @@ class MovePreviewTest {
                     List.of(OWN, OTHER));
 
     @Test
-    void aStoryMovedOnShowsTheIssueOfAnotherRepositoryItCarriesAlongWithItsStates() {
-        // Harm: an issue of another repository still at work set to Review unasked.
-        final MovePreview preview = preview(List.of(story("ST1", "Review")), NOTHING_RUNS);
+    void aStoryRejectedShowsTheIssueOfAnotherRepositoryItClosesAlongWithItsStates() {
+        // Harm: an issue of another repository still at work closed unasked.
+        final MovePreview preview = preview(List.of(story("ST1", "Rejected")), NOTHING_RUNS);
 
         assertThat(preview.issues())
-                .as("the issue that moves, with its repository, old and new state")
-                .containsExactly(new MovePreview.MovedIssue("F1", OTHER, "Implementing", "Review"));
+                .as("the issues that close with it, with their repository, old and new state")
+                .containsExactly(
+                        new MovePreview.MovedIssue("PL1", OWN, "Review", "Rejected"),
+                        new MovePreview.MovedIssue("F1", OTHER, "Implementing", "Rejected"));
         assertThat(kinds(preview)).as("the warning").containsExactly(MovePreview.ISSUES_ALONG);
         assertThat(preview.warnings().getFirst().issues())
                 .as("the warning names the issue carried along")
-                .containsExactly(new MovePreview.MovedIssue("F1", OTHER, "Implementing", "Review"));
+                .containsExactly(
+                        new MovePreview.MovedIssue("F1", OTHER, "Implementing", "Rejected"));
     }
 
     @Test
-    void aStoryMovedThatCarriesOnlyItsOwnWaitingIssueAsksNothing() {
+    void aStoryRejectedThatClosesOnlyItsOwnWaitingIssueAsksNothing() {
         // Harm: a warning on every move, which teaches the person to confirm without reading.
-        final MovePreview preview = preview(List.of(story("ST2", "Review")), NOTHING_RUNS);
+        final MovePreview preview = preview(List.of(story("ST2", "Rejected")), NOTHING_RUNS);
 
         assertThat(preview.warnings()).as("nothing to ask").isEmpty();
         assertThat(preview.issues())
-                .as("the story's own issue moves with it")
-                .containsExactly(new MovePreview.MovedIssue("PL2", OWN, "Backlog", "Review"));
+                .as("the story's own issue closes with it")
+                .containsExactly(new MovePreview.MovedIssue("PL2", OWN, "Backlog", "Rejected"));
     }
 
     @Test
@@ -109,14 +110,15 @@ class MovePreviewTest {
     }
 
     @Test
-    void aStoryThatWouldNotFitItsIssuesWarnsInsteadOfBeingRefused() {
-        // Harm: a story shown Rejected over an issue still in Review, confirmed without seeing it.
-        final MovePreview preview = preview(List.of(story("ST3", "Rejected")), NOTHING_RUNS);
+    void anOpenStoryMovedToAnotherOpenStateIsRefusedByItsPreview() {
+        // Harm: an open story shown in a state its issues do not give, which no read keeps.
+        final Moves.Refused refused =
+                catchThrowableOfType(
+                        Moves.Refused.class,
+                        () -> preview(List.of(story("ST3", "Backlog")), NOTHING_RUNS));
 
-        assertThat(kinds(preview)).containsExactly(MovePreview.STORY_MISMATCH);
-        assertThat(preview.warnings().getFirst().issues())
-                .as("the issue that does not fit, with its state after the batch")
-                .containsExactly(new MovePreview.MovedIssue("PL3", OWN, "Review", "Review"));
+        assertThat(refused).as("refused").isNotNull();
+        assertThat(refused.name()).isEqualTo("MoveNotAllowed");
     }
 
     @Test
@@ -125,7 +127,7 @@ class MovePreviewTest {
         final List<Set<String>> asked = new ArrayList<>();
         final MovePreview preview =
                 preview(
-                        List.of(story("ST1", "Review")),
+                        List.of(story("ST1", "Rejected")),
                         (issues, stories) -> {
                             asked.add(issues);
                             asked.add(stories);
@@ -150,10 +152,10 @@ class MovePreviewTest {
         final Moves.Refused refused =
                 catchThrowableOfType(
                         Moves.Refused.class,
-                        () -> preview(List.of(story("ST2", "Reading")), NOTHING_RUNS));
+                        () -> preview(List.of(issue("PL9", "Review")), NOTHING_RUNS));
 
         assertThat(refused).as("refused").isNotNull();
-        assertThat(refused.name()).isEqualTo("EnteredOnlyByWork");
+        assertThat(refused.name()).isEqualTo("NoSuchIssue");
     }
 
     @Test
@@ -166,7 +168,6 @@ class MovePreviewTest {
                         Moves.preview(
                                         board,
                                         moves,
-                                        DERIVE,
                                         NOTHING_RUNS,
                                         (issue, stories) -> {
                                             asked.add(Set.of(issue));
@@ -186,7 +187,6 @@ class MovePreviewTest {
                                 Moves.preview(
                                         board,
                                         moves,
-                                        DERIVE,
                                         NOTHING_RUNS,
                                         (issue, stories) -> stories.contains("ST2")));
         assertThat(refused).as("refused while a run works its story").isNotNull();
@@ -196,12 +196,12 @@ class MovePreviewTest {
     @Test
     void theDigestChangesWithEverythingThePreviewShowedAndWhereTheSaveGoes() {
         // Harm: a confirmation counted for another batch, repository, branch or work.
-        final MovePreview preview = preview(List.of(story("ST1", "Review")), NOTHING_RUNS);
+        final MovePreview preview = preview(List.of(story("ST1", "Rejected")), NOTHING_RUNS);
         final String digest = preview.digest("https://example.org/a.git", null);
 
         assertThat(digest).as("SHA-256 in hex").matches("[0-9a-f]{64}");
         assertThat(
-                        preview(List.of(story("ST1", "Review")), NOTHING_RUNS)
+                        preview(List.of(story("ST1", "Rejected")), NOTHING_RUNS)
                                 .digest("https://example.org/a.git", null))
                 .as("the same preview again")
                 .isEqualTo(digest);
@@ -209,10 +209,10 @@ class MovePreviewTest {
                         List.of(
                                 preview.digest("https://example.org/b.git", null),
                                 preview.digest("https://example.org/a.git", "main"),
-                                preview(List.of(story("ST1", "Finishing")), NOTHING_RUNS)
+                                preview(List.of(story("ST2", "Rejected")), NOTHING_RUNS)
                                         .digest("https://example.org/a.git", null),
                                 preview(
-                                                List.of(story("ST1", "Review")),
+                                                List.of(story("ST1", "Rejected")),
                                                 (issues, stories) ->
                                                         List.of(
                                                                 new MovePreview.Owned(
@@ -232,10 +232,9 @@ class MovePreviewTest {
                     new Revision("r1"),
                     new Workflow(STATES, List.of(), CLOSED),
                     List.of(
-                            story("ST4", "Rejected", "PL5", "PL6"),
-                            new Story(
-                                    "ST5", "A story", "Idea", false, "High", null, List.of(), "",
-                                    null),
+                            // Open, as a story over rejected issues only stands.
+                            story("ST4", "Backlog", "PL5", "PL6"),
+                            new Story("ST5", "A story", "Idea", "High", null, List.of(), "", null),
                             story("ST6", "Review", "PL7"),
                             story("ST7", "Reading", "PL8")),
                     List.of(
@@ -247,22 +246,16 @@ class MovePreviewTest {
                     List.of(OWN));
 
     @Test
-    void aStoryFinishedOverRejectedIssuesOnlyIsAskedAboutAndSavedAsConfirmed() {
-        // Harm: a Finished over rejected work only passed unasked, or asked about and then
-        // refused by the save the person confirmed.
+    void aStoryFinishedOverRejectedIssuesOnlyIsSavedWithItsIssuesLeftRejected() {
+        // Harm: a Finished over rejected work refused, or reopening and finishing the rejected
+        // work with it.
         final List<Moves.Move> moves = List.of(story("ST4", "Finished"));
-        final MovePreview preview = Moves.preview(finishing, moves, DERIVE, NOTHING_RUNS, NO_RUNS);
+        final MovePreview preview = Moves.preview(finishing, moves, NOTHING_RUNS, NO_RUNS);
 
-        assertThat(kinds(preview)).as("asked about").containsExactly(MovePreview.STORY_MISMATCH);
-        final Moves.Refused unconfirmed =
-                catchThrowableOfType(
-                        Moves.Refused.class,
-                        () -> Moves.check(finishing, moves, false, DERIVE, NO_RUNS));
-        assertThat(unconfirmed).as("the save unconfirmed refused").isNotNull();
-        assertThat(unconfirmed.name()).isEqualTo("StoryStateMismatch");
-        final Moves.Planned planned = Moves.check(finishing, moves, true, DERIVE, NO_RUNS);
+        assertThat(preview.warnings()).as("nothing to ask").isEmpty();
+        final Moves.Planned planned = Moves.check(finishing, moves, NO_RUNS);
         assertThat(planned.stories())
-                .as("the confirmed save states the story Finished")
+                .as("the save closes the story as Finished")
                 .containsExactly(Map.entry("ST4", "Finished"));
         assertThat(planned.issues()).as("its rejected issues stay").isEmpty();
     }
@@ -271,10 +264,10 @@ class MovePreviewTest {
     void aStoryWithoutIssuesFinishedIsSavedUnasked() {
         // Harm: a Finished of a story without issues asked about, or refused by its save.
         final List<Moves.Move> moves = List.of(story("ST5", "Finished"));
-        final MovePreview preview = Moves.preview(finishing, moves, DERIVE, NOTHING_RUNS, NO_RUNS);
+        final MovePreview preview = Moves.preview(finishing, moves, NOTHING_RUNS, NO_RUNS);
 
         assertThat(preview.warnings()).as("nothing to ask").isEmpty();
-        assertThat(Moves.check(finishing, moves, false, DERIVE, NO_RUNS).stories())
+        assertThat(Moves.check(finishing, moves, NO_RUNS).stories())
                 .as("saved unasked")
                 .containsExactly(Map.entry("ST5", "Finished"));
     }
@@ -290,7 +283,6 @@ class MovePreviewTest {
                                 Moves.preview(
                                         finishing,
                                         List.of(story("ST7", "Finished")),
-                                        DERIVE,
                                         NOTHING_RUNS,
                                         NO_RUNS));
 
@@ -303,13 +295,7 @@ class MovePreviewTest {
         final Moves.Refused saved =
                 catchThrowableOfType(
                         Moves.Refused.class,
-                        () ->
-                                Moves.check(
-                                        finishing,
-                                        List.of(story("ST7", "Finished")),
-                                        true,
-                                        DERIVE,
-                                        NO_RUNS));
+                        () -> Moves.check(finishing, List.of(story("ST7", "Finished")), NO_RUNS));
         assertThat(saved).as("refused by the save alike").isNotNull();
         assertThat(saved.getMessage()).as("in the same words").isEqualTo(refused.getMessage());
     }
@@ -322,7 +308,6 @@ class MovePreviewTest {
                 Moves.preview(
                         finishing,
                         moves,
-                        DERIVE,
                         (issues, stories) ->
                                 List.of(
                                         new MovePreview.Owned(
@@ -330,25 +315,17 @@ class MovePreviewTest {
                         NO_RUNS);
 
         assertThat(kinds(preview)).as("asked about").contains(MovePreview.RUNNING_WORK);
-        assertThat(Moves.check(finishing, moves, true, DERIVE, NO_RUNS).issues())
+        assertThat(Moves.check(finishing, moves, NO_RUNS).issues())
                 .as("the issue finished with its story")
                 .containsExactly(Map.entry("PL7", "Finished"));
     }
 
     private MovePreview preview(final List<Moves.Move> moves, final MovePreview.Running running) {
-        return Moves.preview(board, moves, DERIVE, running, NO_RUNS);
+        return Moves.preview(board, moves, running, NO_RUNS);
     }
 
     private static List<String> kinds(final MovePreview preview) {
         return preview.warnings().stream().map(MovePreview.Warning::kind).toList();
-    }
-
-    private static @Nullable String derive(final List<String> states) {
-        final List<String> open = states.stream().filter(state -> !CLOSED.contains(state)).toList();
-        final List<String> candidates = open.isEmpty() ? states : open;
-        return candidates.stream()
-                .min((a, b) -> STATES.indexOf(a) - STATES.indexOf(b))
-                .orElse(null);
     }
 
     private static Moves.Move story(final String id, final String to) {
@@ -372,7 +349,7 @@ class MovePreviewTest {
     }
 
     private static Story story(final String id, final String state, final String... issues) {
-        return new Story(id, "A story", state, false, "High", null, List.of(issues), "", null);
+        return new Story(id, "A story", state, "High", null, List.of(issues), "", null);
     }
 
     private static Issue issue(final String id, final String repository, final String state) {

@@ -203,18 +203,22 @@ public final class LocalDirectoryStore implements PlanningStore {
                                                             .choice(
                                                                     FieldNames.WORKER,
                                                                     worker(worker)));
+                            // A closed state closes a story; an open one reopens it, after
+                            // which it follows its issues again.
                             writes.stories()
                                     .forEach(
                                             (id, state) ->
                                                     plan.edit(story(plan.now, id))
                                                             .choice(
                                                                     FieldNames.STATUS,
-                                                                    known(workflow, id, state)));
-                            writes.unstated()
-                                    .forEach(
-                                            id ->
-                                                    plan.edit(story(plan.now, id))
-                                                            .choice(FieldNames.STATUS, null));
+                                                                    workflow.closed()
+                                                                                    .contains(
+                                                                                            known(
+                                                                                                    workflow,
+                                                                                                    id,
+                                                                                                    state))
+                                                                            ? state
+                                                                            : null));
                             writes.priorities()
                                     .forEach(
                                             (id, priority) ->

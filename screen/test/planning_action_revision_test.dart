@@ -58,7 +58,7 @@ void main() {
     expect(board.actionProblem, refusal);
     expect(board.refusal?.name, 'MoveNotAllowed');
     source.priorityFailure = null;
-    await board.move('S1', 'Review');
+    await board.move('S1', 'Finished');
     expect(board.actionProblem, isNull);
     expect(board.refusal, isNull);
   });
@@ -66,7 +66,7 @@ void main() {
   // Harm: a saved notice for an earlier move claims that a refused priority was saved.
   test('starting a priority clears the earlier move notice', () async {
     final (source, board) = await _open();
-    await board.move('S1', 'Review');
+    await board.move('S1', 'Finished');
     expect(board.moveNotice, isNotNull);
     source.priorityFailure = const PlanningRefusal('MoveNotAllowed');
 

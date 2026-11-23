@@ -21,11 +21,12 @@ Map<String, dynamic> _board({bool rules = true}) => {
     {'name': 'Backlog', 'kind': 'WAITING'},
     {'name': 'Review', 'kind': 'WAITING'},
     {'name': 'Finished', 'kind': 'CLOSED'},
+    {'name': 'Rejected', 'kind': 'CLOSED'},
   ],
   'phases': [
     {
       'name': 'All',
-      'states': ['New', 'Backlog', 'Review', 'Finished'],
+      'states': ['New', 'Backlog', 'Review', 'Finished', 'Rejected'],
     },
   ],
   'stories': [
@@ -33,8 +34,6 @@ Map<String, dynamic> _board({bool rules = true}) => {
       'id': 'ST1',
       'title': 'Low story',
       'state': 'Backlog',
-      'stateGiven': false,
-      'misfits': <String>[],
       'priority': 'Low',
       'issues': [_issue('PL1', 'Backlog')],
     },
@@ -42,8 +41,6 @@ Map<String, dynamic> _board({bool rules = true}) => {
       'id': 'ST2',
       'title': 'Sound story',
       'state': 'Backlog',
-      'stateGiven': false,
-      'misfits': <String>[],
       'priority': 'High',
       'issues': [_issue('PL2', 'Backlog')],
     },
@@ -143,14 +140,14 @@ void main() {
     final (backend, boards) = await _shown(tester, _board());
     final board = boards.selected!;
 
-    await tester.runAsync(() => board.move('ST1', 'Review'));
+    await tester.runAsync(() => board.move('ST1', 'Rejected'));
     await settle(tester);
 
     expect(board.question, isNull, reason: 'no warning was asked about');
     expect(
       (backend.boards['demo']!['stories'] as List).cast<Map<String, dynamic>>().first['state'],
-      'Review',
-      reason: 'the move was saved',
+      'Rejected',
+      reason: 'the close was saved',
     );
     expect(board.rules, isEmpty, reason: 'no breach from before the save is shown as current');
     expect(find.byKey(const Key('planning-rules')), findsNothing, reason: 'the list is gone until a board names it');
@@ -165,7 +162,11 @@ void main() {
         'rules': [
           'ST1',
           {'item': 'ST1'},
-          {'item': 'ST2', 'rule': 'StoryWithoutIssueOrState', 'words': 'ST2 has no issue and no given state.'},
+          {
+            'item': 'ST2',
+            'rule': 'StoryPriorityBelowIssue',
+            'words': 'ST2 has a lower priority than its open issue PL1.',
+          },
         ],
       }).rules.map((breach) => breach.item),
       ['ST2'],

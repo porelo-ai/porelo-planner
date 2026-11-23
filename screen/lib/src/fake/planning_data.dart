@@ -6,63 +6,78 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
   "states": [
     {
       "name": "New",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "Accepted",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "In analysis",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": false
     },
     {
       "name": "Analyzed",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "Under estimation",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": false
     },
     {
       "name": "Estimated",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "Backlog",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "Implementing",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": true
     },
     {
       "name": "Reading",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": true
     },
     {
       "name": "Review",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": true
     },
     {
       "name": "Rework",
-      "kind": "WAITING"
+      "kind": "WAITING",
+      "measured": false
     },
     {
       "name": "Reworking",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": true
     },
     {
       "name": "Finishing",
-      "kind": "WORKING"
+      "kind": "WORKING",
+      "measured": true
     },
     {
       "name": "Finished",
-      "kind": "CLOSED"
+      "kind": "CLOSED",
+      "measured": true
     },
     {
       "name": "Rejected",
-      "kind": "CLOSED"
+      "kind": "CLOSED",
+      "measured": false
     }
   ],
   "phases": [
@@ -160,7 +175,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST72",
       "title": "A forge’s calls in a client that knows nothing of Porelo",
-      "state": "Under estimation",
+      "state": "Backlog",
       "priority": "Medium",
       "link": "https://example.org/stories/ST72",
       "issues": [
@@ -308,7 +323,14 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         "issueReadingRounds": [],
         "issues": []
       },
-      "description": ""
+      "description": "",
+      "warnings": [
+        {
+          "kind": "IssueBehindStory",
+          "text": "Its issues FC03, FC09, FC10, FC11 and FC13 stand before its state Backlog.",
+          "holds": false
+        }
+      ]
     },
     {
       "id": "ST21",
@@ -509,7 +531,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST291",
       "title": "The host run by a program of its own, built like porelo",
-      "state": "Backlog",
+      "state": "Implementing",
       "priority": "Highest",
       "link": "https://example.org/stories/ST291",
       "issues": [
@@ -881,7 +903,14 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         }
       ],
       "description": "# The host tool\n\nThe host runs through a packaged native program.\n\nThe host is run by porelo-host, a native program packaged like porelo, instead of scripts copied onto it.\n\nRent a host, bring it up with porelo-host and run a move on it; every verb answers as the old scripts did.",
-      "work": null
+      "work": null,
+      "warnings": [
+        {
+          "kind": "IssueBehindStory",
+          "text": "Its issues B542, B543, B544, B545, B546, B547, B548, B549, B550, B551, B552, HO156, HO157 and B540.1 stand before its state Implementing.",
+          "holds": false
+        }
+      ]
     },
     {
       "id": "ST292",
@@ -2132,9 +2161,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     {
       "id": "ST295",
       "title": "Hand the sluice's last checks to a person",
-      "state": "Review",
-      "stateGiven": true,
-      "misfits": ["SL38"],
+      "state": "Backlog",
       "priority": "Low",
       "link": "https://example.org/stories/ST295",
       "issues": [
@@ -2263,7 +2290,6 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     },
     {
       "id": "ST296",
-      "stateGiven": true,
       "title": "Items the planner could not fully read",
       "state": "Backlog",
       "priority": "Medium",
@@ -2782,11 +2808,11 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
         {
           "id": "B887",
           "repository": "porelo",
-          "state": "Backlog",
+          "state": "Rejected",
           "blockedBy": [],
           "waitsOn": [],
           "link": "https://example.org/issues/B887",
-          "title": "An issue closed on GitHub under an open state",
+          "title": "An issue GitHub closed as not planned, whatever its Status reads",
           "size": "S",
           "priority": "Medium",
           "rounds": 0,
@@ -2799,13 +2825,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the issue description.",
-          "subAgents": [],
-          "warnings": [
-            {
-              "kind": "ClosedUnderOpenState",
-              "text": "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it."
-            }
-          ]
+          "subAgents": []
         },
         {
           "id": "B888",
@@ -2814,7 +2834,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "blockedBy": [],
           "waitsOn": [],
           "link": "https://example.org/issues/B888",
-          "title": "An issue open on GitHub under a closed state",
+          "title": "An issue GitHub closed as completed, whatever its Status reads",
           "size": "S",
           "priority": "Medium",
           "rounds": 0,
@@ -2827,13 +2847,7 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
           "worker": "AGENT",
           "findings": [],
           "whatMustBeTrue": "The work meets the issue description.",
-          "subAgents": [],
-          "warnings": [
-            {
-              "kind": "OpenUnderClosedState",
-              "text": "It is open on GitHub while its state is a closed one; the board goes by its state."
-            }
-          ]
+          "subAgents": []
         },
         {
           "id": "B889",
@@ -2922,7 +2936,6 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     },
     {
       "id": "ST297",
-      "stateGiven": false,
       "title": "A story whose state cannot be told",
       "state": "",
       "priority": "Medium",
@@ -2940,7 +2953,6 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     },
     {
       "id": "ST298",
-      "stateGiven": true,
       "title": "A story naming an issue outside the project",
       "state": "New",
       "priority": "Medium",
@@ -2958,7 +2970,6 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
     },
     {
       "id": "ST299",
-      "stateGiven": true,
       "title": "A story edited by hand where the planner cannot follow",
       "state": "New",
       "priority": "Medium",
@@ -3149,109 +3160,9 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
   "reasons": true,
   "rules": [
     {
-      "item": "ST294",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST294 has no issue and no given state."
-    },
-    {
-      "item": "ST21",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST21 has no issue and no given state."
-    },
-    {
-      "item": "ST11",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST11 has no issue and no given state."
-    },
-    {
-      "item": "ST13",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST13 has no issue and no given state."
-    },
-    {
-      "item": "ST28",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST28 has no issue and no given state."
-    },
-    {
-      "item": "ST87",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST87 has no issue and no given state."
-    },
-    {
-      "item": "ST182",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST182 has no issue and no given state."
-    },
-    {
-      "item": "ST114",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST114 has no issue and no given state."
-    },
-    {
-      "item": "ST111",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST111 has no issue and no given state."
-    },
-    {
-      "item": "ST144",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST144 has no issue and no given state."
-    },
-    {
-      "item": "ST39",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST39 has no issue and no given state."
-    },
-    {
-      "item": "ST35",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST35 has no issue and no given state."
-    },
-    {
-      "item": "ST106",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST106 has no issue and no given state."
-    },
-    {
-      "item": "ST198",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST198 has no issue and no given state."
-    },
-    {
-      "item": "ST293",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST293 has no issue and no given state."
-    },
-    {
-      "item": "ST6",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST6 has no issue and no given state."
-    },
-    {
       "item": "ST193",
       "rule": "StoryPriorityBelowIssue",
       "words": "ST193 has a lower priority than its open issue PJ106."
-    },
-    {
-      "item": "ST127",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST127 has no issue and no given state."
-    },
-    {
-      "item": "ST295",
-      "rule": "StoryStateMisfit",
-      "words": "ST295 has a given state its issues SL38 do not fit."
-    },
-    {
-      "item": "ST264",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST264 has no issue and no given state."
-    },
-    {
-      "item": "ST268",
-      "rule": "StoryWithoutIssueOrState",
-      "words": "ST268 has no issue and no given state."
     },
     {
       "item": "B900",

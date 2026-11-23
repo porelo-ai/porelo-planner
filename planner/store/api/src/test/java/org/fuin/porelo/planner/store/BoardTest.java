@@ -18,7 +18,7 @@ class BoardTest {
                     List.of("Finished"));
 
     private static Story story(final String id, final String state) {
-        return new Story(id, "A story", state, true, "High", null, List.of("XY03"), "Text", null);
+        return new Story(id, "A story", state, "High", null, List.of("XY03"), "Text", null);
     }
 
     private static Issue issue(final String id, final String state) {
@@ -348,7 +348,7 @@ class BoardTest {
 
     @Test
     void anEmptyStateStandsOnlyOnAStoryWarnedThatNoneCanBeTold() {
-        // An empty state is what a save writes to have a story follow its issues again.
+        // A story whose state cannot be told stands only with the warning that says so.
         assertThatThrownBy(
                         () ->
                                 board(
@@ -361,15 +361,15 @@ class BoardTest {
                                         List.of(issue("XY03", "Idea"))))
                 .as("an empty state needs the warning that no state can be told")
                 .hasMessage("ST1 has the unknown state ''");
-        assertThatThrownBy(
-                        () ->
-                                board(
+        assertThat(
+                        board(
                                         List.of(
                                                 story("ST1", "")
                                                         .withWarnings(List.of(Warning.noState()))),
-                                        List.of(issue("XY03", "Idea"))))
-                .as("a story without a state never counts as stating one")
-                .hasMessage("Story ST1 states no state but is marked as stating one");
+                                        List.of(issue("XY03", "Idea")))
+                                .story("ST1"))
+                .as("warned that no state can be told, it stands")
+                .isPresent();
         final Board board =
                 board(
                         List.of(
@@ -377,7 +377,6 @@ class BoardTest {
                                         "ST1",
                                         "A story",
                                         "",
-                                        false,
                                         "High",
                                         null,
                                         List.of("XY03"),

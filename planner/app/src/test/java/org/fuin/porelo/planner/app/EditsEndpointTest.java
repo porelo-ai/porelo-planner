@@ -47,15 +47,7 @@ class EditsEndpointTest {
                     new Workflow(List.of("Idea", "Finished"), List.of(), List.of("Finished")),
                     List.of(
                             new Story(
-                                    "ST1",
-                                    "One",
-                                    "Idea",
-                                    false,
-                                    "High",
-                                    null,
-                                    List.of("AB1"),
-                                    "",
-                                    null)),
+                                    "ST1", "One", "Idea", "High", null, List.of("AB1"), "", null)),
                     List.of(
                             new Issue(
                                     "AB1",

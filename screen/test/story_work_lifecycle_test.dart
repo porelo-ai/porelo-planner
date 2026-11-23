@@ -56,7 +56,7 @@ void main() {
     final backend = _Delayed()..delayProposal = false;
     final board = PlanningBoard(backend, 'checkout');
     await Future<void>.delayed(Duration.zero);
-    final work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST291'), 'Implementing');
+    final work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST292'), 'Implementing');
     await work.load();
     var notifications = 0;
     work.addListener(() => notifications++);
@@ -78,13 +78,13 @@ void main() {
     final backend = _Delayed();
     final snapshot = mockPlanningBoard();
     final storyMap = (snapshot['stories'] as List).cast<Map<String, dynamic>>().firstWhere(
-      (story) => story['id'] == 'ST291',
+      (story) => story['id'] == 'ST292',
     );
     ((storyMap['issues'] as List).first as Map<String, dynamic>).addAll({'readingStopped': true, 'rounds': 3});
     backend.boards['checkout'] = snapshot;
     final board = PlanningBoard(backend, 'checkout');
     await Future<void>.delayed(Duration.zero);
-    final story = board.stories.firstWhere((story) => story.id == 'ST291');
+    final story = board.stories.firstWhere((story) => story.id == 'ST292');
     final reading = ReadingDecision(PlanningAttention(board, story, issue: story.issues.first));
     final loading = reading.load();
     backend.findings.complete(PlanningIssueDetail.from({}));
@@ -119,7 +119,7 @@ void main() {
     final revision = board.snapshot!.revision;
     final replacement = mockPlanningBoard()..['revision'] = 'replacement-run';
     final story = (replacement['stories'] as List).cast<Map<String, dynamic>>().firstWhere(
-      (story) => story['id'] == 'ST291',
+      (story) => story['id'] == 'ST292',
     );
     story['work'] = {
       'atWork': true,
@@ -130,14 +130,14 @@ void main() {
     backend.push('checkout', replacement);
     await Future<void>.delayed(Duration.zero);
     await board.stopWork(
-      'ST291',
-      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST291'))?.run,
+      'ST292',
+      run: board.workOf(board.stories.firstWhere((each) => each.id == 'ST292'))?.run,
       revision: revision,
       source: backend,
       sourceProject: 'checkout',
     );
     expect(backend.work.calls.where((call) => call.$1 == 'StopStoryWork'), hasLength(1));
-    expect(board.stories.firstWhere((story) => story.id == 'ST291').work!.tasks.map((task) => task.task), ['new-run']);
+    expect(board.stories.firstWhere((story) => story.id == 'ST292').work!.tasks.map((task) => task.task), ['new-run']);
     board.dispose();
     await backend.end();
   });

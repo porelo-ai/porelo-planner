@@ -250,8 +250,7 @@ class GitHubStoreOpenerTest {
                                         new Revision("r1"),
                                         new Writes(
                                                 java.util.Map.of("PL1", "Idea"),
-                                                java.util.Map.of(),
-                                                List.of())))
+                                                java.util.Map.of())))
                 .as("GitHub's refusal of the token")
                 .isInstanceOf(StoreException.NoForgeAccess.class);
     }
@@ -289,8 +288,7 @@ class GitHubStoreOpenerTest {
                         Duration.ofSeconds(1));
         final TrackedProject project = project("https://github.com", "github");
         final var store = opener.open(project, () -> project);
-        final Writes move =
-                new Writes(java.util.Map.of("PL1", "Idea"), java.util.Map.of(), List.of());
+        final Writes move = new Writes(java.util.Map.of("PL1", "Idea"), java.util.Map.of());
 
         store.save(new Revision("r1"), move);
 
@@ -343,8 +341,7 @@ class GitHubStoreOpenerTest {
                                         new Revision("r1"),
                                         new Writes(
                                                 java.util.Map.of("PL1", "Idea"),
-                                                java.util.Map.of(),
-                                                List.of())))
+                                                java.util.Map.of())))
                 .as("a move written whose following read failed")
                 .isInstanceOf(StoreException.PartlySaved.class);
     }

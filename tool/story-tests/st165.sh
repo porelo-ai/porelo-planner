@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2329 # each step function is called through st_step
 # Plays the test of story ST165, "Every story and issue read and written robustly", for a board a person edited by
-# hand: at the command line in a clone of the project, and through the planner as the window offers, previews and
-# confirms the correction of each warning.
+# hand: at the command line in a clone of the project, and through the planner as the window reads it, previews and
+# confirms a move. An open story keeps no state of its own, so the state written into its head is not followed.
 #
 # Usage: st165.sh --dir DIR [--expect N=ISSUE]...   (see story-test.sh for the run's directory and exit codes)
 #
 # The fixture: a project repository st-project with two stories and a repository st-alpha with their issues, on a
 # forge of the run's own. A person then writes a state the workflow does not know into ST1's head and into AB03's,
-# by hand; ST1 is set right through a correction and AB03 through a move, each previewed and confirmed.
+# by hand; ST1 stands where its issues give and is closed through a move, AB03 is set right through a move, each
+# previewed and confirmed.
 
 ST_STORY=ST165
 ST_LIBRARY=1
@@ -145,47 +146,40 @@ step_1() {
     st_is "POST /refresh" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
 }
 
+# Previews a batch and saves it with the preview's digest, confirmed: save MOVES.
+save() {
+    local digest
+    st_api POST "/projects/$PROJECT/moves/preview" "$1"
+    st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    digest=$(jq -r '.digest' <<<"$ST_BODY")
+    st_api POST "/projects/$PROJECT/moves" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$1")"
+    st_is "the confirmed move" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
+}
+
 step_2() {
     local story issue
     board || return 1
     story=$(item ST1)
     issue=$(item AB03)
-    st_is "ST1's warning and its correction" "StateOutsideWorkflow StateStated" \
-        "$(jq -r '.warnings[0] | "\(.kind) \(.correction.kind // "none")"' <<<"$story")" || return 1
+    # An open story follows its issues, so the state written into its head is neither shown nor warned of.
+    st_is "ST1 on the board, unwarned" "Backlog 0" "$(jq -r '"\(.state) \(.warnings | length)"' <<<"$story")" ||
+        return 1
     st_is "AB03's warning and its correction" "StateOutsideWorkflow Move" \
         "$(jq -r '.warnings[0] | "\(.kind) \(.correction.kind // "none")"' <<<"$issue")" || return 1
-    jq -e '.warnings[0].correction.states | index("Backlog")' <<<"$story" >/dev/null ||
-        st_no "Backlog among the states offered for ST1" "$(jq -c '.warnings[0].correction.states' <<<"$story")" ||
-        return 1
     jq -e '.warnings[0].correction.states | index("Estimated")' <<<"$issue" >/dev/null ||
         st_no "Estimated among the states offered for AB03" "$(jq -c '.warnings[0].correction.states' <<<"$issue")"
 }
 
 step_3() {
-    local asked digest
     board || return 1
-    asked=$(jq -nc --arg r "$REVISION" '{revision: $r, story: "ST1", warning: "StateOutsideWorkflow", state: "Backlog"}')
-    st_api POST "/projects/$PROJECT/corrections/preview" "$asked"
-    st_is "the correction's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
-    st_is "what the preview would write" "ST1 Parked Backlog" \
-        "$(jq -r '"\(.story) \(.from) \(.to)"' <<<"$ST_BODY")" || return 1
-    digest=$(jq -r '.digest' <<<"$ST_BODY")
-    st_api POST "/projects/$PROJECT/corrections" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$asked")"
-    st_is "the confirmed correction" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST1", to: "Rejected"}]}')" || return 1
     board || return 1
-    st_is "ST1 on the board, its warning lifted" "Backlog 0" \
-        "$(item ST1 | jq -r '"\(.state) \(.warnings | length)"')"
+    st_is "ST1 on the board, closed" "Rejected 0" "$(item ST1 | jq -r '"\(.state) \(.warnings | length)"')"
 }
 
 step_4() {
-    local moves digest
     board || return 1
-    moves=$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{issue: "AB03", to: "Estimated"}]}')
-    st_api POST "/projects/$PROJECT/moves/preview" "$moves"
-    st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
-    digest=$(jq -r '.digest' <<<"$ST_BODY")
-    st_api POST "/projects/$PROJECT/moves" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$moves")"
-    st_is "the confirmed move" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{issue: "AB03", to: "Estimated"}]}')" || return 1
     board || return 1
     st_is "AB03 on the board, its warning lifted" "Estimated 0" \
         "$(item AB03 | jq -r '"\(.state) \(.warnings | length)"')"
@@ -194,19 +188,21 @@ step_4() {
 step_5() {
     local clones
     clones=$(st_clones "$OWN" "$ALPHA") || st_no "a clone of $OWN and $ALPHA" "git clone failed" || return 1
-    st_is "ST1's head" Backlog "$(head_state "$clones/$OWN" stories ST1)" || return 1
-    st_is "ST1's row in stories/README.md" Backlog "$(st_section "$clones/$OWN/stories/README.md" st1)" || return 1
+    st_is "ST1's head, its close over the hand-written state" Rejected "$(head_state "$clones/$OWN" stories ST1)" ||
+        return 1
+    st_is "ST1's row in stories/README.md" Rejected "$(st_section "$clones/$OWN/stories/README.md" st1)" || return 1
     st_is "AB03's head" Estimated "$(head_state "$clones/$ALPHA" issues AB03)" || return 1
-    st_is "the heads of AB01 AB02, which the correction left" "Backlog Backlog" \
-        "$(head_state "$clones/$ALPHA" issues AB01) $(head_state "$clones/$ALPHA" issues AB02)"
+    # A rejected story closes each of its open issues with it; a closed issue keeps only its row in the index.
+    st_is "the rows of AB01 AB02, closed with their story" "Rejected Rejected" \
+        "$(st_closed "$clones/$ALPHA/issues" AB01) $(st_closed "$clones/$ALPHA/issues" AB02)"
 }
 
 st_setup "$@"
 fixture
 st_planner "$PROJECT" "$OWN"
 st_step 1 "a state no workflow knows is written into a story's head and an issue's by hand" step_1
-st_step 2 "the board warns on both and offers each its one correction" step_2
-st_step 3 "the story is set right through a previewed and confirmed correction" step_3
+st_step 2 "the board shows the story where its issues give and offers the issue its correction" step_2
+st_step 3 "the story is closed through a previewed and confirmed move" step_3
 st_step 4 "the issue is set right through a previewed and confirmed move" step_4
-st_step 5 "a fresh clone holds both states, and the story's issues kept their own" step_5
+st_step 5 "a fresh clone holds both states, and the story's issues closed with it" step_5
 st_finish

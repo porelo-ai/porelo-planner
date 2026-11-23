@@ -64,7 +64,8 @@ public record TrackedItem(
             @Nullable String parentId,
             Links subIssues,
             Links blockedBy,
-            @Nullable String type) {
+            @Nullable String type,
+            @Nullable Instant closedAt) {
 
         /** Requires every part the tracker always gives and copies the labels. */
         public Issue {
@@ -76,6 +77,57 @@ public record TrackedItem(
             labels = List.copyOf(labels);
             Objects.requireNonNull(subIssues, "subIssues");
             Objects.requireNonNull(blockedBy, "blockedBy");
+        }
+
+        /**
+         * An issue the tracker never closed.
+         *
+         * @param id its own id at the tracker
+         * @param key the tracker's second, numeric id of it, or 0 where it has none
+         * @param number its number in its repository
+         * @param title its title
+         * @param body its text, or null when it has none
+         * @param state its state at the tracker
+         * @param stateReason why it was closed, or null
+         * @param updatedAt when the tracker last changed it
+         * @param repository its repository, as the tracker names it
+         * @param labels its labels, in the tracker's order
+         * @param parentId the id of the issue it is a sub-issue of, or null
+         * @param subIssues its sub-issues
+         * @param blockedBy the issues that block it
+         * @param type the name of its issue type at the tracker, or null when it has none
+         */
+        public Issue(
+                final String id,
+                final long key,
+                final int number,
+                final String title,
+                final @Nullable String body,
+                final String state,
+                final @Nullable String stateReason,
+                final Instant updatedAt,
+                final String repository,
+                final List<String> labels,
+                final @Nullable String parentId,
+                final Links subIssues,
+                final Links blockedBy,
+                final @Nullable String type) {
+            this(
+                    id,
+                    key,
+                    number,
+                    title,
+                    body,
+                    state,
+                    stateReason,
+                    updatedAt,
+                    repository,
+                    labels,
+                    parentId,
+                    subIssues,
+                    blockedBy,
+                    type,
+                    null);
         }
 
         /**
@@ -123,6 +175,7 @@ public record TrackedItem(
                     parentId,
                     subIssues,
                     blockedBy,
+                    null,
                     null);
         }
     }

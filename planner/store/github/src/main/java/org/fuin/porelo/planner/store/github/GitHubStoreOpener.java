@@ -341,8 +341,7 @@ public final class GitHubStoreOpener implements TrackedStores {
         // The workflow read last decides a story's state, so a changed one counts at once.
         final AtomicReference<TrackedProject> latest = new AtomicReference<>(project);
         final StoryStates states =
-                issueStates ->
-                        Objects.requireNonNull(latest.get()).storyStates().storyState(issueStates);
+                StoryStates.following(() -> Objects.requireNonNull(latest.get()).storyStates());
         final Touched touched = new Touched();
         return new GitHubStore(
                 first,

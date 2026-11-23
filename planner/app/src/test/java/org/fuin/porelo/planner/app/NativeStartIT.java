@@ -88,7 +88,7 @@ class NativeStartIT {
                 assertThat(call(address, "GET", "/projects/alpha/stories", null))
                         .as("the stories" + log)
                         .startsWith("200 ")
-                        .contains("\"id\":\"ST7\"", "\"stateGiven\":false", "\"work\":null");
+                        .contains("\"id\":\"ST7\"", "\"closedAt\":null", "\"work\":null");
                 assertThat(call(address, "GET", "/projects/alpha/stories/ST7", null))
                         .as("one story" + log)
                         .contains("A story served to the window.");

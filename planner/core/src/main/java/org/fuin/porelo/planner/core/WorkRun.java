@@ -40,7 +40,7 @@ public final class WorkRun {
     private static final Pattern AT =
             Pattern.compile(
                     "[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})");
-    private static final Writes NOTHING = new Writes(Map.of(), Map.of(), List.of());
+    private static final Writes NOTHING = new Writes(Map.of(), Map.of());
     private final PlanningStore store;
     private final Record record;
     private final Clock clock;
@@ -881,7 +881,7 @@ public final class WorkRun {
                     .anyMatch(o -> task.equals(o.task()))) {
                 throw conflict(task, report.event(), "The task is already bound.");
             }
-            writes = NextStep.started(board, known.binding(), store::storyState);
+            writes = NextStep.started(board, known.binding());
             accepted =
                     new Offer(
                             known.id(),
@@ -1188,16 +1188,6 @@ public final class WorkRun {
                 });
     }
 
-    /**
-     * Answers how this run's store derives a story's state from its issues, for the boards it
-     * views.
-     *
-     * @return the store's rule
-     */
-    public Moves.StoryState derive() {
-        return store::storyState;
-    }
-
     /** Reads one complete generation for board decoration. */
     public Snapshot snapshot() {
         return record.locked(this::read);
@@ -1401,13 +1391,7 @@ public final class WorkRun {
                                                     comment,
                                                     null));
                                 } else {
-                                    writes =
-                                            NextStep.writes(
-                                                    board,
-                                                    story,
-                                                    Map.of(issueId, target),
-                                                    null,
-                                                    store::storyState);
+                                    writes = NextStep.writes(board, story, Map.of(issueId, target));
                                 }
                             } else if (counted.next() == ReadingCycle.Next.REWORK
                                     && NextStep.waitsForChildren(board, issue, target)) {
@@ -1946,8 +1930,7 @@ public final class WorkRun {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
                     final Snapshot snapshot = read(session);
-                    return Moves.preview(
-                            board, moves, store::storyState, owners(snapshot), held(snapshot));
+                    return Moves.preview(board, moves, owners(snapshot), held(snapshot));
                 });
     }
 
@@ -2027,12 +2010,7 @@ public final class WorkRun {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
                     final String now =
-                            Moves.preview(
-                                            board,
-                                            moves,
-                                            store::storyState,
-                                            owners(snapshot),
-                                            held(snapshot))
+                            Moves.preview(board, moves, owners(snapshot), held(snapshot))
                                     .digest(repository, branch);
                     if (!MessageDigest.isEqual(
                             now.getBytes(StandardCharsets.UTF_8),
@@ -2077,8 +2055,7 @@ public final class WorkRun {
                     if (!board.revision().value().equals(revision)) {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
-                    return Corrections.check(
-                            board, asked, store::storyState, owners(read(session)));
+                    return Corrections.check(board, asked, owners(read(session)));
                 });
     }
 
@@ -2119,7 +2096,7 @@ public final class WorkRun {
                         throw new StoreException.StaleRevision(board.revision().value());
                     }
                     final Corrections.Preview preview =
-                            Corrections.check(board, asked, store::storyState, owners(snapshot));
+                            Corrections.check(board, asked, owners(snapshot));
                     if (!MessageDigest.isEqual(
                             preview.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
                             digest.getBytes(StandardCharsets.UTF_8))) {
@@ -2538,7 +2515,6 @@ public final class WorkRun {
                             binding,
                             draft.progress,
                             draft.comment,
-                            store::storyState,
                             old.reviewAnyway(),
                             old.reworkComment(),
                             old.rework(),
@@ -2574,7 +2550,7 @@ public final class WorkRun {
         if (targets.equals(first.issues())) {
             return first;
         }
-        return NextStep.writes(board, draft.story, targets, null, store::storyState);
+        return NextStep.writes(board, draft.story, targets);
     }
 
     /**
@@ -2612,8 +2588,7 @@ public final class WorkRun {
             final String comment,
             final NextStep.Build ended) {
         try {
-            return NextStep.after(
-                    board, binding, judgment, progress, comment, store::storyState, ended);
+            return NextStep.after(board, binding, judgment, progress, comment, ended);
         } catch (final WorkRefusal
                 | IllegalArgumentException
                 | UnsupportedOperationException cannotBuild) {
@@ -2930,16 +2905,14 @@ public final class WorkRun {
      * person set on the story stands over its issues, so nothing holds it.
      */
     private static boolean heldByManual(final Board board, final Story story) {
-        return !story.stateGiven()
-                && board.issues().stream()
-                        .anyMatch(
-                                i ->
-                                        i.worker() == Worker.MANUAL
-                                                && i.state().equals(story.state())
-                                                && (story.issues().contains(i.id())
-                                                        || i.parent() != null
-                                                                && story.issues()
-                                                                        .contains(i.parent())));
+        return board.issues().stream()
+                .anyMatch(
+                        i ->
+                                i.worker() == Worker.MANUAL
+                                        && i.state().equals(story.state())
+                                        && (story.issues().contains(i.id())
+                                                || i.parent() != null
+                                                        && story.issues().contains(i.parent())));
     }
 
     /** Refuses a Start replacing the run's unstarted offers without naming that run. */

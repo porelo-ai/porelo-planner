@@ -51,6 +51,45 @@ class IssueMappingTest {
 
     private static final StoryStates FIRST_OPEN = states -> states.isEmpty() ? null : states.get(0);
 
+    /** A workflow the one rule reads: building in Implementing, review in Review. */
+    private static final Workflow REVIEWED =
+            new Workflow(
+                    List.of(
+                            "Idea",
+                            "Backlog",
+                            "Implementing",
+                            "Review",
+                            "Rework",
+                            "Finished",
+                            "Rejected"),
+                    List.of(),
+                    List.of("Finished", "Rejected"),
+                    List.of("Implementing", "Review"));
+
+    /** The one rule over {@link #REVIEWED}. */
+    private static final StoryStates RULED = ruled(REVIEWED);
+
+    /** Story states by the one rule every store derives them by, over [workflow]. */
+    private static StoryStates ruled(final Workflow workflow) {
+        final org.fuin.porelo.planner.core.StoryState rule =
+                org.fuin.porelo.planner.core.StoryState.of(workflow, List.of("Rejected"))
+                        .orElseThrow();
+        return new StoryStates() {
+            @Override
+            public @Nullable String storyState(final List<String> issueStates) {
+                return rule.state(issueStates);
+            }
+
+            @Override
+            public java.util.Optional<Warning> behind(
+                    final String storyState,
+                    final List<String> ids,
+                    final List<String> issueStates) {
+                return rule.behind(storyState, ids, issueStates);
+            }
+        };
+    }
+
     private static final String SECRET_TITLE = "a title only GitHub may show";
 
     private static final String SECRET_BODY = "a body only GitHub may show";
@@ -67,6 +106,8 @@ class IssueMappingTest {
         private @Nullable String parent;
         private @Nullable String type;
         private boolean open = true;
+        private @Nullable String reason = "COMPLETED";
+        private @Nullable Instant closedAt;
         private boolean archived;
         private String body = SECRET_BODY;
 
@@ -104,6 +145,14 @@ class IssueMappingTest {
 
         private Item closed() {
             open = false;
+            return this;
+        }
+
+        /** Closed by GitHub for a reason, or for none, at a time. */
+        private Item closedAs(final @Nullable String why, final Instant at) {
+            open = false;
+            reason = why;
+            closedAt = at;
             return this;
         }
 
@@ -148,7 +197,7 @@ class IssueMappingTest {
                     SECRET_TITLE,
                     body,
                     open,
-                    open ? null : "COMPLETED",
+                    open ? null : reason,
                     fields,
                     labels,
                     parent,
@@ -160,7 +209,8 @@ class IssueMappingTest {
                     archived,
                     named,
                     0,
-                    type);
+                    type,
+                    open ? null : closedAt);
         }
     }
 
@@ -177,6 +227,41 @@ class IssueMappingTest {
                 CONFIG,
                 FIRST_OPEN,
                 waits);
+    }
+
+    @Test
+    void aWorkflowWithoutARuleIsTheBoardsFaultAndPlacesNoOpenStory() {
+        // Harm: a workflow the rule cannot read puts every open story in its first state, unwarned.
+        final StoryStates none =
+                new StoryStates() {
+                    @Override
+                    public @Nullable String storyState(final List<String> issueStates) {
+                        return null;
+                    }
+
+                    @Override
+                    public java.util.Optional<String> fault() {
+                        return java.util.Optional.of("no rule");
+                    }
+                };
+        final Item story = new Item("example-project", 1).story();
+        final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Implementing");
+        story.sub(issue);
+
+        final IssueMapping.Mapped mapped =
+                IssueMapping.read(
+                        java.util.stream.Stream.of(story, issue).map(Item::view).toList(),
+                        CONFIG,
+                        none);
+
+        assertThat(mapped.faults()).as("the board names the fault").contains("no rule");
+        assertThat(mapped.stories())
+                .singleElement()
+                .satisfies(
+                        s -> {
+                            assertThat(s.state()).as("no state guessed").isEmpty();
+                            assertThat(s.warnings()).contains(Warning.noState());
+                        });
     }
 
     @Test
@@ -212,9 +297,6 @@ class IssueMappingTest {
                                     .as("its issues, in GitHub's order")
                                     .containsExactly(
                                             "example-project#2", "example-lib#3", "example-lib#5");
-                            assertThat(s.stateGiven())
-                                    .as("an empty Status follows the issues")
-                                    .isFalse();
                             assertThat(s.state())
                                     .as("the state its issues give")
                                     .isEqualTo("Backlog");
@@ -234,6 +316,75 @@ class IssueMappingTest {
                 .as("a Porelo sub-issue's parent")
                 .isEqualTo("example-lib#3");
         assertThat(issues.get("example-lib#5").state()).as("a closed issue").isEqualTo("Finished");
+    }
+
+    @Test
+    void aStoryFollowsItsIssueIntoWorkStartedElsewhereWhateverItsOwnStatusReads() {
+        // Harm: a story stays Analyzed beside its issue in Implementing.
+        final Workflow porelo =
+                new Workflow(
+                        List.of(
+                                "Idea",
+                                "Analyzed",
+                                "Backlog",
+                                "Implementing",
+                                "Review",
+                                "Rework",
+                                "Finished",
+                                "Rejected"),
+                        List.of(),
+                        List.of("Finished", "Rejected"),
+                        List.of("Implementing", "Review", "Finished"));
+        final StoryStates states = ruled(porelo);
+        final ProjectConfig config =
+                new ProjectConfig(
+                        URI.create("https://github.com"),
+                        new ProjectRef("example-org", 7),
+                        "c0ffee0",
+                        porelo,
+                        new Work(Map.of(), List.of()),
+                        List.of("example-project", "example-lib"),
+                        Map.of(),
+                        Map.of());
+        final Item story =
+                new Item("example-project", 1)
+                        .story()
+                        .field(FieldNames.STATUS, "Analyzed")
+                        .field(FieldNames.PRIORITY, "High")
+                        .field(FieldNames.SIZE, "M");
+        final Item started = new Item("example-lib", 2).field(FieldNames.STATUS, "Implementing");
+        final Item waiting = new Item("example-lib", 3).field(FieldNames.STATUS, "Analyzed");
+        story.sub(started).sub(waiting);
+
+        final IssueMapping.Mapped mapped =
+                IssueMapping.read(
+                        java.util.stream.Stream.of(story, started, waiting)
+                                .map(Item::view)
+                                .toList(),
+                        config,
+                        states);
+
+        assertThat(mapped.stories())
+                .singleElement()
+                .satisfies(
+                        s -> {
+                            assertThat(s.state())
+                                    .as("its issue's work, not its own Status")
+                                    .isEqualTo("Implementing");
+                            assertThat(s.priority()).as("its priority").isEqualTo("High");
+                            assertThat(s.size()).as("its size").isEqualTo("M");
+                            assertThat(s.issues())
+                                    .as("its issues")
+                                    .containsExactly("example-lib#2", "example-lib#3");
+                            assertThat(s.warnings())
+                                    .as("the issue left behind is named")
+                                    .extracting(Warning::kind, Warning::text)
+                                    .containsExactly(
+                                            org.assertj.core.groups.Tuple.tuple(
+                                                    Warning.ISSUE_BEHIND_STORY,
+                                                    "Its issue example-lib#3 stands before its"
+                                                            + " state Implementing."));
+                        });
     }
 
     @Test
@@ -442,33 +593,68 @@ class IssueMappingTest {
     }
 
     @Test
-    void aStatusAgainstGitHubsOpenOrClosedStaysTheTruthAndIsWarnedOnTheItem() {
-        // Harm: a finished issue reopened on GitHub, or an issue a merge closed under an open
-        // state, counted by its state with no sign on its card that GitHub says otherwise.
-        final Item reopened = new Item("example-lib", 1).field(FieldNames.STATUS, "Finished");
-        final Item closed = new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog").closed();
-        final Item unstated = new Item("example-lib", 3).closed();
+    void anOpenIssueUnderAClosedStatusStandsOutsideTheWorkflowWarnedAndCountsAsOpen() {
+        // Harm: an issue a person reopened on GitHub counted done by a Status nobody moved, so
+        // its open work is left out of every count, rule and story.
+        final Item story =
+                new Item("example-project", 1).story().field(FieldNames.PRIORITY, "High");
+        final Item reopened = new Item("example-lib", 2).field(FieldNames.STATUS, "Finished");
+        final Item rejected = new Item("example-lib", 3).field(FieldNames.STATUS, "Rejected");
         final Item agreeing = new Item("example-lib", 4).field(FieldNames.STATUS, "Backlog");
+        story.sub(reopened);
 
-        final IssueMapping.Mapped mapped = read(reopened, closed, unstated, agreeing);
+        final IssueMapping.Mapped mapped = read(story, reopened, rejected, agreeing);
 
         assertThat(mapped.issues())
-                .as("each by its Status, a disagreement warned without holding work")
+                .as("each open one outside the workflow, warned, its Status still shown")
                 .extracting(Issue::id, Issue::state, Issue::warnings)
                 .containsExactlyInAnyOrder(
                         Tuple.tuple(
-                                "example-lib#1",
-                                "Finished",
-                                List.of(Warning.openUnderClosedState())),
-                        Tuple.tuple(
                                 "example-lib#2",
-                                "Backlog",
-                                List.of(Warning.closedUnderOpenState())),
+                                "Finished (open)",
+                                List.of(Warning.stateOutsideWorkflow())),
                         Tuple.tuple(
-                                "example-lib#3", "Idea", List.of(Warning.closedUnderOpenState())),
+                                "example-lib#3",
+                                "Rejected (open)",
+                                List.of(Warning.stateOutsideWorkflow())),
                         Tuple.tuple("example-lib#4", "Backlog", List.of()));
-        assertThat(Warning.closedUnderOpenState().holdsWork()).as("work goes on").isFalse();
-        assertThat(Warning.openUnderClosedState().holdsWork()).as("work goes on").isFalse();
+        assertThat(mapped.stories())
+                .as("its story stays open, its state told by no issue it knows")
+                .singleElement()
+                .extracting(Story::state)
+                .isNotIn("Finished", "Rejected");
+        assertThat(mapped.faults()).as("no fault").isEmpty();
+    }
+
+    @Test
+    void aClosedIssueStandsInTheClosedStateItsReasonGivesWhateverItsStatusReads() {
+        // Harm: work GitHub has closed shown open by a Status nobody moved, so it is counted,
+        // ruled and offered as open work, or a rejected issue counted as finished.
+        final Instant at = Instant.parse("2026-02-03T04:05:06Z");
+        final Item done =
+                new Item("example-lib", 1)
+                        .field(FieldNames.STATUS, "Implementing")
+                        .closedAs("COMPLETED", at);
+        final Item unstated = new Item("example-lib", 2).closedAs(null, at);
+        final Item dropped =
+                new Item("example-lib", 3)
+                        .field(FieldNames.STATUS, "Finished")
+                        .closedAs("NOT_PLANNED", at);
+        final Item twin =
+                new Item("example-lib", 4)
+                        .field(FieldNames.STATUS, "Backlog")
+                        .closedAs("DUPLICATE", at);
+
+        final IssueMapping.Mapped mapped = read(done, unstated, dropped, twin);
+
+        assertThat(mapped.issues())
+                .as("each by GitHub's close and its reason, with no warning")
+                .extracting(Issue::id, Issue::state, Issue::warnings)
+                .containsExactlyInAnyOrder(
+                        Tuple.tuple("example-lib#1", "Finished", List.of()),
+                        Tuple.tuple("example-lib#2", "Finished", List.of()),
+                        Tuple.tuple("example-lib#3", "Rejected", List.of()),
+                        Tuple.tuple("example-lib#4", "Rejected", List.of()));
         assertThat(mapped.faults()).as("no fault").isEmpty();
     }
 
@@ -517,13 +703,12 @@ class IssueMappingTest {
 
     @Test
     void theFieldsWrittenForAStoryReadBackAsTheSameStory() {
-        // Harm: a story's given state or priority lost on a save.
+        // Harm: a story's priority or size lost on a save.
         final Story story =
                 new Story(
                         "example-project#1",
                         SECRET_TITLE,
-                        "Implementing",
-                        true,
+                        "Idea",
                         "Low",
                         "L",
                         List.of(),
@@ -819,9 +1004,9 @@ class IssueMappingTest {
     }
 
     @Test
-    void aStoryNotWholeNeverFollowsTheIssuesShownIntoAClose() {
-        // Harm: a story without a Status shown Finished, its work done, while an issue of it the
-        // board cannot see is still open.
+    void anOpenStoryNeverFollowsItsIssuesIntoAClose() {
+        // Harm: a story shown Finished, its work taken for tested, while it is still open on
+        // GitHub, or while an issue of it the board cannot see is still open.
         final Item partial =
                 new Item("example-project", 1)
                         .story()
@@ -836,14 +1021,28 @@ class IssueMappingTest {
                 new Item("example-project", 4).field(FieldNames.STATUS, "Finished").closed();
         whole.sub(alsoDone);
 
-        final IssueMapping.Mapped mapped = read(partial, done, whole, alsoDone);
+        final IssueMapping.Mapped mapped =
+                IssueMapping.read(
+                        java.util.stream.Stream.of(partial, done, whole, alsoDone)
+                                .map(Item::view)
+                                .toList(),
+                        new ProjectConfig(
+                                URI.create("https://github.com"),
+                                new ProjectRef("example-org", 7),
+                                "c0ffee0",
+                                REVIEWED,
+                                new Work(Map.of(), List.of()),
+                                List.of("example-project", "example-lib"),
+                                Map.of(),
+                                Map.of()),
+                        RULED);
 
         assertThat(mapped.stories())
-                .as("the story not whole in the workflow's last open state, the whole one finished")
+                .as("each open story waits in review, whole or not")
                 .extracting(Story::id, Story::issuesWhole, Story::state)
                 .containsExactlyInAnyOrder(
-                        Tuple.tuple("example-project#1", false, "Implementing"),
-                        Tuple.tuple("example-project#3", true, "Finished"));
+                        Tuple.tuple("example-project#1", false, "Review"),
+                        Tuple.tuple("example-project#3", true, "Review"));
     }
 
     @Test
@@ -1181,29 +1380,6 @@ class IssueMappingTest {
     }
 
     @Test
-    void aStoryWhoseStatusTheWorkflowDoesNotHoldIsShownWarnedWithItsIssues() {
-        // Harm: a story given a Status by hand that the workflow lacks hides itself and leaves
-        // its issues shown as if they belonged to no story.
-        final Item story =
-                new Item("example-project", 1).story().field(FieldNames.STATUS, "Accepted");
-        final Item issue = new Item("example-lib", 2).field(FieldNames.STATUS, "Idea");
-        story.sub(issue);
-
-        final IssueMapping.Mapped mapped = read(story, issue);
-
-        assertThat(mapped.stories())
-                .as("the story in its own state, warned, its issue in it")
-                .extracting(Story::id, Story::state, Story::issues, Story::warnings)
-                .containsExactly(
-                        Tuple.tuple(
-                                "example-project#1",
-                                "Accepted",
-                                List.of("example-lib#2"),
-                                List.of(Warning.stateOutsideWorkflow())));
-        assertThat(mapped.faults()).as("nothing left out").isEmpty();
-    }
-
-    @Test
     void anIssueOutsideTheWorkflowStandsOnTheBoardWarnedForItAndForEachOtherFault() {
         // Harm: an issue outside the workflow that the board cannot hold for another reason too
         // is hidden; or it is offered for a move back that the next read refuses again.
@@ -1538,7 +1714,8 @@ class IssueMappingTest {
                         view.archived(),
                         view.blockers(),
                         view.unseenBlockers(),
-                        view.issueType());
+                        view.issueType(),
+                        view.closedAt());
 
         assertThat(ItemVersions.of(touched)).isEqualTo(ItemVersions.of(view));
         assertThat(

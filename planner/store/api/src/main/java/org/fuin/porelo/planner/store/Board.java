@@ -154,11 +154,6 @@ public record Board(
                         "Story " + story.id() + " is on the board twice");
             }
             known(workflow, story.state(), story.id(), story.warnings());
-            if (story.state().isEmpty() && story.stateGiven()) {
-                // A save would write the empty state back as one the story states.
-                throw new IllegalArgumentException(
-                        "Story " + story.id() + " states no state but is marked as stating one");
-            }
         }
         final Map<String, Issue> issueIds = new LinkedHashMap<>();
         for (final Issue issue : issues) {
@@ -247,17 +242,6 @@ public record Board(
      */
     public Optional<String> holdsWork(final String id) {
         return held(id, Warning::holdsWork);
-    }
-
-    /**
-     * Says why no work may be proposed or started on an item: what {@link #holdsWork(String)} says,
-     * and an item GitHub has closed under an open state, which a move or an edit may still name.
-     *
-     * @param id a story's or an issue's id
-     * @return the words of a refusal; empty when work may start on the item
-     */
-    public Optional<String> holdsStart(final String id) {
-        return held(id, Warning::holdsStart);
     }
 
     /**

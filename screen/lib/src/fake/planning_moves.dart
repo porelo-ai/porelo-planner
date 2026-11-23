@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models.dart';
 import 'refusal.dart';
+import 'story_state.dart';
 
 /// Validates a complete save on a copy, publishing nothing on a refusal.
 Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, dynamic> parameters) {
@@ -21,7 +22,6 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   final storyWrites = <void Function()>[];
   final issueWrites = <void Function()>[];
   final storyChecks = <void Function()>[];
-  final storyMisfits = <String, List<String>>{};
   for (final value in batch) {
     final move = value is Map<String, dynamic> ? value : <String, dynamic>{};
     final isStory = move['story'] is String;
@@ -41,25 +41,6 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
     if (isStory && story == null) refuse('NoSuchStory', {'story': id});
     if (!isStory && issue == null) refuse('NoSuchIssue', {'issue': id});
     final from = (isStory ? story! : issue!)['state'];
-    if (move['follow'] == true) {
-      // A story hands its given state back to its issues only to the state they give now, as the planner checks.
-      if (!isStory) invalid('Only a story follows its issues.');
-      if (!states.any((state) => state['name'] == to)) refuse('StateNotAllowed', {'item': id, 'from': from, 'to': to});
-      if (_reasonRefused(move, true, true, from == to) case final reason?) {
-        refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
-      }
-      if (batch.length > 1) invalid('A story follows its issues in a batch of its own.');
-      void refused(String reason) => refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
-      final derived = _derived(states, story!);
-      if (story['stateGiven'] != true) refused('Its state is not given; it follows its issues already.');
-      if (derived == null) refused('The board does not hold all of its issues, so the state they give is not known.');
-      if (derived != to) refused('Its issues give $derived now.');
-      storyWrites.add(() {
-        story.remove('stateGiven');
-        story['state'] = to;
-      });
-      continue;
-    }
     final target = states.where((state) => state['name'] == to).firstOrNull;
     // An agent's issue no run works enters work by hand as work started elsewhere, as the planner allows it.
     final byHand = !isStory && (issue!['worker'] == 'MANUAL' || !_runHolds(stories, issue));
@@ -76,12 +57,18 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
       refuse('MoveNotAllowed', {'item': id, 'from': from, 'to': to, 'reason': reason});
     }
     if (isStory) {
+      bool closed(Object? name) => states.any((state) => state['name'] == name && state['kind'] == 'CLOSED');
+      // An open story follows its issues, as the planner keeps it: it is moved only to close it, or to reopen it.
+      if (!closed(from) && !closed(to)) {
+        invalid('An open story follows its issues; it is moved only to close it, or to reopen it once closed.');
+      }
       final issues = (story!['issues'] as List? ?? []).cast<Map<String, dynamic>>();
       if (issues.any((item) => !states.any((state) => state['name'] == item['state']))) {
         invalid('An issue of the story stands in a state outside the workflow.');
       }
       // A story moved to a completed state is judged on the shown board, before any other move of the batch, and
-      // finishes its issues in the last done state with it, as the planner does.
+      // finishes its issues in the last done state with it; rejected, it closes every open one; reopened, it carries
+      // none, as the planner does.
       final completes = target['kind'] == 'CLOSED' && to != _rejected;
       final done = _lastDone(states, board['work']);
       void checkOpen() {
@@ -105,13 +92,19 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
               for (final item in issues)
                 if (done != null && item['state'] == done) item,
             ]
-          : _leastAdvanced(states, issues);
+          : closed(to)
+          ? [
+              for (final item in issues)
+                if (!closed(item['state'])) item,
+            ]
+          : const <Map<String, dynamic>>[];
       storyWrites.add(() {
         for (final item in least) {
           item['state'] = to;
           if (!moved.contains(item['id'])) moved.add(item['id'] as String);
         }
-        if (issues.isEmpty) story['state'] = to;
+        story['state'] = to;
+        story['closedAt'] = null;
       });
       storyChecks.add(() {
         if (issues.isEmpty) return;
@@ -130,23 +123,6 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
             });
           }
         }
-        final derived = _leastAdvanced(states, issues).firstOrNull?['state'];
-        if (derived == to) {
-          // A story moved where its issues follow states no state of its own, as the planner unstates it.
-          story.remove('stateGiven');
-          return;
-        }
-        final misfits = [
-          for (final item in issues)
-            if (item['state'] != to) item['id'] as String,
-        ];
-        if (parameters['confirm'] != true) {
-          refuse('StoryStateMismatch', {'story': id, 'to': to, 'issues': misfits});
-        }
-        // Confirmed, the story stands where it was moved although its issues do not fit, as the planner writes it.
-        story['state'] = to;
-        story['stateGiven'] = true;
-        storyMisfits[id] = misfits;
       });
     } else {
       issueWrites.add(() {
@@ -163,7 +139,6 @@ Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, 
   // The fake does not judge the stories' rules, so a change shows none of the breaches it named.
   board.remove('rules');
   board['moved'] = moved;
-  board['storyMisfits'] = storyMisfits;
   return board;
 }
 
@@ -194,7 +169,6 @@ String? _reasonRefused(Map<String, dynamic> move, bool closes, bool isStory, boo
   final reason = (move['reason'] as String? ?? '').trim();
   if (reason.isEmpty) return null;
   if (planningReasonRefusal(reason) case final refused?) return refused;
-  if (move['follow'] == true) return 'A story that follows its issues closes nothing, so it takes no reason.';
   if (!closes) return 'A reason is taken only with a move into a closed state.';
   if (!isStory && unchanged) return 'It is in that state already; a reason goes only with the move that closes it.';
   return null;
@@ -213,9 +187,8 @@ String? _lastDone(List<Map<String, dynamic>> states, Object? work) {
 /// Answers what a batch would do as the planner's preview does, writing nothing: every issue it carries with its
 /// repository and states, and the warnings the stand-in can tell from its board - issues a story's move carries
 /// along from a working state or another repository than the project's own, or finishes with it, a move forward past
-/// waiting states, and a story that would not fit its issues. A refusal is the save's own.
+/// waiting states. A refusal is the save's own.
 Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String, dynamic> parameters) {
-  // Previewed as confirmed, so a story that would not fit its issues is warned of, as the planner's preview does.
   final after = applyPlanningMove(source, {...parameters, 'confirm': true});
   final states = (source['states'] as List).cast<Map<String, dynamic>>();
   int place(Object? state) => states.indexWhere((each) => each['name'] == state);
@@ -256,8 +229,6 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
     'skipped': <String>[],
   };
   for (final move in batch) {
-    // A story that follows its issues carries none and passes no state of its own.
-    if (move['follow'] == true) continue;
     final to = move['to'] as String;
     final story = stories.where((story) => story['id'] == move['story']).firstOrNull;
     final id = (move['story'] ?? move['issue']) as String;
@@ -282,14 +253,6 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
       ];
       if (skipped.isNotEmpty) warnings.add({...warning('SKIPS_STATES', id, from, to), 'skipped': skipped});
     }
-  }
-  final misfits = (after['storyMisfits'] as Map).cast<String, List<String>>();
-  for (final MapEntry(key: story, value: ids) in misfits.entries) {
-    final move = batch.firstWhere((move) => move['story'] == story);
-    final from = stories.firstWhere((each) => each['id'] == story)['state'] as String? ?? '';
-    warnings.add(
-      warning('STORY_MISMATCH', story, from, move['to'] as String, issues: [for (final id in ids) moved(id)]),
-    );
   }
   final revision = source['revision'] as String;
   return {
@@ -359,24 +322,31 @@ Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id,
   return board;
 }
 
-/// Puts every story with issues in the earliest open state of its issues, or the earliest closed one when all are;
-/// a story whose state was given keeps it, with each issue standing elsewhere as a misfit when its issues give another.
+/// Puts every open story with issues where the planner's one rule ([PlanningStoryRule]) puts it, naming the issues
+/// that stand before it in one warning: only a person's move closes a story, as the planner keeps it. A closed story
+/// stays closed; a workflow the rule cannot read derives no state, as the planner then derives none.
 void settleStoryStates(Map<String, dynamic> board) {
   final states = (board['states'] as List).cast<Map<String, dynamic>>();
+  final rule = PlanningStoryRule.of(states);
+  if (rule == null) return;
+  bool closed(Object? name) => states.any((state) => state['name'] == name && state['kind'] == 'CLOSED');
   for (final story in (board['stories'] as List).cast<Map<String, dynamic>>()) {
+    if (closed(story['state'])) continue;
     final issues = (story['issues'] as List? ?? []).cast<Map<String, dynamic>>();
-    final least = _leastAdvanced(states, issues);
-    story['derivedState'] = story['stateGiven'] == true ? _derived(states, story) : null;
-    if (story['stateGiven'] == true) {
-      story['misfits'] = least.isEmpty || least.first['state'] == story['state']
-          ? <String>[]
-          : [
-              for (final issue in issues)
-                if (issue['state'] != story['state']) issue['id'] as String,
-            ];
+    final issueStates = [for (final issue in issues) issue['state'] as String];
+    final derived = rule.state(issueStates);
+    if (derived == null) continue;
+    story['state'] = derived;
+    final behind = rule.behind(derived, [for (final issue in issues) issue['id'] as String], issueStates);
+    final warnings = [
+      for (final warning in (story['warnings'] as List? ?? const []).cast<Map<String, dynamic>>())
+        if (warning['kind'] != PlanningStoryRule.behindKind) warning,
+      if (behind.isNotEmpty) PlanningStoryRule.warning(behind, derived),
+    ];
+    if (warnings.isEmpty) {
+      story.remove('warnings');
     } else {
-      if (least.isNotEmpty) story['state'] = least.first['state'];
-      if (story.containsKey('misfits')) story['misfits'] = <String>[];
+      story['warnings'] = warnings;
     }
   }
 }
@@ -392,29 +362,6 @@ bool _runHolds(List<Map<String, dynamic>> stories, Map<String, dynamic> issue) =
             (each) => each['id'] == issue['id'] || issue['parent'] is String && each['id'] == issue['parent'],
           ),
     );
-
-/// The state a story's issues give, or null when it has none or one stands in a state outside the workflow, as the
-/// planner reads it.
-String? _derived(List<Map<String, dynamic>> states, Map<String, dynamic> story) {
-  final issues = (story['issues'] as List? ?? []).cast<Map<String, dynamic>>();
-  if (issues.any((issue) => !states.any((state) => state['name'] == issue['state']))) return null;
-  final least = _leastAdvanced(states, issues);
-  return least.isEmpty ? null : least.first['state'] as String;
-}
-
-/// The issues in the earliest open state in workflow order, or in the earliest closed state when all are closed.
-List<Map<String, dynamic>> _leastAdvanced(List<Map<String, dynamic>> states, List<Map<String, dynamic>> issues) {
-  int place(Map<String, dynamic> issue) => states.indexWhere((state) => state['name'] == issue['state']);
-  final placed = issues.where((issue) => place(issue) >= 0).toList();
-  final open = placed.where((issue) => states[place(issue)]['kind'] != 'CLOSED').toList();
-  final candidates = open.isEmpty ? placed : open;
-  if (candidates.isEmpty) return const [];
-  final earliest = candidates.map(place).reduce((a, b) => a < b ? a : b);
-  return [
-    for (final issue in candidates)
-      if (place(issue) == earliest) issue,
-  ];
-}
 
 /// Adds an issue the board offers as made outside the project, on a copy: it leaves the offer and stands in no story
 /// in the first state, as the planner adds it.

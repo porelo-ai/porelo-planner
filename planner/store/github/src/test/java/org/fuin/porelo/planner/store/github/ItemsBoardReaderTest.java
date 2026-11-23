@@ -1018,9 +1018,9 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void anIssueGitHubClosedUnderAnOpenStateIsReadIntoTheBoardWarnedAndHeldFromStart() {
+    void anIssueGitHubClosedAsNotPlannedUnderAnOpenStatusIsReadClosed() {
         // Harm: an issue a person closed as not planned while it stood in Backlog read as open
-        // work, with no sign on its card, and proposed for a start.
+        // work and proposed for a start.
         final ProjectItem open = libIssue(3, refs(false));
         final GitHubGraphQl.BoardIssue was = open.issue();
         final ProjectItem closed =
@@ -1054,13 +1054,9 @@ class ItemsBoardReaderTest {
                         .read();
 
         assertThat(snapshot.board().issue("example-lib#3").orElseThrow())
-                .as("in its Status, warned")
+                .as("in the workflow's one closed state, unwarned")
                 .extracting(Issue::state, Issue::warnings)
-                .containsExactly(
-                        "Backlog",
-                        List.of(org.fuin.porelo.planner.store.Warning.closedUnderOpenState()));
-        assertThat(snapshot.board().holdsStart("example-lib#3")).as("no start").isPresent();
-        assertThat(snapshot.board().holdsMove("example-lib#3")).as("a move").isEmpty();
+                .containsExactly("Finished", List.of());
         assertThat(snapshot.board().faults()).as("no fault").isEmpty();
     }
 

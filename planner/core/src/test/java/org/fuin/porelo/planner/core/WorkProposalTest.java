@@ -84,7 +84,6 @@ class WorkProposalTest {
                                         "ST1",
                                         "Story",
                                         "Backlog",
-                                        true,
                                         "High",
                                         null,
                                         List.of("AA1", "AA1.1"),
@@ -240,7 +239,6 @@ class WorkProposalTest {
                                         "ST1",
                                         "Story",
                                         "Review",
-                                        true,
                                         "High",
                                         null,
                                         List.of("AA1"),
@@ -296,8 +294,8 @@ class WorkProposalTest {
                         original.workflow(),
                         List.of(
                                 new Story(
-                                        "ST1", "Empty", "Backlog", true, "High", null, List.of(),
-                                        "", null)),
+                                        "ST1", "Empty", "Backlog", "High", null, List.of(), "",
+                                        null)),
                         List.of(),
                         original.work(),
                         original.repositories());
@@ -335,7 +333,6 @@ class WorkProposalTest {
                                         story.id(),
                                         story.title(),
                                         story.state(),
-                                        story.stateGiven(),
                                         story.priority(),
                                         null,
                                         List.of("AA1.1", "BB1"),
@@ -503,8 +500,8 @@ class WorkProposalTest {
                         original.workflow(),
                         List.of(
                                 new Story(
-                                        "ST1", "Story", "Backlog", true, "High", null, List.of(),
-                                        "", null)),
+                                        "ST1", "Story", "Backlog", "High", null, List.of(), "",
+                                        null)),
                         original.issues(),
                         original.work(),
                         original.repositories());
@@ -575,7 +572,6 @@ class WorkProposalTest {
                                 "ST1",
                                 "Story",
                                 "Idea",
-                                false,
                                 "High",
                                 null,
                                 List.of("AA1", "BB1"),
@@ -670,7 +666,6 @@ class WorkProposalTest {
                                         "ST1",
                                         "Story",
                                         "Backlog",
-                                        true,
                                         "High",
                                         null,
                                         List.of("AA1", "AA2"),
@@ -934,58 +929,6 @@ class WorkProposalTest {
     }
 
     @Test
-    void anIssueGitHubClosedUnderAnOpenStateIsNeitherProposedNorStartedButStillMoved() {
-        // Harm: an issue a person closed as not planned while it stood in Backlog proposed and
-        // started, so an agent builds work the person rejected; or the move to a closed state
-        // that sets it right refused.
-        final Board board =
-                warned(
-                        board(WorkRule.Per.REPOSITORY),
-                        Map.of("BB1", Warning.closedUnderOpenState()),
-                        Map.of());
-
-        final WorkProposal proposal = WorkProposal.propose(board, "ST1", "Building");
-
-        assertThat(proposal.repositories())
-                .as("only the other repository's issues are worked")
-                .extracting(WorkProposal.Repository::repository, WorkProposal.Repository::issues)
-                .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("alpha", List.of("AA1", "AA1.1")));
-        assertThat(proposal.held())
-                .as("the closed issue is named with its warning")
-                .containsExactly(
-                        new WorkProposal.Held(
-                                "BB1", "BB1: " + Warning.closedUnderOpenState().text()));
-        assertThatThrownBy(
-                        () ->
-                                WorkProposal.propose(
-                                        board,
-                                        "ST1",
-                                        "Building",
-                                        story -> List.of(),
-                                        List.of("BB1")))
-                .as("a start naming it")
-                .isInstanceOf(WorkRefusal.class)
-                .hasMessage("BB1: " + Warning.closedUnderOpenState().text());
-        assertThat(board.holdsMove("BB1")).as("a move may still name it").isEmpty();
-        assertThat(board.holdsWork("BB1")).as("an edit may still name it").isEmpty();
-    }
-
-    @Test
-    void anIssueGitHubHasOpenUnderAClosedStateHoldsNothing() {
-        // Harm: an issue counted done by its state still held from work, or the issues it blocks
-        // held, though the board goes by the state.
-        final Board board =
-                warned(
-                        board(WorkRule.Per.REPOSITORY),
-                        Map.of("BB1", Warning.openUnderClosedState()),
-                        Map.of());
-
-        assertThat(board.holdsStart("BB1")).as("no start held").isEmpty();
-        assertThat(board.holdsMove("BB1")).as("no move held").isEmpty();
-    }
-
-    @Test
     void aStartNamingAHeldIssueIsRefusedWithItsWarning() {
         // A person's pick must not reach what the story's own work leaves out.
         final Board board =
@@ -1093,7 +1036,6 @@ class WorkProposalTest {
                                         "ST1",
                                         "Story",
                                         "Review",
-                                        true,
                                         "High",
                                         null,
                                         List.of("AA1", "AA1.1", "BB1", "CC1"),
@@ -1406,7 +1348,6 @@ class WorkProposalTest {
                                 "ST1",
                                 "Story",
                                 "Backlog",
-                                true,
                                 "High",
                                 null,
                                 List.of("AA1", "AA1.1", "BB1", "CC1"),

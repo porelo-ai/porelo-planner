@@ -291,7 +291,8 @@ class UnlistedAddTest {
                 item.archived(),
                 item.blockers(),
                 item.unseenBlockers(),
-                item.issueType());
+                item.issueType(),
+                null);
     }
 
     /**
@@ -311,7 +312,6 @@ class UnlistedAddTest {
                                 item.repository() + "#" + item.number(),
                                 "A story",
                                 "Idea",
-                                false,
                                 "Medium",
                                 null,
                                 List.of(),

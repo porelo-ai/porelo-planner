@@ -33,14 +33,7 @@ class NextStepTest {
         final Board board = board("Building", "Building");
         final NextStep.Binding main = binding(List.of("AA1"), "MAIN", "Building");
         final NextStep.Result next =
-                NextStep.after(
-                        board,
-                        main,
-                        new WorkEnds.Done(),
-                        Map.of(),
-                        "",
-                        states -> states.getFirst(),
-                        BUILT);
+                NextStep.after(board, main, new WorkEnds.Done(), Map.of(), "", BUILT);
         assertThat(next.writes().issues())
                 .as("the parent waits for its participating child")
                 .isEmpty();
@@ -61,7 +54,6 @@ class NextStepTest {
                         new WorkEnds.Read(List.of(BLOCKING)),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(stopped.tasks()).as("no rework is offered").isEmpty();
         assertThat(stopped.writes().none()).as("the issue stays in Reading").isTrue();
@@ -96,7 +88,6 @@ class NextStepTest {
                                         "NONE",
                                         "")),
                         "",
-                        states -> states.getFirst(),
                         false,
                         "Preserve bytes",
                         chosen,
@@ -135,7 +126,6 @@ class NextStepTest {
                                         "NONE",
                                         "")),
                         "",
-                        states -> states.getFirst(),
                         false,
                         "",
                         null,
@@ -161,7 +151,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(next.progress().get("AA1").needsYou()).as("nothing is refused").isFalse();
         final WorkOrder.Task reader = next.tasks().getFirst().task();
@@ -182,7 +171,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         final WorkOrder.Task reader = next.tasks().getFirst().task();
         assertThat(reader.prompt())
@@ -203,7 +191,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         new NextStep.Build("foo-1-2", List.of()));
         assertThat(next.tasks()).as("no reader before the work has landed").isEmpty();
         assertThat(next.writes().issues())
@@ -254,7 +241,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         new NextStep.Build("", List.of()));
         assertThat(next.tasks()).as("no reader is offered without the builder").isEmpty();
         assertThat(next.progress().get("AA1").needsYou())
@@ -272,7 +258,6 @@ class NextStepTest {
                         new WorkEnds.Read(List.of()),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(result.writes().none())
                 .as("display order does not make rework complete")
@@ -302,7 +287,6 @@ class NextStepTest {
                                         "NONE",
                                         "")),
                         "",
-                        states -> states.getFirst(),
                         false,
                         "",
                         null,
@@ -340,7 +324,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(next.tasks()).as("unsound work releases no offer").isEmpty();
         assertThat(next.progress().get("AA1").needsYou())
@@ -355,8 +338,7 @@ class NextStepTest {
                         () ->
                                 NextStep.started(
                                         board("Review", "Review"),
-                                        binding(List.of("AA1"), "MAIN", "Building"),
-                                        states -> states.getFirst()))
+                                        binding(List.of("AA1"), "MAIN", "Building")))
                 .as("a changed source state has the state-write refusal")
                 .isInstanceOf(Moves.Refused.class);
         final Board original = board("Reading", "Building");
@@ -398,7 +380,6 @@ class NextStepTest {
                         new WorkEnds.Read(List.of()),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(result.writes().none()).as("a parent cannot close over an open child").isTrue();
         assertThat(result.progress().get("AA1").rounds().rounds())
@@ -414,7 +395,7 @@ class NextStepTest {
         // Prevents an old offer from writing work reassigned outside its bound scope.
         final Board source = board("Building", "Review");
         final Story story =
-                new Story("ST1", "Story", "Building", false, "High", null, List.of(), "", null);
+                new Story("ST1", "Story", "Building", "High", null, List.of(), "", null);
         final Board board =
                 new Board(
                         source.revision(),
@@ -430,7 +411,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> null,
                         BUILT);
         assertThat(next.writes().none()).as("foreign ownership produces no store write").isTrue();
         assertThat(next.progress().get("AA1").needsYou())
@@ -450,7 +430,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
 
         assertThat(next.tasks()).as("no task for the person's issue").isEmpty();
@@ -471,11 +450,7 @@ class NextStepTest {
         final Board board = ManualIssues.of(board("Backlog", "Finished"), "AA1");
 
         assertThatThrownBy(
-                        () ->
-                                NextStep.started(
-                                        board,
-                                        binding(List.of("AA1"), "MAIN", "Building"),
-                                        states -> states.getFirst()))
+                        () -> NextStep.started(board, binding(List.of("AA1"), "MAIN", "Building")))
                 .as("the start of the stale offer is refused")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessageContaining("AA1");
@@ -581,7 +556,6 @@ class NextStepTest {
                                 new WorkEnds.Done(),
                                 Map.of(),
                                 "",
-                                states -> states.getFirst(),
                                 BUILT)
                         .tasks()
                         .getFirst();
@@ -606,7 +580,6 @@ class NextStepTest {
                                 new WorkEnds.Done(),
                                 Map.of(),
                                 "",
-                                states -> states.getFirst(),
                                 BUILT)
                         .tasks()
                         .getFirst();
@@ -873,8 +846,7 @@ class NextStepTest {
                         () ->
                                 NextStep.started(
                                         heldBoard("Backlog", "Backlog"),
-                                        binding(List.of("AA1"), "MAIN", "Building"),
-                                        states -> states.getFirst()))
+                                        binding(List.of("AA1"), "MAIN", "Building")))
                 .as("the start is refused")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessage("AA1: " + Warning.parentOutsideProject().text());
@@ -890,7 +862,6 @@ class NextStepTest {
                         new WorkEnds.Done(),
                         Map.of(),
                         "",
-                        states -> states.getFirst(),
                         BUILT);
         assertThat(next.tasks()).as("no follow-up is offered").isEmpty();
         assertThat(next.writes().issues()).as("nothing is moved").isEmpty();
@@ -928,17 +899,7 @@ class NextStepTest {
                                 "Finished"),
                         List.of(),
                         List.of("Finished")),
-                List.of(
-                        new Story(
-                                "ST1",
-                                "Story",
-                                parent,
-                                false,
-                                "High",
-                                null,
-                                List.of("AA1"),
-                                "",
-                                null)),
+                List.of(new Story("ST1", "Story", parent, "High", null, List.of("AA1"), "", null)),
                 List.of(
                         new Issue(
                                 "AA1",

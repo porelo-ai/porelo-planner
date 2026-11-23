@@ -124,7 +124,6 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
               Text(planningShown(story.id)),
               _priority(story.id, story.priority),
               Chip(label: Text(planningValue(story.state))),
-              ?planningGivenMark(story, onFollow: (to) => unawaited(detail.board.followIssues(story.id, to))),
               ?planningWarningMark(story.warnings, key: Key('planning-warned ${story.id}')),
             ],
           ),

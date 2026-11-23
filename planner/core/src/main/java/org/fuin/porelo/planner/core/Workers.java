@@ -1,7 +1,6 @@
 package org.fuin.porelo.planner.core;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
@@ -48,7 +47,7 @@ public final class Workers {
                     "A sub-issue is worked as its parent " + parent + " is, never by its own.");
         }
         if (found.worker() == worker) {
-            return new Writes(Map.of(), Map.of(), List.of());
+            return new Writes(Map.of(), Map.of());
         }
         if (worker == Worker.AGENT) {
             for (final Issue each : board.issues()) {
@@ -65,7 +64,7 @@ public final class Workers {
                 }
             }
         }
-        return new Writes(Map.of(), Map.of(), List.of(), Map.of(issue, worker));
+        return new Writes(Map.of(), Map.of(), Map.of(issue, worker));
     }
 
     /**

@@ -5,7 +5,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Correction;
 import org.fuin.porelo.planner.store.Issue;
@@ -19,7 +18,8 @@ import org.jspecify.annotations.Nullable;
  * Previews and carries out the correction a store offers for one warning on a story or an issue:
  * only that warning is lifted, only for that correction's own write, and only while it still
  * stands. A correction that is a move of an issue is previewed and saved as any move; this checks
- * the others, which {@link WorkRun} previews and saves with the runs at work on the item.
+ * the others, which {@link WorkRun} previews and saves with the runs at work on the item. No store
+ * offers another kind now, so every other correction is answered as not offered.
  */
 public final class Corrections {
 
@@ -46,8 +46,7 @@ public final class Corrections {
      * @param from the item's state now, empty when none is told
      * @param writes what saving it writes: the one item's state, nothing else
      * @param warnings what it can do harm by, as a move's preview names it: a run with tasks at
-     *     work on the story ({@link MovePreview#RUNNING_WORK}), which a confirmed save stops, and
-     *     the story's issues the stated state does not fit ({@link MovePreview#STORY_MISMATCH})
+     *     work on the story ({@link MovePreview#RUNNING_WORK}), which a confirmed save stops
      */
     public record Preview(
             String revision,
@@ -89,7 +88,6 @@ public final class Corrections {
      *
      * @param board the board
      * @param asked the correction
-     * @param derive derives a story's state from its issues' states
      * @param running the runs with tasks at work over the story
      * @return what saving it writes and what it can do harm by
      * @throws Moves.Refused {@code NoSuchStory} or {@code NoSuchIssue} for an item the board lacks,
@@ -97,11 +95,7 @@ public final class Corrections {
      *     work rules have faults or the state is none the correction offers
      * @throws UnsupportedOperationException when the store offers no correction of the warning
      */
-    static Preview check(
-            final Board board,
-            final Asked asked,
-            final Moves.StoryState derive,
-            final MovePreview.Running running) {
+    static Preview check(final Board board, final Asked asked, final MovePreview.Running running) {
         final String id = asked.id();
         final Optional<String> twice = board.twice(id);
         if (twice.isPresent()) {
@@ -171,65 +165,8 @@ public final class Corrections {
             throw refused(
                     asked, "It is set right by a move of it, previewed and saved as any move.");
         }
-        if (!Correction.STATE_STATED.equals(correction.kind()) || !asked.story()) {
-            throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
-        }
-        if (!correction.states().contains(asked.state())) {
-            throw refused(asked, "The state is none of those the correction offers.");
-        }
-        final String to = asked.state();
-        final List<MovePreview.Warning> harms = new ArrayList<>();
-        for (final MovePreview.Owned owned : running.over(Set.of(), Set.of(id))) {
-            harms.add(
-                    new MovePreview.Warning(
-                            MovePreview.RUNNING_WORK,
-                            owned.story(),
-                            from,
-                            to,
-                            owned.run(),
-                            owned.tasks(),
-                            owned.offers(),
-                            List.of(),
-                            List.of()));
-        }
-        // The issues a move would judge it by: those in a state the workflow knows, not held.
-        final Map<String, String> states = new LinkedHashMap<>();
-        for (final String issue : board.story(id).orElseThrow().issues()) {
-            board.issue(issue)
-                    .filter(i -> Moves.placed(board, i))
-                    .ifPresent(i -> states.put(i.id(), i.state()));
-        }
-        final List<String> misfits =
-                Misfits.of(board.story(id).orElseThrow().issues(), to, states, derive);
-        if (!misfits.isEmpty()) {
-            harms.add(
-                    new MovePreview.Warning(
-                            MovePreview.STORY_MISMATCH,
-                            id,
-                            from,
-                            to,
-                            null,
-                            List.of(),
-                            List.of(),
-                            misfits.stream()
-                                    .map(issue -> board.issue(issue).orElseThrow())
-                                    .map(
-                                            issue ->
-                                                    new MovePreview.MovedIssue(
-                                                            issue.id(),
-                                                            issue.repository(),
-                                                            issue.state(),
-                                                            issue.state()))
-                                    .toList(),
-                            List.of()));
-        }
-        // The story's stated state alone: none of its issues is moved along.
-        return new Preview(
-                board.revision().value(),
-                asked,
-                from,
-                new Writes(Map.of(), Map.of(id, to), List.of()),
-                harms);
+        // No store offers another kind of correction.
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 
     private static Moves.Refused refused(final Asked asked, final String reason) {

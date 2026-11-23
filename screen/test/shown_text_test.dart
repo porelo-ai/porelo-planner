@@ -268,23 +268,23 @@ void main() {
   testWidgets('the warnings of a move asked about show no control characters', (tester) async {
     final source = FakePlanningSource(_hostile(smallBoard()) as Map<String, dynamic>);
     source.warnings = [
-      for (final kind in ['RUNNING_WORK', 'ISSUES_ALONG', 'SKIPS_STATES', 'STORY_MISMATCH'])
+      for (final kind in ['RUNNING_WORK', 'ISSUES_ALONG', 'SKIPS_STATES'])
         {
           'kind': kind,
           'item': 'S1$_bad',
           'from': 'Ready$_bad',
-          'to': 'Review$_bad',
+          'to': 'Finished$_bad',
           'run': 'run$_bad',
           'tasks': ['task$_bad'],
           'offers': ['offer$_bad'],
           'issues': [
-            {'id': 'I1$_bad', 'repository': 'repo$_bad', 'from': 'Ready$_bad', 'to': 'Review$_bad'},
+            {'id': 'I1$_bad', 'repository': 'repo$_bad', 'from': 'Ready$_bad', 'to': 'Finished$_bad'},
           ],
           'skipped': ['Waiting$_bad'],
         },
     ];
     final board = (await _showBoard(tester, source)).selected!;
-    await tester.runAsync(() => board.move('S1$_bad', 'Review$_bad'));
+    await tester.runAsync(() => board.move('S1$_bad', 'Finished$_bad'));
     await settle(tester);
     expect(find.byKey(const Key('planning-move-warning')), findsOneWidget, reason: 'the move is asked about');
     expect(_shown(tester).where((text) => text.contains('repo')), isNotEmpty, reason: 'the issue carried is named');

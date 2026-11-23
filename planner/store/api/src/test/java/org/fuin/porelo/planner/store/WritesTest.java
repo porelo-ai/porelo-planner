@@ -17,21 +17,13 @@ class WritesTest {
         // Harm: a reason whose comment failed after the close is refused on the retry, or a
         // comment goes to an item no id names.
         final Writes retry =
-                new Writes(
-                        Map.of(),
-                        Map.of(),
-                        List.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of("PL1", WHY),
-                        Map.of());
+                new Writes(Map.of(), Map.of(), Map.of(), Map.of(), Map.of("PL1", WHY), Map.of());
         assertThat(retry.issueReasons()).containsOnlyKeys("PL1");
         assertThatThrownBy(
                         () ->
                                 new Writes(
                                         Map.of(),
                                         Map.of(),
-                                        List.of(),
                                         Map.of(),
                                         Map.of(),
                                         Map.of(),
@@ -66,16 +58,9 @@ class WritesTest {
     void writesThatKeepOnlyAReasonAreSomethingToSave() {
         // Harm: a reason whose comment failed after the close is dropped by the early return.
         final Writes only =
-                new Writes(
-                        Map.of(),
-                        Map.of(),
-                        List.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of("ST1", WHY));
+                new Writes(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of("ST1", WHY));
         assertThat(only.none()).isFalse();
         assertThat(only.reasons()).isTrue();
-        assertThat(new Writes(Map.of(), Map.of(), List.of()).none()).isTrue();
+        assertThat(new Writes(Map.of(), Map.of()).none()).isTrue();
     }
 }

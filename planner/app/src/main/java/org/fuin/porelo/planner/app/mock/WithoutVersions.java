@@ -11,8 +11,8 @@ import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
 
 /**
- * How the mock board's file is read into issues and stories: by the constructors that take each
- * item's version over its own values, since the mock keeps no edit basis and its file names none.
+ * How the mock board's file is read into issues: by the constructor that takes each issue's version
+ * over its own values, since the mock keeps no edit basis and its file names none.
  */
 final class WithoutVersions {
 
@@ -38,22 +38,5 @@ final class WithoutVersions {
                 @JsonProperty("priority") final @Nullable String priority,
                 @JsonProperty("warnings") final List<Warning> warnings,
                 @JsonProperty("waitsOn") final List<Wait> waitsOn) {}
-    }
-
-    /** A story read without a version. */
-    abstract static class StoryMixIn {
-        @JsonCreator
-        StoryMixIn(
-                @JsonProperty("id") final String id,
-                @JsonProperty("title") final String title,
-                @JsonProperty("state") final String state,
-                @JsonProperty("stateGiven") final boolean stateGiven,
-                @JsonProperty("priority") final String priority,
-                @JsonProperty("size") final @Nullable String size,
-                @JsonProperty("issues") final List<String> issues,
-                @JsonProperty("description") final String description,
-                @JsonProperty("link") final @Nullable URI link,
-                @JsonProperty("issuesWhole") final boolean issuesWhole,
-                @JsonProperty("warnings") final List<Warning> warnings) {}
     }
 }

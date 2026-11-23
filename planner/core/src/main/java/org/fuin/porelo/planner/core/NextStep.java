@@ -185,8 +185,7 @@ public final class NextStep {
     }
 
     /** Plans entry to an offered state; only STARTED calls this. */
-    public static Writes started(
-            final Board board, final Binding binding, final Moves.StoryState derive) {
+    public static Writes started(final Board board, final Binding binding) {
         WorkRefusal.unlessFree(board, binding.story(), "", binding.state());
         for (final String id : binding.issues()) {
             WorkRefusal.unlessFree(board, id, "", binding.state());
@@ -221,12 +220,7 @@ public final class NextStep {
                     binding.state(),
                     "The rule does not allow this story's state.");
         }
-        return writes(
-                board,
-                binding.story(),
-                targets,
-                binding.issues().isEmpty() ? binding.state() : null,
-                derive);
+        return writes(board, binding.story(), targets);
     }
 
     /**
@@ -240,9 +234,8 @@ public final class NextStep {
             final WorkEnds.Judgment judgment,
             final Map<String, Progress> previous,
             final String comment,
-            final Moves.StoryState derive,
             final Build ended) {
-        return after(board, binding, judgment, previous, comment, derive, true, "", null, ended);
+        return after(board, binding, judgment, previous, comment, true, "", null, ended);
     }
 
     /**
@@ -254,7 +247,6 @@ public final class NextStep {
             final Binding binding,
             final Map<String, Progress> previous,
             final String comment,
-            final Moves.StoryState derive,
             final boolean reviewAnyway,
             final String operatorWords,
             final @Nullable Settings rework,
@@ -268,16 +260,7 @@ public final class NextStep {
                                                 .findings())
                         : new WorkEnds.Done();
         return after(
-                board,
-                binding,
-                judgment,
-                previous,
-                comment,
-                derive,
-                false,
-                operatorWords,
-                rework,
-                ended);
+                board, binding, judgment, previous, comment, false, operatorWords, rework, ended);
     }
 
     private static Result after(
@@ -286,7 +269,6 @@ public final class NextStep {
             final WorkEnds.Judgment judgment,
             final Map<String, Progress> previous,
             final String comment,
-            final Moves.StoryState derive,
             final boolean countReading,
             final String operatorWords,
             final @Nullable Settings rework,
@@ -458,17 +440,7 @@ public final class NextStep {
                 }
             }
         }
-        final String storyState = binding.issues().isEmpty() ? successState(binding.rule()) : null;
-        return finish(
-                board,
-                binding,
-                targets,
-                storyState,
-                derive,
-                tasks,
-                progress,
-                deferred,
-                unavailable);
+        return finish(board, binding, targets, tasks, progress, deferred, unavailable);
     }
 
     /**
@@ -541,8 +513,7 @@ public final class NextStep {
                 }
             }
         }
-        return new Result(
-                new Writes(Map.of(), Map.of(), List.of()), tasks, progress, List.of(), unavailable);
+        return new Result(new Writes(Map.of(), Map.of()), tasks, progress, List.of(), unavailable);
     }
 
     /** A reader of a known build whose work still waits at the gate is offered on its landing. */
@@ -554,15 +525,13 @@ public final class NextStep {
             final Board board,
             final Binding binding,
             final Map<String, String> targets,
-            final @Nullable String storyState,
-            final Moves.StoryState derive,
             final List<Planned> tasks,
             final Map<String, Progress> progress,
             final List<String> deferred,
             final Map<String, String> unavailable) {
         try {
             return new Result(
-                    writes(board, binding.story(), targets, storyState, derive),
+                    writes(board, binding.story(), targets),
                     tasks,
                     progress,
                     deferred,
@@ -787,13 +756,18 @@ public final class NextStep {
         return then == null ? rule.done() : then;
     }
 
-    /** Computes only the bound story's head, removing an agreeing override. */
+    /**
+     * Computes the issues' writes of a step: each target that changes its issue; no story's state,
+     * since a story follows its issues while open.
+     *
+     * @param board the board
+     * @param storyId the bound story
+     * @param targets each issue's target state, by id
+     * @return the writes
+     * @throws WorkRefusal when a parent would close before its sub-issues
+     */
     public static Writes writes(
-            final Board board,
-            final String storyId,
-            final Map<String, String> targets,
-            final @Nullable String emptyStoryState,
-            final Moves.StoryState derive) {
+            final Board board, final String storyId, final Map<String, String> targets) {
         final Map<String, String> changed = new LinkedHashMap<>(targets);
         changed.entrySet()
                 .removeIf(
@@ -802,36 +776,7 @@ public final class NextStep {
                                         .orElseThrow()
                                         .state()
                                         .equals(entry.getValue()));
-        final Story story = board.story(storyId).orElseThrow();
-        final Map<String, String> stories = new LinkedHashMap<>();
-        final List<String> unstated = new ArrayList<>();
-        if (story.issues().isEmpty()
-                && emptyStoryState != null
-                && !story.state().equals(emptyStoryState)) {
-            stories.put(storyId, emptyStoryState);
-        } else if (story.stateGiven() && !story.issues().isEmpty()) {
-            final String derived =
-                    derive.of(
-                            story.issues().stream()
-                                    // Only states the workflow knows give the story's.
-                                    .map(
-                                            id ->
-                                                    targets.getOrDefault(
-                                                            id,
-                                                            board.issue(id)
-                                                                    .map(Issue::state)
-                                                                    .filter(
-                                                                            board.workflow()
-                                                                                            .states()
-                                                                                    ::contains)
-                                                                    .orElse(null)))
-                                    .filter(java.util.Objects::nonNull)
-                                    .toList());
-            if (derived != null
-                    && (derived.equals(story.state()) || targets.containsValue(derived))) {
-                unstated.add(storyId);
-            }
-        }
+        board.story(storyId).orElseThrow();
         for (final Issue child : board.issues()) {
             final String parent = child.parent();
             if (parent != null
@@ -851,7 +796,7 @@ public final class NextStep {
                         "A parent cannot close before its sub-issues.");
             }
         }
-        return new Writes(changed, stories, unstated);
+        return new Writes(changed, Map.of());
     }
 
     /**
@@ -906,22 +851,13 @@ public final class NextStep {
                                             before.answer()));
                         });
         return new Result(
-                new Writes(Map.of(), Map.of(), List.of()),
-                List.of(),
-                progress,
-                List.of(),
-                unavailable);
+                new Writes(Map.of(), Map.of()), List.of(), progress, List.of(), unavailable);
     }
 
     private static Result attention(
             final Binding binding, final Map<String, Progress> progress, final String reason) {
         binding.issues().forEach(id -> progress.put(id, progress(progress, id).attention(reason)));
-        return new Result(
-                new Writes(Map.of(), Map.of(), List.of()),
-                List.of(),
-                progress,
-                List.of(),
-                Map.of());
+        return new Result(new Writes(Map.of(), Map.of()), List.of(), progress, List.of(), Map.of());
     }
 
     /** Every issue of the binding asks the person, each with the one line saying why. */
@@ -939,11 +875,7 @@ public final class NextStep {
         final Map<String, String> unavailable = new LinkedHashMap<>();
         binding.issues().forEach(id -> unavailable(progress, unavailable, id, why));
         return new Result(
-                new Writes(Map.of(), Map.of(), List.of()),
-                List.of(),
-                progress,
-                List.of(),
-                unavailable);
+                new Writes(Map.of(), Map.of()), List.of(), progress, List.of(), unavailable);
     }
 
     private static void unavailable(

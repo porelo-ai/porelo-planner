@@ -432,7 +432,7 @@ class GitHubStoreHeldTest {
         final GitHubStore store = store(github, TrackerChanges.NONE);
         final Board board = store.refresh();
 
-        store.save(board.revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(board.revision(), new Writes(Map.of(), Map.of()));
         final Board read = store.refresh();
 
         assertThat(heldInCopy()).as("the save held in the copy").containsExactly("PVTI_1");
@@ -499,7 +499,7 @@ class GitHubStoreHeldTest {
         final Board board = store.refresh();
         store.poll();
 
-        store.save(board.revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(board.revision(), new Writes(Map.of(), Map.of()));
         store.poll();
         assertThat(heldInCopy())
                 .as("held while its page, answered anew, shows the item from before it")

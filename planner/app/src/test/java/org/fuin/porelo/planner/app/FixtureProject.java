@@ -54,12 +54,13 @@ final class FixtureProject implements AutoCloseable {
                         """
                         states:
                           - {name: Backlog, closed: false}
-                          - {name: Implementing, closed: false}
-                          - {name: Review, closed: false}
-                          - {name: Finished, closed: true}
+                          - {name: Implementing, closed: false, measured: true}
+                          - {name: Review, closed: false, measured: true}
+                          - {name: Rework, closed: false}
+                          - {name: Finished, closed: true, measured: true}
                         phases:
                           - {name: Open, states: [Backlog]}
-                          - {name: Build, states: [Implementing, Review]}
+                          - {name: Build, states: [Implementing, Review, Rework]}
                           - {name: Done, states: [Finished]}
                         """,
                         "stories/work.yml",
@@ -85,12 +86,13 @@ final class FixtureProject implements AutoCloseable {
                         """
                         states:
                           - {name: Backlog, closed: false}
-                          - {name: Implementing, closed: false}
-                          - {name: Review, closed: false}
-                          - {name: Finished, closed: true}
+                          - {name: Implementing, closed: false, measured: true}
+                          - {name: Review, closed: false, measured: true}
+                          - {name: Rework, closed: false}
+                          - {name: Finished, closed: true, measured: true}
                         phases:
                           - {name: Open, states: [Backlog]}
-                          - {name: Build, states: [Implementing, Review]}
+                          - {name: Build, states: [Implementing, Review, Rework]}
                           - {name: Done, states: [Finished]}
                         """,
                         "issues/README.md",

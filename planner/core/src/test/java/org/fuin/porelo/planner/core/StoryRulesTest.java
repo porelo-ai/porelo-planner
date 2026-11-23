@@ -23,17 +23,12 @@ class StoryRulesTest {
 
     private static final List<String> CLOSED = List.of("Finished", "Rejected");
 
-    /** The stories index's rule: the earliest open state, else the earliest closed. */
-    private static final Moves.StoryState DERIVE = StoryRulesTest::derive;
-
-    // Rule: an open issue past the first state in no story.
-
     @Test
     void anOpenIssuePastTheFirstStateInNoStoryIsABreach() {
         // Harm: work planned past an idea that no story carries is never seen, nor its gain.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "High", true, "Backlog", "PL1")),
+                                List.of(story("ST1", "High", "Backlog", "PL1")),
                                 issue("PL1", null, "Backlog"),
                                 issue("PL2", null, "Backlog")))
                 .as("PL2 in Backlog stands in no story; PL1 stands in ST1")
@@ -44,9 +39,7 @@ class StoryRulesTest {
     void noIssueIsInNoStoryWhileAStorysIssuesAreNotAllKnown() {
         // Harm: an issue a story's unread Also needs names marked as in no story.
         final Story partly =
-                new Story(
-                        "ST1", "A story", "Backlog", true, "High", null, List.of(), "", null,
-                        false);
+                new Story("ST1", "A story", "Backlog", "High", null, List.of(), "", null, false);
         assertThat(breaches(List.of(partly), issue("PL2", null, "Backlog")))
                 .as("PL2 may be one ST1's unread lines name")
                 .isEmpty();
@@ -77,7 +70,7 @@ class StoryRulesTest {
                         List.of(),
                         List.of(issue("PL1", null, "Draft"), issue("PL2", null, "Idea")),
                         new Work(Map.of(), List.of()));
-        assertThat(spelled(StoryRules.of(board, DERIVE)))
+        assertThat(spelled(StoryRules.of(board)))
                 .as("Draft is this workflow's first state, Idea its second")
                 .containsExactly("PL2 IssueInNoStory");
     }
@@ -87,7 +80,7 @@ class StoryRulesTest {
         // Harm: the parts of a story's issue marked as belonging to none.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "High", true, "Backlog", "example-lib#1")),
+                                List.of(story("ST1", "High", "Backlog", "example-lib#1")),
                                 issue("example-lib#1", null, "Backlog"),
                                 sub("example-lib#2", "example-lib#1", "Backlog", null),
                                 sub("example-lib#3", "example-lib#2", "Backlog", null)))
@@ -103,10 +96,9 @@ class StoryRulesTest {
         final List<StoryRules.Breach> found =
                 StoryRules.of(
                         board(
-                                List.of(story("ST1", "Low", true, "Backlog", "PL1", "PL2")),
+                                List.of(story("ST1", "Low", "Backlog", "PL1", "PL2")),
                                 issue("PL1", "Medium", "Backlog"),
-                                issue("PL2", "Highest", "Backlog")),
-                        DERIVE);
+                                issue("PL2", "Highest", "Backlog")));
         assertThat(spelled(found))
                 .as("PL2 is Highest under a Low story")
                 .containsExactly("ST1 StoryPriorityBelowIssue");
@@ -120,7 +112,7 @@ class StoryRulesTest {
         // Harm: a story ranked rightly marked as wrong.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "High", true, "Backlog", "PL1", "PL2")),
+                                List.of(story("ST1", "High", "Backlog", "PL1", "PL2")),
                                 issue("PL1", "High", "Backlog"),
                                 issue("PL2", "Low", "Backlog")))
                 .as("High over High and Low")
@@ -132,7 +124,7 @@ class StoryRulesTest {
         // Harm: a breach made up from a priority nobody gave.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Lowest", true, "Backlog", "PL1")),
+                                List.of(story("ST1", "Lowest", "Backlog", "PL1")),
                                 issue("PL1", null, "Backlog")))
                 .as("PL1 holds no priority")
                 .isEmpty();
@@ -146,7 +138,7 @@ class StoryRulesTest {
         // Harm: a story whose priority could not be read marked below every issue.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Urgent", true, "Backlog", "PL1")),
+                                List.of(story("ST1", "Urgent", "Backlog", "PL1")),
                                 issue("PL1", "Highest", "Backlog")))
                 .as("Urgent is no priority")
                 .isEmpty();
@@ -157,7 +149,7 @@ class StoryRulesTest {
         // Harm: a finished urgent issue keeping its story marked for good.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Low", true, "Backlog", "PL1", "PL2")),
+                                List.of(story("ST1", "Low", "Backlog", "PL1", "PL2")),
                                 issue("PL1", "Highest", "Finished"),
                                 issue("PL2", "Low", "Backlog")))
                 .as("PL1 is finished")
@@ -169,14 +161,14 @@ class StoryRulesTest {
         // Harm: urgent work still to be tested, or a part of an issue, hiding behind a low story.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Low", true, "Review", "PL1")),
+                                List.of(story("ST1", "Low", "Review", "PL1")),
                                 issue("PL1", "Low", "Review"),
                                 sub("PL1.1", "PL1", "Review", "High")))
                 .as("the sub-issue PL1.1 is High under the Low story")
                 .containsExactly("ST1 StoryPriorityBelowIssue");
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Low", true, "Review", "PL1")),
+                                List.of(story("ST1", "Low", "Review", "PL1")),
                                 issue("PL1", "High", "Review")))
                 .as("PL1 in Review is open")
                 .containsExactly("ST1 StoryPriorityBelowIssue");
@@ -188,8 +180,8 @@ class StoryRulesTest {
         assertThat(
                         breaches(
                                 List.of(
-                                        story("ST1", "Highest", true, "Backlog", "PL1"),
-                                        story("ST2", "Low", true, "Backlog", "PL1")),
+                                        story("ST1", "Highest", "Backlog", "PL1"),
+                                        story("ST2", "Low", "Backlog", "PL1")),
                                 issue("PL1", "High", "Backlog")))
                 .as("ST2 alone is below PL1")
                 .containsExactly("ST2 StoryPriorityBelowIssue");
@@ -200,54 +192,11 @@ class StoryRulesTest {
         // Harm: a story closed over open urgent work hiding that work.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "Low", true, "Finished", "PL1")),
+                                List.of(story("ST1", "Low", "Finished", "PL1")),
                                 issue("PL1", "High", "Finished"),
                                 sub("PL1.1", "PL1", "Backlog", "High")))
                 .as("PL1.1 is open and High under the Low story")
                 .contains("ST1 StoryPriorityBelowIssue");
-    }
-
-    // Rule: a story with no issue and no state.
-
-    @Test
-    void aStoryWithNoIssueAndNoGivenStateIsABreach() {
-        // Harm: an empty story stands in a state nothing gives it, and is never planned.
-        final Story empty = story("ST1", "High", false, "Idea");
-        assertThat(breaches(List.of(empty)))
-                .as("ST1 has neither")
-                .containsExactly("ST1 StoryWithoutIssueOrState");
-        assertThat(breaches(List.of(story("ST1", "High", true, "Idea"))))
-                .as("a given state is enough")
-                .isEmpty();
-    }
-
-    @Test
-    void aStoryWhoseIssuesTheStoreLeftOutIsNotEmpty() {
-        // Harm: a story whose issues could not be read marked as having none.
-        final Story partial =
-                new Story(
-                        "ST1", "A story", "Idea", false, "High", null, List.of(), "", null, false);
-        assertThat(breaches(List.of(partial))).as("its issues are not known").isEmpty();
-    }
-
-    // Rule: a given state its issues do not fit.
-
-    @Test
-    void aGivenStateItsIssuesDoNotFitIsABreachNamingThem() {
-        // Harm: a story shown as done while its issues are still being built.
-        final List<StoryRules.Breach> found =
-                StoryRules.of(
-                        board(
-                                List.of(story("ST1", "High", true, "Review", "PL1", "PL2")),
-                                issue("PL1", "High", "Implementing"),
-                                issue("PL2", "High", "Review")),
-                        DERIVE);
-        assertThat(spelled(found))
-                .as("PL1 in Implementing does not fit Review")
-                .containsExactly("ST1 StoryStateMisfit");
-        assertThat(found.get(0).words())
-                .as("the words name the misfits by id")
-                .isEqualTo("ST1 has a given state its issues PL1 do not fit.");
     }
 
     @Test
@@ -255,7 +204,7 @@ class StoryRulesTest {
         // Harm: marks on a sound board, so the person learns to ignore them.
         assertThat(
                         breaches(
-                                List.of(story("ST1", "High", false, "Backlog", "PL1")),
+                                List.of(story("ST1", "High", "Backlog", "PL1")),
                                 issue("PL1", "High", "Backlog"),
                                 issue("PL2", null, "Idea")))
                 .as("a sound board")
@@ -267,7 +216,7 @@ class StoryRulesTest {
         // Harm: the list of issues in no story and the rule disagreeing on one issue.
         final Board board =
                 board(
-                        List.of(story("ST1", "High", true, "Backlog", "PL1")),
+                        List.of(story("ST1", "High", "Backlog", "PL1")),
                         issue("PL1", null, "Backlog"),
                         sub("PL1.1", "PL1", "Backlog", null),
                         issue("PL2", null, "Backlog"));
@@ -277,7 +226,7 @@ class StoryRulesTest {
     }
 
     private static List<String> breaches(final List<Story> stories, final Issue... issues) {
-        return spelled(StoryRules.of(board(stories, issues), DERIVE));
+        return spelled(StoryRules.of(board(stories, issues)));
     }
 
     private static List<String> spelled(final List<StoryRules.Breach> breaches) {
@@ -293,21 +242,9 @@ class StoryRulesTest {
                 new Work(Map.of(), List.of()));
     }
 
-    private static @Nullable String derive(final List<String> states) {
-        final List<String> open = states.stream().filter(state -> !CLOSED.contains(state)).toList();
-        final List<String> candidates = open.isEmpty() ? states : open;
-        return candidates.stream()
-                .min((a, b) -> STATES.indexOf(a) - STATES.indexOf(b))
-                .orElse(null);
-    }
-
     private static Story story(
-            final String id,
-            final String priority,
-            final boolean given,
-            final String state,
-            final String... issues) {
-        return new Story(id, "A story", state, given, priority, null, List.of(issues), "", null);
+            final String id, final String priority, final String state, final String... issues) {
+        return new Story(id, "A story", state, priority, null, List.of(issues), "", null);
     }
 
     private static Issue issue(

@@ -151,7 +151,7 @@ class GitHubStoreFailedSaveTest {
     }
 
     private static Writes nothing() {
-        return new Writes(Map.of(), Map.of(), List.of());
+        return new Writes(Map.of(), Map.of());
     }
 
     @Test

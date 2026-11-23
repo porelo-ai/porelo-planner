@@ -232,7 +232,7 @@ void main() {
       ..refusedStory = 'ST291'
       ..refusalDetail = 'not now';
     final before = source.board('demo')['revision'] as String;
-    const moves = [PlanningStoryMove('ST291', 'Backlog')];
+    const moves = [PlanningStoryMove('ST291', 'Rejected')];
     final preview = await source.previewMoves('demo', moves, before);
 
     await expectLater(
@@ -243,25 +243,24 @@ void main() {
     expect(source.board('demo')['revision'], before);
   });
 
-  // Harm: the window's tests confirm a story that would not fit its issues against a mock that neither warns of it nor
-  // saves it as the planner does.
-  test('a story moved where its issues do not fit is warned of, refused unconfirmed and saved confirmed', () async {
+  // Harm: the window's tests move an open story between open states against a mock that lets it, where the planner
+  // refuses it, or reject a story whose open issues stay open.
+  test('an open story moved to an open state is refused, and rejected it closes its open issues', () async {
     final source = MockPlanningSource();
     final before = source.board('demo')['revision'] as String;
-    const moves = [PlanningStoryMove('ST295', 'Rejected')];
 
-    final preview = await source.previewMoves('demo', moves, before);
-
-    final mismatch = preview.warnings.where((warning) => warning.kind == PlanningMoveWarning.storyMismatch).single;
-    expect(mismatch.item, 'ST295');
-    expect([for (final issue in mismatch.issues) '${issue.id} ${issue.to}'], ['SL37 Review']);
     await expectLater(
-      source.saveMoves('demo', moves, before, digest: preview.digest),
-      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'StoryStateMismatch')),
+      source.previewMoves('demo', const [PlanningStoryMove('ST295', 'Review')], before),
+      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'MoveNotAllowed')),
     );
-    expect(source.board('demo')['revision'], before, reason: 'the refused save wrote nothing');
-    await source.saveMoves('demo', moves, before, digest: preview.digest, confirm: true);
-    expect(mockPlanningStory(source.board('demo'), 'ST295')!['state'], 'Rejected', reason: 'the planner writes it');
+    expect(source.board('demo')['revision'], before, reason: 'the refused move wrote nothing');
+
+    const moves = [PlanningStoryMove('ST295', 'Rejected')];
+    final preview = await source.previewMoves('demo', moves, before);
+    await source.saveMoves('demo', moves, before, digest: preview.digest);
+    final story = mockPlanningStory(source.board('demo'), 'ST295')!;
+    expect(story['state'], 'Rejected', reason: 'the story is closed');
+    expect([for (final issue in story['issues'] as List) issue['state']], everyElement('Rejected'));
   });
 
   // Harm: a provider without planning answers anyway, and the screen never shows that it has none.

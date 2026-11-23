@@ -55,13 +55,13 @@ class RealProjectReadTest {
             mvc.perform(get("/projects/alpha/workflow"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.states[1].kind").value("WORKING"))
-                    .andExpect(jsonPath("$.states[3].kind").value("CLOSED"))
+                    .andExpect(jsonPath("$.states[4].kind").value("CLOSED"))
                     .andExpect(jsonPath("$.faults.length()").value(0));
             mvc.perform(get("/projects/alpha/stories"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.stories[0].id").value("ST7"))
                     .andExpect(jsonPath("$.stories[0].state").value("Implementing"))
-                    .andExpect(jsonPath("$.stories[0].stateGiven").value(false));
+                    .andExpect(jsonPath("$.stories[0].closedAt").isEmpty());
             mvc.perform(get("/projects/alpha/issues/XY07"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.issue.whatMustBeTrue").value("It is served."));

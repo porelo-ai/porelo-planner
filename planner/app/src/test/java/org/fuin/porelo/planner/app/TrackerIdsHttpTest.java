@@ -52,7 +52,6 @@ class TrackerIdsHttpTest {
                                 "porelo-store#7",
                                 "A carried story",
                                 "Backlog",
-                                false,
                                 "High",
                                 null,
                                 List.of("porelo-store#8", "porelo-store#9"),

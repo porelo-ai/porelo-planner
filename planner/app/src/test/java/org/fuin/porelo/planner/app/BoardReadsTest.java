@@ -97,7 +97,6 @@ class BoardReadsTest {
                                 "ST1",
                                 "Given",
                                 "Review",
-                                true,
                                 "High",
                                 "M",
                                 List.of("AB01"),
@@ -107,7 +106,6 @@ class BoardReadsTest {
                                 "ST2",
                                 "By issues",
                                 "Backlog",
-                                false,
                                 "Low",
                                 null,
                                 List.of("AB01.1", "AB01"),
@@ -287,7 +285,6 @@ class BoardReadsTest {
         mvc.perform(get("/projects/alpha/stories"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stories.length()").value(2))
-                .andExpect(jsonPath("$.stories[0].stateGiven").value(true))
                 .andExpect(jsonPath("$.stories[0].link").value("https://example.org/ST1"))
                 .andExpect(jsonPath("$.stories[0].description").doesNotExist())
                 .andExpect(jsonPath("$.stories[0].work").isEmpty())
@@ -295,43 +292,13 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.stories[0].size").value("M"))
                 .andExpect(jsonPath("$.stories[1].size").isEmpty())
                 .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("size")))
-                .andExpect(jsonPath("$.stories[1].stateGiven").value(false))
-                // Harm: a story given Review over an issue in Backlog shown as fitting, taken as
-                // done.
-                .andExpect(
-                        jsonPath("$.stories[0].misfits")
-                                .value(org.hamcrest.Matchers.contains("AB01")))
-                .andExpect(jsonPath("$.stories[1].misfits").isEmpty())
-                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("misfits")))
-                // Harm: a given story offered back to its issues without the state they give.
-                .andExpect(jsonPath("$.stories[0].derivedState").value("Backlog"))
-                .andExpect(jsonPath("$.stories[1].derivedState").isEmpty())
-                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("derivedState")))
+                .andExpect(jsonPath("$.stories[1].closedAt").isEmpty())
+                .andExpect(jsonPath("$.stories[1]", org.hamcrest.Matchers.hasKey("closedAt")))
                 .andExpect(jsonPath("$.stories[1].issues[0].id").value("AB01.1"))
                 .andExpect(jsonPath("$.stories[1].issues[1].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories").param("state", "Backlog"))
                 .andExpect(jsonPath("$.stories.length()").value(1))
                 .andExpect(jsonPath("$.stories[0].id").value("ST2"));
-    }
-
-    @Test
-    void theStreamedBoardNamesTheMisfitsOfAGivenState() {
-        // Harm: a window following the stream losing the mark the board's read showed.
-        final org.fuin.porelo.planner.app.answers.Board streamed =
-                BoardController.boardOf(
-                        board(),
-                        new WorkRun.Snapshot(0, Map.of()),
-                        BoardReadsTest::storyState,
-                        false);
-        assertThat(streamed.stories())
-                .as("ST1 given Review over AB01 in Backlog; ST2 by its issues")
-                .extracting(org.fuin.porelo.planner.app.answers.Story::misfits)
-                .containsExactly(List.of("AB01"), List.of());
-        // Harm: a stream without the state a given story's issues give hands the story nowhere.
-        assertThat(streamed.stories())
-                .as("ST1's issue gives Backlog; ST2's state is not given")
-                .extracting(org.fuin.porelo.planner.app.answers.Story::derivedState)
-                .containsExactly("Backlog", null);
     }
 
     @Test
@@ -345,10 +312,6 @@ class BoardReadsTest {
                 // that is none.
                 .andExpect(jsonPath("$.story.descriptionFormat").value("MARKDOWN"))
                 .andExpect(jsonPath("$.story.size").value("M"))
-                // Harm: the story page showing a given state as fitting while the board marks it.
-                .andExpect(
-                        jsonPath("$.story.misfits").value(org.hamcrest.Matchers.contains("AB01")))
-                .andExpect(jsonPath("$.story.derivedState").value("Backlog"))
                 .andExpect(jsonPath("$.story.issues[0].id").value("AB01"));
         mvc.perform(get("/projects/alpha/stories/ST2/issues"))
                 .andExpect(status().isOk())
@@ -626,7 +589,6 @@ class BoardReadsTest {
                                 "ST3",
                                 "Parked by hand",
                                 "Parked",
-                                true,
                                 "High",
                                 null,
                                 List.of("AB05"),
@@ -647,16 +609,7 @@ class BoardReadsTest {
         // Harm: a read by an id two stories share answers one of them as if it were the one.
         final Board base = warnedBoard();
         final Story copy =
-                new Story(
-                                "ST4",
-                                "Copied by hand",
-                                "Backlog",
-                                true,
-                                "High",
-                                null,
-                                List.of(),
-                                "",
-                                null)
+                new Story("ST4", "Copied by hand", "Backlog", "High", null, List.of(), "", null)
                         .withWarnings(List.of(Warning.idTwice()));
         final List<Story> stories = new ArrayList<>(base.stories());
         stories.add(copy);
@@ -698,7 +651,7 @@ class BoardReadsTest {
                 .andExpect(jsonPath("$.stories[2].issues[0].repository").value("porelo-store"))
                 .andExpect(jsonPath("$.stories[2].issues[1].repository").value("porelo-other"))
                 .andExpect(jsonPath("$.stories[2].issues[1].warnings[0].kind").value("IdTwice"))
-                .andExpect(jsonPath("$.stories[2].misfits").isEmpty())
+                .andExpect(jsonPath("$.stories[2].closedAt").isEmpty())
                 .andExpect(jsonPath("$.stories[2].open").isEmpty());
         final JsonNode none = issuesInNoStory();
         assertThat(none.path("issues").valueStream().map(i -> i.path("id").asString()).toList())
@@ -755,7 +708,7 @@ class BoardReadsTest {
         return new Board(
                 new Revision("unassigned@c2"),
                 base.workflow(),
-                List.of(new Story("ST1", "Story", "Backlog", true, "High", "M", named, "", null)),
+                List.of(new Story("ST1", "Story", "Backlog", "High", "M", named, "", null)),
                 issues,
                 base.work(),
                 List.of("porelo-store", "porelo-other"),

@@ -45,6 +45,19 @@ class WorkflowTest {
                 """;
     }
 
+    /**
+     * The workflow of {@link #workflow()} with an open state that is not measured after Reworking,
+     * so the one rule reads Reworking as its review state.
+     */
+    static String ruled() {
+        return workflow()
+                .replace(
+                        "  - {name: Reworking, closed: false, measured: true}\n",
+                        "  - {name: Reworking, closed: false, measured: true}\n"
+                                + "  - {name: Waiting, closed: false}\n")
+                .replace("[Rework, Reworking]", "[Rework, Reworking, Waiting]");
+    }
+
     // Rejected must never be mistaken for completed work across module boundaries.
     // Rejected work must not require the tested date reserved for completed work.
     @Test
@@ -166,14 +179,17 @@ class WorkflowTest {
                 .hasMessageContaining(dir.resolve("workflow.yml").toString());
     }
 
+    // Prevents the index from holding a story back in the state of its least advanced issue.
     @Test
     void storyStateIsComputedFromItsIssues() throws Exception {
-        final Path dir = stories(workflow(), "Idea", "[\"porelo-project#PJ01\"]");
+        final Path dir =
+                stories(ruled(), "Idea", "[\"porelo-project#PJ01\", \"porelo-project#PJ02\"]");
         assertThat(
                         StoriesIndex.write(
                                         dir,
                                         repo ->
-                                                "## Rework\n| <a id=\"pj01\"></a>PJ01 | S | - | Sample |\n")
+                                                "## Idea\n| <a id=\"pj02\"></a>PJ02 | S | - | Later |\n"
+                                                        + "## Rework\n| <a id=\"pj01\"></a>PJ01 | S | - | Sample |\n")
                                 .faults())
                 .isEmpty();
         assertThat(Files.readString(dir.resolve("ST1.md")))
@@ -263,22 +279,23 @@ class WorkflowTest {
         assertThatThrownBy(() -> workflow.order("Unknown")).hasMessageContaining(file.toString());
     }
 
-    // Prevents closed issues from holding an open story back, and rejection from counting as
-    // completion.
+    // Prevents closed issues from holding an open story back or closing it, and rejection from
+    // counting as completion: with Reworking the review state, a story whose issues are all done
+    // waits in it, and one whose issues are all rejected keeps the state it states.
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
         "Rework;Reworking,Rework",
         "Reworking;Rework,Rework",
         "Finished;Reworking,Reworking",
         "Rejected;Rework,Rework",
-        "Finished;Rejected,Finished",
-        "Finished;Finished,Finished",
-        "Rejected;Rejected,Rejected"
+        "Finished;Rejected,Reworking",
+        "Finished;Finished,Reworking",
+        "Rejected;Rejected,Idea"
     })
     void computesEveryCombinationOfOpenClosedAndRejectedIssues(String states, String expected)
             throws Exception {
         final Path dir =
-                stories(workflow(), "Idea", "[\"porelo-project#PJ01\",\"porelo-project#PJ02\"]");
+                stories(ruled(), "Idea", "[\"porelo-project#PJ01\",\"porelo-project#PJ02\"]");
         final String[] values = states.split(";");
         final IssueSource source =
                 repo ->
@@ -293,11 +310,15 @@ class WorkflowTest {
                 .contains("**State:** " + expected)
                 .contains("\"$schema\": \"story-2.json\"")
                 .doesNotContain("\"state\"");
-        assertThat(result.notes())
-                .hasSize(1)
-                .first()
-                .asString()
-                .contains("NOTE", "ST1", "Idea", expected);
+        if (expected.equals("Idea")) {
+            assertThat(result.notes()).as("the state stated stands, so nothing to note").isEmpty();
+        } else {
+            assertThat(result.notes())
+                    .hasSize(1)
+                    .first()
+                    .asString()
+                    .contains("NOTE", "ST1", "Idea", expected);
+        }
         assertThat(StoriesIndex.write(dir, source).notes()).isEmpty();
         assertThat(StoriesIndex.check(dir, source).faults()).isEmpty();
     }
@@ -305,7 +326,7 @@ class WorkflowTest {
     // Prevents a state given in a new head being overruled by its issues, or refused beside them.
     @Test
     void keepsAStateGivenBesideIssuesInANewHeadAndWarns() throws Exception {
-        final Path dir = stories(workflow(), "Idea", "[\"porelo-project#PJ01\"]");
+        final Path dir = stories(ruled(), "Idea", "[\"porelo-project#PJ01\"]");
         final Path story = dir.resolve("ST1.md");
         Files.writeString(
                 story,
@@ -324,7 +345,7 @@ class WorkflowTest {
     @org.junit.jupiter.params.provider.ValueSource(
             strings = {"In analysis", "Under estimation", "Reworking", "Finishing"})
     void computesNewStatesWithoutARelease(String state) throws Exception {
-        String yaml = workflow();
+        String yaml = ruled();
         if (!state.equals("Reworking"))
             yaml =
                     yaml.replace(
@@ -390,9 +411,13 @@ class WorkflowTest {
                             + id
                             + " — Sample\n\n## Data\n\n```json\n{\"$schema\":\"story-2.json\",\"id\":\""
                             + id
-                            + "\",\"title\":\"Sample\",\"priority\":\"High\",\"gain\":\"Gain\",\"test\":\"Test\",\"issues\":[\"porelo-project#PJ"
-                            + number
-                            + "\"],\"tested\":null}\n```\n");
+                            + "\",\"title\":\"Sample\",\"priority\":\"High\",\"gain\":\"Gain\",\"test\":\"Test\",\"state\":\""
+                            + state
+                            + "\",\"issues\":[],\"tested\":"
+                            + (workflow.closed(state) && !workflow.rejected(state)
+                                    ? "\"2026-01-01\""
+                                    : "null")
+                            + "}\n```\n");
             index.append("## ")
                     .append(state)
                     .append("\n| PJ")

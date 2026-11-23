@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -60,7 +59,6 @@ public final class MockStore implements PlanningStore {
                     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
                     .addMixIn(Issue.class, WithoutVersions.IssueMixIn.class)
-                    .addMixIn(Story.class, WithoutVersions.StoryMixIn.class)
                     .build();
 
     /**
@@ -80,8 +78,58 @@ public final class MockStore implements PlanningStore {
             Workflow workflow,
             Map<String, RuleFile> work,
             List<String> faults,
-            List<Story> stories,
+            List<StoryFile> stories,
             List<Issue> issues) {}
+
+    /**
+     * One story as {@code mock/board.json} holds it: its values, without a version, which the mock
+     * takes over them as it does after every save.
+     *
+     * @param id its id
+     * @param title its title
+     * @param state its state
+     * @param priority its priority
+     * @param size its size, or null
+     * @param issues the ids of the issues it needs, in its order
+     * @param description its body
+     * @param link where a person reads it, or null
+     * @param issuesWhole whether {@code issues} holds every issue it names
+     * @param closedAt when it was closed as completed, or null
+     * @param warnings what the store could not read in it
+     */
+    record StoryFile(
+            String id,
+            String title,
+            String state,
+            String priority,
+            @Nullable String size,
+            List<String> issues,
+            String description,
+            java.net.@Nullable URI link,
+            boolean issuesWhole,
+            java.time.@Nullable Instant closedAt,
+            List<org.fuin.porelo.planner.store.Warning> warnings) {
+
+        /**
+         * The story, its state its own stored value only when closed, as the mock gives every story
+         * after a save, so a save leaves an untouched story's version as it was.
+         */
+        Story story(final Workflow workflow) {
+            return new Story(
+                    id,
+                    title,
+                    state,
+                    workflow.closed().contains(state),
+                    priority,
+                    size,
+                    issues,
+                    description,
+                    link,
+                    issuesWhole,
+                    closedAt,
+                    warnings);
+        }
+    }
 
     /**
      * One work rule as {@code stories/work.yml} writes it.
@@ -130,7 +178,7 @@ public final class MockStore implements PlanningStore {
     /** The reasons kept with each closed item, in the order saved; guarded by the monitor. */
     private final Map<String, List<Writes.Reason>> reasons = new java.util.HashMap<>();
 
-    private static final Writes NOTHING = new Writes(Map.of(), Map.of(), List.of());
+    private static final Writes NOTHING = new Writes(Map.of(), Map.of());
 
     private static final Pattern ID = Pattern.compile("([A-Z]+)([0-9]+)");
 
@@ -188,18 +236,14 @@ public final class MockStore implements PlanningStore {
         }
         final Map<String, WorkRule> rules = new LinkedHashMap<>();
         file.work().forEach((state, rule) -> rules.put(state, rule(state, rule)));
-        // Corrections are offered as the Git store offers them: for a state alone.
+        // Corrections are offered as the Git store offers them: for an issue's state alone.
         final Work work = new Work(rules, file.faults());
         final org.fuin.porelo.planner.store.Correction move =
-                org.fuin.porelo.planner.store.Correction.ofState(false, file.workflow(), work);
-        final org.fuin.porelo.planner.store.Correction stated =
-                org.fuin.porelo.planner.store.Correction.ofState(true, file.workflow(), work);
+                org.fuin.porelo.planner.store.Correction.ofState(file.workflow(), work);
         return new Board(
                 new Revision(file.revision()),
                 file.workflow(),
-                file.stories().stream()
-                        .map(story -> story.withWarnings(offering(story.warnings(), stated)))
-                        .toList(),
+                file.stories().stream().map(story -> story.story(file.workflow())).toList(),
                 file.issues().stream()
                         .map(issue -> issue.withWarnings(offering(issue.warnings(), move)))
                         .toList(),
@@ -404,7 +448,7 @@ public final class MockStore implements PlanningStore {
                         board.work(),
                         board.repositories(),
                         board.faults());
-        current = saved(sized, new Writes(states, Map.of(), List.of()));
+        current = saved(sized, new Writes(states, Map.of()));
         return current;
     }
 
@@ -479,7 +523,7 @@ public final class MockStore implements PlanningStore {
         return current;
     }
 
-    /** Sets a story's issue list in memory; its state follows them again unless it is given. */
+    /** Sets a story's issue list in memory; an open story's state follows them again. */
     @Override
     public synchronized Board setStoryIssues(
             final Revision revision, final String story, final List<String> issues) {
@@ -498,7 +542,6 @@ public final class MockStore implements PlanningStore {
                                     known.id(),
                                     known.title(),
                                     known.state(),
-                                    known.stateGiven(),
                                     known.priority(),
                                     known.size(),
                                     issues,
@@ -581,7 +624,6 @@ public final class MockStore implements PlanningStore {
                                     known.id(),
                                     newTitle,
                                     known.state(),
-                                    known.stateGiven(),
                                     known.priority(),
                                     known.size(),
                                     known.issues(),
@@ -699,32 +741,22 @@ public final class MockStore implements PlanningStore {
     }
 
     /**
-     * Derives a story's state as the stories index does: the earliest open state of its issues in
-     * the workflow's order; with every issue closed, the first issue's state when all are rejected,
-     * else the completed state. The mock's workflow names its completed state first among the
-     * closed ones, every later closed state rejecting.
+     * Derives a story's state by the one rule every store derives it by; the mock's workflow names
+     * its completed state first among the closed ones, every later closed state rejecting.
      */
     @Override
     public @Nullable String storyState(final List<String> issueStates) {
-        if (issueStates.isEmpty()) {
-            return null;
-        }
-        final Workflow workflow = current.workflow();
+        return rule(current.workflow()).map(rule -> rule.state(issueStates)).orElse(null);
+    }
+
+    /**
+     * The one rule for the mock's workflow, or none when the workflow lacks the states it needs.
+     */
+    private static java.util.Optional<org.fuin.porelo.planner.core.StoryState> rule(
+            final Workflow workflow) {
         final List<String> closed = workflow.closed();
-        // A state the workflow does not know gives no story its state.
-        final List<String> known =
-                issueStates.stream().filter(workflow.states()::contains).toList();
-        if (known.isEmpty()) {
-            return null;
-        }
-        return known.stream()
-                .filter(state -> !closed.contains(state))
-                .min(Comparator.comparingInt(workflow.states()::indexOf))
-                .orElseGet(
-                        () ->
-                                known.stream().allMatch(state -> closed.indexOf(state) > 0)
-                                        ? known.getFirst()
-                                        : closed.getFirst());
+        return org.fuin.porelo.planner.core.StoryState.of(
+                workflow, closed.isEmpty() ? List.of() : closed.subList(1, closed.size()));
     }
 
     /** The mock makes a story over issues of its board, as the GitHub store does. */
@@ -789,7 +821,6 @@ public final class MockStore implements PlanningStore {
                             id,
                             taken.title(),
                             taken.state(),
-                            taken.stateGiven(),
                             taken.priority(),
                             taken.size(),
                             story.existing(),
@@ -806,7 +837,6 @@ public final class MockStore implements PlanningStore {
                             id,
                             story.title(),
                             board.workflow().states().getFirst(),
-                            false,
                             story.priority(),
                             null,
                             story.existing(),
@@ -868,7 +898,6 @@ public final class MockStore implements PlanningStore {
                         id,
                         idea.title(),
                         board.workflow().states().getFirst(),
-                        false,
                         idea.priority(),
                         null,
                         ids,
@@ -925,7 +954,7 @@ public final class MockStore implements PlanningStore {
         writes.issues().keySet().forEach(id -> written.add(repository(board, id)));
         writes.workers().keySet().forEach(id -> written.add(repository(board, id)));
         final String own = board.repositories().getFirst();
-        if (!writes.stories().isEmpty() || !writes.unstated().isEmpty()) {
+        if (!writes.stories().isEmpty()) {
             written.add(own);
         }
         final List<String> order = new ArrayList<>();
@@ -962,7 +991,7 @@ public final class MockStore implements PlanningStore {
                                 workers.put(id, worker);
                             }
                         });
-        return new Writes(issues, Map.of(), List.of(), workers);
+        return new Writes(issues, Map.of(), workers);
     }
 
     private static String repository(final Board board, final String issue) {
@@ -992,8 +1021,8 @@ public final class MockStore implements PlanningStore {
     }
 
     /**
-     * The board with the writes in it, every story without a stated state following its issues;
-     * called only with this store's monitor held, since it counts the saves.
+     * The board with the writes in it, every open story following its issues; called only with this
+     * store's monitor held, since it counts the saves.
      */
     private Board saved(final Board board, final Writes writes) {
         for (final String id : writes.stories().keySet()) {
@@ -1028,7 +1057,7 @@ public final class MockStore implements PlanningStore {
         }
         final List<Story> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
-            stories.add(story(story, writes, states));
+            stories.add(story(board, story, writes, states));
         }
         final Board next =
                 new Board(
@@ -1043,39 +1072,92 @@ public final class MockStore implements PlanningStore {
         return next;
     }
 
-    /** A story with its stated state written or removed, or else following its issues' states. */
-    private Story story(final Story story, final Writes writes, final Map<String, String> states) {
-        final String stated = writes.stories().get(story.id());
-        final boolean given =
-                stated != null || story.stateGiven() && !writes.unstated().contains(story.id());
+    /**
+     * A story closed or reopened by the writes, or else as it stood: a closed one stays closed, as
+     * a closed issue on GitHub does, and an open one follows its issues' states, never into a
+     * close.
+     */
+    private Story story(
+            final Board board,
+            final Story story,
+            final Writes writes,
+            final Map<String, String> states) {
+        final List<String> closed = board.workflow().closed();
+        final String written = writes.stories().get(story.id());
         final List<String> issueStates = new ArrayList<>();
+        final List<String> issueIds = new ArrayList<>();
         for (final String id : story.issues()) {
             final String issueState = states.get(id);
             if (issueState != null) {
                 issueStates.add(issueState);
+                issueIds.add(id);
             }
         }
         final String derived = storyState(issueStates);
         final String state;
-        if (stated != null) {
-            state = stated;
-        } else if (given || derived == null) {
+        if (written != null && closed.contains(written)) {
+            state = written;
+        } else if (written == null && closed.contains(story.state())) {
             state = story.state();
-        } else {
+        } else if (derived != null) {
             state = derived;
+        } else {
+            state = written != null ? written : story.state();
         }
+        // The day its test passed is kept while it stands closed as it was.
+        final java.time.Instant closedAt =
+                state.equals(story.state()) && closed.contains(state) ? story.closedAt() : null;
+        // A closed story's state is its own, so it counts toward its version; one its issues give
+        // does not.
         return new Story(
                 story.id(),
                 story.title(),
                 state,
-                given,
+                closed.contains(state),
                 story.priority(),
                 story.size(),
                 story.issues(),
                 story.description(),
                 story.link(),
                 story.issuesWhole(),
-                settled(story.warnings(), stated != null));
+                closedAt,
+                behind(
+                        settled(story.warnings(), written != null),
+                        board,
+                        state,
+                        derived,
+                        issueIds,
+                        issueStates));
+    }
+
+    /**
+     * A story's warnings with the one naming its issues behind its derived state, set anew from the
+     * issues as they stand now; a story whose state is not derived carries none.
+     */
+    private static List<org.fuin.porelo.planner.store.Warning> behind(
+            final List<org.fuin.porelo.planner.store.Warning> warnings,
+            final Board board,
+            final String state,
+            final @Nullable String derived,
+            final List<String> ids,
+            final List<String> issueStates) {
+        final List<org.fuin.porelo.planner.store.Warning> kept =
+                new ArrayList<>(
+                        warnings.stream()
+                                .filter(
+                                        warning ->
+                                                !warning.kind()
+                                                        .equals(
+                                                                org.fuin.porelo.planner.store
+                                                                        .Warning
+                                                                        .ISSUE_BEHIND_STORY))
+                                .toList());
+        if (state.equals(derived)) {
+            rule(board.workflow())
+                    .flatMap(rule -> rule.behind(state, ids, issueStates))
+                    .ifPresent(kept::add);
+        }
+        return List.copyOf(kept);
     }
 
     /** An issue's warnings after its priority is written: it has one now. */

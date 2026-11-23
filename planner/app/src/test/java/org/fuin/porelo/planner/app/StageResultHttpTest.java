@@ -245,7 +245,6 @@ class StageResultHttpTest {
                                             "ST1",
                                             "Story",
                                             "Backlog",
-                                            false,
                                             "High",
                                             null,
                                             List.of("AA1"),

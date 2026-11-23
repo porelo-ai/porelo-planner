@@ -29,12 +29,13 @@ class GitStoreReadTest {
             states:
               - {name: Idea, closed: false}
               - {name: Backlog, closed: false}
-              - {name: Review, closed: false}
+              - {name: Review, closed: false, measured: true}
+              - {name: Rework, closed: false}
               - {name: Finished, closed: true}
               - {name: Rejected, closed: true}
             phases:
               - {name: Open, states: [Idea, Backlog]}
-              - {name: Build, states: [Review]}
+              - {name: Build, states: [Review, Rework]}
               - {name: Done, states: [Finished, Rejected]}
             """;
 
@@ -134,7 +135,7 @@ class GitStoreReadTest {
         final Board board = store(null).board();
         assertThat(board.workflow().states())
                 .as("the workflow's states in its order")
-                .containsExactly("Idea", "Backlog", "Review", "Finished", "Rejected");
+                .containsExactly("Idea", "Backlog", "Review", "Rework", "Finished", "Rejected");
         assertThat(board.workflow().closed())
                 .as("the closed states, which no work may start in")
                 .containsExactly("Finished", "Rejected");
@@ -150,12 +151,13 @@ class GitStoreReadTest {
                 .isEqualTo("AB01");
         assertThat(board.stories())
                 .as(
-                        "a stated state is the story's; otherwise the earliest open state of its issues")
-                .extracting(Story::id, Story::state, Story::stateGiven, Story::issues)
+                        "an open story stands where its issues give, an issue in Review counted as"
+                                + " Backlog beside one before it, whatever open state it states")
+                .extracting(Story::id, Story::state, Story::issues)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("ST1", "Idea", true, List.of("AB01")),
+                        org.assertj.core.groups.Tuple.tuple("ST1", "Backlog", List.of("AB01")),
                         org.assertj.core.groups.Tuple.tuple(
-                                "ST2", "Backlog", false, List.of("AB01", "CD01")));
+                                "ST2", "Backlog", List.of("AB01", "CD01")));
         assertThat(board.revision().value())
                 .as("the revision is read from both repositories' commits")
                 .isEqualTo(

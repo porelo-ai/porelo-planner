@@ -28,7 +28,6 @@ Map<String, dynamic> _story(String id, String state, {List<Object>? issues, List
   'id': id,
   'title': 'Story $id',
   'state': state,
-  'stateGiven': true,
   'priority': 'High',
   'issues': issues ?? <Object>[],
   'warnings': ?warnings,
@@ -114,21 +113,23 @@ void main() {
   });
 
   // Harm: a held story is dropped into a state the planner refuses, or one parked by hand cannot be set right by the
-  // one move the planner takes.
-  test('a held story moves only out of a state the workflow lacks, into a waiting or closed state', () async {
+  // one move the planner takes, its close; an open story is offered no other open state.
+  test('a held story moves only out of a state the workflow lacks, into a closed state', () async {
     final board = await _board();
 
     expect(_into(board, (state) => board.storyMayEnter(_of(board, 'S1'), state)), isEmpty, reason: 'named twice');
     expect(_into(board, (state) => board.storyMayEnter(_of(board, 'S2'), state)), [
-      'Ready',
       'Finished',
-    ], reason: 'out of its unknown state, never into work');
+    ], reason: 'out of its unknown state by its close, never into work');
     expect(
       _into(board, (state) => board.storyMayEnter(_of(board, 'S3'), state)),
       isEmpty,
       reason: 'a second holding warning holds the move too',
     );
-    expect(_into(board, (state) => board.storyMayEnter(_of(board, 'S5'), state)), ['Ready', 'Building', 'Finished']);
+    expect(_into(board, (state) => board.storyMayEnter(_of(board, 'S5'), state)), [
+      'Building',
+      'Finished',
+    ], reason: 'an open story is started or closed, never moved to another open state');
     expect(
       [
         for (final id in ['S1', 'S2', 'S3', 'S5']) board.heldInPlace(_of(board, id).state, _of(board, id).warnings),

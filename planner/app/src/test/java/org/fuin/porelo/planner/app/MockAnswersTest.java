@@ -89,60 +89,6 @@ class MockAnswersTest {
         }
     }
 
-    // Prevents the window's planning tests from offering a correction the mock cannot carry
-    // out, or one whose confirm leaves the warning standing.
-    @Test
-    void theMockCarriesOutAStorysCorrectionAndLiftsItsWarning() throws Exception {
-        assertThat(call("PUT", "/projects/fix", SOURCE).statusCode())
-                .as("a project of its own, so the screen's copies stay as recorded")
-                .isEqualTo(204);
-        final tools.jackson.databind.JsonNode before =
-                JSON.readTree(body(call("GET", "/projects/fix/stories", null)));
-        final tools.jackson.databind.JsonNode story = story(before, "ST297");
-        assertThat(story.at("/warnings/0/kind").asString()).isEqualTo("NoState");
-        final String state = story.at("/warnings/0/correction/states/0").asString();
-        assertThat(state).as("a state offered").isNotEmpty();
-        final String asked =
-                "{\"revision\": \""
-                        + before.path("revision").asString()
-                        + "\", \"story\": \"ST297\", \"warning\": \"NoState\", \"state\": \""
-                        + state
-                        + "\"";
-
-        final tools.jackson.databind.JsonNode preview =
-                JSON.readTree(body(call("POST", "/projects/fix/corrections/preview", asked + "}")));
-        final tools.jackson.databind.JsonNode saved =
-                JSON.readTree(
-                        body(
-                                call(
-                                        "POST",
-                                        "/projects/fix/corrections",
-                                        asked
-                                                + ", \"digest\": \""
-                                                + preview.path("digest").asString()
-                                                + "\"}")));
-
-        final tools.jackson.databind.JsonNode after =
-                JSON.readTree(body(call("GET", "/projects/fix/stories", null)));
-        assertThat(after.path("revision").asString())
-                .as("the revision the save answered")
-                .isEqualTo(saved.path("revision").asString());
-        assertThat(story(after, "ST297").path("state").asString())
-                .as("its stated state")
-                .isEqualTo(state);
-        assertThat(story(after, "ST297").path("warnings").size()).as("the warning lifted").isZero();
-    }
-
-    private static tools.jackson.databind.JsonNode story(
-            final tools.jackson.databind.JsonNode list, final String id) {
-        for (final tools.jackson.databind.JsonNode story : list.path("stories")) {
-            if (story.path("id").asString().equals(id)) {
-                return story;
-            }
-        }
-        throw new AssertionError("no story " + id);
-    }
-
     // Prevents a build from rewriting the copies it checks and so passing whatever the mock says.
     @Test
     void recordingIsRefusedWhereTheEnvironmentNamesCi(@TempDir final Path dir) throws IOException {

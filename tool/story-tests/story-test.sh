@@ -343,6 +343,16 @@ st_section() {
     awk -v anchor="<a id=\"$2\"></a>" '/^## /{section=substr($0,4)} index($0,anchor){print section; exit}' "$1"
 }
 
+# The heading a closed issue's row stands under in DIR/README.md, or "file kept" while the issue's own file is still
+# there, since the store keeps only the row of a closed issue: st_closed DIR ID.
+st_closed() {
+    if [[ -n $(find "$1" -maxdepth 1 -name "$2-*.md") ]]; then
+        printf 'file kept'
+        return 0
+    fi
+    st_section "$1/README.md" "${2,,}"
+}
+
 # Runs one step: a function that answers 0 when the step holds, and on failure calls st_no.
 st_step() {
     local number=$1 what=$2 expected

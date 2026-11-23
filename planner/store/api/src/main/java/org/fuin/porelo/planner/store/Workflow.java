@@ -10,8 +10,23 @@ import java.util.List;
  * @param states every state, in the workflow's order
  * @param phases the phases, each naming states of {@code states}
  * @param closed the states that close a story or an issue, in the workflow's order
+ * @param measured the states moving into which needs a stage record, in the workflow's order; an
+ *     open story's state is derived from them
  */
-public record Workflow(List<String> states, List<Phase> phases, List<String> closed) {
+public record Workflow(
+        List<String> states, List<Phase> phases, List<String> closed, List<String> measured) {
+
+    /**
+     * A workflow that measures no state, so no story's state is derived from its issues.
+     *
+     * @param states every state, in the workflow's order
+     * @param phases the phases, each naming states of {@code states}
+     * @param closed the states that close a story or an issue, in the workflow's order
+     */
+    public Workflow(
+            final List<String> states, final List<Phase> phases, final List<String> closed) {
+        this(states, phases, closed, List.of());
+    }
 
     /**
      * Copies the lists and refuses a state named twice, a phase naming an unknown state or an
@@ -21,9 +36,14 @@ public record Workflow(List<String> states, List<Phase> phases, List<String> clo
         states = List.copyOf(states);
         phases = List.copyOf(phases);
         closed = List.copyOf(closed);
+        measured = List.copyOf(measured);
         if (!states.containsAll(closed)) {
             throw new IllegalArgumentException(
                     "A workflow closes states it does not name: " + closed);
+        }
+        if (!states.containsAll(measured)) {
+            throw new IllegalArgumentException(
+                    "A workflow measures states it does not name: " + measured);
         }
         if (states.isEmpty()) {
             throw new IllegalArgumentException("A workflow must name at least one state");

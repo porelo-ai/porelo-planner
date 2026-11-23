@@ -56,7 +56,6 @@ class PriorityEndpointTest {
                                 "ST1",
                                 "A story",
                                 "Backlog",
-                                false,
                                 priority,
                                 null,
                                 List.of("AB01"),

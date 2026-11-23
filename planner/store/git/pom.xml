@@ -80,6 +80,12 @@
             <artifactId>porelo-planner-store-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <!-- An open story's state from its issues, the rule every store derives it by. -->
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>

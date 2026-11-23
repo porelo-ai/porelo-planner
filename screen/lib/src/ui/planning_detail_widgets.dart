@@ -176,44 +176,6 @@ String planningWorker(IssueWorker? worker) => switch (worker) {
   null => 'Not reported',
 };
 
-/// The mark beside a story's state when it was given rather than derived; its tooltip names each misfit with its state.
-///
-/// With [onFollow], a tap or a secondary tap on it opens a menu that hands the story back to its issues, offered only
-/// when the planner names the state they give.
-Widget? planningGivenMark(PlanStory story, {ValueChanged<String>? onFollow}) {
-  if (!story.stateGiven) return null;
-  final states = {for (final issue in story.issues) issue.id: issue.state};
-  final misfits = [
-    for (final id in story.misfits ?? const <String>[])
-      '${planningShown(id, multiline: false)} ${planningValue(states[id] ?? '')}',
-  ];
-  final message = story.misfits == null
-      ? 'State given to the story; whether its issues fit it is not known.'
-      : misfits.isEmpty
-      ? 'State given to the story; its issues fit it.'
-      : 'State given to the story; these issues do not fit it: ${misfits.join(', ')}';
-  final mark = Tooltip(
-    key: Key('planning-given ${story.id}'),
-    message: message,
-    child: const Icon(Icons.push_pin, size: PlanningStyle.rowIcon),
-  );
-  final derived = story.derivedState;
-  if (onFollow == null || derived == null) return mark;
-  return MenuAnchor(
-    menuChildren: [
-      MenuItemButton(
-        key: Key('planning-follow ${story.id}'),
-        onPressed: () => onFollow(derived),
-        child: Text('Follow the issues again (${planningShown(derived, multiline: false)})'),
-      ),
-    ],
-    builder: (context, menu, _) {
-      void toggle() => menu.isOpen ? menu.close() : menu.open();
-      return InkWell(key: Key('planning-given-menu ${story.id}'), onTap: toggle, onSecondaryTap: toggle, child: mark);
-    },
-  );
-}
-
 /// The mark of an item the store could not fully read, each warning's sentence a line of its tooltip; null when it
 /// has none.
 Widget? planningWarningMark(List<PlanWarning> warnings, {Key? key}) => warnings.isEmpty

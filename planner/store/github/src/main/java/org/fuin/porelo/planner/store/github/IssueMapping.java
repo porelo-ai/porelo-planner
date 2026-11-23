@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -43,6 +44,15 @@ public final class IssueMapping {
     /** The sizes a {@code Size} field may hold. */
     public static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL");
 
+    /**
+     * What an open issue's state reads as when its {@code Status} names a closed state: a state the
+     * workflow cannot name, so nothing counts the open issue as closed and a move sets it right.
+     */
+    static final String OPEN_UNDER = " (open)";
+
+    /** The reasons GitHub closes an issue for that read as a rejection, lowercased. */
+    private static final Set<String> REJECTING = Set.of("not_planned", "duplicate");
+
     /** The highest rank, as an issue's head allows it. */
     public static final int MOST_RANK = 99_999;
 
@@ -80,7 +90,7 @@ public final class IssueMapping {
      *
      * @param items every item of the project
      * @param config the project's repositories and workflow
-     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param states derives an open story's state from its issues'
      * @return the stories, the issues and the faults
      */
     public static Mapped read(
@@ -99,7 +109,7 @@ public final class IssueMapping {
      * @param pastPage the item ids of items read past one page of GitHub's answer, each shown
      *     warned
      * @param config the project's repositories and workflow
-     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param states derives an open story's state from its issues'
      * @return the stories, the issues and the faults
      */
     public static Mapped read(
@@ -118,7 +128,7 @@ public final class IssueMapping {
      * @param pastPage the item ids of items read past one page of GitHub's answer, each shown
      *     warned
      * @param config the project's repositories and workflow
-     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param states derives an open story's state from its issues'
      * @param waits the blockers that are no items of the project, by their node ids, as last read
      * @return the stories, the issues and the faults
      */
@@ -176,6 +186,8 @@ public final class IssueMapping {
             final Map<String, Snapshot.Waited> waits) {
         final Workflow workflow = config.workflow();
         final List<String> faults = new ArrayList<>();
+        // A workflow the rule cannot read is the board's fault; its open stories get no state.
+        states.fault().ifPresent(faults::add);
         // Only an item that cannot be named, or one of a repository the project does not plan,
         // stays off the board as a fault; every other is shown, warned where it cannot be held.
         final List<ItemView> candidates = new ArrayList<>();
@@ -435,8 +447,8 @@ public final class IssueMapping {
     }
 
     /**
-     * The field values a story's item holds, by field name; an empty {@code Status} lets the story
-     * follow its issues.
+     * The field values a story's item holds, by field name; a story has no {@code Status}, as it
+     * follows its issues while open and ends by being closed.
      *
      * @param story the story
      * @param rank its rank within its priority
@@ -444,7 +456,6 @@ public final class IssueMapping {
      */
     public static Map<String, String> fields(final Story story, final int rank) {
         final Map<String, String> fields = new LinkedHashMap<>();
-        fields.put(FieldNames.STATUS, story.stateGiven() ? story.state() : "");
         fields.put(FieldNames.PRIORITY, story.priority());
         fields.put(FieldNames.RANK, Integer.toString(rank));
         if (story.size() != null) {
@@ -460,15 +471,18 @@ public final class IssueMapping {
             final List<String> faults) {
         final Workflow workflow = context.config.workflow();
         final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
-        // An issue without a Status stands in the workflow's first state; none is written for it.
-        final String state = status.isEmpty() ? workflow.states().get(0) : status;
-        List<Warning> warnings = new ArrayList<>();
-        // An issue outside the workflow has no open state to check against it.
-        if (workflow.states().contains(state)) {
-            for (final Warning open : openAgainst(item, state, workflow)) {
-                warnings = withAdded(warnings, open);
-            }
+        final String state;
+        if (!item.open()) {
+            // Closing is an issue's only end: GitHub's reason tells which, whatever Status says.
+            state = closedState(item.stateReason(), workflow);
+        } else if (workflow.closed().contains(status)) {
+            // Open under a closed Status: shown outside the workflow, so nothing reads it closed.
+            state = status + OPEN_UNDER;
+        } else {
+            // An issue without a Status stands in the workflow's first state; none is written.
+            state = status.isEmpty() ? workflow.states().get(0) : status;
         }
+        List<Warning> warnings = new ArrayList<>();
         String parent = null;
         if (item.parentIssueId() != null) {
             final ItemView parentItem = context.byIssueId.get(item.parentIssueId());
@@ -751,9 +765,8 @@ public final class IssueMapping {
                 whole = false;
             }
         }
-        final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
         final String state;
-        final boolean given = !status.isEmpty();
+        @Nullable Instant closedAt = null;
         if (pastPage.contains(item.itemId())) {
             warnings.add(Warning.pastOnePage());
             whole = false;
@@ -765,21 +778,16 @@ public final class IssueMapping {
                 whole = false;
             }
         }
-        if (given) {
-            state = status;
-            if (workflow.states().contains(status)) {
-                warnings.addAll(openAgainst(item, state, workflow));
-            } else {
-                // Shown in a column of its own state, its issues with it.
-                warnings.add(Warning.stateOutsideWorkflow());
+        if (!item.open()) {
+            // A story ends by being closed; the day its test passed is the day it closed.
+            state = closedState(item.stateReason(), workflow);
+            if (!workflow.closed().isEmpty() && state.equals(workflow.closed().get(0))) {
+                closedAt = item.closedAt();
             }
         } else {
-            final List<String> held =
-                    own.stream()
-                            .map(issues::get)
-                            .filter(Objects::nonNull)
-                            .map(Issue::state)
-                            .toList();
+            final List<Issue> heldIssues =
+                    own.stream().map(issues::get).filter(Objects::nonNull).toList();
+            final List<String> held = heldIssues.stream().map(Issue::state).toList();
             // Only an issue in a state of the workflow tells the story's.
             final List<String> known = held.stream().filter(workflow.states()::contains).toList();
             final boolean inDoubt = known.size() < held.size();
@@ -790,12 +798,18 @@ public final class IssueMapping {
                 warnings.add(Warning.noState());
             } else {
                 final String followed = states.storyState(known);
-                final String derived = followed != null ? followed : workflow.states().get(0);
-                // An issue it lacks may be open, so it never follows the issues shown into a close.
-                state =
-                        !whole && workflow.closed().contains(derived)
-                                ? lastOpen(workflow.states(), workflow.closed()::contains, derived)
-                                : derived;
+                if (followed == null && states.fault().isPresent()) {
+                    // No rule: the board names its fault, and the story gets no guessed state.
+                    state = "";
+                    warnings.add(Warning.noState());
+                } else {
+                    // With no issue left it is new, the workflow's first state.
+                    state = followed != null ? followed : workflow.states().get(0);
+                }
+                if (followed != null) {
+                    states.behind(followed, heldIssues.stream().map(Issue::id).toList(), held)
+                            .ifPresent(warnings::add);
+                }
             }
         }
         String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
@@ -806,18 +820,18 @@ public final class IssueMapping {
         }
         final String size = choice(item, FieldNames.SIZE, SIZES, Warning.unknownSize(), warnings);
         return new Story(
-                        id,
-                        item.title(),
-                        state,
-                        given,
-                        priority,
-                        size,
-                        own,
-                        body,
-                        item.link(),
-                        whole)
-                .withWarnings(warnings)
-                .withVersion(ItemVersions.of(item));
+                id,
+                item.title(),
+                state,
+                priority,
+                size,
+                own,
+                body,
+                item.link(),
+                whole,
+                closedAt,
+                warnings,
+                ItemVersions.of(item));
     }
 
     /**
@@ -925,17 +939,30 @@ public final class IssueMapping {
     }
 
     /**
-     * Warns an item whose open or closed state on GitHub disagrees with its {@code Status}, which
-     * stays the truth; none when they agree.
+     * The closed state an item GitHub has closed stands in, by the reason it was closed for: the
+     * workflow's first closed state for one completed or closed for no reason, its second for one
+     * not planned or a duplicate. A workflow without a closed state cannot place it.
+     *
+     * @param reason why GitHub closed it, or null
+     * @param workflow the project's workflow
+     * @return the state
      */
-    private static List<Warning> openAgainst(
-            final ItemView item, final String state, final Workflow workflow) {
-        final boolean closedState = workflow.closed().contains(state);
-        if (item.open() == closedState) {
-            return List.of(
-                    item.open() ? Warning.openUnderClosedState() : Warning.closedUnderOpenState());
+    static String closedState(final @Nullable String reason, final Workflow workflow) {
+        final List<String> closed = workflow.closed();
+        if (closed.isEmpty()) {
+            return "Closed";
         }
-        return List.of();
+        return rejecting(reason) && closed.size() > 1 ? closed.get(1) : closed.get(0);
+    }
+
+    /**
+     * Whether GitHub closed an item for a reason that reads as a rejection.
+     *
+     * @param reason why GitHub closed it, or null
+     * @return true for one not planned or a duplicate
+     */
+    static boolean rejecting(final @Nullable String reason) {
+        return reason != null && REJECTING.contains(reason.toLowerCase(Locale.ROOT));
     }
 
     /** An option the planner knows, or null: an unknown one is warned with {@code unknown}. */
@@ -957,22 +984,6 @@ public final class IssueMapping {
     }
 
     /** The Worker the item names, an agent when it names none, or null for one unknown. */
-    /**
-     * The workflow's last state that is not closed, or {@code otherwise} for a workflow of closed
-     * states alone.
-     */
-    static String lastOpen(
-            final List<String> states,
-            final java.util.function.Predicate<String> closed,
-            final String otherwise) {
-        for (int i = states.size() - 1; i >= 0; i--) {
-            if (!closed.test(states.get(i))) {
-                return states.get(i);
-            }
-        }
-        return otherwise;
-    }
-
     private static @Nullable Worker workerOf(final ItemView item) {
         final String value = item.fields().getOrDefault(FieldNames.WORKER, "");
         return switch (value) {

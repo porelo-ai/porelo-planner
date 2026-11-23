@@ -58,7 +58,6 @@ class WorkerEndpointTest {
                                 "ST1",
                                 "A story",
                                 "Backlog",
-                                false,
                                 "High",
                                 null,
                                 List.of("AB01", "AB02"),

@@ -117,8 +117,16 @@ Future<void> _drop(WidgetTester tester, String id, String state) async {
 void _withIssueOf(MockPlanningSource backend, String repository) {
   final data = backend.boards['checkout']!;
   data['repositories'] = ['own'];
+  // Its work done and waiting in Review, so the story's close finishes it along.
+  data['work'] = [
+    {
+      'state': 'Building',
+      'from': ['Ready'],
+      'done': 'Review',
+    },
+  ];
   (data['stories'] as List<dynamic>).first['issues'] = [
-    {'id': 'OT1', 'repository': repository, 'title': 'An issue', 'state': 'Ready'},
+    {'id': 'OT1', 'repository': repository, 'title': 'An issue', 'state': 'Review'},
   ];
   backend.push('checkout', data);
 }
@@ -146,7 +154,7 @@ class _ThreeWarnings extends MockPlanningSource {
       'warnings': [
         warning(PlanningMoveWarning.runningWork, tasks: ['reader-1', 'worker-2']),
         warning(PlanningMoveWarning.issuesAlong),
-        warning(PlanningMoveWarning.storyMismatch),
+        warning(PlanningMoveWarning.skipsStates),
       ],
     });
   }
@@ -156,11 +164,11 @@ class _ThreeWarnings extends MockPlanningSource {
 const double _windowPanes = 300;
 
 /// The last row of the warnings, below every other.
-final _lastWarning = find.byKey(const Key('planning-move-warning-issue STORY_MISMATCH OT2'));
+final _lastWarning = find.byKey(const Key('planning-move-warning-issue SKIPS_STATES OT2'));
 
-/// Moves StoryOne to Review as a drop on the board does, since a short board shows Review only after a scroll.
+/// Closes StoryOne in Done as a drop on the board does, since a short board shows its states only after a scroll.
 Future<void> _move(WidgetTester tester, PlanningBoards boards) async {
-  unawaited(boards.selected!.move('StoryOne', 'Review'));
+  unawaited(boards.selected!.move('StoryOne', 'Done'));
   await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
   await settle(tester);
 }
@@ -461,7 +469,7 @@ void main() {
     _withIssueOf(backend, 'other');
     await settle(tester);
 
-    await _drop(tester, 'StoryOne', 'Review');
+    await _drop(tester, 'StoryOne', 'Done');
 
     expect(find.byKey(const Key('planning-move-warning')), findsOneWidget, reason: 'the move is asked about');
     expect(
@@ -498,11 +506,11 @@ void main() {
     tester.view.physicalSize = const Size(1280, 2400);
     await settle(tester);
     backend.moveFailure = const PlanningRefusal('TimedOut', {}, 'the planner did not answer within 120 s');
-    await _drop(tester, 'StoryOne', 'Ready');
+    await _drop(tester, 'StoryOne', 'Done');
     expect(boards.selected!.waitsOnItsSave('StoryOne'), isTrue, reason: 'its save went unanswered');
     backend.moveFailure = null;
 
-    await _drop(tester, 'StoryTwo', 'Ready');
+    await _drop(tester, 'StoryTwo', 'Done');
 
     expect(boards.selected!.queuedMoves, ['StoryTwo'], reason: 'the column took the second card');
     expect(find.text('Waiting for the moves before it…'), findsOneWidget, reason: 'its card says it waits');
@@ -525,7 +533,7 @@ void main() {
     final (backend, boards) = await _showBoard(tester);
     _withIssueOf(backend, 'other');
     await settle(tester);
-    await _drop(tester, 'StoryOne', 'Review');
+    await _drop(tester, 'StoryOne', 'Done');
     final shown = boards.selected!.question!.preview;
 
     await tester.tap(find.byKey(const Key('planning-move-confirm')));
@@ -534,7 +542,7 @@ void main() {
 
     expect(backend.moveCalls, hasLength(1), reason: 'saved once');
     expect(backend.moveCalls.single['moves'], [
-      {'story': 'StoryOne', 'to': 'Review'},
+      {'story': 'StoryOne', 'to': 'Done'},
     ], reason: 'the move the person was shown');
     expect(backend.moveCalls.single['digest'], shown.digest, reason: 'under the digest of the preview shown');
     expect(find.byKey(const Key('planning-move-warning')), findsNothing);
@@ -554,7 +562,7 @@ void main() {
     await tester.pump();
     expect(run.starting, isTrue, reason: 'the start is in flight');
 
-    await _drop(tester, 'StoryOne', 'Review');
+    await _drop(tester, 'StoryOne', 'Done');
 
     expect(
       find.byKey(const Key('planning-move-warning-item RUNNING_WORK StoryOne')),
@@ -603,15 +611,14 @@ void main() {
   // Harm: a move that can do no harm still waits for a Save or a question, and is lost when the person leaves.
   testWidgets('a drop that asks nothing is saved at once, once', (tester) async {
     final (backend, boards) = await _showBoard(tester);
-    _withIssueOf(backend, 'own');
-    await settle(tester);
 
-    await _drop(tester, 'StoryOne', 'Review');
+    // A story without issues carries none along, so its close asks nothing.
+    await _drop(tester, 'StoryOne', 'Done');
 
     expect(find.byKey(const Key('planning-move-warning')), findsNothing, reason: 'nothing to ask');
     expect(backend.moveCalls, hasLength(1), reason: 'saved on the drop');
     expect(backend.moveCalls.single['moves'], [
-      {'story': 'StoryOne', 'to': 'Review'},
+      {'story': 'StoryOne', 'to': 'Done'},
     ]);
     expect(boards.selected!.pending, isEmpty, reason: 'the save was answered');
   });
@@ -619,16 +626,16 @@ void main() {
   // Harm: the drop hint pushes the state's heading and cards under the pointer, so the card lands elsewhere or nowhere.
   testWidgets('the drop hint moves nothing under the pointer', (tester) async {
     await _showBoard(tester);
-    final heading = find.byKey(const Key('planning-drop Review'));
+    final heading = find.byKey(const Key('planning-drop Done'));
     final before = tester.getRect(heading);
     final drag = await tester.startGesture(
       tester.getTopLeft(find.byKey(const Key('planning-card StoryOne'))) + const Offset(20, 20),
     );
     await drag.moveBy(const Offset(0, -20));
     await tester.pump();
-    await drag.moveTo(tester.getCenter(find.descendant(of: heading, matching: find.text('Review'))));
+    await drag.moveTo(tester.getCenter(find.descendant(of: heading, matching: find.text('Done'))));
     await tester.pump();
-    expect(find.text('Drop here for Review'), findsOneWidget, reason: 'the hint is shown');
+    expect(find.text('Drop here for Done'), findsOneWidget, reason: 'the hint is shown');
     expect(tester.getRect(heading), before, reason: 'the heading neither grew nor moved');
     await drag.cancel();
     await settle(tester);
@@ -764,12 +771,12 @@ void main() {
     expect(find.text('Other provider story'), findsOneWidget);
     backend.moveGate = Completer<void>();
     other.moveGate = Completer<void>();
-    unawaited(localBoard.move('StoryOne', 'Review'));
+    unawaited(localBoard.move('StoryOne', 'Done'));
     await settle(tester);
     expect(find.text('A story'), findsOneWidget);
     expect(find.text('Other provider story'), findsNothing);
     expect(localBoard.pending.keys, ['StoryOne']);
-    unawaited(otherBoard.move('StoryOne', 'Review'));
+    unawaited(otherBoard.move('StoryOne', 'Done'));
     await settle(tester);
     expect(find.text('Other provider story'), findsOneWidget);
     expect(find.text('A story'), findsNothing);

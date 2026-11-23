@@ -10,7 +10,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import org.fuin.porelo.planner.core.Misfits;
 import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.store.Board;
@@ -62,6 +61,21 @@ class MockStoreTest {
     }
 
     @Test
+    void aClosedStoryKeepsItsVersionThroughASaveThatLeavesItBe() {
+        // Harm: saving an unrelated issue changes every closed story's version, so the window's
+        // edit of one is refused as stale.
+        final Board before = store.board();
+
+        final Board after = store.save(FIRST, moves(Map.of("B542", "Review")));
+
+        for (final String id : List.of("ST264", "ST268", "ST243")) {
+            assertThat(after.story(id).orElseThrow().version())
+                    .as("the version of %s", id)
+                    .isEqualTo(before.story(id).orElseThrow().version());
+        }
+    }
+
+    @Test
     void aSaveAnswersANewRevisionWithTheMoveAndLeavesTheBoardBeforeItAsItWas() {
         // A mock that never saved would let the window's tests of a save pass.
         final Board before = store.board();
@@ -92,58 +106,45 @@ class MockStoreTest {
     }
 
     @Test
-    void aStoryWithoutAStatedStateFollowsItsIssuesAndAStatedOneIsKept() {
-        // A story left in its old column after its issues moved shows the window a wrong board.
+    void anOpenStoryFollowsItsIssuesAndAClosedOneStaysClosedUntilReopened() {
+        // A story left in its old column after its issues moved shows the window a wrong board;
+        // one closed that its issues reopen undoes the person's close.
         final Board after =
                 store.save(
                         FIRST,
                         new Writes(
                                 Map.of("PJ58", "Estimated", "SI05", "Backlog"),
-                                Map.of("ST15", "Finished"),
-                                List.of()));
+                                Map.of("ST15", "Finished")));
 
         assertThat(story(after, "ST14").state())
-                .as("the story of the moved issue, which states no state")
+                .as("the story of the moved issue, open")
                 .isEqualTo("Estimated");
-        assertThat(story(after, "ST15"))
-                .as("a story whose state was written")
-                .extracting(Story::state, Story::stateGiven)
-                .containsExactly("Finished", true);
+        assertThat(story(after, "ST15").state())
+                .as("a story closed, whatever its issue stands in")
+                .isEqualTo("Finished");
 
-        final Board unstated =
-                store.save(after.revision(), new Writes(Map.of(), Map.of(), List.of("ST15")));
-        assertThat(story(unstated, "ST15"))
-                .as("the story whose stated state was removed")
-                .extracting(Story::state, Story::stateGiven)
-                .containsExactly("Backlog", false);
-    }
-
-    @Test
-    void theMockBoardsGivenStoryKeepsItsStateAndItsMisfitThroughASave() {
-        // Harm: the window's tests never seeing a given state that its issues do not fit.
-        final Board after = store.save(FIRST, moves(Map.of("B542", "Review")));
-
-        assertThat(story(after, "ST295"))
-                .as("ST295 given Review over SL38 in Backlog, after another issue's save")
-                .extracting(Story::state, Story::stateGiven)
-                .containsExactly("Review", true);
-        assertThat(Misfits.of(after, story(after, "ST295"), store::storyState))
-                .as("SL38 stands outside the given Review, SL37 fits")
-                .containsExactly("SL38");
+        final Board reopened =
+                store.save(after.revision(), new Writes(Map.of(), Map.of("ST15", "Backlog")));
+        assertThat(story(reopened, "ST15").state())
+                .as("the story reopened stands where its issue gives")
+                .isEqualTo("Backlog");
     }
 
     @Test
     void aStorysStateIsDerivedAsTheStoriesIndexDerivesIt() {
         // A wrong derivation lets the moves check refuse or confirm the wrong story moves.
         assertThat(store.storyState(List.of("Review", "Backlog", "Finished")))
-                .as("the earliest open state in the workflow's order")
+                .as("none being built: those in Review or later count as Backlog")
                 .isEqualTo("Backlog");
+        assertThat(store.storyState(List.of("Idea", "Reading", "Implementing", "Review")))
+                .as("the furthest state of its issues being built")
+                .isEqualTo("Reading");
         assertThat(store.storyState(List.of("Rejected", "Finished")))
-                .as("closed issues, not all rejected")
-                .isEqualTo("Finished");
+                .as("the rejected left out, the rest closed: Review")
+                .isEqualTo("Review");
         assertThat(store.storyState(List.of("Rejected", "Rejected")))
-                .as("every issue rejected")
-                .isEqualTo("Rejected");
+                .as("every issue rejected: none left")
+                .isNull();
         assertThat(store.storyState(List.of())).as("no issue").isNull();
     }
 
@@ -209,42 +210,21 @@ class MockStoreTest {
                         new Writes(
                                 Map.of("B542", "Finished"),
                                 Map.of(),
-                                List.of(),
                                 Map.of(),
                                 Map.of(),
                                 Map.of("B542", why),
                                 Map.of()));
         store.save(
                 after.revision(),
-                new Writes(
-                        Map.of(),
-                        Map.of(),
-                        List.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of("ST193", why)));
+                new Writes(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of("ST193", why)));
         store.save(
                 store.board().revision(),
-                new Writes(
-                        Map.of(),
-                        Map.of(),
-                        List.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of("ST193", why)));
+                new Writes(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of("ST193", why)));
         final Writes.Reason anew = new Writes.Reason("Finished", "Built anew.");
         store.save(
                 store.board().revision(),
                 new Writes(
-                        Map.of(),
-                        Map.of(),
-                        List.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of(),
-                        Map.of("ST193", anew)));
+                        Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of("ST193", anew)));
 
         assertThat(store.keepsReasons()).isTrue();
         assertThat(store.reasons("B542")).containsExactly(why);
@@ -304,7 +284,6 @@ class MockStoreTest {
                                         new Writes(
                                                 Map.of(),
                                                 Map.of(),
-                                                List.of(),
                                                 Map.of(),
                                                 Map.of("ST294", "Lowest"))))
                 .as("a priority saved into the mock")
@@ -411,24 +390,23 @@ class MockStoreTest {
                         new org.fuin.porelo.planner.store.Workflow(
                                 states, List.of(), List.of("Finished", "Rejected")),
                         List.of(
+                                // Open, as a story over rejected issues only stands.
                                 new Story(
                                         "ST4",
                                         "A story",
-                                        "Rejected",
-                                        false,
+                                        "Backlog",
                                         "High",
                                         null,
                                         List.of("PL5", "PL6"),
                                         "",
                                         null),
                                 new Story(
-                                        "ST5", "A story", "Idea", false, "High", null, List.of(),
-                                        "", null),
+                                        "ST5", "A story", "Idea", "High", null, List.of(), "",
+                                        null),
                                 new Story(
                                         "ST6",
                                         "A story",
                                         "Review",
-                                        false,
                                         "High",
                                         null,
                                         List.of("PL7"),
@@ -459,17 +437,14 @@ class MockStoreTest {
                         new Moves.Move(true, "ST6", "Finished"));
 
         final MovePreview preview =
-                Moves.preview(
-                        board, moves, mock::storyState, (issues, stories) -> List.of(), NO_RUNS);
-        final Moves.Planned planned = Moves.check(board, moves, true, mock::storyState, NO_RUNS);
-        final Board after =
-                mock.save(
-                        FIRST, new Writes(planned.issues(), planned.stories(), planned.unstated()));
+                Moves.preview(board, moves, (issues, stories) -> List.of(), NO_RUNS);
+        final Moves.Planned planned = Moves.check(board, moves, NO_RUNS);
+        final Board after = mock.save(FIRST, new Writes(planned.issues(), planned.stories()));
 
         assertThat(preview.warnings())
-                .as("the done issue taken along, the rejected-only story asked about")
+                .as("the done issue taken along")
                 .extracting(MovePreview.Warning::kind)
-                .containsExactly(MovePreview.ISSUES_ALONG, MovePreview.STORY_MISMATCH);
+                .containsExactly(MovePreview.ISSUES_ALONG);
         assertThat(preview.issues())
                 .as("the preview shows the issue finished")
                 .extracting(MovePreview.MovedIssue::id, MovePreview.MovedIssue::to)
@@ -490,7 +465,7 @@ class MockStoreTest {
     }
 
     private static Writes moves(final Map<String, String> issues) {
-        return new Writes(issues, Map.of(), List.of());
+        return new Writes(issues, Map.of());
     }
 
     private static String state(final Board board, final String issue) {
@@ -771,16 +746,22 @@ class MockStoreTest {
         final List<org.fuin.porelo.planner.store.Warning> factories = factories();
         final java.util.Map<String, Long> expected = new java.util.HashMap<>();
         for (final org.fuin.porelo.planner.store.Warning warning : factories) {
-            // Both copies of an id on two issues carry it.
+            // Both copies of an id on two issues carry it, and both stories the rule puts ahead
+            // of issues, ST72 and ST291.
             expected.put(
                     warning.kind(),
                     warning.kind().equals(org.fuin.porelo.planner.store.Warning.ID_TWICE)
+                                    || warning.kind()
+                                            .equals(
+                                                    org.fuin.porelo.planner.store.Warning
+                                                            .ISSUE_BEHIND_STORY)
                             ? 2L
                             : 1L);
         }
         assertThat(kinds)
                 .as(
-                        "every kind the API makes, %d of them, once, an id on two issues twice",
+                        "every kind the API makes, %d of them, once, an id on two issues and a"
+                                + " story ahead of its issues twice",
                         expected.size())
                 .isEqualTo(expected);
         assertThat(
@@ -794,7 +775,19 @@ class MockStoreTest {
                                 .toList())
                 .as("each as the store API words it, naming places as the Git store does")
                 .containsExactlyInAnyOrderElementsOf(
-                        factories.stream().map(MockStoreTest::placed).toList());
+                        java.util.stream.Stream.concat(
+                                        factories.stream().map(MockStoreTest::placed),
+                                        java.util.stream.Stream.of(
+                                                org.fuin.porelo.planner.store.Warning
+                                                        .issueBehindStory(
+                                                                List.of(
+                                                                        "B542", "B543", "B544",
+                                                                        "B545", "B546", "B547",
+                                                                        "B548", "B549", "B550",
+                                                                        "B551", "B552", "HO156",
+                                                                        "HO157", "B540.1"),
+                                                                "Implementing")))
+                                .toList());
     }
 
     /** A warning that names where an item is kept, worded with the mock's places. */
@@ -892,17 +885,12 @@ class MockStoreTest {
 
         assertThat(open).as("the open states no work alone enters").isNotEmpty();
         assertThat(offered)
-                .as("a state set right by a move or a stated state, nothing else offered")
+                .as("an issue's state set right by a move, nothing else offered")
                 .containsExactly(
                         java.util.Map.entry(
                                 "issue StateOutsideWorkflow",
                                 new org.fuin.porelo.planner.store.Correction(
-                                        org.fuin.porelo.planner.store.Correction.MOVE, open)),
-                        java.util.Map.entry(
-                                "story NoState",
-                                new org.fuin.porelo.planner.store.Correction(
-                                        org.fuin.porelo.planner.store.Correction.STATE_STATED,
-                                        open)));
+                                        org.fuin.porelo.planner.store.Correction.MOVE, open)));
     }
 
     /**
@@ -930,6 +918,15 @@ class MockStoreTest {
                                             : method.invoke(null, "Minutes")));
                 }
             }
+            // A story ahead of its issues names them and its state, as the mock's ST72 is.
+            made.add(
+                    (org.fuin.porelo.planner.store.Warning)
+                            org.fuin.porelo.planner.store.Warning.class
+                                    .getMethod("issueBehindStory", List.class, String.class)
+                                    .invoke(
+                                            null,
+                                            List.of("FC03", "FC09", "FC10", "FC11", "FC13"),
+                                            "Backlog"));
             for (final java.lang.reflect.Field field :
                     org.fuin.porelo.planner.store.Warning.class.getFields()) {
                 if (java.lang.reflect.Modifier.isStatic(field.getModifiers())

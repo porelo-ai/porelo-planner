@@ -36,15 +36,12 @@ class CorrectionsEndpointTest {
 
     private static final String SOURCE = "{\"repository\": \"git@example.org:a/porelo-store.git\"}";
 
-    private static final Correction STATED =
-            new Correction(Correction.STATE_STATED, List.of("Backlog", "Review"));
-
     private final List<Writes> saved = new ArrayList<>();
 
     /** What the store's next save refuses with, or null. */
     private org.fuin.porelo.planner.store.@org.jspecify.annotations.Nullable StoreException refusal;
 
-    private Board current = board("r1", "Parked", Warning.stateOutsideWorkflow().offering(STATED));
+    private Board current = board("r1", "Parked", Warning.stateOutsideWorkflow());
 
     private MockMvc mvc;
 
@@ -66,16 +63,13 @@ class CorrectionsEndpointTest {
                                         "ST1",
                                         "A story",
                                         state,
-                                        true,
                                         "High",
                                         null,
                                         List.of("AB01"), // not-a-citation
                                         "",
                                         null)
                                 .withWarnings(List.of(w)),
-                        new Story(
-                                        "ST2", "Another", "Backlog", true, "High", null, List.of(),
-                                        "", null)
+                        new Story("ST2", "Another", "Backlog", "High", null, List.of(), "", null)
                                 .withWarnings(List.of(Warning.issueOutsideProject()))),
                 List.of(
                         new Issue(
@@ -186,83 +180,27 @@ class CorrectionsEndpointTest {
     }
 
     @Test
-    void theBoardServesEachWarningWithTheCorrectionItsStoreOffersOrNone() throws Exception {
-        // Harm: a window offers a correction the store cannot carry out, or none where it can.
+    void aStorysStateWarningIsOfferedNoCorrectionAndItsPreviewIsNotOffered() throws Exception {
+        // Harm: a story's state set by hand while open, which its issues give, or one a window
+        // offers to correct that no store carries out.
         mvc.perform(get("/projects/alpha/stories"))
                 .andExpect(status().isOk())
                 .andExpect(
-                        jsonPath("$.stories[0].warnings[0].correction.kind").value("StateStated"))
-                .andExpect(
-                        jsonPath("$.stories[0].warnings[0].correction.states[0]").value("Backlog"))
-                .andExpect(
-                        jsonPath("$.stories[0].warnings[0].correction.states[1]").value("Review"))
-                .andExpect(
                         jsonPath(
-                                "$.stories[1].warnings[0]",
+                                "$.stories[0].warnings[0]",
                                 org.hamcrest.Matchers.hasKey("correction")))
-                .andExpect(jsonPath("$.stories[1].warnings[0].correction").isEmpty());
-    }
-
-    @Test
-    void aStorysCorrectionIsPreviewedThenSavedAloneAndAnsweredWithTheNewRevision()
-            throws Exception {
-        // Harm: a correction saved without the person's confirm of what it writes, or with its
-        // issues moved along.
+                .andExpect(jsonPath("$.stories[0].warnings[0].correction").isEmpty());
         post("corrections/preview", asked("r1", "Review") + "}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r1"))
-                .andExpect(jsonPath("$.story").value("ST1"))
-                .andExpect(jsonPath("$.issue").isEmpty())
-                .andExpect(jsonPath("$.warning").value("StateOutsideWorkflow"))
-                .andExpect(jsonPath("$.from").value("Parked"))
-                .andExpect(jsonPath("$.to").value("Review"));
-        assertThat(saved).as("a preview writes nothing").isEmpty();
-
-        confirm("r1", "Review", digest("Review"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r2"));
-
-        assertThat(saved)
-                .as("one save of the story's stated state alone")
-                .containsExactly(new Writes(Map.of(), Map.of("ST1", "Review"), List.of()));
-    }
-
-    @Test
-    void aStaleChangedOrRepeatedConfirmIsAConflictAndWritesNothing() throws Exception {
-        // Harm: a confirm sent again after a lost answer writes over a board the person no
-        // longer saw.
-        final String digest = digest("Review");
-
-        confirm("r1", "Review", "0".repeat(64))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
-        confirm("r0", "Review", digest)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"));
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
         assertThat(saved).as("nothing written").isEmpty();
-
-        confirm("r1", "Review", digest).andExpect(status().isOk());
-        confirm("r1", "Review", digest)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"));
-        assertThat(saved).as("the repeat wrote nothing").hasSize(1);
     }
 
     @Test
     void aCorrectionTheBoardNoLongerLetsStandIsRefusedByNameAndWritesNothing() throws Exception {
         // Harm: a correction written over a warning gone, past another warning's hold, or into
         // a state it never offered.
-        post("corrections/preview", asked("r1", "Building") + "}")
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
-                .andExpect(jsonPath("$.parameters.item").value("ST1"));
-
-        current =
-                board(
-                        "r1",
-                        "Parked",
-                        Warning.stateOutsideWorkflow().offering(STATED),
-                        Warning.wrongParent());
+        current = board("r1", "Parked", Warning.stateOutsideWorkflow(), Warning.wrongParent());
         post("corrections/preview", asked("r1", "Review") + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
@@ -319,11 +257,10 @@ class CorrectionsEndpointTest {
     }
 
     @Test
-    void anIssuesMoveAnUnknownStoryAndAHeadTheStoreCannotEditAreRefusedAndWriteNothing()
-            throws Exception {
-        // Harm: an issue's state set right past the move's rules, a correction written for an
-        // item the board does not hold, or one half written where its head cannot be edited.
-        final Board plain = board("r1", "Parked", Warning.stateOutsideWorkflow().offering(STATED));
+    void anIssuesMoveAndAnUnknownStoryAreRefusedAndWriteNothing() throws Exception {
+        // Harm: an issue's state set right past the move's rules, or a correction written for an
+        // item the board does not hold.
+        final Board plain = board("r1", "Parked", Warning.stateOutsideWorkflow());
         final Issue issue = plain.issues().getFirst();
         current =
                 new Board(
@@ -360,22 +297,12 @@ class CorrectionsEndpointTest {
                                 + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"));
-        final String digest = digest("Review");
-        refusal =
-                new org.fuin.porelo.planner.store.StoreException.NotSavable(
-                        "ST1", "the JSON head holds a state member not written as the heads are");
-        confirm("r1", "Review", digest)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
-                .andExpect(jsonPath("$.parameters.item").value("ST1"));
         assertThat(saved).as("nothing written").isEmpty();
     }
 
     @Test
-    void whileTheWorkRulesHaveFaultsAConfirmIsRefusedWithThemAndWritesNothing() throws Exception {
-        // Harm: a story put into a working state whose rule could not be read, from a board
-        // read before the fault.
-        final String digest = digest("Review");
+    void whileTheWorkRulesHaveFaultsAPreviewIsRefusedWithThemAndWritesNothing() throws Exception {
+        // Harm: an item put into a working state whose rule could not be read.
         final Board read = current;
         current =
                 new Board(
@@ -386,26 +313,12 @@ class CorrectionsEndpointTest {
                         new Work(read.work().rules(), List.of("work.yml: Review is no rule")),
                         read.repositories());
 
-        confirm("r1", "Review", digest)
+        post("corrections/preview", asked("r1", "Review") + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
                 .andExpect(
                         jsonPath("$.detail")
                                 .value("The work rules have faults: work.yml: Review is no rule"));
         assertThat(saved).as("nothing written").isEmpty();
-    }
-
-    @Test
-    void aStatedStateItsIssuesDoNotFitIsPreviewedWithThem() throws Exception {
-        // Harm: a story pinned out of step with its issues, and the person never told.
-        post("corrections/preview", asked("r1", "Review") + "}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.warnings[0].kind").value("STORY_MISMATCH"))
-                .andExpect(jsonPath("$.warnings[0].issues[0].id").value("AB01")) // not-a-citation
-                .andExpect(jsonPath("$.warnings[0].issues[0].from").value("Backlog"))
-                .andExpect(jsonPath("$.warnings[0].issues[0].to").value("Backlog"));
-        post("corrections/preview", asked("r1", "Backlog") + "}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.warnings").isEmpty());
     }
 }

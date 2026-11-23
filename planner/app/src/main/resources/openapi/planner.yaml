@@ -1142,9 +1142,8 @@ paths:
         old and new state, every story it moves, and its warnings. Nothing is stopped, written or pushed. The digest
         answered covers the revision, the project's repository and branch, the batch, the warnings and the runs and
         offers they name; the save sends it back. A refusal the save would answer for the batch itself, such as a
-        working state or an unknown item, is answered here too; a story that does not fit its issues is a warning
-        (STORY_MISMATCH), not a refusal. A planner that does not know this operation answers 404, and the window then
-        moves nothing.
+        working state, an unknown item or an open story moved to another open state, is answered here too. A planner
+        that does not know this operation answers 404, and the window then moves nothing.
       tags: [board]
       requestBody:
         required: true
@@ -1187,10 +1186,9 @@ paths:
       description: >-
         Checks the correction a warning's `correction` offers, other than a Move, against the board at the given
         revision and the work at hand, with the state the person picked among its `states`, and answers what it
-        would write, what it can do harm by and the digest the save sends back. A StateStated correction writes the
-        story's stated state alone and moves none of its issues; its warnings name, as a move's preview does, each
-        run with tasks at work on the story (RUNNING_WORK) and the story's issues the state picked does not fit
-        (STORY_MISMATCH). Nothing is written or pushed. The digest covers the revision, the project's repository and
+        would write, what it can do harm by and the digest the save sends back. No store offers a kind other than
+        Move, so one asked for is answered NotOffered. Nothing is written or pushed. The digest covers the revision,
+        the project's repository and
         branch, the item, the warning's kind, its state now, the state picked and every warning. While the work
         rules have faults no correction is offered and one asked for is refused (CorrectionRefused). A Move is
         previewed and saved through /moves/preview and /moves, as any move of the issue.
@@ -1955,9 +1953,8 @@ components:
         WorkRunning(story,tasks[]) when a move touches an item currently owned by active work or moves an issue of a
         story whose run has a task at work. The board moved since
         the given revision (StaleRevision, naming the current one), the batch's preview, computed again, answers
-        another digest than the one sent (PreviewChanged, naming nothing the window could send back), or a story would
-        stand where its issues do not fit and the move was not confirmed (StoryStateMismatch, naming each issue that
-        does not fit with its state). A preview answers only StaleRevision.
+        another digest than the one sent (PreviewChanged, naming nothing the window could send back). A preview answers
+        only StaleRevision.
       content:
         application/problem+json:
           schema:
@@ -1978,16 +1975,6 @@ components:
                 status: 409
                 detail: What the moves would do changed since their preview; preview them again.
                 parameters: {}
-            StoryStateMismatch:
-              value:
-                type: urn:porelo-planner:StoryStateMismatch
-                title: StoryStateMismatch
-                status: 409
-                detail: ST1 does not fit Rejected while its issues stand in PL2:Review.
-                parameters:
-                  story: ST1
-                  to: Rejected
-                  issues: 'PL2:Review'
     CorrectionConflict:
       description: >-
         The board moved since the given revision (StaleRevision, naming the current one), the correction's preview,
@@ -2506,7 +2493,7 @@ components:
     State:
       description: One state of the workflow.
       type: object
-      required: [name, kind]
+      required: [name, kind, measured]
       properties:
         name:
           type: string
@@ -2515,6 +2502,13 @@ components:
           description: >-
             CLOSED when the workflow closes the state, WORKING when a sound work rule exists for it, else WAITING.
           enum: [WAITING, WORKING, CLOSED]
+        measured:
+          type: boolean
+          description: >-
+            Whether moving an issue into the state needs a stage record. An open story's state is derived from its
+            issues by the measured states alone: building starts in the first measured open state, the open state
+            before it is the backlog, and a story waits for review in the last of the measured open states that run
+            on from there.
     Phase:
       description: One column of the board and its states.
       type: object
@@ -2644,8 +2638,7 @@ components:
         One breach of the stories' rules. IssueInNoStory - an issue that is not closed stands in a state past the
         workflow's first and in no story, directly or under a parent. StoryPriorityBelowIssue - a story's priority is
         below the highest priority of its open issues, its sub-issues included; an issue without a priority is not
-        ranked. StoryWithoutIssueOrState - a story whose issues are all known has none and no given state.
-        StoryStateMisfit - a story's given state does not fit its issues, as its `misfits` name them.
+        ranked.
       type: object
       required: [item, rule, words]
       properties:
@@ -2654,7 +2647,7 @@ components:
           type: string
         rule:
           type: string
-          enum: [IssueInNoStory, StoryPriorityBelowIssue, StoryWithoutIssueOrState, StoryStateMisfit]
+          enum: [IssueInNoStory, StoryPriorityBelowIssue]
         words:
           type: string
           description: The breach in the planner's fixed words, naming items only by their ids.
@@ -2720,8 +2713,8 @@ components:
           type: boolean
           default: false
           description: >-
-            Whether the person confirmed the preview's warnings: a story may stand where its issues do not fit, as
-            its STORY_MISMATCH warning showed, and each run its RUNNING_WORK warning named is stopped with the save.
+            Whether the person confirmed the preview's warnings: each run its RUNNING_WORK warning named is stopped
+            with the save.
     MovesPreviewRequest:
       description: A batch of moves to preview against the board at a revision.
       type: object
@@ -2797,15 +2790,13 @@ components:
         voids; an unconfirmed save is refused (WorkRunning), a confirmed one stops them. ISSUES_ALONG - a story's
         move carries issues along that stand in a working state or in another repository than the project's own: item is the story,
         issues each such issue. SKIPS_STATES - a move forward past waiting states: item is the story or issue, from
-        and to its states, skipped the states passed. STORY_MISMATCH - a story would stand where its issues do not
-        fit: item is the story, to its target, issues each issue that does not fit with its state after the batch;
-        the save then needs confirm.
+        and to its states, skipped the states passed.
       type: object
       required: [kind, item, from, to, run, tasks, offers, issues, skipped]
       properties:
         kind:
           type: string
-          enum: [RUNNING_WORK, ISSUES_ALONG, SKIPS_STATES, STORY_MISMATCH]
+          enum: [RUNNING_WORK, ISSUES_ALONG, SKIPS_STATES]
         item:
           type: string
           description: The story or issue the warning is about.
@@ -2838,7 +2829,12 @@ components:
           items:
             type: string
     Move:
-      description: One move, naming exactly one story or one issue.
+      description: >-
+        One move, naming exactly one story or one issue. A story is moved only to close it or, once closed, to
+        reopen it: an open story follows its issues, and its move to another open state is refused (MoveNotAllowed).
+        Its move to the workflow's first closed state closes it as completed and closes with it each of its issues
+        in Review; to a later closed state, closes it as not planned and closes with it each of its issues in an open
+        state of the workflow. Its move to an open state reopens it alone.
       type: object
       required: [to]
       properties:
@@ -2854,13 +2850,6 @@ components:
         to:
           type: string
           description: The state it moves to.
-        follow:
-          type: boolean
-          description: >-
-            For a story only: true when the story gives up its given state and takes the one its issues give, which
-            `to` names as the board's `derivedState` showed it. The move carries no issue and starts no work; it is
-            refused when the story's state is not given, when the board does not hold every issue its head names, or
-            when the issues give another state now.
         reason:
           type: string
           description: >-
@@ -2872,7 +2861,7 @@ components:
             surrogate, unassigned or private-use character, no line or paragraph separator, and none of U+115F, U+2800
             or U+3164, which show as blank; it is refused
             (MoveNotAllowed, whose own `reason` parameter is the planner's words, not this text) on a move into a
-            state that is not closed, on a `follow` move, on an issue move whose issue stands in that state already,
+            state that is not closed, on an issue move whose issue stands in that state already,
             and on a store that keeps no reasons, before anything is written.
     Moved:
       description: >-
@@ -3433,7 +3422,7 @@ components:
         One story as the board shows it. Two stories share an id only when each carries the warning IdTwice; neither
         is then worked, moved or edited, and a read of the story by that id answers NoSuchStory.
       type: object
-      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open, warnings, version]
+      required: [id, title, state, closedAt, priority, size, link, issues, work, open, warnings, version]
       properties:
         version:
           $ref: '#/components/schemas/Version'
@@ -3447,27 +3436,12 @@ components:
             One of the workflow's states; with a warning about its state, a value the workflow does not know, which
             the board shows in a column of its own at its end named after the value, or empty when no state can be
             told for it (NoState).
-        stateGiven:
-          type: boolean
-          description: >-
-            True when the story's state was given to it - on the board, by a confirmed move, or in its head -
-            false when its issues give it by the automatic rule, the earliest open state of its issues.
-        misfits:
-          type: [array, 'null']
-          description: >-
-            For a given state that its issues do not give, each of its issues whose own state is another, in the
-            story's order; empty when its issues give that state or its state is not given. Only the issues the
-            board holds - those in `issues`, with their own states - are read and named. Null when the state is
-            given but the planner could not apply the workflow's rule to it, so whether its issues fit is not
-            known.
-          items:
-            $ref: '#/components/schemas/IssueId'
-        derivedState:
+        closedAt:
           type: [string, 'null']
+          format: date-time
           description: >-
-            For a given state, the state the story's issues give by the workflow's rule, which a move with `follow`
-            hands the story back to. Null when its state is not given, when the board does not hold every issue its
-            head names, or when the planner could not apply the rule.
+            When the story was closed as done, the day its test passed; null while it is open or closed for another
+            reason, or where its store keeps no such time.
         priority:
           type: string
         size:
@@ -3672,7 +3646,9 @@ components:
             IssueOutsideProject, WrongParent, BodyNotSectioned, StoryOutsideOwnRepository, ParentInOtherRepository,
             BlockedByStory, ParentCircle, SubIssueOfSubIssue, PastOnePage, DependsOnUnplaced, UnknownWorker,
             UnknownRisk, StoryUnderIssue, AlsoNeedsNotOnBoard, BodyTooLong, UnknownSize, UnknownPriority,
-            UnreadableNumber, ClosedUnderOpenState and OpenUnderClosedState.
+            UnreadableNumber, IssueBehindStory. IssueBehindStory is a story's: its words name each of its issues that
+            stands before the state its issues give it, such as an issue in Idea in a story being implemented; it
+            holds nothing back.
         text:
           type: string
           description: >-
@@ -3692,7 +3668,7 @@ components:
           description: >-
             The one change the store offers to set the warning right, or null when it offers none: the store decides
             it when it reads the board, and offers none while another warning holds the item back or the work rules
-            have faults. The Git store offers one for StateOutsideWorkflow and NoState alone.
+            have faults. The Git store offers one for an issue's StateOutsideWorkflow alone.
           oneOf:
             - $ref: '#/components/schemas/Correction'
             - type: 'null'
@@ -3708,8 +3684,7 @@ components:
           description: >-
             An open name of the change; a window offers a kind it does not know as none. Known kinds are Move - the
             issue moved into the state picked, previewed and saved through /moves/preview and /moves as any move of
-            it - and StateStated - the story's stated state set to the state picked, writing none of its issues,
-            previewed and saved through /corrections/preview and /corrections.
+            it.
         states:
           type: array
           minItems: 1
@@ -3799,8 +3774,7 @@ components:
           type: array
           description: >-
             What the correction can do harm by, as a move's preview names it: RUNNING_WORK for each run with tasks at
-            work on the story, and STORY_MISMATCH naming each issue of the story the state picked does not fit, with
-            its state, which it keeps. Empty when it is saved without asking.
+            work on the story. Empty when it is saved without asking.
           items:
             $ref: '#/components/schemas/MoveWarning'
     CorrectionSaved:

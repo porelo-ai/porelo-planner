@@ -1436,7 +1436,12 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
         final Map<String, List<String>> options = new LinkedHashMap<>();
-        options.put(FieldNames.STATUS, config.workflow().states());
+        // A closed state is GitHub's close alone, so the field needs the open states only.
+        options.put(
+                FieldNames.STATUS,
+                config.workflow().states().stream()
+                        .filter(state -> !config.workflow().closed().contains(state))
+                        .toList());
         options.put(FieldNames.PRIORITY, Story.PRIORITIES);
         options.put(FieldNames.SIZE, IssueMapping.SIZES);
         options.put(FieldNames.WORKER, List.of("Agent", "Manual"));
@@ -1529,7 +1534,8 @@ public final class ItemsBoardReader implements BoardReader {
                         .map(ref -> new ItemView.Blocker(ref.id(), ref.repository(), ref.number()))
                         .toList(),
                 unseen(issue.blockedBy()),
-                issue.issueType());
+                issue.issueType(),
+                issue.closedAt());
     }
 
     /**
@@ -1648,6 +1654,9 @@ public final class ItemsBoardReader implements BoardReader {
             add(digest, issue.updatedAt().toString());
             add(digest, issue.state());
             addNullable(digest, issue.stateReason());
+            // The time it closed is a story's tested day.
+            final Instant closedAt = issue.closedAt();
+            addNullable(digest, closedAt == null ? null : closedAt.toString());
             add(digest, String.valueOf(item.archived()));
             addNullable(digest, issue.parentId());
             add(digest, issue.subIssues());

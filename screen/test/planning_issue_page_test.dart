@@ -344,25 +344,12 @@ void main() {
   });
 
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.
-  testWidgets('a task link and a given state\'s tooltip show no control or direction character', (tester) async {
+  testWidgets('a task link shows no control or direction character', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Column(
-            children: [
-              PlanningTaskLink(name: 'build\u202e\x1b', onOpen: () {}, unavailable: 'gone\u202e'),
-              planningGivenMark(
-                PlanStory.from({
-                  'id': 'ST1',
-                  'title': 'A story',
-                  'state': 'Review',
-                  'stateGiven': true,
-                  'misfits': ['PL1\u202e'],
-                  'priority': 'High',
-                  'issues': [_issue('PL1\u202e')],
-                }),
-              )!,
-            ],
+            children: [PlanningTaskLink(name: 'build\u202e\x1b', onOpen: () {}, unavailable: 'gone\u202e')],
           ),
         ),
       ),

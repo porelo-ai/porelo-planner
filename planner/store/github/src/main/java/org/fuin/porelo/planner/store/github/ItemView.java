@@ -36,6 +36,7 @@ import org.jspecify.annotations.Nullable;
  *     leaves out one the person's login cannot read
  * @param issueType the name of its issue type, which makes it a story when it is {@link
  *     IssueMapping#STORY_TYPE}, or null when it has none
+ * @param closedAt when GitHub last closed it, or null while it was never closed
  */
 public record ItemView(
         String itemId,
@@ -56,7 +57,8 @@ public record ItemView(
         boolean archived,
         List<Blocker> blockers,
         int unseenBlockers,
-        @Nullable String issueType) {
+        @Nullable String issueType,
+        @Nullable Instant closedAt) {
 
     /**
      * An issue that blocks the item's, as GitHub names it.
@@ -137,6 +139,7 @@ public record ItemView(
                 archived,
                 blockers,
                 0,
+                null,
                 null);
     }
 
@@ -200,6 +203,7 @@ public record ItemView(
                 archived,
                 blockers,
                 unseenBlockers,
+                null,
                 null);
     }
 
@@ -229,7 +233,38 @@ public record ItemView(
                 archived,
                 blockers,
                 unseenBlockers,
-                type);
+                type,
+                closedAt);
+    }
+
+    /**
+     * Answers the same item closed by GitHub at a time.
+     *
+     * @param at when GitHub last closed it, or null while it was never closed
+     * @return the item
+     */
+    public ItemView withClosedAt(final @Nullable Instant at) {
+        return new ItemView(
+                itemId,
+                issueId,
+                repository,
+                number,
+                title,
+                body,
+                open,
+                stateReason,
+                fields,
+                labels,
+                parentIssueId,
+                subIssueIds,
+                blockedByIds,
+                link,
+                updatedAt,
+                archived,
+                blockers,
+                unseenBlockers,
+                issueType,
+                at);
     }
 
     /**
@@ -288,6 +323,7 @@ public record ItemView(
                 archived,
                 List.of(),
                 0,
+                null,
                 null);
     }
 }

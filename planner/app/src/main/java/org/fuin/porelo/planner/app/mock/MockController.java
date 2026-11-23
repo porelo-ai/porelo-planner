@@ -20,7 +20,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  */
 @RestController
 @ImportRuntimeHints(MockController.BoardHints.class)
-@RegisterReflectionForBinding(classes = {MockStore.BoardFile.class, MockStore.RuleFile.class})
+@RegisterReflectionForBinding(
+        classes = {MockStore.BoardFile.class, MockStore.RuleFile.class, MockStore.StoryFile.class})
 public class MockController {
 
     /** Takes the mock board into a native image, which holds no resource it is not told of. */
@@ -29,14 +30,12 @@ public class MockController {
         @Override
         public void registerHints(final RuntimeHints hints, final @Nullable ClassLoader loader) {
             hints.resources().registerPattern(MockStore.BOARD);
-            // The board's issues and stories are read through these constructors, which Jackson
-            // finds only by reflection.
-            for (final Class<?> mixIn :
-                    new Class<?>[] {
-                        WithoutVersions.IssueMixIn.class, WithoutVersions.StoryMixIn.class
-                    }) {
-                hints.reflection().registerType(mixIn, MemberCategory.INVOKE_DECLARED_CONSTRUCTORS);
-            }
+            // The board's issues are read through this constructor, which Jackson finds only by
+            // reflection; its stories are records bound above.
+            hints.reflection()
+                    .registerType(
+                            WithoutVersions.IssueMixIn.class,
+                            MemberCategory.INVOKE_DECLARED_CONSTRUCTORS);
         }
     }
 

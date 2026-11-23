@@ -44,9 +44,6 @@ public record MovePreview(
     /** A move forward past waiting states into an open one. */
     public static final String SKIPS_STATES = "SKIPS_STATES";
 
-    /** A story would stand where its issues do not fit. */
-    public static final String STORY_MISMATCH = "STORY_MISMATCH";
-
     /** Copies the lists. */
     public MovePreview {
         moves = List.copyOf(moves);
@@ -213,9 +210,7 @@ public record MovePreview(
                     move.story()
                             ? storyState(board, move.id())
                             : board.issue(move.id()).map(Issue::state).orElse("");
-            // A story that follows its issues again passes no state of its own on the way.
-            final List<String> skipped =
-                    move.follow() ? List.of() : skipped(board.workflow(), working, from, move.to());
+            final List<String> skipped = skipped(board.workflow(), working, from, move.to());
             if (!skipped.isEmpty()) {
                 warnings.add(
                         new Warning(
@@ -229,20 +224,6 @@ public record MovePreview(
                                 List.of(),
                                 skipped));
             }
-        }
-        for (final Map.Entry<String, List<String>> misfit : plan.misfits().entrySet()) {
-            final String story = misfit.getKey();
-            warnings.add(
-                    new Warning(
-                            STORY_MISMATCH,
-                            story,
-                            storyState(board, story),
-                            to(moves, story),
-                            null,
-                            List.of(),
-                            List.of(),
-                            misfit.getValue().stream().map(id -> moved(board, id, after)).toList(),
-                            List.of()));
         }
         return new MovePreview(board.revision().value(), moves, issues, stories, warnings);
     }
@@ -264,8 +245,7 @@ public record MovePreview(
         digest.add(branch == null ? "\u0000" : branch);
         digest.count(moves.size());
         for (final Moves.Move move : moves) {
-            // A follow move is its own kind, so a preview without it never saves one with it.
-            digest.add(move.follow() ? "story follow" : move.story() ? "story" : "issue");
+            digest.add(move.story() ? "story" : "issue");
             digest.add(move.id());
             digest.add(move.to());
         }

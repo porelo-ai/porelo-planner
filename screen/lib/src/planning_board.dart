@@ -1472,7 +1472,11 @@ class PlanningBoard extends ChangeNotifier {
     final target = state(to);
     if (story == null || target == null) return;
     if (!{'WAITING', 'CLOSED'}.contains(target.kind)) return;
-    if (!storyMayEnter(story, target)) return refuseMove(id, heldBy(story.warnings)!);
+    if (!storyMayEnter(story, target)) {
+      // A move the board offers no drop for is not sent; one a warning holds is said.
+      if (heldBy(story.warnings) case final held?) return refuseMove(id, held);
+      return;
+    }
     if (snapshot!.revision.isEmpty) {
       moveProblem = 'The planner did not report a planning revision. Reload planning before moving stories.';
       _changed();
@@ -1481,28 +1485,6 @@ class PlanningBoard extends ChangeNotifier {
     // Against where the card is shown: a move back while its move is out is its next move.
     if (to == displayedState(story) || _oneAtATime(id, queues: true)) return;
     await _moveNow(id, PlanningStoryMove(id, to), PendingPlanningMove(story.state, to), revision: revision);
-  }
-
-  /// Hands a story whose state was given back to its issues: it takes the state they give and keeps none of its own.
-  ///
-  /// [to] is the state the person was offered; the planner checks that its issues still give it, so an offer read
-  /// before they moved moves nothing.
-  Future<void> followIssues(String id, String to, {String? revision}) async {
-    if (_disposed || !takesMoves) return;
-    final story = stories.where((story) => story.id == id).firstOrNull;
-    if (story == null || !story.stateGiven) return;
-    if (snapshot!.revision.isEmpty) {
-      moveProblem = 'The planner did not report a planning revision. Reload planning before moving stories.';
-      _changed();
-      return;
-    }
-    if (_oneAtATime(id, queues: true)) return;
-    await _moveNow(
-      id,
-      PlanningStoryMove(id, to, follow: true),
-      PendingPlanningMove(story.state, to),
-      revision: revision,
-    );
   }
 
   /// The issue move in flight, by issue id.
@@ -1520,14 +1502,20 @@ class PlanningBoard extends ChangeNotifier {
           ? _heldMayEnter(issue.state, issue.warnings, target)
           : {'WAITING', 'CLOSED', if (issue.byHand || !runHolds(issue)) 'WORKING'}.contains(target.kind));
 
-  /// Whether a person may drop [story] on [target]: a waiting or closed state moves it, a working one starts it. A
-  /// story a warning holds may only leave a state the workflow does not have, into a waiting or closed state, which
+  /// Whether a person may drop [story] on [target]. An open story follows its issues: a closed state closes it, a
+  /// working one starts its work, and no other open state is offered. A closed story is only reopened, into a waiting
+  /// state. A story a warning holds may only leave a state the workflow does not have, into a closed state, which
   /// sets it right; the planner refuses it every other move.
-  bool storyMayEnter(PlanStory story, PlanState? target) =>
-      target != null &&
-      (PlanWarning.holding(story.warnings)
-          ? _heldMayEnter(story.state, story.warnings, target)
-          : {'WAITING', 'WORKING', 'CLOSED'}.contains(target.kind));
+  bool storyMayEnter(PlanStory story, PlanState? target) {
+    if (target == null) return false;
+    if (PlanWarning.holding(story.warnings)) {
+      return _heldMayEnter(story.state, story.warnings, target) && target.kind == 'CLOSED';
+    }
+    // Judged where the card is shown, so a card whose close is still out is offered its reopen.
+    return state(displayedState(story))?.kind == 'CLOSED'
+        ? target.kind == 'WAITING'
+        : {'WORKING', 'CLOSED'}.contains(target.kind);
+  }
 
   /// Whether an item standing in [from] that one of its [warnings] holds may still enter [target]: only into a waiting
   /// or closed state, since a working one would start its work, and only out of a state the workflow does not have
@@ -2018,16 +2006,12 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
-  /// Whether a move closes its item on a store that keeps the person's reason, so it is asked about first; a story
-  /// that follows its issues closes nothing itself.
-  bool _asksReason(PlanningMove move) =>
-      snapshot?.reasons == true && state(move.to)?.kind == 'CLOSED' && !(move is PlanningStoryMove && move.follow);
+  /// Whether a move closes its item on a store that keeps the person's reason, so it is asked about first.
+  bool _asksReason(PlanningMove move) => snapshot?.reasons == true && state(move.to)?.kind == 'CLOSED';
 
   /// A start this window handed to Porelo that the planner does not report yet, a story's own or a follow-up task's,
   /// which no digest covers.
   List<PlanningMoveWarning> _localWarnings(PlanningMove move, PlanningMovePreview preview) {
-    // A story that follows its issues moves none of them, so it stops no start.
-    if (move is PlanningStoryMove && move.follow) return const [];
     final story = switch (move) {
       PlanningStoryMove(:final story) => story,
       PlanningIssueMove(:final issue) =>
@@ -2388,37 +2372,26 @@ class PlanningBoard extends ChangeNotifier {
       final previous = snapshot!;
       final destinations = <String, String>{};
       final storyDestinations = <String, String>{};
-      final followed = <String>{};
       final story = previous.stories.where((story) => story.id == move.id).firstOrNull;
-      final follows = move is PlanningStoryMove && move.follow;
-      // A story that follows its issues moves none of them.
       final expected = move is PlanningIssueMove
           ? [move.id]
-          : follows
-          ? <String>[]
-          : story?.leastAdvancedIssues(previous.states, previous.work, move.to)?.map((issue) => issue.id).toList();
+          : story?.closedIssues(previous.states, previous.work, move.to)?.map((issue) => issue.id).toList();
       _pending.remove(key);
       if (expected != null && expected.every(reply.moved.contains)) {
         for (final issue in expected) {
           destinations[issue] = move.to;
         }
-        if (move is PlanningStoryMove &&
-            !follows &&
-            story?.fitsCompleted(previous.states, destinations, move.to) == true) {
-          // A completed story whose issues give its state stands there with no state of its own, as one following them.
-          storyDestinations[move.id] = move.to;
-          followed.add(move.id);
-        } else if (move is PlanningStoryMove && expected.isEmpty) {
-          // A story with issues stands where the daemon computes it, read again below.
+        if (move is PlanningStoryMove) {
+          // A story closed stands in its closed state; one reopened in the state its confirmed reopen names, with no
+          // day its test passed, until the read below brings where its issues give.
           storyDestinations[move.id] = move.to;
         }
-        if (follows) followed.add(move.id);
         _addNotice(move is PlanningIssueMove ? 'Issue changes saved.' : 'Planning changes saved.');
       } else {
         _addProblem(planningShown('${move.id}: the planner did not confirm this destination.'));
       }
       _accept(
-        PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations, followed: followed),
+        PlanningSnapshot.saved(previous, reply.revision, destinations, storyDestinations),
         // Numbered after the save: a board streamed while it waited was read before the save was made.
         order: _readStarts(),
         reconcile: false,

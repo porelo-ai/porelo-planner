@@ -2,17 +2,16 @@ package org.fuin.porelo.planner.store;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 
 /**
- * What one save writes to the store: each issue's new state and worker and each story's new stated
- * state and priority.
+ * What one save writes to the store: each issue's new state and worker, and each story's close,
+ * reopen and priority.
  *
  * @param issues the issues' new states, by id
- * @param stories the stories' new stated states, by id
- * @param unstated the stories whose stated state is removed
+ * @param stories the stories moved, by id: into a closed state to close them, into an open one to
+ *     reopen them, after which they follow their issues again
  * @param workers the issues' new workers, by id
  * @param priorities the stories' new priorities, by id, each one of {@link Story#PRIORITIES}
  * @param issueReasons the person's reasons kept with the issues the save closes, by id; an issue
@@ -23,7 +22,6 @@ import org.jspecify.annotations.Nullable;
 public record Writes(
         Map<String, String> issues,
         Map<String, String> stories,
-        List<String> unstated,
         Map<String, Worker> workers,
         Map<String, String> priorities,
         Map<String, Reason> issueReasons,
@@ -110,10 +108,8 @@ public record Writes(
     public Writes {
         issues.keySet().forEach(Ids::issue);
         stories.keySet().forEach(Ids::story);
-        unstated.forEach(Ids::story);
         issues = Collections.unmodifiableMap(new LinkedHashMap<>(issues));
         stories = Collections.unmodifiableMap(new LinkedHashMap<>(stories));
-        unstated = List.copyOf(unstated);
         workers.keySet().forEach(Ids::issue);
         workers = Collections.unmodifiableMap(new LinkedHashMap<>(workers));
         priorities.forEach(
@@ -135,18 +131,16 @@ public record Writes(
      * Writes that keep no reason.
      *
      * @param issues the issues' new states, by id
-     * @param stories the stories' new stated states, by id
-     * @param unstated the stories whose stated state is removed
+     * @param stories the stories moved, by id
      * @param workers the issues' new workers, by id
      * @param priorities the stories' new priorities, by id, each one of {@link Story#PRIORITIES}
      */
     public Writes(
             final Map<String, String> issues,
             final Map<String, String> stories,
-            final List<String> unstated,
             final Map<String, Worker> workers,
             final Map<String, String> priorities) {
-        this(issues, stories, unstated, workers, priorities, Map.of(), Map.of());
+        this(issues, stories, workers, priorities, Map.of(), Map.of());
     }
 
     /**
@@ -162,30 +156,24 @@ public record Writes(
      * Writes that set no priority.
      *
      * @param issues the issues' new states, by id
-     * @param stories the stories' new stated states, by id
-     * @param unstated the stories whose stated state is removed
+     * @param stories the stories moved, by id
      * @param workers the issues' new workers, by id
      */
     public Writes(
             final Map<String, String> issues,
             final Map<String, String> stories,
-            final List<String> unstated,
             final Map<String, Worker> workers) {
-        this(issues, stories, unstated, workers, Map.of());
+        this(issues, stories, workers, Map.of());
     }
 
     /**
      * Writes that set no worker.
      *
      * @param issues the issues' new states, by id
-     * @param stories the stories' new stated states, by id
-     * @param unstated the stories whose stated state is removed
+     * @param stories the stories moved, by id
      */
-    public Writes(
-            final Map<String, String> issues,
-            final Map<String, String> stories,
-            final List<String> unstated) {
-        this(issues, stories, unstated, Map.of(), Map.of());
+    public Writes(final Map<String, String> issues, final Map<String, String> stories) {
+        this(issues, stories, Map.of());
     }
 
     /**
@@ -196,7 +184,6 @@ public record Writes(
     public boolean none() {
         return issues.isEmpty()
                 && stories.isEmpty()
-                && unstated.isEmpty()
                 && workers.isEmpty()
                 && priorities.isEmpty()
                 && !reasons();

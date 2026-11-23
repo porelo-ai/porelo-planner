@@ -10,7 +10,6 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
-import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.Project;
 import org.jspecify.annotations.Nullable;
@@ -192,15 +191,33 @@ public final class ProjectFile {
                 tracker.kind(),
                 tracker.project(),
                 repositories.stream().map(Repository::name).toList(),
-                new Workflow(
-                        workflow.states(),
-                        workflow.phases().stream()
-                                .map(phase -> new Workflow.Phase(phase.name(), phase.states()))
-                                .toList(),
-                        workflow.states().stream().filter(workflow::closed).toList()),
+                workflow.board(),
                 WorkReader.read(work),
                 commit,
-                issueStates -> workflow.storyState(null, issueStates));
+                new TrackedProject.StoryStates() {
+                    @Override
+                    public @org.jspecify.annotations.Nullable String storyState(
+                            final List<String> issueStates) {
+                        return workflow.storyState(null, issueStates);
+                    }
+
+                    @Override
+                    public java.util.Optional<org.fuin.porelo.planner.store.Warning> behind(
+                            final String storyState,
+                            final List<String> ids,
+                            final List<String> issueStates) {
+                        return workflow.storyRule()
+                                .flatMap(rule -> rule.behind(storyState, ids, issueStates));
+                    }
+
+                    @Override
+                    public java.util.Optional<String> fault() {
+                        return workflow.storyRule().isEmpty()
+                                ? java.util.Optional.of(
+                                        org.fuin.porelo.planner.core.StoryState.NO_RULE)
+                                : java.util.Optional.empty();
+                    }
+                });
     }
 
     /**

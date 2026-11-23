@@ -224,7 +224,7 @@ class MockModeTest {
                         runtime,
                         "/projects/any",
                         "{\"revision\": \"mock@1\", \"moves\": [{\"story\": \"ST292\", \"to\":"
-                                + " \"Review\"}]}");
+                                + " \"Rejected\"}]}");
         assertThat(move.statusCode()).as("the status: %s", move.body()).isEqualTo(502);
         final JsonNode problem = JSON.readTree(move.body());
         assertThat(problem.path("type").asString())

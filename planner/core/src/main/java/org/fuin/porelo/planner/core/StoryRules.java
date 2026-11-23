@@ -28,11 +28,7 @@ public final class StoryRules {
         /** An open issue past the workflow's first state stands in no story. */
         ISSUE_IN_NO_STORY("IssueInNoStory"),
         /** A story's priority is below the highest priority of its open issues. */
-        STORY_PRIORITY_BELOW_ISSUE("StoryPriorityBelowIssue"),
-        /** A story has no issue and no given state. */
-        STORY_WITHOUT_ISSUE_OR_STATE("StoryWithoutIssueOrState"),
-        /** A story's given state does not fit its issues. */
-        STORY_STATE_MISFIT("StoryStateMisfit");
+        STORY_PRIORITY_BELOW_ISSUE("StoryPriorityBelowIssue");
 
         private final String spelled;
 
@@ -63,10 +59,9 @@ public final class StoryRules {
      * Answers every breach on a board: each story's in the board's order, then each issue's.
      *
      * @param board the board
-     * @param derive derives a story's state from its issues, as the board's store does
      * @return the breaches
      */
-    public static List<Breach> of(final Board board, final Moves.StoryState derive) {
+    public static List<Breach> of(final Board board) {
         final Workflow workflow = board.workflow();
         final Map<String, Issue> issues = new HashMap<>();
         board.issues().forEach(issue -> issues.put(issue.id(), issue));
@@ -74,24 +69,6 @@ public final class StoryRules {
         final List<Breach> breaches = new ArrayList<>();
         for (final Story story : board.stories()) {
             belowIssue(story, issues, children, workflow).ifPresent(breaches::add);
-            if (story.issues().isEmpty() && story.issuesWhole() && !story.stateGiven()) {
-                breaches.add(
-                        new Breach(
-                                story.id(),
-                                Rule.STORY_WITHOUT_ISSUE_OR_STATE,
-                                story.id() + " has no issue and no given state."));
-            }
-            final List<String> misfits = Misfits.of(board, story, derive);
-            if (misfits != null && !misfits.isEmpty()) {
-                breaches.add(
-                        new Breach(
-                                story.id(),
-                                Rule.STORY_STATE_MISFIT,
-                                story.id()
-                                        + " has a given state its issues "
-                                        + String.join(", ", misfits)
-                                        + " do not fit."));
-            }
         }
         if (board.stories().stream().anyMatch(story -> !story.issuesWhole())) {
             // A story whose issues are not all known may name any issue, so none is in no story.

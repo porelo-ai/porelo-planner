@@ -455,10 +455,6 @@ public record WorkProposal(
      */
     private static boolean agentsReady(
             final Board board, final Story story, final String to, final WorkRule rule) {
-        if (story.stateGiven()) {
-            // A state a person set on the story stands over what its issues say.
-            return false;
-        }
         final List<Issue> open = free(board, issues(board, story, to, new ArrayList<>()), null);
         if (open.stream().noneMatch(i -> i.worker() == Worker.MANUAL)) {
             return false;
@@ -565,7 +561,7 @@ public record WorkProposal(
         final List<Issue> free = new ArrayList<>();
         for (final Issue issue : open) {
             final java.util.Optional<String> reason =
-                    board.holdsStart(issue.id())
+                    board.holdsWork(issue.id())
                             .or(
                                     () ->
                                             openBlockers(board, issue).isEmpty()

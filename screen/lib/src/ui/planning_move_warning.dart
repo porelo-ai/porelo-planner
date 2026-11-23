@@ -87,8 +87,6 @@ class PlanningMoveWarningPanel extends StatelessWidget {
     PlanningMoveWarning.issuesAlong => '${warning.item} carries these issues along:',
     PlanningMoveWarning.skipsStates =>
       '${warning.item} skips ${warning.skipped.join(', ')} on its way from ${warning.from} to ${warning.to}.',
-    PlanningMoveWarning.storyMismatch =>
-      '${warning.item} will stand in ${warning.to} while these issues do not fit it:',
     _ => '${warning.item}: ${warning.kind}',
   };
 }

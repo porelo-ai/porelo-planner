@@ -147,7 +147,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 .forEach(
                         (id, state) -> {
                             final ItemView item = issueItem(current, id);
-                            plan.state(id, item, state);
+                            plan.state(id, item, state, false);
                         });
         writes.workers()
                 .forEach(
@@ -161,11 +161,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                 .forEach(
                         (id, state) -> {
                             final ItemView item = storyItem(current, id);
-                            plan.state(id, item, state);
+                            plan.state(id, item, state, true);
                         });
-        for (final String id : writes.unstated()) {
-            plan.clear(id, storyItem(current, id), FieldNames.STATUS);
-        }
         writes.priorities()
                 .forEach(
                         (id, priority) ->
@@ -530,7 +527,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 throw new StoreException.NotSavable(
                         id, "a result moves it to an open state of the workflow only");
             }
-            plan.state(id, item, given.to());
+            plan.state(id, item, given.to(), false);
             plan.option(id, item, FieldNames.SIZE, given.size());
             final Integer minutes = given.estimateMinutes();
             if (minutes != null) {
@@ -813,45 +810,33 @@ public final class FieldsBoardWriter implements BoardWriter {
             this.current = current;
         }
 
-        void state(final String id, final ItemView item, final String state) {
+        /**
+         * Plans an item's move into a state: a closed state is the close with its reason alone, one
+         * call that writes no {@code Status}; an open state is the issue's {@code Status} and a
+         * reopen of a closed item, while a story, which has no {@code Status}, is only reopened.
+         */
+        void state(final String id, final ItemView item, final String state, final boolean story) {
             final Workflow workflow = current.config().workflow();
             if (!workflow.states().contains(state)) {
                 throw new StoreException.NotSavable(id, "its state is none of the workflow");
             }
-            option(id, item, FieldNames.STATUS, state);
             final boolean closed = workflow.closed().contains(state);
             // The first closed state is done; any later one, such as Rejected, is not planned.
             final boolean notPlanned = closed && workflow.closed().indexOf(state) > 0;
-            // An issue GitHub has closed under an open state stays closed on a move to another open
-            // one, so no close is undone unseen; a move out of any other state reopens it. Without
-            // a Status, a story stands in the state its issues give it and an issue in the
-            // workflow's first state, as the board reads them.
-            final String status = item.fields().getOrDefault(FieldNames.STATUS, "");
-            final String before =
-                    status.isEmpty()
-                            ? current.board()
-                                    .story(id)
-                                    .map(org.fuin.porelo.planner.store.Story::state)
-                                    .orElse(workflow.states().get(0))
-                            : status;
-            final boolean openBefore =
-                    workflow.states().contains(before) && !workflow.closed().contains(before);
-            final boolean reopens = !closed && !item.open() && !openBefore;
-            if ((closed && (item.open() || otherReason(item.stateReason(), notPlanned)))
-                    || reopens) {
+            if (!closed && !story) {
+                option(id, item, FieldNames.STATUS, state);
+            }
+            final boolean changes =
+                    closed
+                            ? item.open()
+                                    || IssueMapping.rejecting(item.stateReason()) != notPlanned
+                            : !item.open();
+            if (changes) {
+                items.putIfAbsent(id, item);
                 openings.put(id, new ProjectWrites.Opening(!closed, notPlanned));
             } else {
                 openings.remove(id);
             }
-        }
-
-        /**
-         * Whether GitHub closed an issue for another reason than its closed state gives; a
-         * duplicate counts as not planned, so a person's choice of it stays.
-         */
-        private static boolean otherReason(
-                final @Nullable String reason, final boolean notPlanned) {
-            return notPlanned ? "completed".equals(reason) : !"completed".equals(reason);
         }
 
         void option(final String id, final ItemView item, final String field, final String name) {
@@ -1221,9 +1206,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                             refused.item().repository(), List.copyOf(written), reason);
                 }
             }
-            // After the field values: a save cut off between them leaves an issue whose Status
-            // already says what the person chose, never a closed one the board shows in its old
-            // state; the same move again closes what is still open.
+            // After the field values: a reopen cut off between them leaves the issue closed, as
+            // the board still shows it, and the same move again reopens it.
             for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
                 final ProjectWrites.Opening opening = openings.get(entry.getKey());
                 if (opening != null) {
@@ -1594,7 +1578,7 @@ public final class FieldsBoardWriter implements BoardWriter {
     /**
      * What a person's change to an item shows in: its field values, its parent, its sub-issues, its
      * blockers, its labels, its issue type, whether either list runs past the one page read,
-     * whether it is open, its title and its body.
+     * whether it is open, why GitHub closed it, its title and its body.
      */
     private record Seen(
             Map<String, String> fields,
@@ -1605,6 +1589,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             @Nullable String type,
             boolean more,
             boolean open,
+            @Nullable String reason,
             String title,
             String body) {
 
@@ -1620,6 +1605,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     item.issueType(),
                     false,
                     item.open(),
+                    item.stateReason(),
                     item.title(),
                     item.body());
         }
@@ -1636,8 +1622,14 @@ public final class FieldsBoardWriter implements BoardWriter {
                     Boolean.TRUE.equals(issue.subIssues().pageInfo().hasNextPage())
                             || Boolean.TRUE.equals(issue.blockedBy().pageInfo().hasNextPage()),
                     "OPEN".equals(issue.state()),
+                    reason(issue.stateReason()),
                     Objects.requireNonNullElse(issue.title(), ""),
                     Objects.requireNonNullElse(issue.body(), ""));
+        }
+
+        /** A reason as the board's read holds it, lowercased. */
+        private static @Nullable String reason(final @Nullable String given) {
+            return given == null ? null : given.toLowerCase(java.util.Locale.ROOT);
         }
 
         private static List<String> ids(final GitHubGraphQl.IssueRefs refs) {

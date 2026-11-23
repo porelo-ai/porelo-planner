@@ -329,7 +329,7 @@ class GitHubStoreWriterFailureTest {
     private static Writes allReady(final Board board) {
         final Map<String, String> moves = new LinkedHashMap<>();
         board.issues().forEach(issue -> moves.put(issue.id(), "Ready"));
-        return new Writes(moves, Map.of(), List.of());
+        return new Writes(moves, Map.of());
     }
 
     private static long count(final GitHub github, final String call) {
@@ -393,7 +393,7 @@ class GitHubStoreWriterFailureTest {
         final GitHubStore store = store(github);
         final Board board = store.refresh();
         github.writesFailReads = true;
-        final Writes one = new Writes(Map.of("example-project#1", "Ready"), Map.of(), List.of());
+        final Writes one = new Writes(Map.of("example-project#1", "Ready"), Map.of());
 
         assertThatThrownBy(() -> store.save(board.revision(), one))
                 .as("a save whose read after its writes fails")

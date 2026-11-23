@@ -88,6 +88,86 @@ class LocalDirectoryStoreTest {
         return new LocalDirectoryStore(items, files, PROJECT, () -> PROJECT, metrics, CLOCK);
     }
 
+    private LocalDirectoryStore store(final TrackedProject project) {
+        return new LocalDirectoryStore(
+                items, files, project, () -> project, StageMetrics.NONE, CLOCK);
+    }
+
+    private static TrackedProject ruledBy(final TrackedProject.StoryStates states) {
+        return new TrackedProject(
+                null,
+                "",
+                "local",
+                "",
+                List.of("plans", "engine"),
+                WORKFLOW,
+                new Work(Map.of(), List.of()),
+                "files",
+                states);
+    }
+
+    @Test
+    void aLocalStoryWarnsOfItsIssueBehindIt() {
+        // Harm: a local story shown as built hides the issue still waiting, so nobody plans it.
+        final LocalDirectoryStore store =
+                store(
+                        ruledBy(
+                                new TrackedProject.StoryStates() {
+                                    @Override
+                                    public String storyState(final List<String> issueStates) {
+                                        return "Analyzed";
+                                    }
+
+                                    @Override
+                                    public Optional<Warning> behind(
+                                            final String storyState,
+                                            final List<String> ids,
+                                            final List<String> issueStates) {
+                                        return Optional.of(
+                                                Warning.issueBehindStory(ids, storyState));
+                                    }
+                                }));
+        final NewIssue.Added first = issue(store);
+        final NewIdea.Added story =
+                store.createStoryFromIssues(
+                        first.board().revision(),
+                        new StoryFromIssues("One", "Gain", "Test", "High", List.of(first.id())));
+
+        assertThat(store.board().story(story.story()).orElseThrow().warnings())
+                .extracting(Warning::kind)
+                .contains(Warning.ISSUE_BEHIND_STORY);
+    }
+
+    @Test
+    void aLocalWorkflowWithoutARuleIsTheBoardsFaultAndPlacesNoStory() {
+        // Harm: a local workflow the rule cannot read puts every story in its first state,
+        // unwarned.
+        final LocalDirectoryStore store =
+                store(
+                        ruledBy(
+                                new TrackedProject.StoryStates() {
+                                    @Override
+                                    public @org.jspecify.annotations.Nullable String storyState(
+                                            final List<String> issueStates) {
+                                        return null;
+                                    }
+
+                                    @Override
+                                    public Optional<String> fault() {
+                                        return Optional.of("no rule");
+                                    }
+                                }));
+        final NewIssue.Added first = issue(store);
+        final NewIdea.Added story =
+                store.createStoryFromIssues(
+                        first.board().revision(),
+                        new StoryFromIssues("One", "Gain", "Test", "High", List.of(first.id())));
+
+        final Board read = store.board();
+        assertThat(read.faults()).contains("no rule");
+        assertThat(read.story(story.story()).orElseThrow().state()).isEmpty();
+    }
+
     private LocalDirectoryStore store(final PrivateFiles hooked) {
         return new LocalDirectoryStore(
                 items, hooked, PROJECT, () -> PROJECT, StageMetrics.NONE, CLOCK);
@@ -109,9 +189,7 @@ class LocalDirectoryStoreTest {
         // Harm: planning without a forge loses a new issue or its move, or sends a local id to one.
         final LocalDirectoryStore store = store();
         final NewIssue.Added added = issue(store);
-        store.save(
-                added.board().revision(),
-                new Writes(Map.of(added.id(), "Backlog"), Map.of(), List.of()));
+        store.save(added.board().revision(), new Writes(Map.of(added.id(), "Backlog"), Map.of()));
 
         final Board read = store().board();
         assertThat(added.id()).as("the repository's first number").isEqualTo("engine#1");
@@ -142,8 +220,7 @@ class LocalDirectoryStoreTest {
                         () ->
                                 store.save(
                                         added.board().revision(),
-                                        new Writes(
-                                                Map.of(added.id(), "Done"), Map.of(), List.of())))
+                                        new Writes(Map.of(added.id(), "Done"), Map.of())))
                 .as("a write reads the directory again")
                 .isInstanceOf(StoreException.StaleRevision.class);
         assertThat(store().issue(added.id()).state())
@@ -194,9 +271,7 @@ class LocalDirectoryStoreTest {
                         Map.of("codex_input_tokens", 100L));
         final LocalDirectoryStore store = store((id, result) -> Optional.of(stage));
         final NewIssue.Added added = issue(store);
-        store.save(
-                added.board().revision(),
-                new Writes(Map.of(added.id(), "Analyzing"), Map.of(), List.of()));
+        store.save(added.board().revision(), new Writes(Map.of(added.id(), "Analyzing"), Map.of()));
         final StageResult result =
                 new StageResult(
                         WorkRule.Result.ANALYSIS,
@@ -213,9 +288,7 @@ class LocalDirectoryStoreTest {
                                         List.of())));
         store.saveResult(result);
         // The issue is moved back by hand, so the same result can be handed in again.
-        store.save(
-                store.board().revision(),
-                new Writes(Map.of(added.id(), "Analyzing"), Map.of(), List.of()));
+        store.save(store.board().revision(), new Writes(Map.of(added.id(), "Analyzing"), Map.of()));
         store.saveResult(result);
 
         final String text = Files.readString(items.resolve("engine-1.md"));
@@ -348,8 +421,7 @@ class LocalDirectoryStoreTest {
         final NewIssue.Added first = issue(store);
         final NewIssue.Added second = issue(store);
         store.save(
-                second.board().revision(),
-                new Writes(Map.of(first.id(), "Analyzing"), Map.of(), List.of()));
+                second.board().revision(), new Writes(Map.of(first.id(), "Analyzing"), Map.of()));
         store.saveResult(analysis(first.id()));
         final String stages = stages("engine-1.md");
         final NewIdea.Added story =
@@ -464,8 +536,7 @@ class LocalDirectoryStoreTest {
                         + "\n## Stages\n\n```json\n[ { \"key\" : \"task/1:1\",\n```\n";
         edit("engine-1.md", text -> text + broken);
         store.save(
-                store.refresh().revision(),
-                new Writes(Map.of(added.id(), "Analyzing"), Map.of(), List.of()));
+                store.refresh().revision(), new Writes(Map.of(added.id(), "Analyzing"), Map.of()));
         store.setText(
                 store.board().revision(),
                 added.id(),
@@ -562,8 +633,7 @@ class LocalDirectoryStoreTest {
                                                         "Backlog",
                                                         "engine#2",
                                                         "Backlog"),
-                                                Map.of(),
-                                                List.of())))
+                                                Map.of())))
                 .isInstanceOf(StoreException.PartlySaved.class);
         final Board shown = store.board();
         assertThat(shown.revision()).as("the revision on disk").isNotEqualTo(before.revision());
@@ -677,9 +747,7 @@ class LocalDirectoryStoreTest {
         store.refresh();
         assertThat(hooked.directoryChecks).as("a read").hasValue(1);
         hooked.directoryChecks.set(0);
-        store.save(
-                store.board().revision(),
-                new Writes(Map.of(added.id(), "Backlog"), Map.of(), List.of()));
+        store.save(store.board().revision(), new Writes(Map.of(added.id(), "Backlog"), Map.of()));
         assertThat(hooked.directoryChecks).as("a write").hasValue(1);
     }
 }

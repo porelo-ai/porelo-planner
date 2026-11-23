@@ -295,7 +295,10 @@ final class LocalReader {
                         views,
                         project.workflow(),
                         project.repositories(),
-                        project.storyStates()::storyState);
+                        // The whole rule, its warnings and its fault with it, as the GitHub store
+                        // takes it.
+                        org.fuin.porelo.planner.store.github.StoryStates.following(
+                                project::storyStates));
         faults.addAll(mapped.faults());
         final List<Issue> issues = new ArrayList<>();
         for (final Issue issue : mapped.issues()) {
@@ -334,18 +337,20 @@ final class LocalReader {
             final List<Warning> warnings = new ArrayList<>(story.warnings());
             warnings.addAll(item.warnings());
             stories.add(
+                    // Its version is taken over its own values, a closed story's state among them.
                     new Story(
-                                    story.id(),
-                                    story.title(),
-                                    story.state(),
-                                    story.stateGiven(),
-                                    story.priority(),
-                                    story.size(),
-                                    story.issues(),
-                                    story.description(),
-                                    null,
-                                    story.issuesWhole())
-                            .withWarnings(warnings));
+                            story.id(),
+                            story.title(),
+                            story.state(),
+                            project.workflow().closed().contains(story.state()),
+                            story.priority(),
+                            story.size(),
+                            story.issues(),
+                            story.description(),
+                            null,
+                            story.issuesWhole(),
+                            story.closedAt(),
+                            warnings));
         }
         // No tracker's owner: a local id must never reach a forge as an issue's reference.
         return new Snapshot(

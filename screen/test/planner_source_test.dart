@@ -63,7 +63,6 @@ Map<String, dynamic> _story(String id, String state) => {
   'id': id,
   'title': 'Story $id',
   'state': state,
-  'stateGiven': false,
   'priority': 'High',
   'link': null,
   'issues': [_issue('PR1', state)],

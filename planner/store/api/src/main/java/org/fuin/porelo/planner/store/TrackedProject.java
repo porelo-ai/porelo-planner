@@ -41,6 +41,30 @@ public record TrackedProject(
          */
         @org.jspecify.annotations.Nullable
         String storyState(List<String> issueStates);
+
+        /**
+         * The story's warning naming each of its issues that stands before the state derived for
+         * it.
+         *
+         * @param storyState the state {@link #storyState} gave the story
+         * @param ids the story's issues
+         * @param issueStates their states, one for each of {@code ids}
+         * @return the warning, or empty when none stands behind it or the rule names none
+         */
+        default java.util.Optional<org.fuin.porelo.planner.store.Warning> behind(
+                final String storyState, final List<String> ids, final List<String> issueStates) {
+            return java.util.Optional.empty();
+        }
+
+        /**
+         * The board's fault when the workflow gives no story its state from its issues; a store
+         * then names it among the board's faults and places no story by a guess.
+         *
+         * @return the fault, or empty when the workflow gives the rule
+         */
+        default java.util.Optional<String> fault() {
+            return java.util.Optional.empty();
+        }
     }
 
     /** Checks the origin and copies the list. */

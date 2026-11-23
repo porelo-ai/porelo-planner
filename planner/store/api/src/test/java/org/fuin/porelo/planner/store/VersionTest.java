@@ -26,6 +26,7 @@ class VersionTest {
                 "Its text.",
                 null,
                 true,
+                null,
                 List.of());
     }
 

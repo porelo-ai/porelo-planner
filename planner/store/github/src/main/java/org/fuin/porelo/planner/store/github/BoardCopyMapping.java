@@ -184,7 +184,8 @@ final class BoardCopyMapping {
                 issue.parentId(),
                 links(issue.subIssues()),
                 links(issue.blockedBy()),
-                issue.issueType());
+                issue.issueType(),
+                issue.closedAt());
     }
 
     private static GitHubGraphQl.BoardIssue issue(
@@ -205,8 +206,8 @@ final class BoardCopyMapping {
                 refs(issue.blockedBy()),
                 new GitHubGraphQl.PageInfo(partial, null),
                 issue.type(),
-                // A board copy keeps no closing time, and nothing read from a copy uses one.
-                null);
+                // A story read from the copy keeps the day its test passed.
+                issue.closedAt());
     }
 
     private static TrackedItem.Links links(final GitHubGraphQl.IssueRefs refs) {

@@ -88,7 +88,6 @@ void main() {
         'id': 'S1',
         'title': 'No state told',
         'state': '',
-        'stateGiven': false,
         'priority': 'High',
         'issues': [_issue('I1', 'Parked')],
       },
@@ -113,7 +112,6 @@ void main() {
         'id': 'S1',
         'title': 'Warned',
         'state': 'Parked',
-        'stateGiven': true,
         'priority': 'High',
         'issues': [
           _issue('I1', 'Parked', warnings: [_warning('StateOutsideWorkflow', _outside)]),
@@ -168,24 +166,10 @@ void main() {
     tester,
   ) async {
     await _show(tester, [
-      {
-        'id': 'S1',
-        'title': 'Parked one',
-        'state': 'Parked',
-        'stateGiven': true,
-        'priority': 'High',
-        'issues': <Object>[],
-      },
-      {'id': 'S2', 'title': 'Held one', 'state': 'Held', 'stateGiven': true, 'priority': 'High', 'issues': <Object>[]},
-      {
-        'id': 'S3',
-        'title': 'Parked two',
-        'state': 'Parked',
-        'stateGiven': true,
-        'priority': 'High',
-        'issues': <Object>[],
-      },
-      {'id': 'S4', 'title': 'Untold', 'state': '', 'stateGiven': false, 'priority': 'High', 'issues': <Object>[]},
+      {'id': 'S1', 'title': 'Parked one', 'state': 'Parked', 'priority': 'High', 'issues': <Object>[]},
+      {'id': 'S2', 'title': 'Held one', 'state': 'Held', 'priority': 'High', 'issues': <Object>[]},
+      {'id': 'S3', 'title': 'Parked two', 'state': 'Parked', 'priority': 'High', 'issues': <Object>[]},
+      {'id': 'S4', 'title': 'Untold', 'state': '', 'priority': 'High', 'issues': <Object>[]},
       {'id': 'S5', 'title': 'Ready one', 'state': 'Ready', 'priority': 'High', 'issues': <Object>[]},
     ]);
 
@@ -325,14 +309,7 @@ void main() {
   testWidgets('a phase named as an unknown state\'s column once was keeps a scroll of its own', (tester) async {
     await _show(tester, [
       for (var at = 1; at <= 30; at++)
-        {
-          'id': 'P$at',
-          'title': 'Parked $at',
-          'state': 'Parked',
-          'stateGiven': true,
-          'priority': 'High',
-          'issues': <Object>[],
-        },
+        {'id': 'P$at', 'title': 'Parked $at', 'state': 'Parked', 'priority': 'High', 'issues': <Object>[]},
       {'id': 'S2', 'title': 'Ready one', 'state': 'Ready', 'priority': 'High', 'issues': <Object>[]},
     ], phase: 'unplaced Parked');
     final ready = tester.getRect(find.byKey(const Key('planning-card S2')));
@@ -400,7 +377,6 @@ void main() {
         'id': 'S2',
         'title': 'Parked',
         'state': 'Parked',
-        'stateGiven': true,
         'priority': 'High',
         'issues': <Object>[],
         'warnings': [_warning('StateOutsideWorkflow', _outside, holds: true)],

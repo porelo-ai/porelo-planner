@@ -1,6 +1,5 @@
 package org.fuin.porelo.planner.core;
 
-import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Story;
@@ -49,8 +48,8 @@ public final class Priorities {
                     "MoveNotAllowed", held.get(), Moves.item(story, found.state(), "", held.get()));
         }
         if (found.priority().equals(priority)) {
-            return new Writes(Map.of(), Map.of(), List.of());
+            return new Writes(Map.of(), Map.of());
         }
-        return new Writes(Map.of(), Map.of(), List.of(), Map.of(), Map.of(story, priority));
+        return new Writes(Map.of(), Map.of(), Map.of(), Map.of(story, priority));
     }
 }

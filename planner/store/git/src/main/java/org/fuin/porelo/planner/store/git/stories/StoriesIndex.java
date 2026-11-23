@@ -272,6 +272,24 @@ public final class StoriesIndex {
         }
     }
 
+    /** Whether a head's tested day closes its story: every issue closed, not every one rejected. */
+    private static boolean testedClose(
+            final Workflow workflow, final Heads.Head head, final List<String> issueStates) {
+        return !head.data().get("tested").isNull()
+                && !issueStates.isEmpty()
+                && issueStates.stream().allMatch(workflow::closed)
+                && !issueStates.stream().allMatch(workflow::rejected);
+    }
+
+    /** The workflow's first closed state that is not rejected, its completed state. */
+    private static String completed(final Workflow workflow) {
+        return workflow.states().stream()
+                .filter(state -> workflow.closed(state) && !workflow.rejected(state))
+                .findFirst()
+                .orElseThrow(
+                        () -> new IllegalArgumentException("workflow.yml has no completed state"));
+    }
+
     private static int number(Heads.Head head) {
         return Integer.parseInt(head.data().get("id").asText().substring(2));
     }
@@ -279,7 +297,9 @@ public final class StoriesIndex {
     /**
      * What the stories' heads give, or nothing to go by when a head or an issue is at fault. A
      * story-2 head's stated state is the story's, with a warning where its issues give another;
-     * otherwise a story takes the earliest open issue state in board order.
+     * otherwise a story takes the state the one rule derives from its issues ({@link
+     * org.fuin.porelo.planner.core.StoryState}). A workflow that gives no rule is a fault for every
+     * story with issues, never a guessed state.
      */
     private Generated generate(Path dir, List<String> faults) throws IOException {
         final Map<String, Heads.Head> heads = read(dir, faults, workflow, forBoard);
@@ -332,13 +352,30 @@ public final class StoriesIndex {
             }
 
             if (issueStates.size() != head.data().get("issues").size()) continue;
+            if (!forBoard && !issueStates.isEmpty() && workflow.storyRule().isEmpty()) {
+                final String fault =
+                        "workflow.yml: " + org.fuin.porelo.planner.core.StoryState.NO_RULE;
+                if (!faults.contains(fault)) faults.add(fault);
+                continue;
+            }
             // A story whose state cannot be told stands on the board without one, not here.
             if (forBoard && issueStates.isEmpty() && stated.isEmpty()) continue;
             // A legacy head's state beside issues is no one's word: the migration drops it.
             final boolean given = head.data().has("$schema") && head.data().has("state");
             // A stated state is given, so the rule gives one too.
+            // A story with no issue left once the rejected ones are left out keeps the state it
+            // states, or else is an Idea, the workflow's first state. One whose test passed, its
+            // day in its head, is finished once its issues are all closed and not all rejected:
+            // that day is its close.
             final String byIssues =
-                    Objects.requireNonNull(workflow.storyState(stated, issueStates));
+                    testedClose(workflow, head, issueStates)
+                            ? completed(workflow)
+                            : Objects.requireNonNull(
+                                    workflow.storyState(
+                                            stated.isEmpty() && !issueStates.isEmpty()
+                                                    ? workflow.states().get(0)
+                                                    : stated,
+                                            issueStates));
             final String state = given ? stated : byIssues;
             if (given && !issueStates.isEmpty() && !stated.equals(byIssues))
                 notes.add(

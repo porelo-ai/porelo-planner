@@ -160,76 +160,6 @@ class WorkRunHttpTest {
     }
 
     @Test
-    void aStorysCorrectionOverRunningWorkNamesItIsRefusedUnconfirmedAndStopsItConfirmed()
-            throws Exception {
-        // Harm: a story's stated state set by hand while its run's agents work on it, unstopped,
-        // though a move of the same story would have warned and stopped the run.
-        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
-        call("/tasks/build/events", event(offer, "STARTED", ""), 200);
-        final Board board = store.board();
-        final Story st1 = board.story("ST1").orElseThrow();
-        store.current =
-                new Board(
-                        board.revision(),
-                        board.workflow(),
-                        List.of(
-                                new Story(
-                                                "ST1",
-                                                st1.title(),
-                                                "Parked",
-                                                true,
-                                                st1.priority(),
-                                                null,
-                                                st1.issues(),
-                                                st1.description(),
-                                                st1.link())
-                                        .withWarnings(
-                                                List.of(
-                                                        org.fuin.porelo.planner.store.Warning
-                                                                .stateOutsideWorkflow()
-                                                                .offering(
-                                                                        new org.fuin.porelo.planner
-                                                                                .store.Correction(
-                                                                                "StateStated",
-                                                                                List.of(
-                                                                                        "Backlog",
-                                                                                        "Review")))))),
-                        board.issues(),
-                        board.work(),
-                        board.repositories());
-        final String revision = board.revision().value();
-        final String asked =
-                "{\"revision\":\""
-                        + revision
-                        + "\",\"story\":\"ST1\",\"warning\":\"StateOutsideWorkflow\",\"state\":"
-                        + "\"Review\"";
-
-        final JsonNode preview = call("/corrections/preview", asked + "}", 200);
-        assertThat(preview.at("/warnings/0/kind").asString())
-                .as("the run at work is named")
-                .isEqualTo("RUNNING_WORK");
-        final String confirm = asked + ",\"digest\":\"" + preview.path("digest").asString() + "\"";
-        assertThat(call("/corrections", confirm + "}", 409).path("type").asString())
-                .as("an unconfirmed save is refused")
-                .endsWith(":WorkRunning");
-        assertThat(store.board().revision().value()).as("nothing saved").isEqualTo(revision);
-
-        final JsonNode saved = call("/corrections", confirm + ",\"confirm\":true}", 200);
-
-        assertThat(saved.at("/stopped/0/run").asString())
-                .as("the run the preview named")
-                .isEqualTo(preview.at("/warnings/0/run").asString());
-        assertThat(saved.at("/stopped/0/tasks"))
-                .as("the task the window must end, with its container")
-                .isEqualTo(
-                        JSON.readTree(
-                                "[{\"task\":\"build\",\"containerId\":\"box-" + offer + "\"}]"));
-        assertThat(projects.work("project").work("ST1").stopped())
-                .as("the run is recorded stopped")
-                .isTrue();
-    }
-
-    @Test
     void anIssueOfAStoryWhoseTaskIsOfferedIsNotMovedIntoAWorkingStateByHand() throws Exception {
         // Harm: a hand move let into work beside a task the window is about to start, past the
         // save's own check.
@@ -309,7 +239,6 @@ class WorkRunHttpTest {
                                         "ST1",
                                         "Story",
                                         "Building",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1", "AA2"),
@@ -1314,7 +1243,6 @@ class WorkRunHttpTest {
                                             "ST1",
                                             "Story",
                                             "Backlog",
-                                            false,
                                             "High",
                                             null,
                                             List.of("AA1"),
@@ -1359,7 +1287,6 @@ class WorkRunHttpTest {
                                             "ST1",
                                             "Story",
                                             state,
-                                            false,
                                             "High",
                                             null,
                                             List.of("AA1"),

@@ -140,11 +140,17 @@ class PublicReadersTest {
                 .as("no issues and none stated: none")
                 .isNull();
         assertThat(workflow.storyState("Idea", List.of("Review", "Finished", "Analyzed")))
-                .as("the earliest open issue state in board order")
-                .isEqualTo("Analyzed");
+                .as("none being built: those in Review or later count as Backlog, the furthest")
+                .isEqualTo("Backlog");
+        assertThat(workflow.storyState("Idea", List.of("Idea", "Reworking", "Implementing")))
+                .as("the furthest state of its issues being built")
+                .isEqualTo("Reworking");
+        assertThat(workflow.storyState("Idea", List.of("Review", "Finished")))
+                .as("every issue in Review or closed: Review")
+                .isEqualTo("Review");
         assertThat(workflow.storyState(null, List.of("Rejected", "Rejected")))
-                .as("every issue rejected: the first rejected one")
-                .isEqualTo("Rejected");
+                .as("every issue rejected: none left, and none stated")
+                .isNull();
         assertThat(
                         Workflow.read(
                                         """
@@ -156,8 +162,8 @@ class PublicReadersTest {
                                         phases: []
                                         """)
                                 .storyState("Idea", List.of("Shipped", "Rejected")))
-                .as("every issue closed, not all rejected: the workflow's first completed state")
-                .isEqualTo("Done");
+                .as("a workflow that measures no state gives no rule: the state stated")
+                .isEqualTo("Idea");
         assertThatThrownBy(() -> workflow.storyState("Idea", List.of("Nowhere")))
                 .as("an issue state the workflow does not hold")
                 .isInstanceOf(IllegalArgumentException.class)

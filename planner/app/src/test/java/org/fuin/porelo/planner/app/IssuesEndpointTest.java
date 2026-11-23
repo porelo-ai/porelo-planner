@@ -588,7 +588,7 @@ class IssuesEndpointTest {
         // An issue added under a story the store could not fully read would be worked from it.
         final org.fuin.porelo.planner.store.Story story =
                 new org.fuin.porelo.planner.store.Story(
-                        "ST1", "S", "Idea", true, "Medium", null, List.of(), "", null);
+                        "ST1", "S", "Idea", "Medium", null, List.of(), "", null);
         final String body =
                 "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
                         + " \"W\", \"story\": \"ST1\", \"revision\": \"r1\"}";

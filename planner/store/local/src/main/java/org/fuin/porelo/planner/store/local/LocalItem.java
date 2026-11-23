@@ -403,7 +403,8 @@ final class LocalItem {
 
     /**
      * The item as the GitHub store's mapping reads one: its id stands for its node id, it is open
-     * unless its state is closed, and its link names it alone.
+     * unless its state is closed, a closed state after the first reads as closed not planned, as
+     * the GitHub store writes one, and its link names it alone.
      *
      * @param workflow the project's workflow
      * @param issues the issues a story lists
@@ -411,6 +412,7 @@ final class LocalItem {
      */
     ItemView view(final Workflow workflow, final List<String> issues) {
         final String status = fields().getOrDefault(FieldNames.STATUS, "");
+        final int closed = workflow.closed().indexOf(status);
         return new ItemView(
                         id(),
                         id(),
@@ -418,8 +420,8 @@ final class LocalItem {
                         number(),
                         title(),
                         body,
-                        !workflow.closed().contains(status),
-                        null,
+                        closed < 0,
+                        closed < 0 ? null : closed == 0 ? "COMPLETED" : "NOT_PLANNED",
                         fields(),
                         List.of(),
                         parent(),

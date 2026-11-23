@@ -177,7 +177,6 @@ class FieldsBoardWriterEditsTest {
                                         STORY,
                                         "A story",
                                         "Idea",
-                                        false,
                                         "High",
                                         null,
                                         storyIssues,

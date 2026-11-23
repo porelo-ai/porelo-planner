@@ -6,12 +6,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.fuin.porelo.planner.core.StoryState;
 import org.jspecify.annotations.Nullable;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.MarkedYAMLException;
@@ -172,37 +173,50 @@ public final class Workflow {
     }
 
     /**
-     * The state a story's issues give it, the rule the stories index applies to a story whose head
-     * leaves its state to its issues and checks a stated one against: the stated state when it has
-     * no issues; otherwise the earliest open issue state in board order; otherwise, every issue
-     * being closed, the first issue's state when all are rejected, else the workflow's first closed
-     * state that is not rejected, its first completed state.
+     * This workflow as a board holds it: its states, phases, closed and measured states.
+     *
+     * @return the board's workflow
+     */
+    public org.fuin.porelo.planner.store.Workflow board() {
+        return new org.fuin.porelo.planner.store.Workflow(
+                states,
+                phases.stream()
+                        .map(
+                                phase ->
+                                        new org.fuin.porelo.planner.store.Workflow.Phase(
+                                                phase.name(), phase.states()))
+                        .toList(),
+                states.stream().filter(this::closed).toList(),
+                states.stream().filter(this::measured).toList());
+    }
+
+    /**
+     * The one rule an open story's state is derived from its issues by, or none when this workflow
+     * lacks the states it needs.
+     *
+     * @return the rule, or empty
+     */
+    public Optional<StoryState> storyRule() {
+        return StoryState.of(board(), states.stream().filter(this::rejected).toList());
+    }
+
+    /**
+     * The state a story's issues give it, by the one rule every store derives it by ({@link
+     * StoryState}); the stories index applies it to a story whose head leaves its state to its
+     * issues and checks a stated one against it.
      *
      * @param stated the state the story's head states, or null when it states none; returned as
-     *     given when there are no issues, and otherwise not read
+     *     given when no issue is left once the rejected ones are left out, or when this workflow
+     *     gives no rule
      * @param issueStates the states of the story's issues, in the order its head names them
-     * @return the story's state, null only when there are no issues and none is stated
+     * @return the story's state, null only when none is derived and none is stated
      * @throws NullPointerException when {@code issueStates} or one of its states is null
-     * @throws IllegalArgumentException when an issue state is unknown to the workflow; the index's
-     *     guard "workflow.yml has no completed state" is kept, though a workflow this class reads
-     *     always has the closed, not rejected state an issue then stands in
+     * @throws IllegalArgumentException when an issue state is unknown to the workflow
      */
     public @Nullable String storyState(@Nullable String stated, List<String> issueStates) {
-        if (issueStates.isEmpty()) return stated;
-        return issueStates.stream()
-                .filter(state -> !closed(state))
-                .min(Comparator.comparingInt(this::order))
-                .orElseGet(
-                        () ->
-                                issueStates.stream().allMatch(this::rejected)
-                                        ? issueStates.getFirst()
-                                        : states.stream()
-                                                .filter(state -> closed(state) && !rejected(state))
-                                                .findFirst()
-                                                .orElseThrow(
-                                                        () ->
-                                                                new IllegalArgumentException(
-                                                                        "workflow.yml has no completed state")));
+        issueStates.forEach(this::state);
+        final String derived = storyRule().map(rule -> rule.state(issueStates)).orElse(null);
+        return derived == null ? stated : derived;
     }
 
     private State state(String name) {

@@ -35,7 +35,7 @@ void main() {
     expect(board.live, isTrue, reason: 'the fake answered the watch');
     expect(boards.hasPendingMoves, isFalse, reason: 'nothing is saved yet');
 
-    final moving = board.move('S1', 'Review');
+    final moving = board.move('S1', 'Finished');
     await pumpEventQueue();
 
     expect(board.pending.keys, ['S1']);
@@ -43,7 +43,7 @@ void main() {
     source.gate.complete();
     await moving;
     await pumpEventQueue();
-    expect(source.saves.single.$2.single.to, 'Review');
+    expect(source.saves.single.$2.single.to, 'Finished');
     expect(boards.hasPendingMoves, isFalse, reason: 'the provider confirmed the move');
   });
 
@@ -58,7 +58,7 @@ void main() {
     final hidden = boards.at('other', 'demo')!;
     expect(boards.selected, isNot(same(hidden)));
 
-    final moving = hidden.move('S2', 'Backlog');
+    final moving = hidden.move('S2', 'Finished');
     await pumpEventQueue();
 
     expect(boards.hasPendingMoves, isTrue);

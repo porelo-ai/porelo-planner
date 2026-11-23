@@ -111,8 +111,14 @@ Future<void> _turn() => Future<void>.delayed(Duration.zero);
 
 Future<(_Source, PlanningBoard)> _opened({bool automatic = false}) async {
   final source = _Source();
+  final small = smallBoard();
   source.boards['demo'] = {
-    ...smallBoard(),
+    ...small,
+    // A story with open issues is closed only by its rejection here.
+    'states': [
+      ...small['states'] as List,
+      {'name': 'Rejected', 'kind': 'CLOSED'},
+    ],
     'issues': [_looseIssue()],
   };
   final board = PlanningBoard(source, 'demo');
@@ -322,7 +328,8 @@ void main() {
   test('a story with an unanswered move cannot take another issue', () async {
     final (source, board) = await _opened(automatic: true);
     source.moveFailure = const PlanningRefusal('TimedOut');
-    await board.move('S1', 'Review');
+    await board.move('S1', 'Rejected');
+    await board.confirmMove();
     expect(board.waitsOnItsSave('S1'), isTrue);
     await board.hangIssue('B900', 'S1');
     expect(source.lists, isEmpty);

@@ -41,8 +41,6 @@ class MovesEndpointTest {
 
     private @Nullable RuntimeException failure;
 
-    private boolean derives = true;
-
     private boolean keeps;
 
     private Board current = board("r1", "Backlog");
@@ -52,14 +50,10 @@ class MovesEndpointTest {
     private ChangesRegistry changes;
 
     private static Board board(final String revision, final String state) {
-        return board(revision, state, false, state);
+        return board(revision, state, state);
     }
 
-    private static Board board(
-            final String revision,
-            final String state,
-            final boolean given,
-            final String issueState) {
+    private static Board board(final String revision, final String state, final String issueState) {
         return new Board(
                 new Revision(revision),
                 new Workflow(
@@ -68,15 +62,7 @@ class MovesEndpointTest {
                         List.of("Finished")),
                 List.of(
                         new Story(
-                                "ST1",
-                                "A story",
-                                state,
-                                given,
-                                "High",
-                                null,
-                                List.of("AB01"),
-                                "",
-                                null)),
+                                "ST1", "A story", state, "High", null, List.of("AB01"), "", null)),
                 List.of(
                         new Issue(
                                 "AB01",
@@ -136,14 +122,6 @@ class MovesEndpointTest {
                     @Override
                     public boolean keepsReasons() {
                         return keeps;
-                    }
-
-                    @Override
-                    public @Nullable String storyState(final List<String> states) {
-                        if (!derives) {
-                            throw new UnsupportedOperationException();
-                        }
-                        return states.isEmpty() ? null : states.get(0);
                     }
                 };
         final Projects projects = new Projects((project, repository, branch) -> store, 8);
@@ -278,16 +256,6 @@ class MovesEndpointTest {
     }
 
     @Test
-    void aStoryMoveWhereTheStoreDerivesNoStateIsAnsweredAsNotOffered() throws Exception {
-        // A bare server error would leave the window unable to tell a missing feature from a fault.
-        derives = false;
-        moves("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Review\"}]}")
-                .andExpect(status().isNotImplemented())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
-        assertThat(saved).as("nothing saved").isEmpty();
-    }
-
-    @Test
     void aPartlySavedBatchIsToldToEveryWindow() throws Exception {
         // The windows not told would show a board some repositories no longer hold.
         final Changes.Subscription window = changes.subscribe("alpha");
@@ -320,7 +288,8 @@ class MovesEndpointTest {
     @Test
     void aPreviewAnswersEveryIssueThatMovesWithItsDigestAndSavesNothing() throws Exception {
         // Harm: a preview that writes, so a person who cancels has moved the story already.
-        preview("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Review\"}]}")
+        current = board("r1", "Review", "Review");
+        preview("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Finished\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r1"))
                 .andExpect(
@@ -328,10 +297,11 @@ class MovesEndpointTest {
                                 .value(org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")))
                 .andExpect(jsonPath("$.issues[0].id").value("AB01"))
                 .andExpect(jsonPath("$.issues[0].repository").value("porelo-store"))
-                .andExpect(jsonPath("$.issues[0].from").value("Backlog"))
-                .andExpect(jsonPath("$.issues[0].to").value("Review"))
+                .andExpect(jsonPath("$.issues[0].from").value("Review"))
+                .andExpect(jsonPath("$.issues[0].to").value("Finished"))
                 .andExpect(jsonPath("$.stories[0].id").value("ST1"))
-                .andExpect(jsonPath("$.warnings").isEmpty());
+                // A finish names every issue it takes along.
+                .andExpect(jsonPath("$.warnings[0].kind").value("ISSUES_ALONG"));
 
         assertThat(saved).as("nothing saved").isEmpty();
         assertThat(current.revision().value()).as("the board as it was").isEqualTo("r1");
@@ -401,16 +371,20 @@ class MovesEndpointTest {
     @Test
     void aStoryBreakingTheStoriesRulesIsPreviewedAndSavedAsAnyOther() throws Exception {
         // Harm: a breach that is only to be shown holds back or warns a move the person chose.
-        current = ranked(board("r1", "Backlog"), "Lowest", "Highest");
+        current = ranked(board("r1", "Review", "Review"), "Lowest", "Highest");
         final String body =
                 "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
-                        + " \"Review\"}]}";
+                        + " \"Finished\"}]}";
 
-        preview(body).andExpect(status().isOk()).andExpect(jsonPath("$.warnings").isEmpty());
+        // The finish's own warning alone: the breach adds none.
+        preview(body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.warnings.length()").value(1))
+                .andExpect(jsonPath("$.warnings[0].kind").value("ISSUES_ALONG"));
         moves(body).andExpect(status().isOk()).andExpect(jsonPath("$.moved[0]").value("AB01"));
 
         assertThat(saved).as("the move saved as any other").hasSize(1);
-        assertThat(saved.get(0).issues()).containsExactly(Map.entry("AB01", "Review"));
+        assertThat(saved.get(0).issues()).containsExactly(Map.entry("AB01", "Finished"));
     }
 
     @Test
@@ -518,7 +492,6 @@ class MovesEndpointTest {
                                 held.id(),
                                 held.title(),
                                 held.state(),
-                                held.stateGiven(),
                                 story,
                                 held.size(),
                                 held.issues(),
@@ -552,38 +525,6 @@ class MovesEndpointTest {
                 post("/projects/alpha/moves")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(Previewed.moves(body, preview)));
-    }
-
-    @Test
-    void aStoryThatFollowsItsIssuesLosesItsGivenStateAndMovesNoIssue() throws Exception {
-        // Harm: the follow member dropped on the way, so the story's move carries its issues
-        // instead.
-        current = board("r1", "Backlog", true, "Review");
-        final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Review\", \"follow\": true}]}";
-        final String shown =
-                preview(body)
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.issues").isEmpty())
-                        .andExpect(jsonPath("$.warnings").isEmpty())
-                        .andReturn()
-                        .getResponse()
-                        .getContentAsString();
-        mvc.perform(
-                        post("/projects/alpha/moves")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        Previewed.moves(
-                                                body.replace(", \"follow\": true", ""), shown)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
-        assertThat(saved).as("a plain move never saves on a follow move's preview").isEmpty();
-
-        moves(body).andExpect(status().isOk());
-        assertThat(saved).as("one save").hasSize(1);
-        assertThat(saved.get(0).unstated()).as("its given state goes").containsExactly("ST1");
-        assertThat(saved.get(0).issues()).as("no issue moves").isEmpty();
-        assertThat(saved.get(0).stories()).as("no state is given").isEmpty();
     }
 
     private ResultActions preview(final String body) throws Exception {

@@ -107,7 +107,7 @@ class ConditionalChangeProbeTest {
     }
 
     private void saveNothing(final GitHubStore store) {
-        store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(store.board().revision(), new Writes(Map.of(), Map.of()));
     }
 
     private GitHubStore store(final ChangeProbe probe) {
@@ -247,7 +247,7 @@ class ConditionalChangeProbeTest {
         store.poll();
         github.issueTags.put("example-two", "\"two-2\"");
         store.poll();
-        store.save(store.board().revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(store.board().revision(), new Writes(Map.of(), Map.of()));
         pastTheSavesOwnWindow();
         // A person undoes the planner's write on GitHub.
         github.issueTags.put("example-two", "\"two-2\"");
@@ -674,8 +674,7 @@ class ConditionalChangeProbeTest {
         store.refresh();
         final int before = reads.get();
 
-        final Board saved =
-                store.save(new Revision("read-1"), new Writes(Map.of(), Map.of(), List.of()));
+        final Board saved = store.save(new Revision("read-1"), new Writes(Map.of(), Map.of()));
 
         assertThat(reads.get()).as("whole reads after the write").isEqualTo(before + 1);
         assertThat(saved.revision().value()).as("the board after the write").isEqualTo("read-2");
@@ -700,8 +699,7 @@ class ConditionalChangeProbeTest {
         store.refresh();
         pace.spent(Duration.ofSeconds(120));
 
-        final Board saved =
-                store.save(new Revision("read-1"), new Writes(Map.of(), Map.of(), List.of()));
+        final Board saved = store.save(new Revision("read-1"), new Writes(Map.of(), Map.of()));
 
         assertThat(saved.faults())
                 .as("the faults of the board the write answers")

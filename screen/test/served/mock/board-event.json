@@ -3,49 +3,64 @@
   "repositories" : [ "porelo-project", "porelo-forge-clients", "porelo-ai.github.io", "porelo", "porelo-host", "porelo-frontend", "porelo-message-matrix", "porelo-intellij", "porelo-buildtools", "porelo-pi", "porelo-omp", "porelo-claude-code", "porelo-message-sluice", "porelo-adapters" ],
   "states" : [ {
     "name" : "New",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Accepted",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "In analysis",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : false
   }, {
     "name" : "Analyzed",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Under estimation",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : false
   }, {
     "name" : "Estimated",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Backlog",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Implementing",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Reading",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Review",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : true
   }, {
     "name" : "Rework",
-    "kind" : "WAITING"
+    "kind" : "WAITING",
+    "measured" : false
   }, {
     "name" : "Reworking",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Finishing",
-    "kind" : "WORKING"
+    "kind" : "WORKING",
+    "measured" : true
   }, {
     "name" : "Finished",
-    "kind" : "CLOSED"
+    "kind" : "CLOSED",
+    "measured" : true
   }, {
     "name" : "Rejected",
-    "kind" : "CLOSED"
+    "kind" : "CLOSED",
+    "measured" : false
   } ],
   "phases" : [ {
     "name" : "Ideas",
@@ -146,9 +161,7 @@
     "id" : "ST294",
     "title" : "Plan the stories on a board in the window",
     "state" : "In analysis",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "High",
     "size" : "L",
     "link" : "https://example.org/stories/ST294",
@@ -214,10 +227,8 @@
     "version" : "dde996310e935dcabdcab795d13b084d98bc32a3dda02994f15f47ef250b9c2f",
     "id" : "ST72",
     "title" : "A forge’s calls in a client that knows nothing of Porelo",
-    "state" : "Under estimation",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "state" : "Backlog",
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST72",
@@ -401,15 +412,18 @@
       "unestimated" : 6,
       "review" : 0
     },
-    "warnings" : [ ]
+    "warnings" : [ {
+      "kind" : "IssueBehindStory",
+      "text" : "Its issues FC03, FC09, FC10, FC11 and FC13 stand before its state Backlog.",
+      "holds" : false,
+      "correction" : null
+    } ]
   }, {
     "version" : "5165bad0d92d67c30658e7a81675c67d820f901e172fefa6f1a56db52135366d",
     "id" : "ST21",
     "title" : "No channel file and no hand-over directory any more",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : "M",
     "link" : "https://example.org/stories/ST21",
@@ -476,9 +490,7 @@
     "id" : "ST11",
     "title" : "porelo-adapters and porelo-ai.github.io each in its own task",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : "XL",
     "link" : "https://example.org/stories/ST11",
@@ -545,9 +557,7 @@
     "id" : "ST13",
     "title" : "porelo and porelo-host each in its task, with a way back",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST13",
@@ -614,9 +624,7 @@
     "id" : "ST28",
     "title" : "The setup, move and recovery proven together",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST28",
@@ -683,9 +691,7 @@
     "id" : "ST87",
     "title" : "Invalid machine inputs refused before renting",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST87",
@@ -752,9 +758,7 @@
     "id" : "ST182",
     "title" : "Review a Bitbucket pull request",
     "state" : "New",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST182",
@@ -821,9 +825,7 @@
     "id" : "ST114",
     "title" : "A vulnerability has a way in and is answered",
     "state" : "Accepted",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST114",
@@ -890,9 +892,7 @@
     "id" : "ST111",
     "title" : "Install from the intended package source",
     "state" : "Accepted",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST111",
@@ -959,9 +959,7 @@
     "id" : "ST144",
     "title" : "Understand where a binding setting came from",
     "state" : "Accepted",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST144",
@@ -1028,9 +1026,7 @@
     "id" : "ST14",
     "title" : "The coordinator reads everything and changes only porelo-project",
     "state" : "Analyzed",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : "S",
     "link" : "https://example.org/stories/ST14",
@@ -1120,9 +1116,7 @@
     "id" : "ST39",
     "title" : "A failed delivery named and kept visible",
     "state" : "Analyzed",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "High",
     "size" : "XS",
     "link" : "https://example.org/stories/ST39",
@@ -1189,9 +1183,7 @@
     "id" : "ST35",
     "title" : "Refuse an incompatible protocol and a meaningless option",
     "state" : "Analyzed",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "High",
     "size" : null,
     "link" : "https://example.org/stories/ST35",
@@ -1258,9 +1250,7 @@
     "id" : "ST15",
     "title" : "The website builds in its task",
     "state" : "Estimated",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST15",
@@ -1350,9 +1340,7 @@
     "id" : "ST106",
     "title" : "Make security failures hold the release",
     "state" : "Estimated",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST106",
@@ -1419,9 +1407,7 @@
     "id" : "ST198",
     "title" : "Reach a remote machine from Windows",
     "state" : "Estimated",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST198",
@@ -1487,10 +1473,8 @@
     "version" : "d62bf863af41cf1c689ee11482359786b63223ff9af15cf881d4cbdeaa9613b8",
     "id" : "ST291",
     "title" : "The host run by a program of its own, built like porelo",
-    "state" : "Backlog",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "state" : "Implementing",
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST291",
@@ -1880,15 +1864,18 @@
       "unestimated" : 16,
       "review" : 0
     },
-    "warnings" : [ ]
+    "warnings" : [ {
+      "kind" : "IssueBehindStory",
+      "text" : "Its issues B542, B543, B544, B545, B546, B547, B548, B549, B550, B551, B552, HO156, HO157 and B540.1 stand before its state Implementing.",
+      "holds" : false,
+      "correction" : null
+    } ]
   }, {
     "version" : "04d8bdf9598c4597f891c063aaa2b753a5352c1a218b3e44a04072022b4250d4",
     "id" : "ST292",
     "title" : "A whole move rehearsed by the agents on a rented server",
     "state" : "Backlog",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST292",
@@ -2127,9 +2114,7 @@
     "id" : "ST293",
     "title" : "Every agent works in a Porelo task, moved one at a time",
     "state" : "Backlog",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST293",
@@ -2196,9 +2181,7 @@
     "id" : "ST23",
     "title" : "The room and the usage records outlive the host",
     "state" : "Backlog",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST23",
@@ -2368,9 +2351,7 @@
     "id" : "ST6",
     "title" : "porelo-agy and porelo-codex each in its own task",
     "state" : "Backlog",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : "M",
     "link" : "https://example.org/stories/ST6",
@@ -2437,9 +2418,7 @@
     "id" : "ST27",
     "title" : "Every workflow runs on the local forge as on the central one",
     "state" : "Implementing",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST27",
@@ -2529,9 +2508,7 @@
     "id" : "ST12",
     "title" : "The release and pipeline tools the move rests on",
     "state" : "Implementing",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST12",
@@ -2741,9 +2718,7 @@
     "id" : "ST5",
     "title" : "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
     "state" : "Implementing",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST5",
@@ -2933,9 +2908,7 @@
     "id" : "ST193",
     "title" : "Choose drive areas for each host",
     "state" : "Implementing",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST193",
@@ -3025,9 +2998,7 @@
     "id" : "ST127",
     "title" : "Keep container limits on large hosts",
     "state" : "Implementing",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST127",
@@ -3094,9 +3065,7 @@
     "id" : "ST1",
     "title" : "Builds on the host’s forge resolve snapshots with a read-only token",
     "state" : "Review",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST1",
@@ -3303,9 +3272,7 @@
     "id" : "ST2",
     "title" : "porelo-message-sluice works wholly in its task",
     "state" : "Review",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST2",
@@ -3392,9 +3359,7 @@
     "id" : "ST3",
     "title" : "porelo’s Build on the host’s Forgejo",
     "state" : "Review",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST3",
@@ -3481,9 +3446,7 @@
     "id" : "ST10",
     "title" : "Test machines by kind from the VM pool",
     "state" : "Review",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST10",
@@ -3606,13 +3569,11 @@
     },
     "warnings" : [ ]
   }, {
-    "version" : "35f1d0fe598f50b6f3200466cb4be1502af7c213df6e4801326479cd4f274915",
+    "version" : "b4ab7e482dc584395dbcbed7ce066eb7f3aee78422aeeff99b35759b442dec33",
     "id" : "ST295",
     "title" : "Hand the sluice's last checks to a person",
-    "state" : "Review",
-    "stateGiven" : true,
-    "misfits" : [ "SL38" ],
-    "derivedState" : "Backlog",
+    "state" : "Backlog",
+    "closedAt" : null,
     "priority" : "Low",
     "size" : null,
     "link" : "https://example.org/stories/ST295",
@@ -3718,13 +3679,11 @@
     },
     "warnings" : [ ]
   }, {
-    "version" : "49de22f7299a273164a89ecd36841d2bb6b400b7d73cc01f7fe96342fe1337f7",
+    "version" : "899c3a4f8c3f68afb2d19b3bfb689bb7e4cf58c16d556d795881439f76fe73ee",
     "id" : "ST264",
     "title" : "A host prepared with no project or person",
     "state" : "Finished",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST264",
@@ -3787,13 +3746,11 @@
     },
     "warnings" : [ ]
   }, {
-    "version" : "b054a2f7cd98a5409c2cc3ae75be354950fcd88c524854fe04a6fd8ca5605d15",
+    "version" : "c5de5ccc3152dd6b307050da3e48f6acf60dbd49b5faf5d60a21deb50d57c6d8",
     "id" : "ST268",
     "title" : "Each person’s one key and card, kept in the registry",
     "state" : "Finished",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST268",
@@ -3856,13 +3813,11 @@
     },
     "warnings" : [ ]
   }, {
-    "version" : "358c9568031fd6898fbeb91a6c2717133a5991f3cabdc6ed51470c7190d6923d",
+    "version" : "99a7131f410cd0919cd3a97cef1c077b450d5404b9c2ae6a2d17b704e26d9745",
     "id" : "ST243",
     "title" : "Both adapters pass one contract suite",
     "state" : "Finished",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Highest",
     "size" : null,
     "link" : "https://example.org/stories/ST243",
@@ -3965,13 +3920,11 @@
     },
     "warnings" : [ ]
   }, {
-    "version" : "bb375a5086ee428ec00a7236b4bdd7da0a1af5a4e9207972bfc6fb6eaa901121",
+    "version" : "6f9f1830d85be641cb6371aea0dceb2ab3bb657612fad3cd255cc233db16adbc",
     "id" : "ST296",
     "title" : "Items the planner could not fully read",
     "state" : "Backlog",
-    "stateGiven" : true,
-    "misfits" : null,
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST296",
@@ -4428,11 +4381,11 @@
         "correction" : null
       } ]
     }, {
-      "version" : "de9af40a78a85c2cdc91ed7e45f175a15d11a5121417e0caf79e7b1f6303bfde",
+      "version" : "f5b14ddb603ec7ce0d7ebdc3df26cd2193088f8f60709be8087e89a6c7f2a56b",
       "id" : "B887",
       "repository" : "porelo",
-      "title" : "An issue closed on GitHub under an open state",
-      "state" : "Backlog",
+      "title" : "An issue GitHub closed as not planned, whatever its Status reads",
+      "state" : "Rejected",
       "size" : "S",
       "priority" : "Medium",
       "minutesLeft" : null,
@@ -4446,17 +4399,12 @@
       "readingStopped" : false,
       "noRunHere" : false,
       "attention" : "NONE",
-      "warnings" : [ {
-        "kind" : "ClosedUnderOpenState",
-        "text" : "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it.",
-        "holds" : false,
-        "correction" : null
-      } ]
+      "warnings" : [ ]
     }, {
-      "version" : "1237fa6f3f4107b16c0b472578fb4ced9288845b97c005a783809712685c752e",
+      "version" : "b85ebf659164607dd30ab366004eb678f59fe2610d4e1047e6aa779785c9bbea",
       "id" : "B888",
       "repository" : "porelo",
-      "title" : "An issue open on GitHub under a closed state",
+      "title" : "An issue GitHub closed as completed, whatever its Status reads",
       "state" : "Finished",
       "size" : "S",
       "priority" : "Medium",
@@ -4471,12 +4419,7 @@
       "readingStopped" : false,
       "noRunHere" : false,
       "attention" : "NONE",
-      "warnings" : [ {
-        "kind" : "OpenUnderClosedState",
-        "text" : "It is open on GitHub while its state is a closed one; the board goes by its state.",
-        "holds" : false,
-        "correction" : null
-      } ]
+      "warnings" : [ ]
     }, {
       "version" : "e9386bc583ba054ac0f0ba277c6dd05ed223dbcfabe0e881c2d13fba724b6311",
       "id" : "B889",
@@ -4556,9 +4499,7 @@
     "id" : "ST297",
     "title" : "A story whose state cannot be told",
     "state" : "",
-    "stateGiven" : false,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST297",
@@ -4623,19 +4564,14 @@
       "kind" : "NoState",
       "text" : "No state can be told for it: it states none, and its issues give none.",
       "holds" : true,
-      "correction" : {
-        "kind" : "StateStated",
-        "states" : [ "New", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
-      }
+      "correction" : null
     } ]
   }, {
-    "version" : "b2be8f54f60bb813e0a38d3eccece21c9d5f35bbcebb928b8846f22f61d97935",
+    "version" : "55573b06ac38bb4cec9f7adea72a8ef8447269ab71f79ae9e8fadcc48195938c",
     "id" : "ST298",
     "title" : "A story naming an issue outside the project",
     "state" : "New",
-    "stateGiven" : true,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST298",
@@ -4649,13 +4585,11 @@
       "correction" : null
     } ]
   }, {
-    "version" : "615915e454c0ae1fe5d2c53220ac9bd04ba29dca724c21fde5631104115c03b9",
+    "version" : "8dd260cda8d442363b141f6350ca7ee59199b11472d79957220071141d69d490",
     "id" : "ST299",
     "title" : "A story edited by hand where the planner cannot follow",
     "state" : "New",
-    "stateGiven" : true,
-    "misfits" : [ ],
-    "derivedState" : null,
+    "closedAt" : null,
     "priority" : "Medium",
     "size" : null,
     "link" : "https://example.org/stories/ST299",
@@ -4701,7 +4635,7 @@
       "issues" : 1
     }, {
       "name" : "Backlog",
-      "issues" : 45
+      "issues" : 44
     }, {
       "name" : "Implementing",
       "issues" : 10
@@ -4725,7 +4659,7 @@
       "issues" : 9
     }, {
       "name" : "Rejected",
-      "issues" : 0
+      "issues" : 1
     } ],
     "blocked" : 4,
     "sizes" : [ {
@@ -4733,7 +4667,7 @@
       "issues" : 1
     }, {
       "name" : "S",
-      "issues" : 28
+      "issues" : 27
     }, {
       "name" : "M",
       "issues" : 35
@@ -4742,98 +4676,14 @@
       "issues" : 2
     } ],
     "unsized" : 1,
-    "left" : 67,
+    "left" : 66,
     "minutes" : null,
-    "unestimated" : 67,
+    "unestimated" : 66,
     "review" : 16
   },
   "rules" : [ {
-    "item" : "ST294",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST294 has no issue and no given state."
-  }, {
-    "item" : "ST21",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST21 has no issue and no given state."
-  }, {
-    "item" : "ST11",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST11 has no issue and no given state."
-  }, {
-    "item" : "ST13",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST13 has no issue and no given state."
-  }, {
-    "item" : "ST28",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST28 has no issue and no given state."
-  }, {
-    "item" : "ST87",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST87 has no issue and no given state."
-  }, {
-    "item" : "ST182",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST182 has no issue and no given state."
-  }, {
-    "item" : "ST114",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST114 has no issue and no given state."
-  }, {
-    "item" : "ST111",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST111 has no issue and no given state."
-  }, {
-    "item" : "ST144",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST144 has no issue and no given state."
-  }, {
-    "item" : "ST39",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST39 has no issue and no given state."
-  }, {
-    "item" : "ST35",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST35 has no issue and no given state."
-  }, {
-    "item" : "ST106",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST106 has no issue and no given state."
-  }, {
-    "item" : "ST198",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST198 has no issue and no given state."
-  }, {
-    "item" : "ST293",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST293 has no issue and no given state."
-  }, {
-    "item" : "ST6",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST6 has no issue and no given state."
-  }, {
     "item" : "ST193",
     "rule" : "StoryPriorityBelowIssue",
     "words" : "ST193 has a lower priority than its open issue PJ106."
-  }, {
-    "item" : "ST127",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST127 has no issue and no given state."
-  }, {
-    "item" : "ST295",
-    "rule" : "StoryStateMisfit",
-    "words" : "ST295 has a given state its issues SL38 do not fit."
-  }, {
-    "item" : "ST264",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST264 has no issue and no given state."
-  }, {
-    "item" : "ST268",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST268 has no issue and no given state."
-  }, {
-    "item" : "ST297",
-    "rule" : "StoryWithoutIssueOrState",
-    "words" : "ST297 has no issue and no given state."
   } ]
 }

@@ -24,10 +24,7 @@ class WorkersTest {
         assertThat(writes.workers())
                 .as("the worker of the issue named, and no other")
                 .isEqualTo(Map.of("AA1", Worker.MANUAL));
-        assertThat(
-                        writes.issues().isEmpty()
-                                && writes.stories().isEmpty()
-                                && writes.unstated().isEmpty())
+        assertThat(writes.issues().isEmpty() && writes.stories().isEmpty())
                 .as("no state is written with a worker")
                 .isTrue();
     }

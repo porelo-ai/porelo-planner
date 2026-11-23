@@ -167,16 +167,28 @@ void main() {
 
   // Harm: a person's move refused without a word because the box it came from is folded.
   testWidgets('a move refused out of a folded box is said above the board', (tester) async {
-    final (backend, boards) = await _show(tester, [_story('S1', 'Ready'), _story('S2', 'Ready')]);
+    final stories = [_story('S1', 'Ready'), _story('S2', 'Ready')];
+    final closing = _board(stories);
+    closing['states'] = [
+      ...closing['states'] as List,
+      {'name': 'Rejected', 'kind': 'CLOSED'},
+    ];
+    closing['phases'] = [
+      {
+        'name': 'Work',
+        'states': ['Ready', 'Building', 'Review', 'Rejected'],
+      },
+    ];
+    final (backend, boards) = await _show(tester, stories, board: closing);
     final board = boards.selected!;
     await _press(tester, 'planning-fold-state Ready');
-    // The story's issue is the project's own and waits, so its move asks nothing.
+    // The story's issue is the project's own, so the close carrying it asks nothing.
     backend.boards['demo']!['repositories'] = ['repo'];
     backend
       ..refusedStory = 'S1'
       ..refusalDetail = 'Policy refuses';
 
-    await tester.runAsync(() => board.move('S1', 'Review'));
+    await tester.runAsync(() => board.move('S1', 'Rejected'));
     await settle(tester);
 
     expect(backend.moveCalls, hasLength(1), reason: 'the move was sent at once');

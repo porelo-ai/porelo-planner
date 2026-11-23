@@ -51,11 +51,7 @@ public record Warning(
         /** Its size. */
         SIZE,
         /** Its number fields. */
-        FIGURES,
-        /** That GitHub has it open while its state is a closed one. */
-        OPEN,
-        /** That GitHub has it closed while its state is an open one. */
-        CLOSED
+        FIGURES
     }
 
     /**
@@ -71,12 +67,6 @@ public record Warning(
                     Concern.KIND,
                     Concern.WORKER,
                     Concern.RISK);
-
-    /**
-     * What a warning that holds back only the start of work is about: an item GitHub has closed,
-     * which a move into a closed state sets right.
-     */
-    private static final Set<Concern> HOLDING_START = EnumSet.of(Concern.CLOSED);
 
     /** A field's name a warning may name: the planner's own word, never a person's text. */
     private static final Pattern FIELD = Pattern.compile("[A-Z][A-Za-z ]{0,39}");
@@ -148,17 +138,6 @@ public record Warning(
     }
 
     /**
-     * Whether no work is proposed or started on an item with this warning: what {@link
-     * #holdsWork()} holds, and an item GitHub has closed under an open state, which a move or an
-     * edit may still name.
-     *
-     * @return true when it holds back the start of work
-     */
-    public boolean holdsStart() {
-        return holdsWork() || concerns.stream().anyMatch(HOLDING_START::contains);
-    }
-
-    /**
      * Whether it is about the item's state, so the board takes a state the workflow does not know.
      *
      * @return true when it concerns the state
@@ -187,6 +166,9 @@ public record Warning(
 
     /** The kind of an issue a story names that is outside the project. */
     public static final String ISSUE_OUTSIDE_PROJECT = "IssueOutsideProject";
+
+    /** The kind of a story whose issues stand before the state they give it. */
+    public static final String ISSUE_BEHIND_STORY = "IssueBehindStory";
 
     /** The kind of a sub-issue under another parent than its id names. */
     public static final String WRONG_PARENT = "WrongParent";
@@ -238,12 +220,6 @@ public record Warning(
 
     /** The kind of an issue with a number field that holds no number in the range it reads. */
     public static final String UNREADABLE_NUMBER = "UnreadableNumber";
-
-    /** The kind of an item GitHub has closed while its state is an open one. */
-    public static final String CLOSED_UNDER_OPEN_STATE = "ClosedUnderOpenState";
-
-    /** The kind of an item GitHub has open while its state is a closed one. */
-    public static final String OPEN_UNDER_CLOSED_STATE = "OpenUnderClosedState";
 
     /**
      * An item whose state is none of the workflow's; the board shows it in a column of its own.
@@ -369,6 +345,30 @@ public record Warning(
                 "It names an issue that is no issue of the project's repositories, which is not"
                         + " shown; it is set right by hand in "
                         + spoken(places)
+                        + ".",
+                Set.of(Concern.ISSUES));
+    }
+
+    /**
+     * A story whose issues give it a state some of them stand before, such as an issue still in
+     * Idea in a story being built; it holds nothing back.
+     *
+     * @param issues the ids of the issues standing before the story's state, as the board names
+     *     them
+     * @param state the story's state
+     * @return the warning
+     */
+    public static Warning issueBehindStory(final List<String> issues, final String state) {
+        if (issues.isEmpty()) {
+            throw new IllegalArgumentException("A story stands ahead of no issue");
+        }
+        return new Warning(
+                ISSUE_BEHIND_STORY,
+                (issues.size() == 1 ? "Its issue " : "Its issues ")
+                        + spoken(issues)
+                        + (issues.size() == 1 ? " stands" : " stand")
+                        + " before its state "
+                        + state
                         + ".",
                 Set.of(Concern.ISSUES));
     }
@@ -637,34 +637,6 @@ public record Warning(
                         + " holds no number in the range the planner reads, so the board counts it"
                         + " as none and saves no stage over it.",
                 Set.of(Concern.FIGURES));
-    }
-
-    /**
-     * An item GitHub has closed while its state is an open one; the state counts, no work is
-     * proposed or started on it, and the planner reopens it only on a move out of a closed state.
-     *
-     * @return the warning
-     */
-    public static Warning closedUnderOpenState() {
-        return new Warning(
-                CLOSED_UNDER_OPEN_STATE,
-                "It is closed on GitHub while its state is an open one, so no work starts on it;"
-                        + " the board goes by its state, and only a move out of a closed state"
-                        + " reopens it.",
-                Set.of(Concern.CLOSED));
-    }
-
-    /**
-     * An item GitHub has open while its state is a closed one; the state counts.
-     *
-     * @return the warning
-     */
-    public static Warning openUnderClosedState() {
-        return new Warning(
-                OPEN_UNDER_CLOSED_STATE,
-                "It is open on GitHub while its state is a closed one; the board goes by its"
-                        + " state.",
-                Set.of(Concern.OPEN));
     }
 
     /**

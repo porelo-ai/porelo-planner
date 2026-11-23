@@ -14,7 +14,7 @@ void main() {
     backend = MockPlanningSource();
     board = PlanningBoard(backend, 'checkout');
     await _turn();
-    work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST291'), 'Implementing');
+    work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST292'), 'Implementing');
     await work.load();
   });
   tearDown(() async {
@@ -27,10 +27,10 @@ void main() {
   test('only allowed modes can start', () async {
     final proposal = backend.work.call('ProposeStoryWork', {
       'project': 'checkout',
-      'story': 'ST291',
+      'story': 'ST292',
       'to': 'Implementing',
     });
-    backend.work.proposals['ST291'] = {
+    backend.work.proposals['ST292'] = {
       ...proposal,
       'modes': ['UNATTENDED'],
     };
@@ -128,7 +128,7 @@ void main() {
     backend.work.refusal = 'This repository cannot start on this machine.';
     expect(await work.start(), isFalse);
     expect(work.problem, 'This repository cannot start on this machine.');
-    expect(board.stories.firstWhere((story) => story.id == 'ST291').state, 'Backlog');
+    expect(board.stories.firstWhere((story) => story.id == 'ST292').state, 'Backlog');
   });
 
   // Harm: work is sent with an obsolete proposal after another board revision arrives.
@@ -145,7 +145,7 @@ void main() {
     backend.push('checkout', {...backend.boards['checkout']!, 'revision': ''});
     await _turn();
     work.dispose();
-    work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST291'), 'Implementing');
+    work = planningStoryWork(board, board.stories.firstWhere((story) => story.id == 'ST292'), 'Implementing');
     await work.load();
     expect(await work.start(), isFalse);
     expect(backend.work.calls.where((call) => call.$1 == 'StartStoryWork'), isEmpty);
@@ -155,6 +155,6 @@ void main() {
   test('start waits for the board echo', () async {
     backend.work.deferEcho = true;
     expect(await work.start(), isTrue);
-    expect(board.stories.firstWhere((story) => story.id == 'ST291').state, 'Backlog');
+    expect(board.stories.firstWhere((story) => story.id == 'ST292').state, 'Backlog');
   });
 }

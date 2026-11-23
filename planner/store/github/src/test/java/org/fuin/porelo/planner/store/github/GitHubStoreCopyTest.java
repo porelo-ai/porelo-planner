@@ -296,11 +296,7 @@ class GitHubStoreCopyTest {
                         AccessRefusals.DEFAULT);
         final Board board = store.board();
 
-        assertThatThrownBy(
-                        () ->
-                                store.save(
-                                        board.revision(),
-                                        new Writes(Map.of(), Map.of(), List.of())))
+        assertThatThrownBy(() -> store.save(board.revision(), new Writes(Map.of(), Map.of())))
                 .as("the failed save")
                 .isInstanceOf(StoreException.class);
         assertThat(copies().read(PROJECT, CONFIG.commit()))
@@ -364,7 +360,7 @@ class GitHubStoreCopyTest {
         final Instant saved = FIRST.plusSeconds(60);
         now.set(saved);
 
-        store.save(board.revision(), new Writes(Map.of(), Map.of(), List.of()));
+        store.save(board.revision(), new Writes(Map.of(), Map.of()));
 
         final BoardCopy copy = copies().read(PROJECT, CONFIG.commit()).orElseThrow();
         assertThat(copy.takenAt()).as("when the copy was taken").isEqualTo(saved);

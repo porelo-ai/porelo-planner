@@ -51,7 +51,7 @@ class EditsTest {
     private static final Fields SIZE = new Fields(Set.of(Fields.Field.SIZE), "M", null, null, null);
 
     private static Story story(final String id, final List<String> issues) {
-        return new Story(id, "Story " + id, "Idea", false, "High", null, issues, "", null);
+        return new Story(id, "Story " + id, "Idea", "High", null, issues, "", null);
     }
 
     private static Issue issue(final String id, final String parent, final List<String> blockedBy) {
@@ -267,7 +267,6 @@ class EditsTest {
                                         "ST1",
                                         "Story ST1",
                                         "Idea",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AB1"),

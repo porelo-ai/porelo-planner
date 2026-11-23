@@ -360,7 +360,6 @@ class WorkRunTest {
                                         "ST2",
                                         "Other",
                                         "Backlog",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1"),
@@ -619,14 +618,20 @@ class WorkRunTest {
             f.store.current =
                     new Board(
                             board.revision(),
-                            board.workflow(),
+                            // Rejected as well, so the other story can be closed over AA1.
+                            new org.fuin.porelo.planner.store.Workflow(
+                                    java.util.stream.Stream.concat(
+                                                    board.workflow().states().stream(),
+                                                    java.util.stream.Stream.of("Rejected"))
+                                            .toList(),
+                                    board.workflow().phases(),
+                                    List.of("Finished", "Rejected")),
                             List.of(
                                     board.stories().getFirst(),
                                     new Story(
                                             "ST2",
                                             "Other",
                                             "Backlog",
-                                            false,
                                             "High",
                                             null,
                                             List.of("AA1"),
@@ -646,7 +651,7 @@ class WorkRunTest {
                             () ->
                                     moved(
                                             f.run,
-                                            List.of(new Moves.Move(true, "ST2", "Review")),
+                                            List.of(new Moves.Move(true, "ST2", "Rejected")),
                                             () -> {
                                                 saved.set(true);
                                                 return f.store.board();
@@ -761,54 +766,6 @@ class WorkRunTest {
                 .containsExactly("BB1");
     }
 
-    @Test
-    void aStoryWhoseWorkingStateAPersonSetIsNotHeldThereByAPersonsIssue() {
-        // A state a person set stands over the issues, so a working story state without a run
-        // would otherwise pass as a person's work and start agents over lost work.
-        final Fixture f = new Fixture();
-        final Board held =
-                ManualIssues.of(
-                        withSecondIssue(NextStepTest.board("Reading", "Reading"), "Backlog"),
-                        "AA1");
-        f.store.current = held;
-        assertThat(f.run.propose("ST1", "Building").repositories())
-                .as("a story state its person's issue gives is held by that issue")
-                .isNotEmpty();
-
-        f.store.current = withStoryState(held, true);
-
-        assertThatThrownBy(() -> f.run.propose("ST1", "Building"))
-                .as("the stated working state without a run needs attention")
-                .isInstanceOf(WorkRefusal.class)
-                .satisfies(
-                        e ->
-                                assertThat(((WorkRefusal) e).name())
-                                        .as("the proposal is not allowed")
-                                        .isEqualTo("WorkNotAllowed"));
-    }
-
-    /** The board with its first story's state stated by its head, or given by its issues. */
-    private static Board withStoryState(final Board board, final boolean stateGiven) {
-        final Story story = board.stories().getFirst();
-        return new Board(
-                board.revision(),
-                board.workflow(),
-                List.of(
-                        new Story(
-                                story.id(),
-                                story.title(),
-                                story.state(),
-                                stateGiven,
-                                story.priority(),
-                                null,
-                                story.issues(),
-                                story.description(),
-                                story.link())),
-                board.issues(),
-                board.work(),
-                board.repositories());
-    }
-
     /** The fixture's board with BB1, an agent's issue of another repository, in the story too. */
     private static Board withSecondIssue(final Board board, final String state) {
         final Story story = board.stories().getFirst();
@@ -820,7 +777,6 @@ class WorkRunTest {
                                 story.id(),
                                 story.title(),
                                 story.state(),
-                                false,
                                 story.priority(),
                                 null,
                                 List.of("AA1", "BB1"),
@@ -851,7 +807,6 @@ class WorkRunTest {
                                         "ST1",
                                         "Story",
                                         "Backlog",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1.1"),
@@ -1069,7 +1024,6 @@ class WorkRunTest {
                                         "ST1",
                                         "Story",
                                         "Backlog",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1.1"),
@@ -1240,7 +1194,6 @@ class WorkRunTest {
                                     known.id(),
                                     known.title(),
                                     known.state(),
-                                    known.stateGiven(),
                                     known.priority(),
                                     known.size(),
                                     issues,
@@ -1665,9 +1618,7 @@ class WorkRunTest {
         // Harm: a stop offered for choices that are all refused, leaving the person no way on.
         final Fixture f = new Fixture();
         final var reader = readerStarted(f);
-        f.store.save(
-                f.store.board().revision(),
-                new Writes(Map.of("AA1", "Review"), Map.of(), List.of()));
+        f.store.save(f.store.board().revision(), new Writes(Map.of("AA1", "Review"), Map.of()));
         final var ended =
                 f.run.report(
                         "reader",
@@ -2429,8 +2380,8 @@ class WorkRunTest {
                         "box",
                         "workstation",
                         new WorkRun.Ended("2026-01-01T00:00:00Z", false, "Died", "", 0)));
-        // A second issue of the story behind it, so the story's move carries that one and leaves
-        // the failed one where it stands, as a move the planner takes can.
+        // A second issue of the story behind it, moved by hand while the failed one stays where it
+        // stands.
         final Board before = f.store.board();
         f.store.current =
                 new Board(
@@ -2441,7 +2392,6 @@ class WorkRunTest {
                                         "ST1",
                                         "Story",
                                         "Building",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1", "AA2"),
@@ -2457,7 +2407,7 @@ class WorkRunTest {
 
         moved(
                 f.run,
-                List.of(new Moves.Move(true, "ST1", "Review")),
+                List.of(new Moves.Move(false, "AA2", "Review")),
                 () -> f.store.save(f.store.board().revision(), writes("AA2", "Review")));
 
         final NextStep.Progress progress =
@@ -3100,7 +3050,7 @@ class WorkRunTest {
     }
 
     private static Writes writes(final String issue, final String state) {
-        return new Writes(Map.of(issue, state), Map.of(), List.of());
+        return new Writes(Map.of(issue, state), Map.of());
     }
 
     @Test
@@ -3327,9 +3277,7 @@ class WorkRunTest {
         f.start(f.order().tasks().getFirst());
         final Board board = f.store.current;
         final List<Story> stories = new java.util.ArrayList<>(board.stories());
-        stories.add(
-                new Story(
-                        "ST2", "Other", "Backlog", false, "High", null, List.of("AA2"), "", null));
+        stories.add(new Story("ST2", "Other", "Backlog", "High", null, List.of("AA2"), "", null));
         final List<Issue> issues = new java.util.ArrayList<>(board.issues());
         issues.add(new Issue("AA2", "alpha", "Other", "Backlog", null, List.of(), null, null, ""));
         f.store.current =
@@ -4433,7 +4381,6 @@ class WorkRunTest {
                                         "ST1",
                                         "Story",
                                         "Building",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1", "AA2"),
@@ -4741,7 +4688,7 @@ class WorkRunTest {
         final WorkRun.Offered child = role(tasks, "BUILDER");
         f.start(main);
         startChild(f, child);
-        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
         final String revision = f.store.board().revision().value();
         final MovePreview preview = f.run.preview(moves, revision);
         assertThat(preview.warnings().getFirst().tasks()).as("the tasks at work shown").hasSize(2);
@@ -4779,7 +4726,7 @@ class WorkRunTest {
         final WorkRun.Offered child = role(tasks, "BUILDER");
         f.start(main);
         startChild(f, child);
-        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
         final String revision = f.store.board().revision().value();
         final MovePreview preview = f.run.preview(moves, revision);
         endMain(f, main);
@@ -4814,7 +4761,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         final WorkRun.Offered main = role(f.order().tasks(), "MAIN");
         f.start(main);
-        final List<Moves.Move> moves = List.of(new Moves.Move(true, "ST1", "Backlog"));
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
         final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -4845,97 +4792,6 @@ class WorkRunTest {
                         runs -> saved.getAndSet(true));
 
         assertThat(saved).as("the move is saved").isTrue();
-        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
-        assertThat(run.stopped()).as("the run is recorded stopped with the save").isTrue();
-        assertThat(answer.stopped())
-                .as("the run stopped and the task the window must end, with its container")
-                .containsExactly(
-                        new WorkRun.StoppedRun(
-                                "ST1", run.id(), List.of(new WorkRun.StoppedTask("task", "box"))));
-    }
-
-    @Test
-    void aStorysStateCorrectionOverRunningWorkIsNamedRefusedUnconfirmedAndStopsItsRunConfirmed() {
-        // Harm: a story's stated state set by hand while a run's agents work on it, unstopped and
-        // unrecorded, though the same change as a move would have warned and stopped the run.
-        final Fixture f = new Fixture();
-        final WorkRun.Offered main = role(f.order().tasks(), "MAIN");
-        f.start(main);
-        final Board board = f.store.board();
-        final Story st1 = board.story("ST1").orElseThrow();
-        f.store.current =
-                new Board(
-                        board.revision(),
-                        board.workflow(),
-                        List.of(
-                                new Story(
-                                                "ST1",
-                                                st1.title(),
-                                                "Parked",
-                                                true,
-                                                st1.priority(),
-                                                null,
-                                                st1.issues(),
-                                                st1.description(),
-                                                st1.link())
-                                        .withWarnings(
-                                                List.of(
-                                                        org.fuin.porelo.planner.store.Warning
-                                                                .stateOutsideWorkflow()
-                                                                .offering(
-                                                                        new org.fuin.porelo.planner
-                                                                                .store.Correction(
-                                                                                org.fuin.porelo
-                                                                                        .planner
-                                                                                        .store
-                                                                                        .Correction
-                                                                                        .STATE_STATED,
-                                                                                List.of(
-                                                                                        "Backlog",
-                                                                                        "Review")))))),
-                        board.issues(),
-                        board.work(),
-                        board.repositories());
-        final Corrections.Asked asked =
-                new Corrections.Asked(
-                        true,
-                        "ST1",
-                        org.fuin.porelo.planner.store.Warning.STATE_OUTSIDE_WORKFLOW,
-                        "Review");
-        final String revision = board.revision().value();
-        final int saves = f.store.saves;
-
-        final Corrections.Preview preview = f.run.correctionPreview(asked, revision);
-        assertThat(preview.warnings())
-                .as("the run at work on the story is named before the save")
-                .filteredOn(w -> w.kind().equals(MovePreview.RUNNING_WORK))
-                .singleElement()
-                .satisfies(w -> assertThat(w.item()).isEqualTo("ST1"))
-                .satisfies(w -> assertThat(w.tasks()).containsExactly("task"));
-        final String digest = preview.digest("https://example.org/own.git", null);
-
-        final Throwable unconfirmed =
-                catchThrowable(
-                        () ->
-                                f.run.correction(
-                                        asked,
-                                        revision,
-                                        digest,
-                                        false,
-                                        "https://example.org/own.git",
-                                        null));
-        assertThat(unconfirmed).as("refused").isInstanceOf(WorkRefusal.class);
-        assertThat(conflictOf(unconfirmed)).as("as running work").isEqualTo("WorkRunning");
-        assertThat(f.store.saves).as("nothing reaches the store").isEqualTo(saves);
-        assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
-                .as("an unconfirmed save stops nothing")
-                .isFalse();
-
-        final WorkRun.MoveSaved<Board> answer =
-                f.run.correction(
-                        asked, revision, digest, true, "https://example.org/own.git", null);
-
-        assertThat(f.store.saves).as("the correction is saved once").isEqualTo(saves + 1);
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.stopped()).as("the run is recorded stopped with the save").isTrue();
         assertThat(answer.stopped())
@@ -5080,7 +4936,6 @@ class WorkRunTest {
                                         "ST1",
                                         "Story",
                                         "Building",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA1", "AA2"),
@@ -5090,7 +4945,6 @@ class WorkRunTest {
                                         "ST2",
                                         "Other",
                                         "Backlog",
-                                        false,
                                         "High",
                                         null,
                                         List.of("AA3"),
@@ -5228,7 +5082,6 @@ class WorkRunTest {
                                                                 s.id(),
                                                                 s.title(),
                                                                 s.state(),
-                                                                false,
                                                                 s.priority(),
                                                                 null,
                                                                 List.of(),
@@ -5665,7 +5518,6 @@ class WorkRunTest {
                                                                                                             .orElseThrow()
                                                                                                             .state())
                                                                                     .toList())),
-                                                    false,
                                                     s.priority(),
                                                     null,
                                                     s.issues(),

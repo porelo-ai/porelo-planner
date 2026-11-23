@@ -264,7 +264,6 @@ class WorkAnswersTest {
                                 "ST1",
                                 "Story",
                                 "Building",
-                                false,
                                 "High",
                                 null,
                                 List.of("AA1", "AA2"),

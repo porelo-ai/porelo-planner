@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2329 # each step function is called through st_step
-# Plays the test of story ST309, "A story takes the state the operator gives it", as a person plays it: at the
-# command line in a clone of the project, and through the planner as the window saves and reads the board.
+# Plays the test of story ST309, "A story takes the state the operator gives it", as a person plays it now: at the
+# command line in a clone of the project, and through the planner as the window saves and reads the board. An open
+# story keeps no state of its own: it follows its issues, and a person only closes it and reopens it.
 #
 # Usage: st309.sh --dir DIR [--expect N=ISSUE]...   (see story-test.sh for the run's directory and exit codes)
 #
 # The fixture: a project repository st-project with its stories and a repository st-alpha with the issues, on a
 # forge of the run's own. ST1 stands in for a story set by hand to Backlog while one issue is Implementing and one
-# Finished; ST2 is moved through the planner; ST3 states no state and then gets one written into its head.
+# Finished; ST2, one issue in Backlog and one Implementing, is refused a move between open states, then rejected and
+# reopened through the planner; ST3, one issue Estimated and one in Review, states no state and then gets an open one
+# written into its head by hand, which the board does not follow.
 
 ST_STORY=ST309
 ST_LIBRARY=1
@@ -118,17 +121,6 @@ board_story() {
     jq -c --arg id "$1" '.stories[] | select(.id == $id)' <<<"$ST_BODY"
 }
 
-# The state an issue's head gives in a clone: head_state DIR ID.
-head_state() {
-    local file
-    file=$(find "$1/issues" -maxdepth 1 -name "$2-*.md" | head -n 1)
-    [[ -n $file ]] || {
-        printf 'no file'
-        return 0
-    }
-    st_head "$file" | jq -r '.state'
-}
-
 step_1() {
     local clones line
     clones=$(st_clones "$OWN" "$ALPHA") || st_no "a clone of $OWN and $ALPHA" "git clone failed" || return 1
@@ -142,51 +134,76 @@ step_1() {
     st_is "the index leaves the clone unchanged" "" "$(git -C "$clones/$OWN" status --porcelain)"
 }
 
+# Previews a batch and saves it with the preview's digest, confirmed: save MOVES.
+save() {
+    local digest
+    st_api POST "/projects/$PROJECT/moves/preview" "$1"
+    st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    digest=$(jq -r '.digest' <<<"$ST_BODY")
+    st_api POST "/projects/$PROJECT/moves" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$1")"
+    st_is "the confirmed move" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
+}
+
 step_2() {
-    board_story ST2 >/dev/null || return 1
-    local moves
-    moves=$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Review"}]}')
-    st_api POST "/projects/$PROJECT/moves" "$moves"
-    st_is "the unconfirmed move's status" 409 "$ST_STATUS" || return 1
-    st_is "the refusal" urn:porelo-planner:StoryStateMismatch "$(jq -r '.type' <<<"$ST_BODY")" || return 1
-    local named
-    named=$(jq -r '.parameters.issues // ""' <<<"$ST_BODY")
-    [[ $named == *AB04:Implementing* && $named != *AB03* ]] ||
-        st_no "the refusal names AB04:Implementing, the issue that does not fit, and not AB03" "$named" || return 1
-    st_api POST "/projects/$PROJECT/moves" "$(jq -c '. + {confirm: true}' <<<"$moves")"
-    st_is "the confirmed move's status" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
+    local story
+    story=$(board_story ST1) || return 1
+    # The state stated by hand is not the board's: an open story stands where its issues give.
+    st_is "ST1 on the board" Implementing "$(jq -r '.state' <<<"$story")" || return 1
+    story=$(board_story ST2) || return 1
+    # An issue being built makes its story built, the other still in Backlog.
+    st_is "ST2 on the board" Implementing "$(jq -r '.state' <<<"$story")"
 }
 
 step_3() {
-    local story
-    story=$(board_story ST2) || return 1
-    st_is "ST2 on the board" "Review true" "$(jq -r '"\(.state) \(.stateGiven)"' <<<"$story")" || return 1
-    st_is "ST2's issues that do not fit" '["AB04"]' "$(jq -c '.misfits' <<<"$story")"
+    local moves
+    board_story ST2 >/dev/null || return 1
+    moves=$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Review"}]}')
+    st_api POST "/projects/$PROJECT/moves/preview" "$moves"
+    st_is "the move's status" 422 "$ST_STATUS" || return 1
+    st_is "the refusal" urn:porelo-planner:MoveNotAllowed "$(jq -r '.type' <<<"$ST_BODY")" || return 1
+    board_story ST2 >/dev/null || return 1
+    st_is "ST2 still on the board" Implementing "$(board_story ST2 | jq -r '.state')"
 }
 
 step_4() {
-    local clones
-    clones=$(st_clones "$OWN" "$ALPHA") || st_no "a clone of $OWN and $ALPHA" "git clone failed" || return 1
-    st_is "ST2's head" Review \
-        "$(st_head "$clones/$OWN/stories/ST2-A-Story-Moved-On-The-Board.md" | jq -r '.state // "none"')" || return 1
-    st_is "ST2's row in stories/README.md" Review "$(st_section "$clones/$OWN/stories/README.md" st2)" || return 1
-    # A story moves its least advanced issues, so AB03 goes along; the issue that did not fit keeps its state.
-    st_is "the heads of AB01 AB02 AB04" "Implementing Finished Implementing" \
-        "$(head_state "$clones/$ALPHA" AB01) $(head_state "$clones/$ALPHA" AB02) $(head_state "$clones/$ALPHA" AB04)" ||
-        return 1
-    st_is "AB03's head, moved with its story" Review "$(head_state "$clones/$ALPHA" AB03)"
+    local story
+    board_story ST2 >/dev/null || return 1
+    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Rejected"}]}')" || return 1
+    story=$(board_story ST2) || return 1
+    st_is "ST2 on the board" Rejected "$(jq -r '.state' <<<"$story")" || return 1
+    st_is "ST2's day of a passed test, none for a rejected story" null "$(jq -r '.closedAt' <<<"$story")"
 }
 
 step_5() {
-    local story clones
-    story=$(board_story ST3) || return 1
-    st_is "ST3 on the board" "Estimated false" "$(jq -r '"\(.state) \(.stateGiven)"' <<<"$story")" || return 1
-    clones=$(st_clones "$OWN") || st_no "a clone of $OWN" "git clone failed" || return 1
-    st_is "ST3's row in stories/README.md" Estimated "$(st_section "$clones/$OWN/stories/README.md" st3)"
+    local clones
+    clones=$(st_clones "$OWN" "$ALPHA") || st_no "a clone of $OWN and $ALPHA" "git clone failed" || return 1
+    st_is "ST2's head" Rejected \
+        "$(st_head "$clones/$OWN/stories/ST2-A-Story-Moved-On-The-Board.md" | jq -r '.state // "none"')" || return 1
+    st_is "ST2's row in stories/README.md" Rejected "$(st_section "$clones/$OWN/stories/README.md" st2)" || return 1
+    # A rejected story closes each of its open issues with it; a closed issue keeps only its row in the index.
+    st_is "the rows of AB03 AB04" "Rejected Rejected" \
+        "$(st_closed "$clones/$ALPHA/issues" AB03) $(st_closed "$clones/$ALPHA/issues" AB04)"
 }
 
 step_6() {
+    local story clones
+    board_story ST2 >/dev/null || return 1
+    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Backlog"}]}')" || return 1
+    story=$(board_story ST2) || return 1
+    # Reopened with every issue rejected, it has none to follow: it stands in the state its reopen names, kept in its
+    # head as a story without issues keeps one.
+    st_is "ST2 on the board" Backlog "$(jq -r '.state' <<<"$story")" || return 1
+    st_is "ST2 unwarned" "[]" "$(jq -c '.warnings' <<<"$story")" || return 1
+    clones=$(st_clones "$OWN") || st_no "a clone of $OWN" "git clone failed" || return 1
+    st_is "ST2's head, the reopen's state" Backlog \
+        "$(st_head "$clones/$OWN/stories/ST2-A-Story-Moved-On-The-Board.md" | jq -r '.state // "none"')"
+}
+
+step_7() {
     local clones file story
+    story=$(board_story ST3) || return 1
+    # No issue being built: AB06 in Review counts as Backlog, which stands after AB05's Estimated.
+    st_is "ST3 on the board" Backlog "$(jq -r '.state' <<<"$story")" || return 1
     clones=$(st_clones "$OWN") || st_no "a clone of $OWN" "git clone failed" || return 1
     file=$clones/$OWN/stories/ST3-A-Story-Its-Issues-Place.md
     # As a person edits it: one line added to the head, beside the priority.
@@ -197,16 +214,17 @@ step_6() {
     st_api POST "/projects/$PROJECT/refresh"
     st_is "POST /refresh" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     story=$(board_story ST3) || return 1
-    st_is "ST3 on the board" "Analyzed true" "$(jq -r '"\(.state) \(.stateGiven)"' <<<"$story")"
+    st_is "ST3 on the board, still where its issues give" Backlog "$(jq -r '.state' <<<"$story")"
 }
 
 st_setup "$@"
 fixture
 st_planner "$PROJECT" "$OWN"
 st_step 1 "stories index keeps a stated Backlog and warns naming the issues" step_1
-st_step 2 "a move to a state the issues do not fit is refused, then saved when confirmed" step_2
-st_step 3 "the board shows the given state and the issues that do not fit" step_3
-st_step 4 "a fresh clone holds the story's state, and the issue that did not fit kept its own" step_4
-st_step 5 "a story with no state stands in its issues' earliest open state" step_5
-st_step 6 "a state written into a head by hand stands on the board after a refresh" step_6
+st_step 2 "an open story stands where its issues give, whatever its head states" step_2
+st_step 3 "a move of an open story to another open state is refused" step_3
+st_step 4 "a story rejected through the planner stands closed" step_4
+st_step 5 "a fresh clone holds the story's close, and its open issues closed with it" step_5
+st_step 6 "a story reopened with every issue rejected stands in the state its reopen names" step_6
+st_step 7 "an open state written into a head by hand is not followed by the board" step_7
 st_finish

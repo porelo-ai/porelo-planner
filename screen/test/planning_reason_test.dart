@@ -33,18 +33,9 @@ Map<String, dynamic> _board({bool reasons = true}) => {
       'id': 'ST1',
       'title': 'A story',
       'state': 'Backlog',
-      'stateGiven': false,
-      'misfits': <String>[],
       'issues': [_issue('PL1', 'Review'), _issue('PL2', 'Backlog')],
     },
-    {
-      'id': 'ST2',
-      'title': 'An empty story',
-      'state': 'Backlog',
-      'stateGiven': true,
-      'misfits': <String>[],
-      'issues': <Map<String, dynamic>>[],
-    },
+    {'id': 'ST2', 'title': 'An empty story', 'state': 'Backlog', 'issues': <Map<String, dynamic>>[]},
   ],
   'repositories': ['repo'],
   'revision': 'r1',
@@ -221,7 +212,6 @@ void main() {
       expect(refused({'issue': 'PL1', 'to': 'Finished', 'reason': bad}), contains('no control'));
     }
     expect(refused({'issue': 'PL1', 'to': 'Review', 'reason': 'Why.'}), contains('closed state'));
-    expect(refused({'story': 'ST2', 'to': 'Backlog', 'follow': true, 'reason': 'Why.'}), contains('closes nothing'));
     final closed = save({'issue': 'PL1', 'to': 'Finished'});
     expect(
       () => applyPlanningMove(closed, {

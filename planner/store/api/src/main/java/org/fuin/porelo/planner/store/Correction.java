@@ -19,9 +19,6 @@ public record Correction(String kind, List<String> states) {
     /** The kind of an issue's move into one of the states, saved as any move of it. */
     public static final String MOVE = "Move";
 
-    /** The kind of a story's stated state set to one of the states, writing none of its issues. */
-    public static final String STATE_STATED = "StateStated";
-
     /** Checks the kind's spelling and copies the states. */
     public Correction {
         if (!KIND.matcher(kind).matches()) {
@@ -50,22 +47,21 @@ public record Correction(String kind, List<String> states) {
     }
 
     /**
-     * The correction of a state none of the workflow's, or of none told: for an issue a move into
-     * one of the open states, for a story its stated state set to one of them; none when the
-     * workflow has no such state, or while the work rules have faults, since a working state whose
-     * rule could not be read would then be offered as open.
+     * The correction of an issue's state none of the workflow's: a move into one of the open
+     * states; none when the workflow has no such state, or while the work rules have faults, since
+     * a working state whose rule could not be read would then be offered as open. A story has no
+     * state of its own to correct.
      *
-     * @param story whether it corrects a story
      * @param workflow the board's workflow
      * @param work the board's work rules
      * @return the correction, or null when nothing can be offered
      */
     public static @org.jspecify.annotations.Nullable Correction ofState(
-            final boolean story, final Workflow workflow, final Work work) {
+            final Workflow workflow, final Work work) {
         if (!work.faults().isEmpty()) {
             return null;
         }
         final List<String> states = openStates(workflow, work.rules().keySet());
-        return states.isEmpty() ? null : new Correction(story ? STATE_STATED : MOVE, states);
+        return states.isEmpty() ? null : new Correction(MOVE, states);
     }
 }
