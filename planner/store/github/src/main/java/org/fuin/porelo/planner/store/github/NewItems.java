@@ -31,11 +31,12 @@ import org.jspecify.annotations.Nullable;
  * made is {@link StoreException.PartlySaved}, naming what GitHub holds. The same write tried again
  * finishes it: the person's open issue of the same title and body made within {@link
  * #TRIED_AGAIN_WITHIN} is taken as the one an earlier try made, never made twice: a story only
- * while an issue planned under it has none alike hanging under it with all its values, an issue
- * only under the story it is planned under, off the project under no story, or, planned under no
- * story, on the project under none holding no planned value but an automatic first Status. A taken
- * item gets its place, its requested Status and the values it lacks, keeping its other values;
- * several alike stop the write, naming them. The calls go at the pace of a {@link WritePace}.
+ * while an issue planned under it has none alike hanging under it with all its values; an issue
+ * only where an earlier try leaves it: under the story it is planned under, off the project under
+ * no story, or on the project under no story holding no planned value but an automatic first
+ * Status. A taken item gets its place, its requested Status and the values it lacks, keeping its
+ * other values; several alike stop the write, naming them. The calls go at the pace of a {@link
+ * WritePace}.
  */
 final class NewItems {
 
@@ -662,10 +663,9 @@ final class NewItems {
     /**
      * Whether an issue alike was left by an earlier try of this write: it hangs under the story it
      * is planned under, it stands off the project under no story, as a try cut off before it added
-     * the issue leaves it, or, planned under no story, it stands on the project under none holding
-     * no planned value but an automatic first Status, as a try cut off before its values leaves it.
-     * One on the project holding any other planned value, or under another story, is the person's
-     * own.
+     * the issue leaves it, or it stands on the project under none holding no planned value but an
+     * automatic first Status, as a try cut off before its link or values leaves it. One on the
+     * project holding any other planned value, or under another story, is the person's own.
      */
     private boolean leftUnder(
             final ProjectWrites.Found issue,
@@ -675,23 +675,21 @@ final class NewItems {
         if (item == null) {
             return !issue.underParent();
         }
-        if (parent == null) {
-            // A try writes its values in one batch, so a cut-off one leaves none but an automatic
-            // first Status; an item holding any other is the person's own.
-            final String first = current.config().workflow().states().get(0);
-            return item.parentIssueId() == null
-                    && planned.values.stream()
-                            .noneMatch(
-                                    v ->
-                                            holds(item, v.field())
-                                                    && !(v.field().equals(FieldNames.STATUS)
-                                                            && first.equals(
-                                                                    item.fields()
-                                                                            .get(
-                                                                                    FieldNames
-                                                                                            .STATUS))));
+        if (parent != null && parent.nodeId().equals(item.parentIssueId())) {
+            return true;
         }
-        return parent.nodeId().equals(item.parentIssueId());
+        // A try writes its values in one batch, so a cut-off one leaves none but an automatic
+        // first Status; an item holding any other is the person's own.
+        final String first = current.config().workflow().states().get(0);
+        return item.parentIssueId() == null
+                && planned.values.stream()
+                        .noneMatch(
+                                v ->
+                                        holds(item, v.field())
+                                                && !(v.field().equals(FieldNames.STATUS)
+                                                        && first.equals(
+                                                                item.fields()
+                                                                        .get(FieldNames.STATUS))));
     }
 
     /** The person's open issues of a repository made since a moment, every page read. */

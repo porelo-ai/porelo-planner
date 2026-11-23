@@ -3069,6 +3069,103 @@ class FieldsBoardWriterTest {
                 .containsKeys("F_Status", "F_Size", "F_Worker", "F_Priority", "F_Rank");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", "Idea"})
+    void aCreateUnderAStoryCutOffBeforeLinkingIsFinishedOnARetryNotMadeTwice(
+            final String automatic) {
+        // Harm: a retry makes a second issue and leaves the first on the board outside its story.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
+        github.added.add("I_example-project_100");
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        "example-project#100",
+                        "Backlog");
+        github.linkFailures.add(GitHubExceptions.refused(422, "link refused"));
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createIssue(
+                                                snapshot(onTheProject(github, null)), SHOWN, issue))
+                .as("the first try stops after the project add, before the sub-issue link")
+                .isInstanceOf(StoreException.PartlySaved.class)
+                .hasMessageContaining("link refused");
+        assertThat(github.added)
+                .as("the first try added the issue to the project")
+                .containsExactly("I_example-project_100", "I_example-lib_101");
+        assertThat(github.subIssues).as("the first try left the issue without its link").isEmpty();
+        assertThat(github.values)
+                .as("the first try stopped before the issue's field values")
+                .doesNotContainKey("PVTI_I_example-lib_101");
+
+        final String reference =
+                github.writer()
+                        .createIssue(
+                                snapshot(
+                                        onTheProject(
+                                                github, automatic.isEmpty() ? null : automatic)),
+                                SHOWN,
+                                issue);
+
+        assertThat(reference).as("the retry finishes the first issue").isEqualTo("example-lib#101");
+        assertThat(held(github))
+                .as("exactly one issue beside its story")
+                .containsExactlyInAnyOrder("example-project#100", "example-lib#101");
+        assertThat(github.added)
+                .as("the issue stands on the project once")
+                .containsExactly("I_example-project_100", "I_example-lib_101");
+        assertThat(github.subIssues)
+                .as("the retry finishes the missing story link")
+                .containsExactly("example-project#100 < 9101");
+        assertThat(github.values.get("PVTI_I_example-lib_101"))
+                .as("the retry gives the original issue its requested Status and missing values")
+                .containsEntry(
+                        "F_Status",
+                        FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Backlog"))
+                .containsKeys("F_Size", "F_Worker", "F_Priority", "F_Rank");
+    }
+
+    @Test
+    void anIssueAlikeOnTheProjectHoldingAValueIsNotTakenByACreateUnderAStory() {
+        // Harm: the person's own issue of the same words, given a Size by hand, hung under a story
+        // and its values written over by a new create under that story.
+        final GitHub github = new GitHub();
+        github.make("example-project", "A story", "", IssueMapping.STORY_TYPE);
+        github.added.add("I_example-project_100");
+        github.writer().createIssue(snapshot(), SHOWN, newIssue("example-lib", "A new thing"));
+        final java.util.Map<String, FieldValue> own = github.values.get("PVTI_I_example-lib_101");
+        own.keySet().retainAll(java.util.Set.of("F_Size"));
+        final NewIssue issue =
+                new NewIssue(
+                        "example-lib",
+                        "A new thing",
+                        "It holds.",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        "example-project#100",
+                        "Backlog");
+
+        final String reference =
+                github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);
+
+        assertThat(reference)
+                .as("a new issue made under the story beside the person's")
+                .isEqualTo("example-lib#102");
+        assertThat(github.subIssues)
+                .as("only the new issue hung under the story")
+                .containsExactly("example-project#100 < 9102");
+    }
+
     @Test
     void aWholeIssueAlikeInNoStoryIsThePersonsOwnAndANewOneIsMade() {
         // Harm: the person's finished issue in no story taken by a new create of the same words,
