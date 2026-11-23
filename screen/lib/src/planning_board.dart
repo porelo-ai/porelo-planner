@@ -401,6 +401,33 @@ class PlanningBoard extends ChangeNotifier {
     refusal = null;
   }
 
+  /// The refusals a read that progresses proves wrong: the planner answers, and it reads the forge with the person's
+  /// access.
+  static const _disprovedByProgress = {
+    'TimedOut',
+    'PlannerUnreachable',
+    'PlannerSilent',
+    'NoAddress',
+    'NoForgeAccess',
+    'Unreachable',
+  };
+
+  /// The words a Reload's refused fetch left in [moveProblem], so a read's progress can take them back.
+  String? _reloadProblem;
+
+  /// Takes back, at a read's progress, every line an earlier step left that the progress proves wrong, an action's
+  /// too, and at a read's start the failure of the read before; every other refusal stays.
+  void _progressed({required bool began}) {
+    final kept = refusal;
+    if (kept != null && _disprovedByProgress.contains(kept.name)) {
+      _actionRefusal = false;
+      refusal = null;
+    }
+    if (_reloadProblem != null && moveProblem == _reloadProblem) moveProblem = null;
+    _reloadProblem = null;
+    if (began) readProblem = null;
+  }
+
   void _beginAction() {
     // A read's refusal, such as missing forge access, holds until a board read shows it mended.
     if (_actionRefusal) _clearRefusal(action: true);
@@ -537,7 +564,9 @@ class PlanningBoard extends ChangeNotifier {
       _tellsReads = watch is PlanningWatch && watch.tellsReads;
       void read() {
         if (!current() || loading == progress?.value) return;
+        final began = loading == null;
         loading = progress?.value;
+        if (loading != null) _progressed(began: began);
         // The read behind a Reload is told now: its bar is the watch's from here. A look the Reload may wait behind
         // is not that read.
         if (loading?.look != true) _endFetch();
@@ -1363,6 +1392,10 @@ class PlanningBoard extends ChangeNotifier {
     }
     if (!_sameBoard(source, name)) return;
     moveProblem = refused;
+    // A fetch that timed out while the read it began goes on is taken back by that read's progress.
+    _reloadProblem = refusedError is PlanningRefusal && _disprovedByProgress.contains(refusedError.name)
+        ? refused
+        : null;
     if (_queuedProject != null) {
       // A project chosen meanwhile is opened by the save's end instead.
       reopening = false;
@@ -2242,6 +2275,7 @@ class PlanningBoard extends ChangeNotifier {
         if (!_disposed && generation == _generation) {
           _keepRefusal(error);
           moveProblem = planningFailureWords(error);
+          _reloadProblem = error is PlanningRefusal && _disprovedByProgress.contains(error.name) ? moveProblem : null;
         }
         _endFetch();
         return;

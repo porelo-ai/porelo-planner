@@ -42,6 +42,19 @@ class _HeldReload extends MockPlanningSource {
   );
 }
 
+/// A planning whose Reload is refused with [refusal], and whose watch tells reads through [load].
+class _RefusedReload extends MockPlanningSource {
+  _RefusedReload(this.refusal);
+  final PlanningRefusal refusal;
+  final load = ValueNotifier<PlanningLoad?>(null);
+  @override
+  Future<String> refreshProject(String project) async => throw refusal;
+
+  @override
+  Stream<PlanningSnapshot> watchStories(String project) =>
+      PlanningWatch(super.watchStories(project), ValueNotifier(false), loading: load, tellsReads: true);
+}
+
 void main() {
   // Harm: a busy planner leaves an empty story page even though its board already contains the story and issues.
   testWidgets('a story shows its board row until its latest details arrive during a save', (tester) async {
@@ -317,5 +330,64 @@ void main() {
     backend.failed.value = null;
     await settle(tester);
     expect(find.byKey(const Key('planning-read-error')), findsNothing);
+  });
+
+  // Harm: a Reload that timed out while its read goes on stays as a failure beside that read's progress, and the
+  // person takes a board that is loading for one that cannot be read.
+  for (final name in ['TimedOut', 'NoForgeAccess']) {
+    testWidgets('a $name Reload is taken back at the read\'s next progress', (tester) async {
+      final backend = _RefusedReload(PlanningRefusal(name, const {}, 'the planner did not answer within 30 s'));
+      final client = MockPlanningClient.of(backend, projects: ['checkout']);
+      final boards = PlanningBoards(client);
+      addTearDown(() async {
+        boards.dispose();
+        client.dispose();
+        await backend.end();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: planningView(boards: boards)),
+        ),
+      );
+      await settle(tester);
+      final board = boards.sources.single;
+      await tester.tap(find.byKey(const Key('planning-reload')));
+      await settle(tester);
+      expect(board.refusal?.name, name, reason: 'the Reload\'s refusal is said first');
+      expect(board.moveProblem, isNotNull);
+
+      backend.load.value = PlanningLoad(since: DateTime.utc(2026, 11, 23, 5), place: 'GitHub', read: 750, total: 1548);
+      await tester.pump();
+
+      expect(board.refusal, isNull, reason: 'a read that progresses proves the planner answers and reads GitHub');
+      expect(board.moveProblem, isNull, reason: 'no failure line beside the progress');
+    });
+  }
+
+  // Harm: a refusal the progress of a read does not undo, such as a project the planner no longer names, is hidden.
+  testWidgets('a Reload refused for another cause stays through the read\'s progress', (tester) async {
+    final backend = _RefusedReload(const PlanningRefusal('NoSuchProject', {}, 'No project checkout.'));
+    final client = MockPlanningClient.of(backend, projects: ['checkout']);
+    final boards = PlanningBoards(client);
+    addTearDown(() async {
+      boards.dispose();
+      client.dispose();
+      await backend.end();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: planningView(boards: boards)),
+      ),
+    );
+    await settle(tester);
+    final board = boards.sources.single;
+    await tester.tap(find.byKey(const Key('planning-reload')));
+    await settle(tester);
+
+    backend.load.value = PlanningLoad(since: DateTime.utc(2026, 11, 23, 5), place: 'GitHub', read: 750, total: 1548);
+    await tester.pump();
+
+    expect(board.refusal?.name, 'NoSuchProject');
+    expect(board.moveProblem, isNotNull);
   });
 }
