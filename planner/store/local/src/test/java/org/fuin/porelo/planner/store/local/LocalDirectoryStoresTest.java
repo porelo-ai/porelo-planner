@@ -129,6 +129,8 @@ class LocalDirectoryStoresTest {
         schema.path("properties").fieldNames().forEachRemaining(named::add);
         final Set<String> known = new HashSet<>(LocalItem.STRUCTURE);
         known.addAll(FieldNames.ALL.keySet());
+        // GitHub keeps Priority in the organization's issue field; a head keeps it as a field.
+        known.add(FieldNames.PRIORITY);
 
         assertThat(schema.path("additionalProperties").asBoolean(true))
                 .as("no key beside them")

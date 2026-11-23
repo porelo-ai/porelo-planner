@@ -28,7 +28,6 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
-import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
@@ -1442,7 +1441,6 @@ public final class ItemsBoardReader implements BoardReader {
                 config.workflow().states().stream()
                         .filter(state -> !config.workflow().closed().contains(state))
                         .toList());
-        options.put(FieldNames.PRIORITY, Story.PRIORITIES);
         options.put(FieldNames.SIZE, IssueMapping.SIZES);
         options.put(FieldNames.WORKER, List.of("Agent", "Manual"));
         options.put(
@@ -1553,7 +1551,7 @@ public final class ItemsBoardReader implements BoardReader {
      */
     private static Map<String, String> values(
             final GitHubGraphQl.ProjectItem item, final Map<String, String> fieldNames) {
-        return values(item.values(), fieldNames);
+        return values(item.values(), fieldNames, item.issue());
     }
 
     /**
@@ -1569,9 +1567,22 @@ public final class ItemsBoardReader implements BoardReader {
         for (final GitHubGraphQl.ItemValue value : given) {
             final String field = fieldNames.get(value.fieldId());
             final String text = text(value);
-            if (field != null && text != null) {
+            if (field != null && !FieldNames.PRIORITY.equals(field) && text != null) {
                 values.put(field, text);
             }
+        }
+        return values;
+    }
+
+    /** Combines project values with the Priority option carried by the issue itself. */
+    static Map<String, String> values(
+            final List<GitHubGraphQl.ItemValue> given,
+            final Map<String, String> fieldNames,
+            final GitHubGraphQl.@Nullable BoardIssue issue) {
+        final Map<String, String> values = values(given, fieldNames);
+        final String priority = issue == null ? null : IssuePriority.held(issue);
+        if (priority != null) {
+            values.put(FieldNames.PRIORITY, priority);
         }
         return values;
     }

@@ -332,7 +332,8 @@ class GitHubStoreLookTest {
                             none,
                             NONE,
                             held.story ? IssueMapping.STORY_TYPE : null,
-                            null),
+                            null,
+                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
                     values,
                     NONE);
         }

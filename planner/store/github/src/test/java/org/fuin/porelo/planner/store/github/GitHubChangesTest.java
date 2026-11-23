@@ -156,7 +156,8 @@ class GitHubChangesTest {
                 new GitHubGraphQl.IssueRefs(List.of(), none, 0),
                 none,
                 null,
-                null);
+                null,
+                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")));
     }
 
     /** An item as the copy holds it: open, in status Idea, with no links. */
@@ -588,7 +589,8 @@ class GitHubChangesTest {
                                 blockers,
                                 none,
                                 null,
-                                null),
+                                null,
+                                open.fieldOptions()),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
@@ -657,7 +659,8 @@ class GitHubChangesTest {
                                 blockers,
                                 none,
                                 null,
-                                null),
+                                null,
+                                open.fieldOptions()),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
@@ -725,7 +728,8 @@ class GitHubChangesTest {
                                 blockers,
                                 none,
                                 null,
-                                null),
+                                null,
+                                open.fieldOptions()),
                         List.of(
                                 new GitHubGraphQl.ItemValue(
                                         STATUS, "opt-idea", "Idea", null, null)),
@@ -789,7 +793,8 @@ class GitHubChangesTest {
                                 total),
                         none,
                         null,
-                        null),
+                        null,
+                        open.fieldOptions()),
                 List.of(new GitHubGraphQl.ItemValue(STATUS, "opt-idea", "Idea", null, null)),
                 none);
     }

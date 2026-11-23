@@ -136,9 +136,11 @@ public final class NewItemTexts {
             if (IssueMapping.isStory(item) != story) {
                 continue;
             }
-            final String given = item.fields().getOrDefault(FieldNames.PRIORITY, "");
-            final String its = Story.PRIORITIES.contains(given) ? given : "Medium";
-            if (!its.equals(priority)) {
+            // One without a priority the planner knows sorts as Medium, so it counts as Medium.
+            final String its =
+                    java.util.Objects.requireNonNullElse(
+                            IssuePriority.read(item.fields().get(FieldNames.PRIORITY)), "Medium");
+            if (!priority.equals(its)) {
                 continue;
             }
             try {

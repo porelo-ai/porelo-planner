@@ -155,7 +155,8 @@ final class HeldSaves {
                                 none,
                                 none,
                                 issue.type(),
-                                issue.closedAt()),
+                                issue.closedAt(),
+                                issue.choices()),
                 item.values(),
                 null,
                 item.partial());

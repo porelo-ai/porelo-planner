@@ -19,6 +19,7 @@ import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
@@ -243,7 +244,8 @@ class GitHubStoreHeldTest {
                             none,
                             NONE,
                             type,
-                            null),
+                            null,
+                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
                     List.of(new GitHubGraphQl.ItemValue("F_status", "O_idea", "Idea", null, null)),
                     NONE);
         }
@@ -259,7 +261,15 @@ class GitHubStoreHeldTest {
                                 switch (method.getName()) {
                                     case "createIssue" -> {
                                         github.second = true;
-                                        yield new ProjectWrites.Created("I_2", 12L, 2, null);
+                                        yield new ProjectWrites.Created(
+                                                "I_2",
+                                                12L,
+                                                2,
+                                                null,
+                                                OrganizationFields.answered(
+                                                        (List<
+                                                                        IssuesCreateRequestIssueFieldValuesInner>)
+                                                                args[6]));
                                     }
                                     case "issuesCreatedSince" ->
                                             new ProjectWrites.FoundPage(
@@ -275,6 +285,8 @@ class GitHubStoreHeldTest {
                                                                     "Recent four",
                                                                     "A body")),
                                                     false);
+                                    case "issueFields" -> OrganizationFields.fields();
+                                    case "issueFieldValues" -> List.of();
                                     case "addProjectItems" ->
                                             new Batch<>(
                                                     List.of(Batch.Outcome.of("PVTI_2")),

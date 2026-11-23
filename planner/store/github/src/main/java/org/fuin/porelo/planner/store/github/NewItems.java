@@ -15,6 +15,8 @@ import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
@@ -76,6 +78,10 @@ final class NewItems {
     /** The pace of this write's calls, started when it writes with the person's token. */
     private @Nullable WritePace pace;
 
+    private @Nullable IssueField priorityField;
+
+    private final Set<String> priorities = new LinkedHashSet<>();
+
     /** The person's issues of the last {@link #TRIED_AGAIN_WITHIN}, by repository, read once. */
     private final Map<String, List<ProjectWrites.Found>> earlier = new HashMap<>();
 
@@ -134,6 +140,9 @@ final class NewItems {
         private final String body;
         private final boolean story;
         private final List<Value> values;
+        private final String priority;
+        private boolean existing;
+        private @Nullable String existingPriority;
         private ProjectWrites.@Nullable Created created;
         private @Nullable String itemId;
 
@@ -142,12 +151,14 @@ final class NewItems {
                 final String title,
                 final String body,
                 final boolean story,
-                final List<Value> values) {
+                final List<Value> values,
+                final String priority) {
             this.repository = repository;
             this.title = title;
             this.body = body;
             this.story = story;
             this.values = List.copyOf(values);
+            this.priority = priority;
         }
 
         /**
@@ -204,22 +215,23 @@ final class NewItems {
             values.add(option(FieldNames.SIZE, size));
         }
         values.add(worker(issue.worker()));
-        values.add(option(FieldNames.PRIORITY, NewItemTexts.priority(priority)));
+        IssuePriority.option("", priority);
         values.add(rank(false, priority));
-        return planned(repository, issue.title().strip(), body, false, values);
+        return planned(repository, issue.title().strip(), body, false, values, priority);
     }
 
     /**
      * Plans the add of an open issue GitHub holds that is no item of the project: an issue gets the
      * workflow's first state as its Status, {@link #ADDED_WORKER} as its Worker, {@link
-     * #ADDED_PRIORITY} and the rank after the last issue of it; a story gets that Priority and its
-     * rank and no Status, so its state follows its issues'.
+     * #ADDED_PRIORITY} when it lacks a priority, and the rank after the last issue of its priority;
+     * a story gets its priority and rank and no Status, so its state follows its issues'.
      *
      * @param repository the repository that holds it, as the board names it
      * @param number its number
      * @param nodeId its node id, which the project adds it by
      * @param databaseId its id in REST
      * @param story whether it is a story
+     * @param heldPriority its issue-field option, or null when absent
      * @return the planned add
      * @throws StoreException.NotSavable when the project cannot hold it
      */
@@ -228,15 +240,25 @@ final class NewItems {
             final int number,
             final String nodeId,
             final long databaseId,
-            final boolean story) {
+            final boolean story,
+            final @Nullable String heldPriority) {
         final List<Value> values = new ArrayList<>();
         if (!story) {
             values.add(option(FieldNames.STATUS, current.config().workflow().states().get(0)));
             values.add(worker(ADDED_WORKER));
         }
-        values.add(option(FieldNames.PRIORITY, ADDED_PRIORITY));
-        values.add(rank(story, ADDED_PRIORITY));
-        final Planned planned = new Planned(repository, "", "", story, values);
+        // A Priority the planner does not know is kept as it is and ranked with Medium, as the
+        // board sorts it.
+        final String priority =
+                Objects.requireNonNullElse(IssuePriority.read(heldPriority), ADDED_PRIORITY);
+        values.add(rank(story, priority));
+        final Planned planned = new Planned(repository, "", "", story, values, priority);
+        planned.existing = true;
+        planned.existingPriority = heldPriority;
+        if (heldPriority == null) {
+            // Only a priority written needs the organization's field; a held one is kept.
+            priorities.add(priority);
+        }
         planned.created =
                 new ProjectWrites.Created(
                         nodeId, databaseId, number, story ? IssueMapping.STORY_TYPE : null);
@@ -253,7 +275,9 @@ final class NewItems {
      */
     void list(final String token, final Planned planned) {
         final String projectId = begin(token);
+        final var preserved = priorityValues(token, planned);
         addToProject(token, projectId, List.of(planned));
+        writePriority(token, planned, preserved);
         setValues(token, projectId, planned, null);
     }
 
@@ -284,11 +308,12 @@ final class NewItems {
      * @throws StoreException.NotSavable when the project cannot hold it
      */
     Planned story(final NewIdea idea, final String marker) {
+        IssuePriority.option("", idea.priority());
         final String body = NewItemTexts.storyBody(idea, marker);
         final List<Value> values = new ArrayList<>();
-        values.add(option(FieldNames.PRIORITY, idea.priority()));
         values.add(rank(true, idea.priority()));
-        return planned(current.config().own(), idea.title().strip(), body, true, values);
+        return planned(
+                current.config().own(), idea.title().strip(), body, true, values, idea.priority());
     }
 
     /**
@@ -438,6 +463,22 @@ final class NewItems {
             throw new StoreException.Unreadable(
                     current.config().own(), "the GitHub project's id was not read");
         }
+        if (!priorities.isEmpty()) {
+            final IssueField field;
+            try {
+                field =
+                        IssuePriority.field(
+                                "", github.issueFields(token, current.config().project().owner()));
+            } catch (final StoreException e) {
+                throw e;
+            } catch (final RuntimeException e) {
+                throw failed(e, current.config().own(), token);
+            }
+            priorityField = field;
+            priorities.forEach(
+                    priority ->
+                            IssuePriority.accepts("", field, IssuePriority.option("", priority)));
+        }
         pace = new WritePace(clock, sleeper, token, limits);
         return projectId;
     }
@@ -493,6 +534,14 @@ final class NewItems {
                             + ", which only an account that may set issue types gives it, so it is"
                             + " no story");
         }
+        if (taken == null
+                && !IssuePriority.option("", planned.priority)
+                        .equals(IssuePriority.held(planned.made().fieldValues()))) {
+            throw partly(
+                    planned.repository,
+                    "GitHub made " + planned.reference() + " without the requested Priority");
+        }
+        final var preserved = taken == null ? null : priorityValues(token, planned);
         final @Nullable ItemView standing = onBoard(planned.repository, planned.made().number());
         if (standing != null) {
             planned.itemId = standing.itemId();
@@ -512,6 +561,7 @@ final class NewItems {
                     planned.made().databaseId(),
                     planned.repository);
         }
+        writePriority(token, planned, preserved);
         setValues(token, projectId, planned, standing);
     }
 
@@ -573,7 +623,12 @@ final class NewItems {
             final @Nullable ItemView item = onBoard(planned.repository, number);
             final boolean left =
                     planned.story
-                            ? cutOff(issue.issue().nodeId(), under)
+                            ? item == null
+                                            && !IssuePriority.option("", planned.priority)
+                                                    .equals(
+                                                            IssuePriority.held(
+                                                                    issue.issue().fieldValues()))
+                                    || cutOff(issue.issue().nodeId(), under)
                             : leftUnder(issue, item, parent, planned);
             if (!made.contains(planned.repository + "#" + number)
                     && left
@@ -618,7 +673,8 @@ final class NewItems {
                         && item.repository().equals(issue.repository)
                         && item.title().equals(issue.title)
                         && plain(item.body()).equals(plain(issue.body))
-                        && issue.values.stream().allMatch(v -> holds(item, v.field()))) {
+                        && issue.values.stream().allMatch(v -> holds(item, v.field()))
+                        && holds(item, FieldNames.PRIORITY)) {
                     there = true;
                     break;
                 }
@@ -668,6 +724,11 @@ final class NewItems {
         }
         if (parent != null && parent.nodeId().equals(item.parentIssueId())) {
             return true;
+        }
+        // A try makes the issue with its priority, so one holding another is the person's own.
+        final String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
+        if (!priority.isEmpty() && !priority.equals(IssuePriority.option("", planned.priority))) {
+            return false;
         }
         // A try writes its values in one batch, so a cut-off one leaves none but an automatic
         // first Status; an item holding any other is the person's own.
@@ -899,7 +960,69 @@ final class NewItems {
                                         planned.repository,
                                         planned.title,
                                         planned.body,
-                                        planned.story ? IssueMapping.STORY_TYPE : null));
+                                        planned.story ? IssueMapping.STORY_TYPE : null,
+                                        IssuePriority.create(
+                                                Objects.requireNonNull(priorityField),
+                                                planned.priority)));
+    }
+
+    private @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> priorityValues(
+            final String token, final Planned planned) {
+        // An unlisted issue keeps a priority the person already chose.
+        if (planned.existing && planned.existingPriority != null) {
+            return null;
+        }
+        final List<org.fuin.porelo.forge.github.model.IssueFieldValue> held;
+        try {
+            held =
+                    github.issueFieldValues(
+                            token,
+                            current.config().project().owner(),
+                            planned.repository,
+                            planned.made().number());
+        } catch (final RuntimeException e) {
+            throw failed(e, planned.repository, token);
+        }
+        if (IssuePriority.held(held) != null) {
+            // A Priority set on GitHub since the board was read is the person's, never
+            // overwritten.
+            if (planned.existing) {
+                throw new StoreException.StaleRevision(
+                        current.board().revision().value(), planned.reference());
+            }
+            // An issue an earlier try made keeps the priority it holds, as it keeps its other
+            // values.
+            return null;
+        }
+        return IssuePriority.update(
+                planned.reference(), Objects.requireNonNull(priorityField), held, planned.priority);
+    }
+
+    private void writePriority(
+            final String token,
+            final Planned planned,
+            final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> values) {
+        if (values == null) {
+            return;
+        }
+        try {
+            pace().again(
+                            "the priority of " + planned.reference(),
+                            () -> {
+                                github.updateIssue(
+                                        token,
+                                        current.config().project().owner(),
+                                        planned.repository,
+                                        planned.made().number(),
+                                        null,
+                                        null,
+                                        null,
+                                        values);
+                                return null;
+                            });
+        } catch (final RuntimeException e) {
+            throw failed(e, planned.repository, token);
+        }
     }
 
     /** The person's issues made since a moment with the planned title and body. */
@@ -1026,12 +1149,14 @@ final class NewItems {
             final String title,
             final String body,
             final boolean story,
-            final List<Value> values) {
+            final List<Value> values,
+            final String priority) {
         if (body.length() > BodySections.LONGEST) {
             throw new StoreException.NotSavable(
                     "", "the body of a new issue is longer than GitHub takes");
         }
-        return new Planned(repository, title, body, story, values);
+        priorities.add(priority);
+        return new Planned(repository, title, body, story, values, priority);
     }
 
     private Value option(final String field, final String name) {

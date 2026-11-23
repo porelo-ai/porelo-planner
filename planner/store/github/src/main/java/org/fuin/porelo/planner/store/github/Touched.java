@@ -7,6 +7,10 @@ import java.util.Locale;
 import java.util.Set;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -126,9 +130,11 @@ public final class Touched {
                     final String repository,
                     final String title,
                     final String body,
-                    final @Nullable String type) {
+                    final @Nullable String type,
+                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
                 final Created created =
-                        writes.createIssue(token, owner, repository, title, body, type);
+                        writes.createIssue(
+                                token, owner, repository, title, body, type, issueFieldValues);
                 issue(created.nodeId());
                 return created;
             }
@@ -217,9 +223,26 @@ public final class Touched {
                     final int number,
                     final @Nullable String title,
                     final @Nullable String body,
-                    final @Nullable Opening opening) {
+                    final @Nullable Opening opening,
+                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner>
+                            issueFieldValues) {
                 numbered(repository, number);
-                writes.updateIssue(token, owner, repository, number, title, body, opening);
+                writes.updateIssue(
+                        token, owner, repository, number, title, body, opening, issueFieldValues);
+            }
+
+            @Override
+            public List<IssueField> issueFields(final String token, final String owner) {
+                return writes.issueFields(token, owner);
+            }
+
+            @Override
+            public List<IssueFieldValue> issueFieldValues(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number) {
+                return writes.issueFieldValues(token, owner, repository, number);
             }
 
             @Override

@@ -360,7 +360,84 @@ class ItemsBoardReaderTest {
                 blockers,
                 new GitHubGraphQl.PageInfo(false, null),
                 type,
-                null);
+                null,
+                List.of(new GitHubGraphQl.IssueFieldOption(FieldNames.PRIORITY, "Medium")));
+    }
+
+    private static BoardIssue withPriority(final BoardIssue issue, final @Nullable String option) {
+        return new BoardIssue(
+                issue.id(),
+                issue.databaseId(),
+                issue.number(),
+                issue.title(),
+                issue.body(),
+                issue.state(),
+                issue.stateReason(),
+                issue.updatedAt(),
+                issue.repository(),
+                issue.labels(),
+                issue.parentId(),
+                issue.subIssues(),
+                issue.blockedBy(),
+                issue.labelsPage(),
+                issue.issueType(),
+                issue.closedAt(),
+                option == null
+                        ? List.of()
+                        : List.of(new GitHubGraphQl.IssueFieldOption("Priority", option)));
+    }
+
+    @Test
+    void theIssuePriorityWinsOverAProjectPriorityAndAMissingOneIsWarned() {
+        // Harm: work follows a project priority that nobody reads, or a story without an issue
+        // priority is shown with the project's.
+        final ProjectItem original = story("High");
+        final ProjectItem urgent =
+                new ProjectItem(
+                        original.id(),
+                        false,
+                        withPriority(java.util.Objects.requireNonNull(original.issue()), "Urgent"),
+                        original.values(),
+                        original.valuesPage());
+        final Snapshot read = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, urgent).read();
+        assertThat(read.board().stories().getFirst().priority())
+                .as("the organization's Urgent wins over the project's High")
+                .isEqualTo("Highest");
+
+        final ProjectItem missing =
+                new ProjectItem(
+                        original.id(),
+                        false,
+                        withPriority(java.util.Objects.requireNonNull(original.issue()), null),
+                        original.values(),
+                        original.valuesPage());
+        final Snapshot absent =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, missing).read();
+        assertThat(absent.board().stories().getFirst().warnings())
+                .as("a project value cannot replace a missing issue Priority")
+                .contains(Warning.noPriority());
+        assertThat(absent.board().stories().getFirst().priority())
+                .as("shown as Medium, as a story without a priority is, never the project's High")
+                .isEqualTo("Medium");
+    }
+
+    @Test
+    void theProjectNeedsNoPriorityField() {
+        // Harm: a board with the organization's Priority is refused for lacking an unused project
+        // field.
+        final Snapshot read =
+                new GitHub()
+                        .fieldsPage(
+                                FIELDS.stream()
+                                        .filter(field -> !FieldNames.PRIORITY.equals(field.name()))
+                                        .toList(),
+                                null)
+                        .itemsPage(null, story("High"))
+                        .read();
+        assertThat(read.board().stories().getFirst().priority())
+                .as("the issue field supplies High")
+                .isEqualTo("High");
+        assertThat(read.board().faults()).as("no project Priority is required").isEmpty();
     }
 
     private static String node(final String nameWithOwner, final int number) {
@@ -376,7 +453,9 @@ class ItemsBoardReaderTest {
         return new ProjectItem(
                 "PVTI_story",
                 archived,
-                storyIssue(OWNER + "/example-project", 1, null, refs(false, subNodes)),
+                withPriority(
+                        storyIssue(OWNER + "/example-project", 1, null, refs(false, subNodes)),
+                        priority.equals("Highest") ? "Urgent" : priority),
                 List.of(option("F_status", "Idea"), option("F_priority", priority)),
                 new GitHubGraphQl.PageInfo(false, null));
     }
@@ -432,7 +511,8 @@ class ItemsBoardReaderTest {
                         issue.blockedBy(),
                         info(next),
                         issue.issueType(),
-                        null),
+                        null,
+                        issue.fieldOptions()),
                 item.values(),
                 item.valuesPage());
     }
@@ -671,9 +751,16 @@ class ItemsBoardReaderTest {
 
     @Test
     void theRestOfFieldValuesChangesTheBoardAndItsRevision() {
-        // Harm: a priority beyond the first values page is lost and later changes are never shown.
+        // Harm: a value beyond the first values page, such as a story's size, is lost and later
+        // changes of it are never shown.
         final ProjectItem before = story("High");
-        final ProjectItem whole = story("Low");
+        final ProjectItem whole =
+                new ProjectItem(
+                        before.id(),
+                        false,
+                        before.issue(),
+                        List.of(option("F_status", "Idea"), option("F_size", "M")),
+                        new GitHubGraphQl.PageInfo(false, null));
         final GitHub github =
                 new GitHub()
                         .fieldsPage(FIELDS, null)
@@ -684,9 +771,9 @@ class ItemsBoardReaderTest {
 
         final Snapshot snapshot = github.read();
 
-        assertThat(snapshot.board().stories().get(0).priority())
-                .as("the reread priority")
-                .isEqualTo("Low");
+        assertThat(snapshot.board().stories().get(0).size())
+                .as("the size from the values' second page")
+                .isEqualTo("M");
         assertThat(snapshot.raw().get(whole.id())).as("whole values retained").isEqualTo(whole);
         assertThat(snapshot.board().revision())
                 .as("completed values participate in the revision")
@@ -1043,7 +1130,8 @@ class ItemsBoardReaderTest {
                                 was.blockedBy(),
                                 was.labelsPage(),
                                 null,
-                                null),
+                                null,
+                                was.fieldOptions()),
                         open.values(),
                         open.valuesPage());
 
@@ -1472,7 +1560,8 @@ class ItemsBoardReaderTest {
                 issue.blockedBy(),
                 new GitHubGraphQl.PageInfo(false, null),
                 issue.issueType(),
-                null);
+                null,
+                issue.fieldOptions());
     }
 
     @Test
@@ -2331,7 +2420,8 @@ class ItemsBoardReaderTest {
                         blockers,
                         issue.labelsPage(),
                         null,
-                        null),
+                        null,
+                        issue.fieldOptions()),
                 plain.values(),
                 plain.valuesPage());
     }
@@ -2355,7 +2445,8 @@ class ItemsBoardReaderTest {
                         refs(false),
                         new GitHubGraphQl.PageInfo(false, null),
                         null,
-                        null),
+                        null,
+                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
                 null,
                 List.of(),
                 new GitHubGraphQl.PageInfo(false, null));

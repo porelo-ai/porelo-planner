@@ -181,7 +181,8 @@ class ItemsBoardReaderUnlistedTest {
                         none,
                         LAST,
                         type,
-                        null),
+                        null,
+                        List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
                 List.of(
                         new GitHubGraphQl.ItemValue(
                                 "F_" + FieldNames.STATUS, "O_Idea", "Idea", null, null),

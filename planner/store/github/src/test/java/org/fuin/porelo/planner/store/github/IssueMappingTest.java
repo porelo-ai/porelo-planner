@@ -24,6 +24,34 @@ import org.junit.jupiter.api.Test;
 
 class IssueMappingTest {
 
+    @Test
+    void urgentInTheIssueFieldIsHighestForIssuesAndStories() {
+        // Harm: a priority read from the wrong field loses urgent work and orders it too late.
+        final Item issue = new Item("example-lib", 1).field(FieldNames.PRIORITY, "Urgent");
+        final Item story =
+                new Item("example-project", 2).story().field(FieldNames.PRIORITY, "Urgent");
+        final IssueMapping.Mapped board = read(issue, story);
+        assertThat(board.issues().getFirst().priority())
+                .as("GitHub Urgent is the planner's Highest")
+                .isEqualTo("Highest");
+        assertThat(board.stories().getFirst().priority())
+                .as("the story uses the same issue-field translation")
+                .isEqualTo("Highest");
+    }
+
+    @Test
+    void lowestIsNeverReadAsAKnownGitHubPriority() {
+        // Harm: an unavailable GitHub option becomes work the planner ranks as if it were valid.
+        final IssueMapping.Mapped mapped =
+                read(new Item("example-lib", 1).field(FieldNames.PRIORITY, "Lowest"));
+        assertThat(mapped.issues().getFirst().priority())
+                .as("Lowest has no GitHub option")
+                .isNull();
+        assertThat(mapped.issues().getFirst().warnings())
+                .as("the unknown value holds work")
+                .contains(Warning.unknownPriority());
+    }
+
     private static final Workflow WORKFLOW =
             new Workflow(
                     List.of("Idea", "Backlog", "Implementing", "Finished", "Rejected"),
@@ -943,7 +971,7 @@ class IssueMappingTest {
                 new Item("example-project", 1)
                         .story()
                         .field(FieldNames.SIZE, "XXL")
-                        .field(FieldNames.PRIORITY, "Urgent");
+                        .field(FieldNames.PRIORITY, "Unexpected");
         story.parent = parent.node();
 
         final IssueMapping.Mapped mapped = read(story, parent);
@@ -1056,7 +1084,8 @@ class IssueMappingTest {
                         new String[] {"Low", "1"},
                         new String[] {"High", "7"},
                         new String[] {"High", "2"},
-                        new String[] {"Medium", "1"})) {
+                        new String[] {"Medium", "1"},
+                        new String[] {"Highest", "8"})) {
             final Issue issue =
                     new Issue(
                             "example-lib#" + number,
@@ -1079,7 +1108,11 @@ class IssueMappingTest {
                 .as("by priority, then by rank")
                 .extracting(Issue::id)
                 .containsExactly(
-                        "example-lib#3", "example-lib#2", "example-lib#4", "example-lib#1");
+                        "example-lib#5",
+                        "example-lib#3",
+                        "example-lib#2",
+                        "example-lib#4",
+                        "example-lib#1");
     }
 
     @Test
@@ -1624,7 +1657,7 @@ class IssueMappingTest {
         final Item part =
                 new Item("example-lib", 4)
                         .field(FieldNames.STATUS, "Idea")
-                        .field(FieldNames.PRIORITY, "Highest");
+                        .field(FieldNames.PRIORITY, "Urgent");
         final Item parent =
                 new Item("example-lib", 3)
                         .field(FieldNames.STATUS, "Idea")
@@ -1684,7 +1717,7 @@ class IssueMappingTest {
                 .as("the story whose state follows its issues")
                 .isEqualTo(versionOf(before, "example-project#1"));
 
-        story.field(FieldNames.PRIORITY, "Highest");
+        story.field(FieldNames.PRIORITY, "Urgent");
         assertThat(versionOf(read(story, first, second), "example-project#1"))
                 .as("the story whose own priority changed")
                 .isNotEqualTo(versionOf(before, "example-project#1"));

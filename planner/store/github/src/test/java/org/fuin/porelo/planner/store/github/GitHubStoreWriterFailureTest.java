@@ -15,6 +15,7 @@ import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -209,14 +210,16 @@ class GitHubStoreWriterFailureTest {
                     GitHubExceptions.WITHOUT_A_WORD);
         }
 
-        ProjectWrites.Created createIssue() {
+        ProjectWrites.Created createIssue(
+                final List<IssuesCreateRequestIssueFieldValuesInner> sent) {
             calls.add("createIssue");
             if (createFailure != null) {
                 throw createFailure;
             }
             final int number = byId.size() + 1;
             byId.put("I_" + number, "O_idea");
-            return new ProjectWrites.Created("I_" + number, 100L + number, number, null);
+            return new ProjectWrites.Created(
+                    "I_" + number, 100L + number, number, null, OrganizationFields.answered(sent));
         }
 
         private static GitHubGraphQl.ProjectItem item(final String issueId, final String option) {
@@ -247,7 +250,8 @@ class GitHubStoreWriterFailureTest {
                             none,
                             NONE,
                             null,
-                            null),
+                            null,
+                            List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium"))),
                     List.of(new GitHubGraphQl.ItemValue("F_status", option, state, null, null)),
                     NONE);
         }
@@ -268,10 +272,14 @@ class GitHubStoreWriterFailureTest {
                                                     (String) args[2]);
                                     case "setFieldValues" ->
                                             github.setFieldValues((List<?>) args[2]);
-                                    case "createIssue" -> github.createIssue();
+                                    case "createIssue" -> github.createIssue(castList(args[6]));
+                                    case "issueFields" -> OrganizationFields.fields();
+                                    case "issueFieldValues" -> List.of();
                                     case "addProjectItems" ->
                                             new Batch<>(
-                                                    castList(args[2]).stream()
+                                                    GitHubStoreWriterFailureTest.<String>castList(
+                                                                    args[2])
+                                                            .stream()
                                                             .map(
                                                                     issue ->
                                                                             Batch.Outcome.of(
@@ -288,8 +296,8 @@ class GitHubStoreWriterFailureTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> castList(final Object list) {
-        return (List<String>) list;
+    private static <T> List<T> castList(final Object list) {
+        return (List<T>) list;
     }
 
     private static GitHubStore store(final GitHub github) {

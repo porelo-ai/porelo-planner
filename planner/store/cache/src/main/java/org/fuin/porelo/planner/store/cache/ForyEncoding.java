@@ -46,6 +46,7 @@ public final class ForyEncoding implements CopyEncoding {
                     TrackedItem.Links.class,
                     TrackedItem.Link.class,
                     TrackedItem.Value.class,
+                    TrackedItem.Choice.class,
                     ChangeCursor.class,
                     ChangeCursor.Page.class,
                     TrackedWait.class,

@@ -449,6 +449,9 @@ class LocalDirectoryStoreTest {
         assertThat(story.story())
                 .as("the story in the project's own repository")
                 .isEqualTo("plans#1");
+        assertThat(read.story(story.story()).orElseThrow().priority())
+                .as("the story keeps its priority, read back from its head")
+                .isEqualTo("High");
         assertThat(read.story(story.story()).orElseThrow().issues())
                 .as("the story keeps its order")
                 .containsExactly(second.id(), first.id());

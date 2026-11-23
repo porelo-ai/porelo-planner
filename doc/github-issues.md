@@ -16,13 +16,14 @@ the work rules stay files in the project's own repository.
 | `waitsOn` | GitHub's "blocked by" on an issue the project does not hold, such as one of another owner's repository |
 | The id | The tracker reference alone, `<repository>#<number>`: the repository the issue lives in, lowercased, and GitHub's number |
 | The state | The project's own field `Status`, whose options are the workflow's states in order |
-| Priority, size, risk, worker | The single-select fields `Priority`, `Size`, `Risk`, `Worker` |
+| Priority | The organization's single-select issue field `Priority` |
+| Size, risk, worker | The project's single-select fields `Size`, `Risk`, `Worker` |
 | The order within a priority | The number field `Rank`, sorted by the planner |
 | What is true now | The issue's body, as sections |
 | The course in time | One comment per stage |
 | The sums of the stages | The number fields `Estimate`, `Minutes`, `VM minutes`, `Tokens`, `Stages` |
 
-The planner adds 10 fields to the project. A GitHub project holds at most 50, 13 of them GitHub's own.
+The planner adds 9 fields to the project. A GitHub project holds at most 50, 13 of them GitHub's own.
 
 ## The body
 
@@ -99,9 +100,17 @@ Markdown store's stage records count them; a pause and a person's move are shown
 - A story whose `Status` is empty follows its issues in states of the workflow; a set `Status` is given. When its
   issues all stand outside the workflow, or those inside it are all closed while another stands outside it, it
   takes no state, warned `NoState`, as the Git store reads it.
-- An issue's `Priority` is read as the board's priority of it; an empty one is none, and one outside Highest to
-  Lowest is none too, warned, and sorted as Medium. A story without a `Priority`, or with one outside them, is shown
-  as Medium and warned.
+- An issue's priority is read from the organization's issue field `Priority`: Urgent is Highest, and High, Medium
+  and Low keep their words. An empty one is none, and any other option is none too, warned `UnknownPriority`,
+  and sorted as Medium. A story without a `Priority` is shown as Medium and warned `NoPriority`, one with another
+  option as Medium and warned `UnknownPriority`. A project field named `Priority` is neither read nor required.
+- GitHub's field has no option for Lowest, so a priority Lowest is refused before any call, as a priority the
+  planner does not know is: an edit of an issue's fields or a story's priority as `MoveNotAllowed`, a new issue as
+  `IssueNotAllowed` and an idea or a story made from issues as `IdeaRefused`, each HTTP 422.
+- A priority is written through GitHub's REST update of the issue, which replaces every issue field value it
+  holds: the planner sends the other values back as they stand, and refuses the save before any write when one
+  of them is of a kind it cannot send back. A priority the issue holds already sends nothing. A new issue is made
+  with its priority; one GitHub answers without it is partly saved and finished by the next try.
 - Shown with a warning that holds no work: a story under an issue, without it; a story's line under *Also needs* that
   names no issue the board shows; a story's sub-issue outside the project; a body longer than GitHub takes, without
   it; a `Size` the planner does not know, as none; and a number field that holds no number in its range, as none,
@@ -200,9 +209,9 @@ A new issue and an idea are added with the person's own access too, and get no `
 planner checks the revision the window showed, the repositories, every field and option it sets and each body, so
 what the project cannot hold is refused with nothing made. A new issue is made in its repository with *What must be
 true* as the lead's paragraph followed by the task that proposed it, or, for a text of several paragraphs, as a
-section of its own below the task's paragraph; it is added to the project, and given the workflow's
-first state in `Status`, its `Size` when given, `Worker`, `Priority` (Medium, or the idea's priority) and the
-`Rank` after the last issue of that priority. A *What must be true* holding a heading of the first or second
+section of its own below the task's paragraph, with its `Priority` (Medium, or the idea's priority); it is added to
+the project, and given the workflow's first state in `Status`, its `Size` when given, `Worker` and the `Rank` after
+the last issue of that priority. A *What must be true* holding a heading of the first or second
 level or leaving a code block open is refused. An idea's story is made first in the project's own repository, of the
 issue type `Story`, its gain and its test in its body, given `Priority` and `Rank`, and no `Status`, so its state
 follows its issues; then each issue is made, and they become the story's sub-issues in the idea's order. GitHub drops
@@ -222,9 +231,10 @@ repository (`ParentInOtherRepository`); blocked by a story (`BlockedByStory`) or
 issue (`BlockedByStory`). One blocked by more issues than one read names is refused too, since not all its blockers can
 be checked. A story of another repository is not offered at all, since as a project item it stands on the board only as
 a warned issue no work starts on; a note among the faults names it. An issue is then added to the project and given the
-workflow's first state in `Status`, `Worker` Manual, so no agent takes an issue nobody chose, `Priority` Medium and the
-`Rank` after the last issue of that priority; a story is given `Priority` and `Rank` only, so its state follows its
-issues. An add GitHub refused writes nothing and is refused as such; once the add stands, or may stand after a call
+workflow's first state in `Status` and `Worker` Manual, so no agent takes an issue nobody chose, the `Priority` it
+holds, or Medium when it holds none, and the `Rank` after the last issue of that priority, or of Medium for an option
+the planner does not know; a story is given `Priority` and `Rank` only, so its state follows its issues. An add
+GitHub refused writes nothing and is refused as such; once the add stands, or may stand after a call
 GitHub left unanswered, a stop is partly saved, naming the issue, since it then stands on the project outside the
 workflow until it gets its `Status`. A workflow of GitHub's own project that sets a `Status` on an added item writes
 after the planner and is seen at the next read. A person who adds the same issue on GitHub between the planner's read

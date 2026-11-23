@@ -71,6 +71,12 @@ final class LocalItem {
                     "issues",
                     "blockedBy");
 
+    /**
+     * The fields a head holds: the GitHub project's fields and Priority, which GitHub keeps in the
+     * organization's issue field and a head beside the others.
+     */
+    static final Set<String> FIELDS = headFields();
+
     private static final Set<String> CHOICES =
             Set.of(
                     FieldNames.STATUS,
@@ -78,6 +84,12 @@ final class LocalItem {
                     FieldNames.SIZE,
                     FieldNames.RISK,
                     FieldNames.WORKER);
+
+    private static Set<String> headFields() {
+        final Set<String> fields = new java.util.LinkedHashSet<>(FieldNames.ALL.keySet());
+        fields.add(FieldNames.PRIORITY);
+        return java.util.Collections.unmodifiableSet(fields);
+    }
 
     private final ObjectNode head;
 
@@ -392,7 +404,7 @@ final class LocalItem {
      */
     Map<String, String> fields() {
         final Map<String, String> fields = new LinkedHashMap<>();
-        for (final String name : FieldNames.ALL.keySet()) {
+        for (final String name : FIELDS) {
             final JsonNode value = head.get(name);
             if (value != null && !value.isNull()) {
                 fields.put(name, value.isValueNode() ? value.asText() : value.toString());

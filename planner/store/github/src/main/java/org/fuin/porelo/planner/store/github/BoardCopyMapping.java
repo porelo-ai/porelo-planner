@@ -185,7 +185,10 @@ final class BoardCopyMapping {
                 links(issue.subIssues()),
                 links(issue.blockedBy()),
                 issue.issueType(),
-                issue.closedAt());
+                issue.closedAt(),
+                issue.fieldOptions().stream()
+                        .map(chosen -> new TrackedItem.Choice(chosen.field(), chosen.option()))
+                        .toList());
     }
 
     private static GitHubGraphQl.BoardIssue issue(
@@ -207,7 +210,13 @@ final class BoardCopyMapping {
                 new GitHubGraphQl.PageInfo(partial, null),
                 issue.type(),
                 // A story read from the copy keeps the day its test passed.
-                issue.closedAt());
+                issue.closedAt(),
+                issue.choices().stream()
+                        .map(
+                                chosen ->
+                                        new GitHubGraphQl.IssueFieldOption(
+                                                chosen.field(), chosen.option()))
+                        .toList());
     }
 
     private static TrackedItem.Links links(final GitHubGraphQl.IssueRefs refs) {

@@ -425,7 +425,7 @@ public final class IssueMapping {
     }
 
     /**
-     * The field values an issue's item holds, by field name, as the planner writes them.
+     * The project values and issue Priority option, by field name, as the planner writes them.
      *
      * @param issue the issue
      * @param priority its priority, one of {@link Story#PRIORITIES}
@@ -436,7 +436,7 @@ public final class IssueMapping {
             final Issue issue, final String priority, final int rank) {
         final Map<String, String> fields = new LinkedHashMap<>();
         fields.put(FieldNames.STATUS, issue.state());
-        fields.put(FieldNames.PRIORITY, priority);
+        fields.put(FieldNames.PRIORITY, IssuePriority.option(issue.id(), priority));
         fields.put(FieldNames.RANK, Integer.toString(rank));
         if (issue.size() != null) {
             fields.put(FieldNames.SIZE, issue.size());
@@ -447,8 +447,8 @@ public final class IssueMapping {
     }
 
     /**
-     * The field values a story's item holds, by field name; a story has no {@code Status}, as it
-     * follows its issues while open and ends by being closed.
+     * The project values and issue Priority option of a story, by field name; a story has no {@code
+     * Status}, as it follows its issues while open and ends by being closed.
      *
      * @param story the story
      * @param rank its rank within its priority
@@ -456,7 +456,7 @@ public final class IssueMapping {
      */
     public static Map<String, String> fields(final Story story, final int rank) {
         final Map<String, String> fields = new LinkedHashMap<>();
-        fields.put(FieldNames.PRIORITY, story.priority());
+        fields.put(FieldNames.PRIORITY, IssuePriority.option(story.id(), story.priority()));
         fields.put(FieldNames.RANK, Integer.toString(rank));
         if (story.size() != null) {
             fields.put(FieldNames.SIZE, story.size());
@@ -549,13 +549,7 @@ public final class IssueMapping {
         }
         final List<Warning> found = new ArrayList<>();
         final String size = choice(item, FieldNames.SIZE, SIZES, Warning.unknownSize(), found);
-        final String priority =
-                choice(
-                        item,
-                        FieldNames.PRIORITY,
-                        Story.PRIORITIES,
-                        Warning.unknownPriority(),
-                        found);
+        final String priority = priority(item, found);
         final Double estimate = figure(item, FieldNames.ESTIMATE, found);
         final Double minutes = figure(item, FieldNames.MINUTES, found);
         // The board shows none of the stage sums but Minutes; each is still warned, as no stage
@@ -643,6 +637,22 @@ public final class IssueMapping {
 
     /** The most minutes an issue's work is read as having taken, its stages together. */
     static final double MOST_TAKEN = 10_000_000;
+
+    /**
+     * An item's priority in the planner's words, read from the organization's issue field: none
+     * when it holds no option, and none, warned, for an option the planner does not know.
+     */
+    private static @Nullable String priority(final ItemView item, final List<Warning> found) {
+        final String option = item.fields().getOrDefault(FieldNames.PRIORITY, "");
+        if (option.isEmpty()) {
+            return null;
+        }
+        final String priority = IssuePriority.read(option);
+        if (priority == null) {
+            found.add(Warning.unknownPriority());
+        }
+        return priority;
+    }
 
     /** The largest whole number a GitHub number field holds exactly. */
     static final double MOST_WHOLE = 9_007_199_254_740_991d;
@@ -812,10 +822,12 @@ public final class IssueMapping {
                 }
             }
         }
-        String priority = item.fields().getOrDefault(FieldNames.PRIORITY, "");
-        if (!Story.PRIORITIES.contains(priority)) {
+        String priority = priority(item, warnings);
+        if (priority == null) {
             // A story sorts by its priority, so one without is told; an issue need have none.
-            warnings.add(priority.isEmpty() ? Warning.noPriority() : Warning.unknownPriority());
+            if (item.fields().getOrDefault(FieldNames.PRIORITY, "").isEmpty()) {
+                warnings.add(Warning.noPriority());
+            }
             priority = "Medium";
         }
         final String size = choice(item, FieldNames.SIZE, SIZES, Warning.unknownSize(), warnings);
@@ -1019,7 +1031,9 @@ public final class IssueMapping {
 
     private static int priorityIndex(final ItemView item) {
         final int index =
-                Story.PRIORITIES.indexOf(item.fields().getOrDefault(FieldNames.PRIORITY, ""));
+                Story.PRIORITIES.indexOf(
+                        Objects.requireNonNullElse(
+                                IssuePriority.read(item.fields().get(FieldNames.PRIORITY)), ""));
         return index < 0 ? Story.PRIORITIES.indexOf("Medium") : index;
     }
 

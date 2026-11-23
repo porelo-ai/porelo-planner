@@ -141,6 +141,7 @@ class GitHubStoreListTest {
                             calls.add(method.getName());
                             return switch (method.getName()) {
                                 case "issueBoard" -> read((List<String>) args[1]);
+                                case "issueFields" -> OrganizationFields.fields();
                                 case "addProjectItems" -> {
                                     // An added item holds no value until the planner writes one.
                                     items.add(
@@ -218,7 +219,8 @@ class GitHubStoreListTest {
                 none,
                 LAST,
                 type,
-                null);
+                null,
+                List.of(new GitHubGraphQl.IssueFieldOption("Priority", "Medium")));
     }
 
     private static GitHubGraphQl.ProjectItem item(

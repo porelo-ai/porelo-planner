@@ -80,7 +80,9 @@ class BoardCopiesTest {
                                 true,
                                 "cursor-1",
                                 3),
-                        new TrackedItem.Links(List.of(), false, null, 0));
+                        new TrackedItem.Links(List.of(), false, null, 0),
+                        "Story",
+                        List.of(new TrackedItem.Choice("Priority", "Urgent")));
         return new BoardCopy(
                 project,
                 commit,

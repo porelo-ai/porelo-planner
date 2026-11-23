@@ -21,6 +21,10 @@ import org.fuin.porelo.forge.github.GitHubGraphQl.IssueRefs;
 import org.fuin.porelo.forge.github.GitHubGraphQl.ItemValue;
 import org.fuin.porelo.forge.github.GitHubGraphQl.PageInfo;
 import org.fuin.porelo.forge.github.GraphQlCost;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
@@ -222,6 +226,9 @@ class FieldsBoardWriterEditsTest {
             item.fields()
                     .forEach(
                             (field, value) -> {
+                                if (FieldNames.PRIORITY.equals(field)) {
+                                    return;
+                                }
                                 final Map<String, String> options = OPTION_IDS.get(field);
                                 values.add(
                                         options != null
@@ -255,7 +262,13 @@ class FieldsBoardWriterEditsTest {
                             refs(item.blockedByIds()),
                             new GitHubGraphQl.PageInfo(false, null),
                             item.issueType(),
-                            null),
+                            null,
+                            item.fields().containsKey(FieldNames.PRIORITY)
+                                    ? List.of(
+                                            new GitHubGraphQl.IssueFieldOption(
+                                                    FieldNames.PRIORITY,
+                                                    item.fields().get(FieldNames.PRIORITY)))
+                                    : List.of()),
                     item.itemId(),
                     values,
                     new GitHubGraphQl.PageInfo(false, null));
@@ -309,7 +322,8 @@ class FieldsBoardWriterEditsTest {
                 final String repository,
                 final String title,
                 final String body,
-                final @Nullable String type) {
+                final @Nullable String type,
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
             throw new AssertionError("an edit made an issue");
         }
 
@@ -393,14 +407,37 @@ class FieldsBoardWriterEditsTest {
                 final int number,
                 final @Nullable String title,
                 final @Nullable String body,
-                final @Nullable Opening opening) {
+                final @Nullable Opening opening,
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
             assertThat(opening).as("an edit by hand leaves the open state").isNull();
             final RuntimeException failure = updateFailure;
             if (failure != null) {
                 throw failure;
             }
+            if (issueFieldValues != null) {
+                priorityUpdates.add(issueFieldValues);
+            }
             calls.add("updateIssue " + repository + "#" + number);
             updates.add(new Update(title, body));
+        }
+
+        private final List<List<IssuesUpdateRequestIssueFieldValuesInner>> priorityUpdates =
+                new ArrayList<>();
+
+        @Override
+        public List<IssueField> issueFields(final String token, final String owner) {
+            return OrganizationFields.fields();
+        }
+
+        @Override
+        public List<IssueFieldValue> issueFieldValues(
+                final String token, final String owner, final String repository, final int number) {
+            return held.values().stream()
+                    .filter(value -> value.issue().number() == number)
+                    .flatMap(value -> value.issue().fieldOptions().stream())
+                    .filter(value -> FieldNames.PRIORITY.equals(value.field()))
+                    .map(value -> OrganizationFields.priority(value.option()))
+                    .toList();
         }
 
         @Override
@@ -483,10 +520,14 @@ class FieldsBoardWriterEditsTest {
         assertThat(wrote).as("something was written").isTrue();
         assertThat(github.mutations).as("the mutations").hasSize(1);
         assertThat(github.mutations.get(0))
-                .as("the estimate and the priority; the size held already, no rank to clear")
-                .containsExactlyInAnyOrder(
-                        FieldValue.number("PVTI_2", "F_Estimate", 90),
-                        FieldValue.option("PVTI_2", "F_Priority", "O_Low"));
+                .as("the estimate; the size held already, no rank to clear")
+                .containsExactly(FieldValue.number("PVTI_2", "F_Estimate", 90));
+        assertThat(github.priorityUpdates)
+                .as("Priority is an issue field")
+                .containsExactly(
+                        List.of(
+                                new IssuesUpdateRequestIssueFieldValuesInner(
+                                        11L, "Low", null, null, null)));
     }
 
     @Test

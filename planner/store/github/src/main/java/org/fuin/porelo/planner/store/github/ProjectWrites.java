@@ -11,10 +11,14 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
 import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.forge.github.model.PrivateUser;
 import org.fuin.porelo.forge.github.model.PublicUser;
 import org.fuin.porelo.forge.github.model.SimpleUser;
@@ -62,8 +66,24 @@ public interface ProjectWrites {
      * @param databaseId its id in REST, which a parent takes it as a sub-issue by
      * @param number its number in its repository
      * @param type the name of the issue type GitHub gave it, or null for none
+     * @param fieldValues the organization issue fields GitHub answered
      */
-    record Created(String nodeId, long databaseId, int number, @Nullable String type) {}
+    record Created(
+            String nodeId,
+            long databaseId,
+            int number,
+            @Nullable String type,
+            List<IssueFieldValue> fieldValues) {
+        /** Copies the issue field values. */
+        public Created {
+            fieldValues = List.copyOf(fieldValues);
+        }
+
+        /** Makes an issue carrying no organization field values. */
+        public Created(String nodeId, long databaseId, int number, @Nullable String type) {
+            this(nodeId, databaseId, number, type, List.of());
+        }
+    }
 
     /**
      * An issue the person made, as a look for one GitHub may have made without answering finds it.
@@ -142,6 +162,7 @@ public interface ProjectWrites {
      * @param title the issue's title
      * @param body the issue's body
      * @param type the name of the issue type it is to carry, or null for none
+     * @param issueFieldValues the organization issue fields to set
      * @return the issue as GitHub made it
      */
     Created createIssue(
@@ -150,7 +171,19 @@ public interface ProjectWrites {
             String repository,
             String title,
             String body,
-            @Nullable String type);
+            @Nullable String type,
+            List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues);
+
+    /** Makes an issue without organization field values. */
+    default Created createIssue(
+            String token,
+            String owner,
+            String repository,
+            String title,
+            String body,
+            @Nullable String type) {
+        return createIssue(token, owner, repository, title, body, type, List.of());
+    }
 
     /**
      * Makes an issue a sub-issue of another, after the sub-issues it has.
@@ -249,6 +282,7 @@ public interface ProjectWrites {
      * @param title the new title, or null to leave it
      * @param body the new body, or null to leave it
      * @param opening the new open state, or null to leave it
+     * @param issueFieldValues all organization field values, or null to leave them
      */
     void updateIssue(
             String token,
@@ -257,7 +291,27 @@ public interface ProjectWrites {
             int number,
             @Nullable String title,
             @Nullable String body,
-            @Nullable Opening opening);
+            @Nullable Opening opening,
+            @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues);
+
+    /** Updates an issue while leaving its organization field values untouched. */
+    default void updateIssue(
+            String token,
+            String owner,
+            String repository,
+            int number,
+            @Nullable String title,
+            @Nullable String body,
+            @Nullable Opening opening) {
+        updateIssue(token, owner, repository, number, title, body, opening, null);
+    }
+
+    /** Reads the organization's issue fields. */
+    List<IssueField> issueFields(String token, String owner);
+
+    /** Reads all organization field values the issue holds before replacing them. */
+    List<IssueFieldValue> issueFieldValues(
+            String token, String owner, String repository, int number);
 
     /**
      * Reads a page of an issue's comments.
@@ -318,14 +372,22 @@ public interface ProjectWrites {
                     final String repository,
                     final String title,
                     final String body,
-                    final @Nullable String type) {
+                    final @Nullable String type,
+                    final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
                 return created(
                         rest.createIssue(
                                 token,
                                 owner,
                                 repository,
                                 new IssuesCreateRequest(
-                                        title, body, null, null, null, null, type, null)));
+                                        title,
+                                        body,
+                                        null,
+                                        null,
+                                        null,
+                                        issueFieldValues,
+                                        type,
+                                        null)));
             }
 
             @Override
@@ -429,7 +491,9 @@ public interface ProjectWrites {
                     final int number,
                     final @Nullable String title,
                     final @Nullable String body,
-                    final @Nullable Opening opening) {
+                    final @Nullable Opening opening,
+                    final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner>
+                            issueFieldValues) {
                 rest.updateIssue(
                         token,
                         owner,
@@ -452,8 +516,24 @@ public interface ProjectWrites {
                                 null,
                                 null,
                                 null,
-                                null,
+                                issueFieldValues,
                                 null));
+            }
+
+            @Override
+            public List<IssueField> issueFields(final String token, final String owner) {
+                return rest.issueFields(token, owner);
+            }
+
+            @Override
+            public List<IssueFieldValue> issueFieldValues(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number) {
+                final List<IssueFieldValue> values =
+                        rest.issue(token, owner, repository, number).issueFieldValues();
+                return values == null ? List.of() : values;
             }
 
             @Override
@@ -522,6 +602,11 @@ public interface ProjectWrites {
             throw new IllegalStateException("GitHub answered an issue without its ids");
         }
         final IssueType type = issue.type();
-        return new Created(nodeId, id, number, type == null ? null : type.name());
+        return new Created(
+                nodeId,
+                id,
+                number,
+                type == null ? null : type.name(),
+                issue.issueFieldValues() == null ? List.of() : issue.issueFieldValues());
     }
 }

@@ -21,8 +21,8 @@ import org.jspecify.annotations.Nullable;
  * @param open whether GitHub has it open
  * @param stateReason why GitHub closed it ({@code completed}, {@code not_planned}), or null while
  *     open
- * @param fields the project's field values by field name, each as text: an option's name, a text, a
- *     number
+ * @param fields the project values and the issue's Priority option by field name, each as text: an
+ *     option's name, a text, a number
  * @param labels its labels' names
  * @param parentIssueId the node id of its GitHub parent issue, or null
  * @param subIssueIds the node ids of its GitHub sub-issues, in GitHub's order
@@ -92,7 +92,7 @@ public record ItemView(
      * @param body its body
      * @param open whether GitHub has it open
      * @param stateReason why GitHub closed it, or null while open
-     * @param fields the project's field values by field name
+     * @param fields the project values and the issue's Priority option by field name
      * @param labels its labels' names
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues
@@ -154,7 +154,7 @@ public record ItemView(
      * @param body its body
      * @param open whether GitHub has it open
      * @param stateReason why GitHub closed it, or null while open
-     * @param fields the project's field values by field name
+     * @param fields the project values and the issue's Priority option by field name
      * @param labels its labels' names
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues
@@ -278,7 +278,7 @@ public record ItemView(
      * @param body its body
      * @param open whether GitHub has it open
      * @param stateReason why GitHub closed it, or null while open
-     * @param fields the project's field values by field name
+     * @param fields the project values and the issue's Priority option by field name
      * @param labels its labels' names
      * @param parentIssueId the node id of its GitHub parent issue, or null
      * @param subIssueIds the node ids of its GitHub sub-issues

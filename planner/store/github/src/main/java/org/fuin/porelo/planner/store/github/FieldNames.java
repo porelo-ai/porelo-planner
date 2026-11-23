@@ -2,7 +2,7 @@ package org.fuin.porelo.planner.store.github;
 
 import java.util.Map;
 
-/** The names of the GitHub project's fields the store reads and writes, and the kind of each. */
+/** The project field names and the organization's issue field Priority. */
 public final class FieldNames {
 
     /** The kinds of field GitHub offers that the store uses. */
@@ -16,7 +16,7 @@ public final class FieldNames {
     /** The state, GitHub's own field, its options the workflow's states. */
     public static final String STATUS = "Status";
 
-    /** A story's priority. */
+    /** The organization's issue field for an issue's or story's priority. */
     public static final String PRIORITY = "Priority";
 
     /** The size, XS to XL. */
@@ -46,11 +46,10 @@ public final class FieldNames {
     /** How many stages it went through. */
     public static final String STAGES = "Stages";
 
-    /** Every field the store uses, by name, with its kind. */
+    /** Every project field the store uses, by name, with its kind. */
     public static final Map<String, Kind> ALL =
             Map.ofEntries(
                     Map.entry(STATUS, Kind.SINGLE_SELECT),
-                    Map.entry(PRIORITY, Kind.SINGLE_SELECT),
                     Map.entry(SIZE, Kind.SINGLE_SELECT),
                     Map.entry(RISK, Kind.SINGLE_SELECT),
                     Map.entry(WORKER, Kind.SINGLE_SELECT),

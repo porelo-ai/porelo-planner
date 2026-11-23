@@ -29,6 +29,9 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.SimpleUser;
 import org.junit.jupiter.api.Test;
@@ -72,6 +75,65 @@ class ProjectWritesWireTest {
               "created_at": "2026-01-02T10:00:00Z", "updated_at": "2026-01-02T10:00:00Z"
             }
             """;
+
+    @Test
+    void issuePrioritiesAreSentAsOptionNamesThroughTheRestFieldValues() throws IOException {
+        // Harm: a generated request loses the priority, or sends an option's numeric id where
+        // GitHub takes its name, so the priority or another field's value is lost.
+        final RecordingHttp http = new RecordingHttp();
+        final ProjectWrites writes =
+                ProjectWrites.over(new GitHubGraphQl(BASE, http), new GitHubClient(BASE, http));
+        final IssueField priority = OrganizationFields.fields().getFirst();
+        final IssueFieldValue team =
+                new IssueFieldValue(
+                        23L,
+                        "Team",
+                        "IFV_23",
+                        IssueFieldValue.DataTypeEnum.SINGLE_SELECT,
+                        900L,
+                        new IssueFieldValueSingleSelectOption(900L, "Platform", "blue"),
+                        null);
+        writes.updateIssue(
+                TOKEN,
+                "example-org",
+                "example-lib",
+                7,
+                null,
+                null,
+                null,
+                IssuePriority.update(
+                        "example-lib#7",
+                        priority,
+                        List.of(OrganizationFields.priority("High"), team),
+                        "Highest"));
+        final JsonNode update =
+                new ObjectMapper().readTree(http.asked.getLast().body()).path("issue_field_values");
+        assertThat(update.get(0).path("field_id").asLong())
+                .as("the other field's id")
+                .isEqualTo(23L);
+        assertThat(update.get(0).path("value").asText())
+                .as("the other field's option, by name")
+                .isEqualTo("Platform");
+        assertThat(update.get(1).path("field_id").asLong())
+                .as("the organization's Priority")
+                .isEqualTo(OrganizationFields.PRIORITY_ID);
+        assertThat(update.get(1).path("value").asText())
+                .as("Highest sent as GitHub's option name")
+                .isEqualTo("Urgent");
+
+        writes.createIssue(
+                TOKEN,
+                "example-org",
+                "example-lib",
+                "Title",
+                "Body",
+                null,
+                IssuePriority.create(priority, "Highest"));
+        final JsonNode create = new ObjectMapper().readTree(http.asked.getLast().body());
+        assertThat(create.path("issue_field_values").get(0).path("value").asText())
+                .as("the option name on create")
+                .isEqualTo("Urgent");
+    }
 
     @Test
     void titleBodyAndStateWritesLeaveLabelsAndAssigneesUntouched() throws IOException {

@@ -49,6 +49,8 @@ public record TrackedItem(
      * @param subIssues its sub-issues
      * @param blockedBy the issues that block it
      * @param type the name of its issue type at the tracker, or null when it has none
+     * @param closedAt when the tracker closed it, or null when it never did
+     * @param choices the options chosen in its single-select issue fields, in the tracker's order
      */
     public record Issue(
             String id,
@@ -65,9 +67,10 @@ public record TrackedItem(
             Links subIssues,
             Links blockedBy,
             @Nullable String type,
-            @Nullable Instant closedAt) {
+            @Nullable Instant closedAt,
+            List<Choice> choices) {
 
-        /** Requires every part the tracker always gives and copies the labels. */
+        /** Requires every part the tracker always gives and copies the labels and choices. */
         public Issue {
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(title, "title");
@@ -77,10 +80,66 @@ public record TrackedItem(
             labels = List.copyOf(labels);
             Objects.requireNonNull(subIssues, "subIssues");
             Objects.requireNonNull(blockedBy, "blockedBy");
+            choices = List.copyOf(choices);
         }
 
         /**
          * An issue the tracker never closed.
+         *
+         * @param id its own id at the tracker
+         * @param key the tracker's second, numeric id of it, or 0 where it has none
+         * @param number its number in its repository
+         * @param title its title
+         * @param body its text, or null when it has none
+         * @param state its state at the tracker
+         * @param stateReason why it was closed, or null
+         * @param updatedAt when the tracker last changed it
+         * @param repository its repository, as the tracker names it
+         * @param labels its labels, in the tracker's order
+         * @param parentId the id of the issue it is a sub-issue of, or null
+         * @param subIssues its sub-issues
+         * @param blockedBy the issues that block it
+         * @param type the name of its issue type at the tracker, or null when it has none
+         * @param choices the options chosen in its single-select issue fields, in the tracker's
+         *     order
+         */
+        public Issue(
+                final String id,
+                final long key,
+                final int number,
+                final String title,
+                final @Nullable String body,
+                final String state,
+                final @Nullable String stateReason,
+                final Instant updatedAt,
+                final String repository,
+                final List<String> labels,
+                final @Nullable String parentId,
+                final Links subIssues,
+                final Links blockedBy,
+                final @Nullable String type,
+                final List<Choice> choices) {
+            this(
+                    id,
+                    key,
+                    number,
+                    title,
+                    body,
+                    state,
+                    stateReason,
+                    updatedAt,
+                    repository,
+                    labels,
+                    parentId,
+                    subIssues,
+                    blockedBy,
+                    type,
+                    null,
+                    choices);
+        }
+
+        /**
+         * An issue the tracker never closed, with no chosen option in an issue field.
          *
          * @param id its own id at the tracker
          * @param key the tracker's second, numeric id of it, or 0 where it has none
@@ -127,11 +186,13 @@ public record TrackedItem(
                     subIssues,
                     blockedBy,
                     type,
-                    null);
+                    null,
+                    List.of());
         }
 
         /**
-         * An issue of no issue type.
+         * An issue of no issue type and no chosen option in an issue field, which the tracker never
+         * closed.
          *
          * @param id its own id at the tracker
          * @param key the tracker's second, numeric id of it, or 0 where it has none
@@ -176,7 +237,23 @@ public record TrackedItem(
                     subIssues,
                     blockedBy,
                     null,
-                    null);
+                    null,
+                    List.of());
+        }
+    }
+
+    /**
+     * The option chosen in one of an issue's single-select issue fields.
+     *
+     * @param field the field's name
+     * @param option the chosen option's name
+     */
+    public record Choice(String field, String option) {
+
+        /** Requires both names. */
+        public Choice {
+            Objects.requireNonNull(field, "field");
+            Objects.requireNonNull(option, "option");
         }
     }
 

@@ -16,6 +16,12 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldOptionsInner;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Story;
@@ -101,10 +107,28 @@ class GitHubAddsHttpTest {
                 final String repository,
                 final String title,
                 final String body,
-                final @Nullable String type) {
+                final @Nullable String type,
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
             final int number = made.size() + 1;
             made.add(repository + "#" + number);
-            return new Created("I_" + number, 9000L + number, number, type);
+            return new Created(
+                    "I_" + number,
+                    9000L + number,
+                    number,
+                    type,
+                    issueFieldValues.stream()
+                            .map(
+                                    value ->
+                                            new IssueFieldValue(
+                                                    value.fieldId(),
+                                                    "Priority",
+                                                    "IF_11",
+                                                    IssueFieldValue.DataTypeEnum.SINGLE_SELECT,
+                                                    1L,
+                                                    new IssueFieldValueSingleSelectOption(
+                                                            1L, (String) value.value(), "gray"),
+                                                    null))
+                            .toList());
         }
 
         @Override
@@ -204,8 +228,41 @@ class GitHubAddsHttpTest {
                 final int number,
                 final @Nullable String title,
                 final @Nullable String body,
-                final @Nullable Opening opening) {
+                final @Nullable Opening opening,
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
             throw new AssertionError("a new item changes no issue");
+        }
+
+        @Override
+        public List<IssueField> issueFields(final String token, final String owner) {
+            return List.of(
+                    new IssueField(
+                            11L,
+                            "IF_11",
+                            "Priority",
+                            "",
+                            IssueField.DataTypeEnum.SINGLE_SELECT,
+                            null,
+                            List.of("Urgent", "High", "Medium", "Low").stream()
+                                    .map(
+                                            name ->
+                                                    new IssueFieldOptionsInner(
+                                                            1L,
+                                                            name,
+                                                            null,
+                                                            IssueFieldOptionsInner.ColorEnum.GRAY,
+                                                            null,
+                                                            null,
+                                                            null))
+                                    .toList(),
+                            null,
+                            null));
+        }
+
+        @Override
+        public List<IssueFieldValue> issueFieldValues(
+                final String token, final String owner, final String repository, final int number) {
+            return List.of();
         }
 
         @Override

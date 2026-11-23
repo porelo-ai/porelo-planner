@@ -94,6 +94,7 @@ class UnlistedAddTest {
         String repository = OWNER + "/" + LIB;
         List<String> labels = List.of();
         List<GitHubGraphQl.IssueRef> blockers = List.of();
+        List<org.fuin.porelo.forge.github.model.IssueFieldValue> organizationValues = List.of();
         boolean gone;
         boolean moreBlockers;
         Function<List<String>, Batch<String>> add =
@@ -138,7 +139,17 @@ class UnlistedAddTest {
                                                         blockers.size()),
                                                 LAST,
                                                 type,
-                                                null),
+                                                null,
+                                                organizationValues.stream()
+                                                        .map(
+                                                                value ->
+                                                                        new GitHubGraphQl
+                                                                                .IssueFieldOption(
+                                                                                value
+                                                                                        .issueFieldName(),
+                                                                                value.singleSelectOption()
+                                                                                        .name()))
+                                                        .toList()),
                                         itemId,
                                         List.of(),
                                         LAST));
@@ -157,6 +168,25 @@ class UnlistedAddTest {
                                 assertThat(args[0]).as("the person's token").isEqualTo(TOKEN);
                                 return switch (method.getName()) {
                                     case "issueBoard" -> read((List<String>) args[1]);
+                                    case "issueFields" -> OrganizationFields.fields();
+                                    case "issueFieldValues" -> organizationValues;
+                                    case "updateIssue" -> {
+                                        final var sent =
+                                                (List<
+                                                                org.fuin.porelo.forge.github.model
+                                                                        .IssuesUpdateRequestIssueFieldValuesInner>)
+                                                        args[7];
+                                        organizationValues =
+                                                sent.stream()
+                                                        .map(
+                                                                value ->
+                                                                        OrganizationFields.priority(
+                                                                                (String)
+                                                                                        value
+                                                                                                .value()))
+                                                        .toList();
+                                        yield null;
+                                    }
                                     case "addProjectItems" -> add.apply((List<String>) args[2]);
                                     case "setFieldValues" -> {
                                         final List<GitHubGraphQl.FieldValue> sent =
@@ -353,6 +383,58 @@ class UnlistedAddTest {
     }
 
     @Test
+    void anUnlistedIssueKeepsItsPriorityAndGetsTheRankOfThatPriority() {
+        // Harm: adding an issue overwrites the priority a person already chose outside the project.
+        final GitHub github = new GitHub();
+        github.organizationValues = List.of(OrganizationFields.priority("Urgent"));
+        github.writer().addUnlistedIssue(offering(item(LIB, 2, null)), SHOWN, LIB + "#6");
+        assertThat(github.written())
+                .as("Medium ranks do not affect an Urgent issue")
+                .containsEntry(FieldNames.RANK, "1.0");
+        assertThat(github.organizationValues)
+                .as("the existing Urgent priority is kept")
+                .containsExactly(OrganizationFields.priority("Urgent"));
+        assertThat(github.calls)
+                .as("no REST replacement of an existing priority")
+                .doesNotContain("updateIssue");
+        assertThat(github.written())
+                .as("no project Priority written")
+                .doesNotContainKey(FieldNames.PRIORITY);
+    }
+
+    @Test
+    void anUnlistedIssueHoldingAPriorityIsAddedWithoutReadingTheOrganizationsFields() {
+        // Harm: an issue that keeps its own priority refused because the organization's Priority
+        // lacks Medium, or the organization has no such field, though nothing is written to it.
+        final GitHub github = new GitHub();
+        github.organizationValues = List.of(OrganizationFields.priority("Urgent"));
+
+        github.writer().addUnlistedIssue(offering(item(LIB, 2, null)), SHOWN, LIB + "#6");
+
+        assertThat(github.calls)
+                .as("neither the organization's fields nor the issue's values read")
+                .doesNotContain("issueFields", "issueFieldValues", "updateIssue");
+    }
+
+    @Test
+    void anUnlistedIssueWithAPriorityThePlannerDoesNotKnowIsAddedKeepingIt() {
+        // Harm: an issue whose Priority an organization set to an option of its own is refused
+        // from the board, or that option is replaced by a guess.
+        final GitHub github = new GitHub();
+        github.organizationValues = List.of(OrganizationFields.priority("Critical"));
+
+        github.writer().addUnlistedIssue(offering(item(LIB, 2, null)), SHOWN, LIB + "#6");
+
+        assertThat(github.organizationValues)
+                .as("the organization's own option kept")
+                .containsExactly(OrganizationFields.priority("Critical"));
+        assertThat(github.calls).as("no Priority sent").doesNotContain("updateIssue");
+        assertThat(github.written())
+                .as("ranked after the last Medium issue, as the board sorts it")
+                .containsEntry(FieldNames.RANK, "5.0");
+    }
+
+    @Test
     void anIssueIsAddedAndGivenTheFirstStateWithItsValuesInOneSave() {
         // Harm: the issue lands on the project without a Status, so the board shows it outside the
         // workflow and offers it no longer, or an agent takes work nobody chose for one.
@@ -363,13 +445,18 @@ class UnlistedAddTest {
 
         assertThat(github.calls)
                 .as("read right before the write, then added and given its values")
-                .containsExactly("issueBoard", "addProjectItems", "setFieldValues");
+                .containsExactly(
+                        "issueBoard",
+                        "issueFields",
+                        "issueFieldValues",
+                        "addProjectItems",
+                        "updateIssue",
+                        "setFieldValues");
         assertThat(github.written())
                 .as("the values of the added issue")
                 .containsExactly(
                         Map.entry(FieldNames.STATUS, "Idea"),
                         Map.entry(FieldNames.WORKER, "Manual"),
-                        Map.entry(FieldNames.PRIORITY, "Medium"),
                         Map.entry(FieldNames.RANK, "5.0"));
         assertThat(github.values)
                 .as("every value on the added item")
@@ -407,9 +494,7 @@ class UnlistedAddTest {
 
         assertThat(github.written())
                 .as("a story's values: its priority and its rank among the stories")
-                .containsExactly(
-                        Map.entry(FieldNames.PRIORITY, "Medium"),
-                        Map.entry(FieldNames.RANK, "5.0"));
+                .containsExactly(Map.entry(FieldNames.RANK, "5.0"));
     }
 
     @Test
@@ -602,7 +687,8 @@ class UnlistedAddTest {
                 .hasMessageContaining("did not add " + LIB + "#6");
         assertThat(github.calls)
                 .as("no value written")
-                .containsExactly("issueBoard", "addProjectItems");
+                .containsExactly(
+                        "issueBoard", "issueFields", "issueFieldValues", "addProjectItems");
     }
 
     @Test

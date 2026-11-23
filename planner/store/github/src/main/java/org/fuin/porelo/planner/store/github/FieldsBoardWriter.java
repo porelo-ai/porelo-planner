@@ -14,6 +14,8 @@ import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -164,10 +166,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                             plan.state(id, item, state, true);
                         });
         writes.priorities()
-                .forEach(
-                        (id, priority) ->
-                                plan.option(
-                                        id, storyItem(current, id), FieldNames.PRIORITY, priority));
+                .forEach((id, priority) -> plan.priority(id, storyItem(current, id), priority));
         writes.issueReasons()
                 .forEach((id, reason) -> plan.closing(id, issueItem(current, id), reason));
         writes.storyReasons()
@@ -292,7 +291,13 @@ public final class FieldsBoardWriter implements BoardWriter {
         final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
         adding.list(
                 token,
-                adding.existing(repository, number, offered.nodeId(), read.databaseId(), story));
+                adding.existing(
+                        repository,
+                        number,
+                        offered.nodeId(),
+                        read.databaseId(),
+                        story,
+                        IssuePriority.held(read)));
     }
 
     /** The issue a repository's list gave that is no item of the project, or null. */
@@ -570,8 +575,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 case ESTIMATE ->
                         plan.numberOrClear(
                                 issue, item, FieldNames.ESTIMATE, fields.estimateMinutes());
-                case PRIORITY ->
-                        plan.optionOrClear(issue, item, FieldNames.PRIORITY, fields.priority());
+                case PRIORITY -> plan.priority(issue, item, fields.priority());
                 case RANK -> plan.numberOrClear(issue, item, FieldNames.RANK, fields.rank());
             }
         }
@@ -779,6 +783,11 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** The field values, one per item and field, the last named winning. */
         private final Map<String, Value> values = new LinkedHashMap<>();
 
+        private final Map<String, String> priorities = new LinkedHashMap<>();
+
+        private final Map<String, List<IssuesUpdateRequestIssueFieldValuesInner>> issueFields =
+                new LinkedHashMap<>();
+
         private final Map<String, ProjectWrites.Opening> openings = new LinkedHashMap<>();
 
         private final Map<String, String> bodies = new LinkedHashMap<>();
@@ -850,6 +859,38 @@ public final class FieldsBoardWriter implements BoardWriter {
             put(id, item, field, GitHubGraphQl.FieldValue.option(item.itemId(), fieldId, optionId));
         }
 
+        void priority(final String id, final ItemView item, final @Nullable String priority) {
+            final String option = IssuePriority.option(id, priority);
+            if (!option.equals(item.fields().get(FieldNames.PRIORITY))) {
+                items.putIfAbsent(id, item);
+                priorities.put(id, Objects.requireNonNull(priority));
+            }
+        }
+
+        private void preparePriorities(final String token) {
+            if (priorities.isEmpty()) {
+                return;
+            }
+            final String owner = current.config().project().owner();
+            final IssueField field = IssuePriority.field("", github.issueFields(token, owner));
+            priorities.forEach(
+                    (id, priority) -> {
+                        final ItemView item = Objects.requireNonNull(items.get(id));
+                        final var held =
+                                github.issueFieldValues(
+                                        token, owner, item.repository(), item.number());
+                        if (!Objects.equals(
+                                item.fields().get(FieldNames.PRIORITY), IssuePriority.held(held))) {
+                            throw new StoreException.StaleRevision(
+                                    current.board().revision().value(), id);
+                        }
+                        final var values = IssuePriority.update(id, field, held, priority);
+                        if (values != null) {
+                            issueFields.put(id, values);
+                        }
+                    });
+        }
+
         void number(final String id, final ItemView item, final String field, final double n) {
             put(
                     id,
@@ -909,6 +950,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         Map<String, Long> readUnchanged(final String token) {
             try {
                 unchanged(token);
+                preparePriorities(token);
             } catch (final StoreException e) {
                 throw e;
             } catch (final RuntimeException e) {
@@ -945,6 +987,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** Whether nothing is to be written. */
         boolean empty() {
             return values.isEmpty()
+                    && priorities.isEmpty()
                     && openings.isEmpty()
                     && bodies.isEmpty()
                     && titles.isEmpty()
@@ -1125,6 +1168,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                     });
             try {
                 unchanged(token);
+                preparePriorities(token);
             } catch (final StoreException e) {
                 throw e;
             } catch (final RuntimeException e) {
@@ -1134,7 +1178,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final String id = entry.getKey();
                 final String title = titles.get(id);
                 final String body = bodies.get(id);
-                if (title == null && body == null) {
+                if (title == null && body == null && !issueFields.containsKey(id)) {
                     continue;
                 }
                 final ItemView item = entry.getValue();
@@ -1319,7 +1363,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                                     item.number(),
                                     title,
                                     body,
-                                    opening);
+                                    opening,
+                                    opening == null ? issueFields.get(id) : null);
                             return null;
                         });
             } catch (final RuntimeException e) {
@@ -1613,7 +1658,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         static Seen of(final GitHubGraphQl.IssueOnBoard now, final Map<String, String> fieldNames) {
             final GitHubGraphQl.BoardIssue issue = now.issue();
             return new Seen(
-                    ItemsBoardReader.values(now.values(), fieldNames),
+                    ItemsBoardReader.values(now.values(), fieldNames, issue),
                     issue.parentId(),
                     ids(issue.subIssues()),
                     ids(issue.blockedBy()),

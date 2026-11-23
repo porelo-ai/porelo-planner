@@ -17,16 +17,23 @@ import org.fuin.porelo.forge.github.model.Integration;
 import org.fuin.porelo.forge.github.model.IntegrationPermissions;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueComment;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldOptionsInner;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssueFieldValueMultiSelectOptionsInner;
+import org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption;
 import org.fuin.porelo.forge.github.model.IssueLabelsInner;
 import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.IssuesAddBlockedByDependencyRequest;
 import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
 import org.fuin.porelo.forge.github.model.IssuesRemoveSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesReprioritizeSubIssueRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
 import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.forge.github.model.PrivateUser;
 import org.fuin.porelo.forge.github.model.PublicUser;
 import org.fuin.porelo.forge.github.model.SimpleUser;
@@ -102,6 +109,14 @@ public class StoreConfiguration {
         IssuesRemoveSubIssueRequest.class,
         IssuesReprioritizeSubIssueRequest.class,
         IssueLabelsInner.class,
+        // The organization's issue fields, which hold an issue's priority, and an issue's values.
+        IssueField.class,
+        IssueFieldOptionsInner.class,
+        IssueFieldValue.class,
+        IssueFieldValueSingleSelectOption.class,
+        IssueFieldValueMultiSelectOptionsInner.class,
+        IssuesCreateRequestIssueFieldValuesInner.class,
+        IssuesUpdateRequestIssueFieldValuesInner.class,
         SimpleUser.class,
         PrivateUser.class,
         PublicUser.class,
@@ -115,6 +130,7 @@ public class StoreConfiguration {
         TrackedItem.Links.class,
         TrackedItem.Link.class,
         TrackedItem.Value.class,
+        TrackedItem.Choice.class,
         ChangeCursor.class,
         ChangeCursor.Page.class,
         TrackedWait.class,

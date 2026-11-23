@@ -29,6 +29,10 @@ import org.fuin.porelo.forge.github.GitHubGraphQl.IssueRefs;
 import org.fuin.porelo.forge.github.GitHubGraphQl.ItemValue;
 import org.fuin.porelo.forge.github.GitHubGraphQl.PageInfo;
 import org.fuin.porelo.forge.github.GraphQlCost;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
@@ -212,6 +216,9 @@ class FieldsBoardWriterTest {
         item.fields()
                 .forEach(
                         (field, value) -> {
+                            if (FieldNames.PRIORITY.equals(field)) {
+                                return;
+                            }
                             final String fieldId = FIELD_IDS.get(field);
                             final Map<String, String> options = OPTION_IDS.get(field);
                             if (options != null) {
@@ -250,7 +257,13 @@ class FieldsBoardWriterTest {
                         none,
                         new GitHubGraphQl.PageInfo(false, null),
                         item.issueType(),
-                        item.closedAt()),
+                        item.closedAt(),
+                        item.fields().containsKey(FieldNames.PRIORITY)
+                                ? List.of(
+                                        new GitHubGraphQl.IssueFieldOption(
+                                                FieldNames.PRIORITY,
+                                                item.fields().get(FieldNames.PRIORITY)))
+                                : List.of()),
                 item.itemId(),
                 values,
                 new GitHubGraphQl.PageInfo(false, null));
@@ -424,7 +437,8 @@ class FieldsBoardWriterTest {
                 final String repository,
                 final String title,
                 final String body,
-                final @Nullable String type) {
+                final @Nullable String type,
+                final List<IssuesCreateRequestIssueFieldValuesInner> issueFieldValues) {
             calls.add("createIssue");
             assertThat(token).as("the issue made with the person's token").isEqualTo(TOKEN);
             assertThat(owner).as("the owner of the repository").isEqualTo(OWNER);
@@ -441,13 +455,32 @@ class FieldsBoardWriterTest {
             }
             final Created created =
                     make(repository, title, body, answer.startsWith("untyped") ? null : type);
+            final List<IssueFieldValue> fields =
+                    answer.equals("unprioritized")
+                            ? List.of()
+                            : issueFieldValues.stream()
+                                    .map(
+                                            value ->
+                                                    OrganizationFields.priority(
+                                                            (String) value.value()))
+                                    .toList();
+            organizationValues.put(created.number(), fields);
+            final Created answered =
+                    new Created(
+                            created.nodeId(),
+                            created.databaseId(),
+                            created.number(),
+                            created.type(),
+                            fields);
+            final List<Found> issues = Objects.requireNonNull(made.get(repository));
+            issues.set(issues.size() - 1, new Found(answered, title.strip(), body));
             if (answer.endsWith("unanswered")) {
                 throw GitHubExceptions.unanswered("timed out");
             }
             if (answer.equals("failed")) {
                 throw GitHubExceptions.refused(502, "bad gateway");
             }
-            return created;
+            return answered;
         }
 
         @Override
@@ -537,8 +570,18 @@ class FieldsBoardWriterTest {
                 final int number,
                 final @Nullable String title,
                 final @Nullable String body,
-                final @Nullable Opening opening) {
+                final @Nullable Opening opening,
+                final @Nullable List<IssuesUpdateRequestIssueFieldValuesInner> issueFieldValues) {
             assertThat(title).as("only an edit of the text sends a title").isNull();
+            if (issueFieldValues != null) {
+                priorityUpdates.add(issueFieldValues);
+                organizationValues.put(
+                        number,
+                        issueFieldValues.stream()
+                                .filter(value -> value.fieldId().equals(11L))
+                                .map(value -> OrganizationFields.priority((String) value.value()))
+                                .toList());
+            }
             calls.add("updateIssue");
             final RuntimeException failure = updateFailure;
             if (failure != null) {
@@ -551,6 +594,30 @@ class FieldsBoardWriterTest {
             if (body != null) {
                 bodies.put(number, body);
             }
+        }
+
+        private final Map<Integer, List<IssueFieldValue>> organizationValues =
+                new LinkedHashMap<>();
+        private final List<List<IssuesUpdateRequestIssueFieldValuesInner>> priorityUpdates =
+                new ArrayList<>();
+
+        @Override
+        public List<IssueField> issueFields(final String token, final String owner) {
+            return OrganizationFields.fields();
+        }
+
+        @Override
+        public List<IssueFieldValue> issueFieldValues(
+                final String token, final String owner, final String repository, final int number) {
+            if (organizationValues.containsKey(number)) {
+                return organizationValues.get(number);
+            }
+            return held.values().stream()
+                    .filter(value -> value.issue().number() == number)
+                    .flatMap(value -> value.issue().fieldOptions().stream())
+                    .filter(value -> FieldNames.PRIORITY.equals(value.field()))
+                    .map(value -> OrganizationFields.priority(value.option()))
+                    .toList();
         }
 
         @Override
@@ -604,6 +671,205 @@ class FieldsBoardWriterTest {
 
     private static Map<String, String> state(final String status) {
         return Map.of(FieldNames.STATUS, status);
+    }
+
+    @Test
+    void highestIsWrittenAsUrgentAndPreservesOtherIssueFieldsWithoutProjectPriority() {
+        // Harm: replacing issue field values loses other fields or writes priority where nobody
+        // reads it.
+        final ItemView one =
+                item("PL1", "example-project", 1, true, BODY, Map.of(FieldNames.PRIORITY, "High"));
+        final GitHub github = new GitHub().holding(one);
+        final IssueFieldValue text =
+                new IssueFieldValue(
+                        22L,
+                        "Context",
+                        "IF_22",
+                        IssueFieldValue.DataTypeEnum.TEXT,
+                        "keep this",
+                        null,
+                        null);
+        final IssueFieldValue select =
+                new IssueFieldValue(
+                        23L,
+                        "Team",
+                        "IF_23",
+                        IssueFieldValue.DataTypeEnum.SINGLE_SELECT,
+                        900L,
+                        new org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption(
+                                900L, "Platform", "blue"),
+                        null);
+        github.organizationValues.put(
+                1, List.of(OrganizationFields.priority("High"), text, select));
+
+        github.writer()
+                .setFields(
+                        snapshot(one),
+                        SHOWN,
+                        "PL1",
+                        new org.fuin.porelo.planner.store.Fields(
+                                Set.of(org.fuin.porelo.planner.store.Fields.Field.PRIORITY),
+                                null,
+                                null,
+                                "Highest",
+                                null));
+
+        assertThat(github.priorityUpdates)
+                .as("one replacement of all issue field values")
+                .containsExactly(
+                        List.of(
+                                new IssuesUpdateRequestIssueFieldValuesInner(
+                                        22L, "keep this", null, null, null),
+                                new IssuesUpdateRequestIssueFieldValuesInner(
+                                        23L, "Platform", null, null, null),
+                                new IssuesUpdateRequestIssueFieldValuesInner(
+                                        11L, "Urgent", null, null, null)));
+        assertThat(github.mutations).as("no project Priority mutation").isEmpty();
+    }
+
+    @Test
+    void anUnchangedTranslatedPrioritySendsNothingAndLowestIsRefusedBeforeAnyCall() {
+        // Harm: an unnecessary replacement loses fields, or Lowest saves a priority GitHub cannot
+        // hold.
+        final ItemView one =
+                item(
+                        "PL1",
+                        "example-project",
+                        1,
+                        true,
+                        BODY,
+                        Map.of(FieldNames.PRIORITY, "Urgent"));
+        final GitHub github = new GitHub().holding(one);
+        assertThat(
+                        github.writer()
+                                .setFields(
+                                        snapshot(one),
+                                        SHOWN,
+                                        "PL1",
+                                        new org.fuin.porelo.planner.store.Fields(
+                                                Set.of(
+                                                        org.fuin.porelo.planner.store.Fields.Field
+                                                                .PRIORITY),
+                                                null,
+                                                null,
+                                                "Highest",
+                                                null)))
+                .as("the translated value already stands")
+                .isFalse();
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .setFields(
+                                                snapshot(one),
+                                                SHOWN,
+                                                "PL1",
+                                                new org.fuin.porelo.planner.store.Fields(
+                                                        Set.of(
+                                                                org.fuin.porelo.planner.store.Fields
+                                                                        .Field.PRIORITY),
+                                                        null,
+                                                        null,
+                                                        "Lowest",
+                                                        null)))
+                .as("Lowest has no organization option")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.calls).as("no call for either request").isEmpty();
+    }
+
+    @Test
+    void anIssueFieldThatCannotBePreservedRefusesTheWholeSave() {
+        // Harm: replacing the priority discards an issue field the store cannot send back.
+        final ItemView one =
+                item("PL1", "example-project", 1, true, BODY, Map.of(FieldNames.PRIORITY, "High"));
+        final GitHub github = new GitHub().holding(one);
+        github.organizationValues.put(
+                1,
+                List.of(
+                        OrganizationFields.priority("High"),
+                        new IssueFieldValue(
+                                22L,
+                                "Teams",
+                                "IF_22",
+                                IssueFieldValue.DataTypeEnum.MULTI_SELECT,
+                                List.of(1L),
+                                null,
+                                List.of())));
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .setFields(
+                                                snapshot(one),
+                                                SHOWN,
+                                                "PL1",
+                                                new org.fuin.porelo.planner.store.Fields(
+                                                        Set.of(
+                                                                org.fuin.porelo.planner.store.Fields
+                                                                        .Field.PRIORITY,
+                                                                org.fuin.porelo.planner.store.Fields
+                                                                        .Field.SIZE),
+                                                        "M",
+                                                        null,
+                                                        "Highest",
+                                                        null)))
+                .as("unsupported preservation refuses before a write")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(github.calls).as("only the preflight board read").containsExactly("issueBoard");
+        assertThat(github.priorityUpdates).as("no REST field replacement").isEmpty();
+        assertThat(github.mutations).as("no project field write").isEmpty();
+    }
+
+    @Test
+    void aNewHighestIssueFollowsTheUrgentIssuesRank() {
+        // Harm: a new urgent issue is ranked ahead of urgent work the person already ordered.
+        final ItemView urgent =
+                item(
+                        "PL1",
+                        "example-lib",
+                        1,
+                        true,
+                        BODY,
+                        Map.of(FieldNames.PRIORITY, "Urgent", FieldNames.RANK, "8"));
+        final GitHub github = new GitHub().holding(urgent);
+        github.writer()
+                .createIssue(
+                        snapshot(urgent),
+                        SHOWN,
+                        new NewIssue(
+                                "example-lib",
+                                "Urgent work",
+                                "It holds.",
+                                "S",
+                                Worker.AGENT,
+                                null,
+                                "Highest",
+                                null));
+        assertThat(github.organizationValues.get(100))
+                .as("the new issue's organization Priority")
+                .containsExactly(OrganizationFields.priority("Urgent"));
+        assertThat(github.values.get("PVTI_I_example-lib_100"))
+                .as("the rank follows translated Highest")
+                .containsEntry("F_Rank", FieldValue.number("PVTI_I_example-lib_100", "F_Rank", 9));
+    }
+
+    @Test
+    void aCreateWithoutItsRequestedPriorityIsFinishedWithoutCreatingItAgain() {
+        // Harm: GitHub dropping a create's Priority is accepted, or retry makes a duplicate issue.
+        final GitHub github = new GitHub().creating("unprioritized");
+        final NewIssue issue = newIssue("example-lib", "A new thing");
+        assertThatThrownBy(() -> github.writer().createIssue(snapshot(), SHOWN, issue))
+                .as("the issue exists but its priority was dropped")
+                .isInstanceOf(StoreException.PartlySaved.class);
+        assertThat(github.added).as("the incomplete create has not been placed").isEmpty();
+
+        github.writer().createIssue(snapshot(), SHOWN, issue);
+
+        assertThat(held(github)).as("the retry takes the one existing issue").hasSize(1);
+        assertThat(github.priorityUpdates)
+                .as("the missing Medium priority is completed")
+                .containsExactly(
+                        List.of(
+                                new IssuesUpdateRequestIssueFieldValuesInner(
+                                        11L, "Medium", null, null, null)));
     }
 
     @Test
@@ -1382,6 +1648,10 @@ class FieldsBoardWriterTest {
     private static ItemView asGitHubHolds(final ItemView one, final GitHub github) {
         final Map<String, String> fields = new LinkedHashMap<>(one.fields());
         final Map<String, FieldValue> taken = github.values.getOrDefault(one.itemId(), Map.of());
+        final List<IssueFieldValue> organization = github.organizationValues.get(one.number());
+        if (organization != null && IssuePriority.held(organization) != null) {
+            fields.put(FieldNames.PRIORITY, IssuePriority.held(organization));
+        }
         for (final Map.Entry<String, String> name :
                 Map.of(
                                 "F_Minutes", FieldNames.MINUTES,
@@ -1860,7 +2130,8 @@ class FieldsBoardWriterTest {
                 blockedBy,
                 new GitHubGraphQl.PageInfo(false, null),
                 issue.issueType(),
-                null);
+                null,
+                issue.fieldOptions());
     }
 
     private static IssueRefs refs(final boolean more, final String... ids) {
@@ -2385,7 +2656,6 @@ class FieldsBoardWriterTest {
                         FieldValue.option("PVTI_I_example-lib_100", "F_Status", "O_Idea"),
                         FieldValue.option("PVTI_I_example-lib_100", "F_Size", "O_S"),
                         FieldValue.option("PVTI_I_example-lib_100", "F_Worker", "O_Manual"),
-                        FieldValue.option("PVTI_I_example-lib_100", "F_Priority", "O_Medium"),
                         FieldValue.number("PVTI_I_example-lib_100", "F_Rank", 5));
     }
 
@@ -2429,15 +2699,11 @@ class FieldsBoardWriterTest {
                         "the story follows its issues' state; each issue starts in Idea; each"
                                 + " item's values written before the next item is made")
                 .containsExactly(
-                        List.of(
-                                FieldValue.option(
-                                        "PVTI_I_example-project_100", "F_Priority", "O_High"),
-                                FieldValue.number("PVTI_I_example-project_100", "F_Rank", 1)),
+                        List.of(FieldValue.number("PVTI_I_example-project_100", "F_Rank", 1)),
                         List.of(
                                 FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Idea"),
                                 FieldValue.option("PVTI_I_example-lib_101", "F_Size", "O_S"),
                                 FieldValue.option("PVTI_I_example-lib_101", "F_Worker", "O_Agent"),
-                                FieldValue.option("PVTI_I_example-lib_101", "F_Priority", "O_High"),
                                 FieldValue.number("PVTI_I_example-lib_101", "F_Rank", 1)),
                         List.of(
                                 FieldValue.option(
@@ -2445,8 +2711,6 @@ class FieldsBoardWriterTest {
                                 FieldValue.option("PVTI_I_example-project_102", "F_Size", "O_S"),
                                 FieldValue.option(
                                         "PVTI_I_example-project_102", "F_Worker", "O_Agent"),
-                                FieldValue.option(
-                                        "PVTI_I_example-project_102", "F_Priority", "O_High"),
                                 FieldValue.number("PVTI_I_example-project_102", "F_Rank", 2)));
         assertThat(github.calls)
                 .as("each item made, added, hung under the story and given its values in turn")
@@ -2705,6 +2969,13 @@ class FieldsBoardWriterTest {
                                                                                     value
                                                                                             .number()))));
                                         });
+                        final String priority =
+                                IssuePriority.held(
+                                        github.organizationValues.getOrDefault(
+                                                issue.number(), List.of()));
+                        if (priority != null) {
+                            fields.put(FieldNames.PRIORITY, priority);
+                        }
                         if (automatic != null) {
                             fields.putIfAbsent(FieldNames.STATUS, automatic);
                         }
@@ -2760,6 +3031,25 @@ class FieldsBoardWriterTest {
                 .answering(failing)
                 .answering(failing)
                 .answering(failing);
+    }
+
+    @Test
+    void aRetriedCutOffCreateKeepsAPriorityTheTakenStoryHolds() {
+        // Harm: a priority a person gave a story between a cut-off create and its retry written
+        // back to the create's, as no other value the taken story holds is.
+        final GitHub github = failingOnTheThirdIssuesValues();
+        final NewIdea idea = threeIssues();
+        assertThatThrownBy(() -> github.writer().createIdea(snapshot(), SHOWN, idea))
+                .as("the first try cut off")
+                .isInstanceOf(StoreException.PartlySaved.class);
+        github.organizationValues.put(100, List.of(OrganizationFields.priority("Urgent")));
+
+        github.writer().createIdea(snapshot(onTheProject(github, "Accepted")), SHOWN, idea);
+
+        assertThat(github.organizationValues.get(100))
+                .as("the person's Urgent kept on the story")
+                .containsExactly(OrganizationFields.priority("Urgent"));
+        assertThat(github.priorityUpdates).as("no priority written over it").isEmpty();
     }
 
     /** An idea of three issues, one in each repository. */
@@ -2849,7 +3139,7 @@ class FieldsBoardWriterTest {
         }
         assertThat(github.values.get("PVTI_I_example-project_100"))
                 .as("the story's values")
-                .containsKeys("F_Priority", "F_Rank")
+                .containsKeys("F_Rank")
                 .doesNotContainKey("F_Status");
         assertThat(
                         List.of(
@@ -2893,6 +3183,26 @@ class FieldsBoardWriterTest {
                         "example-lib#101",
                         "example-tool#103");
         assertThat(github.subIssues).as("every issue hung under the story once").hasSize(3);
+    }
+
+    @Test
+    void aCompleteStoryWhoseIssuesPriorityWasChangedIsNotTakenAsACutOffCreate() {
+        // Harm: a story the person completed and then gave an issue another priority taken as an
+        // earlier try's, its issue's priority written back over the person's.
+        final GitHub github = new GitHub();
+        final NewIdea idea = idea(newIssue("example-lib", "First"));
+        github.writer().createIdea(snapshot(), SHOWN, idea);
+        github.organizationValues.put(101, List.of(OrganizationFields.priority("Low")));
+
+        final BoardWriter.IdeaIds ids =
+                github.writer().createIdea(snapshot(onTheProject(github, null)), SHOWN, idea);
+
+        assertThat(ids.story())
+                .as("a complete story remains the person's own")
+                .isEqualTo("example-project#102");
+        assertThat(github.organizationValues.get(101))
+                .as("the person's Low priority is preserved")
+                .containsExactly(OrganizationFields.priority("Low"));
     }
 
     @Test
@@ -3113,7 +3423,7 @@ class FieldsBoardWriterTest {
                 .containsExactly("I_example-lib_100");
         assertThat(github.values.get("PVTI_I_example-lib_100"))
                 .as("the values the first try left out")
-                .containsKeys("F_Status", "F_Size", "F_Worker", "F_Priority", "F_Rank");
+                .containsKeys("F_Status", "F_Size", "F_Worker", "F_Rank");
     }
 
     @ParameterizedTest
@@ -3177,7 +3487,7 @@ class FieldsBoardWriterTest {
                 .containsEntry(
                         "F_Status",
                         FieldValue.option("PVTI_I_example-lib_101", "F_Status", "O_Backlog"))
-                .containsKeys("F_Size", "F_Worker", "F_Priority", "F_Rank");
+                .containsKeys("F_Size", "F_Worker", "F_Rank");
     }
 
     @Test
@@ -3242,13 +3552,15 @@ class FieldsBoardWriterTest {
     @ValueSource(strings = {"F_Size,F_Worker,F_Rank", "F_Size"})
     void anIssueAlikeInNoStoryHoldingSomeValuesIsThePersonsOwn(final String cleared) {
         // Harm: the person's own issue of the same words, partly filled in or with a value cleared,
-        // taken by a new create, which then writes its values and rank over the person's.
+        // taken by a new create, which then writes its values, rank and priority over the person's.
         final GitHub github = new GitHub();
         final NewIssue issue = newIssue("example-lib", "A new thing");
         github.writer().createIssue(snapshot(), SHOWN, issue);
         for (final String field : cleared.split(",")) {
             github.values.get("PVTI_I_example-lib_100").remove(field);
         }
+        // The person gave it a priority of their own, which a try of this create never sends.
+        github.organizationValues.put(100, List.of(OrganizationFields.priority("Urgent")));
 
         final String reference =
                 github.writer().createIssue(snapshot(onTheProject(github, null)), SHOWN, issue);

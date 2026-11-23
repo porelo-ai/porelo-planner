@@ -4,21 +4,37 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
+import org.fuin.porelo.forge.github.GitHubClient;
+import org.fuin.porelo.forge.github.model.Issue;
+import org.fuin.porelo.forge.github.model.IssueField;
+import org.fuin.porelo.forge.github.model.IssueFieldOptionsInner;
+import org.fuin.porelo.forge.github.model.IssueFieldValue;
+import org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption;
+import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.aot.hint.BindingReflectionHintsRegistrar;
+import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.aot.hint.predicate.RuntimeHintsPredicates;
 
 /** The sources the planner refuses before it touches Git or the cache. */
 class StoreConfigurationTest {
@@ -42,6 +58,88 @@ class StoreConfigurationTest {
         assertThat(Stream.concat(Stream.of(hints.value()), Stream.of(hints.classes())).toList())
                 .as("the records the native image reflects on")
                 .containsAll(BoardCopies.records());
+    }
+
+    @Test
+    void theNativeImageKeepsEveryGitHubModelTheStoreSendsOrReads() throws NoSuchMethodException {
+        // Harm: a GitHub answer the native executable cannot bind, such as the organization's
+        // issue fields, so every priority save fails on a person's computer alone.
+        final RegisterReflectionForBinding hints =
+                StoreConfiguration.class
+                        .getDeclaredMethod(
+                                "gitProjects",
+                                java.time.Duration.class,
+                                org.springframework.beans.factory.ObjectProvider.class)
+                        .getAnnotation(RegisterReflectionForBinding.class);
+        final RuntimeHints runtime = new RuntimeHints();
+        new BindingReflectionHintsRegistrar()
+                .registerReflectionHints(
+                        runtime.reflection(),
+                        Stream.concat(Stream.of(hints.value()), Stream.of(hints.classes()))
+                                .toArray(Type[]::new));
+        final Set<Class<?>> models = new LinkedHashSet<>();
+        for (final Method method : GitHubClient.class.getMethods()) {
+            if (STORE_CALLS.contains(method.getName())) {
+                models(method.getGenericReturnType(), models);
+                for (final Type parameter : method.getGenericParameterTypes()) {
+                    models(parameter, models);
+                }
+            }
+        }
+        // The organization's issue fields and an issue's values of them, each part named.
+        models.addAll(
+                List.of(
+                        IssueField.class,
+                        IssueFieldOptionsInner.class,
+                        IssueField.DataTypeEnum.class,
+                        IssueFieldValue.class,
+                        IssueFieldValue.DataTypeEnum.class,
+                        IssueFieldValueSingleSelectOption.class,
+                        IssuesCreateRequestIssueFieldValuesInner.class,
+                        IssuesUpdateRequestIssueFieldValuesInner.class));
+
+        assertThat(models).as("the models the store sends or reads").contains(IssueField.class);
+        assertThat(
+                        models.stream()
+                                .filter(
+                                        model ->
+                                                !RuntimeHintsPredicates.reflection()
+                                                        .onType(model)
+                                                        .test(runtime))
+                                .toList())
+                .as("the models the native image does not bind")
+                .isEmpty();
+    }
+
+    /** The methods of the forge's REST client the GitHub store calls. */
+    private static final Set<String> STORE_CALLS =
+            Set.of(
+                    "addBlockedBy",
+                    "addSubIssue",
+                    "createIssue",
+                    "createIssueComment",
+                    "issue",
+                    "issueComments",
+                    "issueFields",
+                    "issues",
+                    "issuesIfChanged",
+                    "removeBlockedBy",
+                    "removeSubIssue",
+                    "reprioritizeSubIssue",
+                    "updateIssue",
+                    "user");
+
+    /** Adds the forge's REST models a type names, type arguments included. */
+    private static void models(final Type type, final Set<Class<?>> found) {
+        if (type instanceof Class<?> plain) {
+            if (plain.getPackageName().equals(Issue.class.getPackageName())) {
+                found.add(plain);
+            }
+        } else if (type instanceof ParameterizedType parameterized) {
+            for (final Type argument : parameterized.getActualTypeArguments()) {
+                models(argument, found);
+            }
+        }
     }
 
     @Test
