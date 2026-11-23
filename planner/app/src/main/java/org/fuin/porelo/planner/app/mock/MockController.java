@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app.mock;
 
 import org.fuin.porelo.planner.app.Projects;
 import org.jspecify.annotations.Nullable;
+import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
@@ -28,6 +29,14 @@ public class MockController {
         @Override
         public void registerHints(final RuntimeHints hints, final @Nullable ClassLoader loader) {
             hints.resources().registerPattern(MockStore.BOARD);
+            // The board's issues and stories are read through these constructors, which Jackson
+            // finds only by reflection.
+            for (final Class<?> mixIn :
+                    new Class<?>[] {
+                        WithoutVersions.IssueMixIn.class, WithoutVersions.StoryMixIn.class
+                    }) {
+                hints.reflection().registerType(mixIn, MemberCategory.INVOKE_DECLARED_CONSTRUCTORS);
+            }
         }
     }
 

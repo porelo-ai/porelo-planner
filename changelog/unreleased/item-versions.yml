@@ -1,0 +1,2 @@
+title: Every issue, story and unlisted issue the planner answers with carries its version, which changes only with the item's own stored state, never with another item's change, a value it takes from its story or a comment.
+type: added

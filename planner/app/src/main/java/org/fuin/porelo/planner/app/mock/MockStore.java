@@ -59,6 +59,8 @@ public final class MockStore implements PlanningStore {
             JsonMapper.builder()
                     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                     .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                    .addMixIn(Issue.class, WithoutVersions.IssueMixIn.class)
+                    .addMixIn(Story.class, WithoutVersions.StoryMixIn.class)
                     .build();
 
     /**

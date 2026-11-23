@@ -30,6 +30,8 @@ import org.jspecify.annotations.Nullable;
  *     holds the issue back
  * @param waitsOn the issues it waits on that the board does not hold, such as those of another
  *     repository; empty for a store that knows none
+ * @param version its own stored edit basis, as its store keeps it; a value it takes from its story,
+ *     such as an inherited worker or risk, is not part of it
  */
 public record Issue(
         String id,
@@ -47,7 +49,8 @@ public record Issue(
         @Nullable Double minutes,
         @Nullable String priority,
         List<Warning> warnings,
-        List<Wait> waitsOn) {
+        List<Wait> waitsOn,
+        Version version) {
 
     /** Checks the ids, the repository's name and the priority and copies the lists. */
     public Issue {
@@ -85,6 +88,89 @@ public record Issue(
     }
 
     /**
+     * An issue whose version is taken over its own stored values, for a store that keeps no edit
+     * basis of its own.
+     */
+    public Issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final List<String> blockedBy,
+            final @Nullable String parent,
+            final @Nullable URI link,
+            final String text,
+            final Worker worker,
+            final Risk risk,
+            final @Nullable Double estimate,
+            final @Nullable Double minutes,
+            final @Nullable String priority,
+            final List<Warning> warnings,
+            final List<Wait> waitsOn) {
+        this(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                Version.of(
+                        "issue",
+                        id,
+                        repository,
+                        title,
+                        state,
+                        size,
+                        blockedBy,
+                        parent,
+                        link,
+                        text,
+                        worker,
+                        risk,
+                        estimate,
+                        minutes,
+                        priority));
+    }
+
+    /**
+     * This issue with another version, as its store reads it.
+     *
+     * @param version its own stored edit basis
+     * @return the issue with that version
+     */
+    public Issue withVersion(final Version version) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                version);
+    }
+
+    /**
      * This issue with other warnings.
      *
      * @param warnings its warnings
@@ -107,7 +193,8 @@ public record Issue(
                 minutes,
                 priority,
                 warnings,
-                waitsOn);
+                waitsOn,
+                version);
     }
 
     /**
@@ -135,7 +222,8 @@ public record Issue(
                 minutes,
                 priority,
                 warnings,
-                waitsOn);
+                waitsOn,
+                version);
     }
 
     /**
@@ -161,7 +249,8 @@ public record Issue(
                 minutes,
                 priority,
                 warnings,
-                waits);
+                waits,
+                version);
     }
 
     /**

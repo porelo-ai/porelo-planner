@@ -2396,6 +2396,15 @@ components:
       type: string
       pattern: '^[!-~]{1,200}$'
 
+    Version:
+      description: >-
+        An item's own stored edit basis, opaque to the window, which compares it only for equality: two equal versions
+        of one item mean its own stored state is unchanged. A value it takes from another item, such as a sub-issue's
+        inherited worker or a story's state its issues give, is not part of it; neither is a comment or another
+        item's change. A SHA-256 as 64 lower-case hexadecimal characters.
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+
     Level:
       type: object
       required: [level]
@@ -2649,8 +2658,10 @@ components:
         An open issue of one of the project's repositories that is no item of the project. Its title is the
         tracker's text, shown as plain text.
       type: object
-      required: [id, repository, title, kind, link]
+      required: [id, repository, title, kind, link, version]
       properties:
+        version:
+          $ref: '#/components/schemas/Version'
         id:
           $ref: '#/components/schemas/IssueId'
         repository:
@@ -3416,8 +3427,10 @@ components:
         One story as the board shows it. Two stories share an id only when each carries the warning IdTwice; neither
         is then worked, moved or edited, and a read of the story by that id answers NoSuchStory.
       type: object
-      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open, warnings]
+      required: [id, title, state, stateGiven, misfits, derivedState, priority, size, link, issues, work, open, warnings, version]
       properties:
+        version:
+          $ref: '#/components/schemas/Version'
         id:
           $ref: '#/components/schemas/StoryId'
         title:
@@ -3522,8 +3535,10 @@ components:
         One issue on the board. Two issues share an id only when each carries the warning IdTwice; neither is then
         worked, moved or edited, and a read of the issue by that id answers NoSuchIssue.
       type: object
-      required: [id, repository, title, state, size, blockedBy, waitsOn, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings]
+      required: [id, repository, title, state, size, blockedBy, waitsOn, parent, link, worker, atWork, needsYou, readingStopped, noRunHere, attention, minutesLeft, warnings, version]
       properties:
+        version:
+          $ref: '#/components/schemas/Version'
         id:
           $ref: '#/components/schemas/IssueId'
         repository:

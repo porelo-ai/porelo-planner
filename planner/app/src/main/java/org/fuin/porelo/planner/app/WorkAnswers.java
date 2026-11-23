@@ -319,6 +319,7 @@ public final class WorkAnswers {
         // Work this planner did not start is only shown; it asks the person for nothing here.
         final boolean raised = !manual && progress != null && progress.needsYou();
         return new org.fuin.porelo.planner.app.answers.Issue(
+                issue.version().value(),
                 issue.id(),
                 issue.repository(),
                 issue.title(),

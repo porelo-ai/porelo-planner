@@ -1064,6 +1064,7 @@ public class BoardController {
     private static org.fuin.porelo.planner.app.answers.UnlistedIssue unlistedIssue(
             final UnlistedIssue issue) {
         return new org.fuin.porelo.planner.app.answers.UnlistedIssue(
+                issue.version().value(),
                 issue.id(),
                 issue.repository(),
                 issue.title(),
@@ -1141,6 +1142,7 @@ public class BoardController {
         return new StoryReply(
                 board.revision().value(),
                 new StoryDetail(
+                        story.version().value(),
                         story.id(),
                         story.title(),
                         story.state(),
@@ -1273,6 +1275,7 @@ public class BoardController {
         return new IssueReply(
                 board.revision().value(),
                 new IssueDetail(
+                        issue.version().value(),
                         issue.id(),
                         issue.repository(),
                         issue.title(),
@@ -1626,6 +1629,7 @@ public class BoardController {
             final Moves.StoryState derive,
             final OpenWork.Counter counter) {
         return new org.fuin.porelo.planner.app.answers.Story(
+                story.version().value(),
                 story.id(),
                 story.title(),
                 story.state(),

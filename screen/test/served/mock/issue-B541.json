@@ -1,6 +1,7 @@
 {
   "revision" : "mock@1",
   "issue" : {
+    "version" : "bd77cf9e402e25b230ea812936c73fd115b94bffaa27180fe13dab03c3bcc2ed",
     "id" : "B541",
     "repository" : "porelo",
     "title" : "The host tool reads the organization and a task by its signature",

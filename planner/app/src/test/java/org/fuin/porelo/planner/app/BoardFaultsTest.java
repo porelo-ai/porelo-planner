@@ -152,7 +152,14 @@ class BoardFaultsTest {
 
         final JsonNode event = mapper().valueToTree(boardOf(tracked));
 
-        assertThat(event.path("unlisted").toString())
+        assertThat(event.path("unlisted").findValuesAsString("version"))
+                .as("each with its version")
+                .hasSize(2)
+                .allMatch(version -> version.matches("[0-9a-f]{64}"));
+        assertThat(
+                        event.path("unlisted")
+                                .toString()
+                                .replaceAll("\"version\":\"[0-9a-f]{64}\",", ""))
                 .as("the issues outside the project as the event's data carries them, in order")
                 .isEqualTo(
                         "[{\"id\":\"porelo-store#4\",\"repository\":\"porelo-store\","

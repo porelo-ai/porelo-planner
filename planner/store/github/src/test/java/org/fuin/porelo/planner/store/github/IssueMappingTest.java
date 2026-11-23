@@ -510,7 +510,9 @@ class IssueMappingTest {
         final Item item = new Item("example-lib", 1);
         IssueMapping.fields(issue, "Low", 4).forEach(item::field);
 
-        assertThat(read(item).issues()).as("the issue read back").containsExactly(issue);
+        assertThat(read(item).issues())
+                .as("the issue read back, with GitHub's version of its item")
+                .containsExactly(issue.withVersion(ItemVersions.of(item.view())));
     }
 
     @Test
@@ -530,7 +532,9 @@ class IssueMappingTest {
         final Item item = new Item("example-project", 1).story();
         IssueMapping.fields(story, 2).forEach(item::field);
 
-        assertThat(read(item).stories()).as("the story read back").containsExactly(story);
+        assertThat(read(item).stories())
+                .as("the story read back, with GitHub's version of its item")
+                .containsExactly(story.withVersion(ItemVersions.of(item.view())));
     }
 
     @Test
@@ -1462,5 +1466,99 @@ class IssueMappingTest {
                 .containsExactlyInAnyOrder(
                         Tuple.tuple("example-lib#3", 10.0, Worker.MANUAL, "Low"),
                         Tuple.tuple("example-lib#4", null, Worker.MANUAL, "Highest"));
+    }
+
+    private static org.fuin.porelo.planner.store.Version versionOf(
+            final IssueMapping.Mapped mapped, final String id) {
+        return java.util.stream.Stream.concat(
+                        mapped.issues().stream()
+                                .filter(i -> i.id().equals(id))
+                                .map(org.fuin.porelo.planner.store.Issue::version),
+                        mapped.stories().stream()
+                                .filter(s -> s.id().equals(id))
+                                .map(org.fuin.porelo.planner.store.Story::version))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void anItemsVersionChangesWithItsOwnStateOnly() {
+        // Harm: a write to one item is refused because another changed, or let through over a
+        // change to the item itself.
+        final Item story = new Item("example-project", 1).story();
+        final Item first = new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog");
+        final Item second =
+                new Item("example-lib", 3).field(FieldNames.STATUS, "Backlog").blockedBy(first);
+        story.sub(first).sub(second);
+        final IssueMapping.Mapped before = read(story, first, second);
+        assertThat(versionOf(read(story, first, second), "example-lib#2"))
+                .as("the same item read again")
+                .isEqualTo(versionOf(before, "example-lib#2"));
+
+        first.field(FieldNames.STATUS, "Implementing");
+        final IssueMapping.Mapped after = read(story, first, second);
+
+        assertThat(versionOf(after, "example-lib#2"))
+                .as("the issue that moved")
+                .isNotEqualTo(versionOf(before, "example-lib#2"));
+        assertThat(versionOf(after, "example-lib#3"))
+                .as("the issue its blocker moved")
+                .isEqualTo(versionOf(before, "example-lib#3"));
+        assertThat(versionOf(after, "example-project#1"))
+                .as("the story whose state follows its issues")
+                .isEqualTo(versionOf(before, "example-project#1"));
+
+        story.field(FieldNames.PRIORITY, "Highest");
+        assertThat(versionOf(read(story, first, second), "example-project#1"))
+                .as("the story whose own priority changed")
+                .isNotEqualTo(versionOf(before, "example-project#1"));
+    }
+
+    @Test
+    void whenGitHubLastTouchedAnItemIsNoPartOfItsVersion() {
+        // Harm: a comment, which moves an issue's updatedAt, refuses every write to it.
+        final ItemView view = new Item("example-lib", 2).field(FieldNames.STATUS, "Backlog").view();
+        final ItemView touched =
+                new ItemView(
+                        view.itemId(),
+                        view.issueId(),
+                        view.repository(),
+                        view.number(),
+                        view.title(),
+                        view.body(),
+                        view.open(),
+                        view.stateReason(),
+                        view.fields(),
+                        view.labels(),
+                        view.parentIssueId(),
+                        view.subIssueIds(),
+                        view.blockedByIds(),
+                        view.link(),
+                        view.updatedAt().plusSeconds(3600),
+                        view.archived(),
+                        view.blockers(),
+                        view.unseenBlockers(),
+                        view.issueType());
+
+        assertThat(ItemVersions.of(touched)).isEqualTo(ItemVersions.of(view));
+        assertThat(
+                        ItemVersions.of(
+                                new Item("example-lib", 2)
+                                        .blockedByNode("I_b")
+                                        .blockedByNode("I_a")
+                                        .view()))
+                .as("its blockers in another order, which GitHub does not keep")
+                .isEqualTo(
+                        ItemVersions.of(
+                                new Item("example-lib", 2)
+                                        .blockedByNode("I_a")
+                                        .blockedByNode("I_b")
+                                        .view()));
+        assertThat(ItemVersions.of(new Item("example-lib", 2).blockedByNode("I_a").view()))
+                .as("a blocker added")
+                .isNotEqualTo(ItemVersions.of(new Item("example-lib", 2).view()));
+        assertThat(ItemVersions.of(new Item("example-lib", 2).body("Changed.").view()))
+                .as("its body changed")
+                .isNotEqualTo(ItemVersions.of(new Item("example-lib", 2).view()));
     }
 }

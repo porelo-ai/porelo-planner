@@ -934,7 +934,11 @@ class ItemsBoardReaderTest {
 
         assertThat(task.board().issues())
                 .as("both map to the same issue")
-                .isEqualTo(bug.board().issues());
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("version")
+                .containsExactlyElementsOf(bug.board().issues());
+        assertThat(task.board().issues().getFirst().version())
+                .as("an issue type is the item's own stored state")
+                .isNotEqualTo(bug.board().issues().getFirst().version());
         assertThat(task.board().revision())
                 .as("the same project with another issue type")
                 .isNotEqualTo(bug.board().revision());

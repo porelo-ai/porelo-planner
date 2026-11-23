@@ -1,6 +1,7 @@
 {
   "revision" : "mock@1",
   "stories" : [ {
+    "version" : "0e112f136bc84cb3c9e47f2d7a7331fe4730771ea6f21b1d9f8a99757e2c53cc",
     "id" : "ST294",
     "title" : "Plan the stories on a board in the window",
     "state" : "In analysis",
@@ -69,6 +70,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "dde996310e935dcabdcab795d13b084d98bc32a3dda02994f15f47ef250b9c2f",
     "id" : "ST72",
     "title" : "A forge’s calls in a client that knows nothing of Porelo",
     "state" : "Under estimation",
@@ -79,6 +81,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST72",
     "issues" : [ {
+      "version" : "e40f69f1c056222b262ebe1e51304ef8818e402028ca8d56f2e1f714118f0196",
       "id" : "PJ74",
       "repository" : "porelo-project",
       "title" : "Planning work",
@@ -98,6 +101,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "118e046f86a0c9a02e3264387dfddf5ef00d1635a949af84096bd95df1c8cc95",
       "id" : "FC03",
       "repository" : "porelo-forge-clients",
       "title" : "Planning work",
@@ -117,6 +121,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "86795b2d5ff41f9419979cbfd31d4bf7cb2107412f6a5254cbbb2c847b8be319",
       "id" : "FC09",
       "repository" : "porelo-forge-clients",
       "title" : "Planning work",
@@ -136,6 +141,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "a32f1d4884e468e20d03fbf38cc3fa70cc078b84768ce42f0bdd90daa13fed17",
       "id" : "FC10",
       "repository" : "porelo-forge-clients",
       "title" : "Planning work",
@@ -155,6 +161,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2168bb4d5e1049d47bbcd16929d0bd5fe7f0c11ae96c5f3278ac50ab95f159f3",
       "id" : "FC11",
       "repository" : "porelo-forge-clients",
       "title" : "Planning work",
@@ -174,6 +181,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "9a17880d9f16ec5690845709b85cd894360336442e55477619381b283f077e05",
       "id" : "FC13",
       "repository" : "porelo-forge-clients",
       "title" : "Planning work",
@@ -254,6 +262,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "5165bad0d92d67c30658e7a81675c67d820f901e172fefa6f1a56db52135366d",
     "id" : "ST21",
     "title" : "No channel file and no hand-over directory any more",
     "state" : "New",
@@ -322,6 +331,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "e306d5ef0d00fa1fe68084db1cee0c1cffe68023e240c6735116ca67c0f15a40",
     "id" : "ST11",
     "title" : "porelo-adapters and porelo-ai.github.io each in its own task",
     "state" : "New",
@@ -390,6 +400,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "e1d9b514f7748fd0c492304c29340b598fd6d193248c69cfbaa7e3a4e111cb7b",
     "id" : "ST13",
     "title" : "porelo and porelo-host each in its task, with a way back",
     "state" : "New",
@@ -458,6 +469,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "e64494edb51e6ca48da648f02b5babea89bab95ba9bcbb1c0f932e7b8b7587ca",
     "id" : "ST28",
     "title" : "The setup, move and recovery proven together",
     "state" : "New",
@@ -526,6 +538,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "eccad49bdd93980a574da19fed2c69bd3b529e0369aac00d711643c80c30aa0e",
     "id" : "ST87",
     "title" : "Invalid machine inputs refused before renting",
     "state" : "New",
@@ -594,6 +607,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "7bc96bc34da8f5004481241eda5033770926219761ff28fe0307e810ce984a78",
     "id" : "ST182",
     "title" : "Review a Bitbucket pull request",
     "state" : "New",
@@ -662,6 +676,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "e5ae78a097857898e4e870939be82a291e581e67a137a5b3114367b1a7eb92ba",
     "id" : "ST114",
     "title" : "A vulnerability has a way in and is answered",
     "state" : "Accepted",
@@ -730,6 +745,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "d333c8c3703dd5a30e71bc5480172ecab132bc7a53ab3f3b6c77f69f10b0998b",
     "id" : "ST111",
     "title" : "Install from the intended package source",
     "state" : "Accepted",
@@ -798,6 +814,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "3881381ac0a582a09145aefbea80d02957972b47a0d32bad634719a9814c4115",
     "id" : "ST144",
     "title" : "Understand where a binding setting came from",
     "state" : "Accepted",
@@ -866,6 +883,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "eebd1e282b00e675cafdf565e52e2f0bbf3ea142397f962a3689a63567d5afe9",
     "id" : "ST14",
     "title" : "The coordinator reads everything and changes only porelo-project",
     "state" : "Analyzed",
@@ -876,6 +894,7 @@
     "size" : "S",
     "link" : "https://example.org/stories/ST14",
     "issues" : [ {
+      "version" : "8264f8ba92eb6d57650f4a563b97886074803a3cd35216345693b73b95dcdbfb",
       "id" : "PJ58",
       "repository" : "porelo-project",
       "title" : "Planning work",
@@ -956,6 +975,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "f8fec52bad43eaf703430f7baef1ca73bdfd9652e2f03c6eed19e5d2a0c5f2be",
     "id" : "ST39",
     "title" : "A failed delivery named and kept visible",
     "state" : "Analyzed",
@@ -1024,6 +1044,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "29529e76e9ab7e6b42d8767a8c95bc5f29afe63fb5a36a5222ef8dc8b6f57406",
     "id" : "ST35",
     "title" : "Refuse an incompatible protocol and a meaningless option",
     "state" : "Analyzed",
@@ -1092,6 +1113,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "49fec4104a4fec51bfdba9df424c4d7b9ae55e90ebdf110451457ca1c7f2f02c",
     "id" : "ST15",
     "title" : "The website builds in its task",
     "state" : "Estimated",
@@ -1102,6 +1124,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST15",
     "issues" : [ {
+      "version" : "7f2e197df1e716f926c37c331fa0fd204007849adbefc049100cc6d0410d5e26",
       "id" : "SI05",
       "repository" : "porelo-ai.github.io",
       "title" : "Planning work",
@@ -1182,6 +1205,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "2567bbe20ac509980845a5baed24d9a9101e68891fc36cde12dd75681dd7a009",
     "id" : "ST106",
     "title" : "Make security failures hold the release",
     "state" : "Estimated",
@@ -1250,6 +1274,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "5c06b55fea8284bdeb9132aeddc4f4ea5375f1ca84626f85da4bf573cccf8119",
     "id" : "ST198",
     "title" : "Reach a remote machine from Windows",
     "state" : "Estimated",
@@ -1318,6 +1343,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "d62bf863af41cf1c689ee11482359786b63223ff9af15cf881d4cbdeaa9613b8",
     "id" : "ST291",
     "title" : "The host run by a program of its own, built like porelo",
     "state" : "Backlog",
@@ -1328,6 +1354,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST291",
     "issues" : [ {
+      "version" : "31248a16175fd72cbb97ccebd0088e9cfae88cf527c244982d76d0ae8bd4f72b",
       "id" : "B540",
       "repository" : "porelo",
       "title" : "The host tool as a module of porelo",
@@ -1347,6 +1374,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "bd77cf9e402e25b230ea812936c73fd115b94bffaa27180fe13dab03c3bcc2ed",
       "id" : "B541",
       "repository" : "porelo",
       "title" : "The host tool reads the organization and a task by its signature",
@@ -1366,6 +1394,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "a88491544f27ab0e227f6887c094b6872868bca5f20b770e8ad3e245e1d3d7fc",
       "id" : "B542",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1385,6 +1414,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "ea150284ff89b5eac27886a37f65d68951956e9b88e44c675a666e7341d7f85b",
       "id" : "B543",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1404,6 +1434,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "18a56ccae2e5a137b56927aea2db09b96fcec94cae678340b7ef0df73c1812c5",
       "id" : "B544",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1423,6 +1454,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "a496692d7afaaf29804e05bab9555d13ca3aec7390514c48e80c5ef8db0d3d43",
       "id" : "B545",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1442,6 +1474,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "d6e62c7516731e20621d2fb3264a8a5c570c669384e4fb67e37a9e857e593d4f",
       "id" : "B546",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1461,6 +1494,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "f7d537ed0a61f16afd5e97b5ee4e5d95318b72778cb9d4ac92ddf125a346de2a",
       "id" : "B547",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1480,6 +1514,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "156929be7451201e5416e00d56b5663cd410ee8680554c91c32fc15d18d61748",
       "id" : "B548",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1499,6 +1534,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "3dad8990593c2401b9d51343c9e27d8b411e3b74c9f23dfd76df11e099b9f820",
       "id" : "B549",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1518,6 +1554,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "aad05eb83ec4b76a6c0f1459fb06407c3ed201e15bafbafb05a32d0b8c4901d2",
       "id" : "B550",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1537,6 +1574,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "1168076d7b6db1a29114ca604dbe4f1b1093f1454839f213e20ab59254e92514",
       "id" : "B551",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1556,6 +1594,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "c4531aff2d4cbe65cd02b85ebf6bec9fc1da69088634dafa4ddb86fe47695c6f",
       "id" : "B552",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -1575,6 +1614,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "5879e61f3c18bac68d24226c9790b469a17bc8c93737e97765bad4b5374e3878",
       "id" : "HO156",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -1594,6 +1634,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "cb0f3fb9eea09a9ddc1eff988031a29613cbda7aeeb70dacab6565029892b07c",
       "id" : "HO157",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -1613,6 +1654,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "7d911c4042e56667bb23ac1c83d5818e5c5883657e5548c91bcb98eac85ee82d",
       "id" : "B540.1",
       "repository" : "porelo",
       "title" : "The host tool's module builds in the porelo build",
@@ -1699,6 +1741,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "04d8bdf9598c4597f891c063aaa2b753a5352c1a218b3e44a04072022b4250d4",
     "id" : "ST292",
     "title" : "A whole move rehearsed by the agents on a rented server",
     "state" : "Backlog",
@@ -1709,6 +1752,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST292",
     "issues" : [ {
+      "version" : "88b366699950b8f3665b164c69e4ad45c87cf8131f1bee9c26d4d1c4180b6a2c",
       "id" : "B553",
       "repository" : "porelo",
       "title" : "A move runs without a terminal for a rehearsal",
@@ -1728,6 +1772,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "4786804160638dd279f75baae103a0b9ba8f394a67099d30e78a54a00855dc32",
       "id" : "B554",
       "repository" : "porelo",
       "title" : "A forge token’s reach checked against what a move needs",
@@ -1747,6 +1792,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "a45b11103902921b0439579c689d8eda3a6abe5e3b3f22c6c057fb341fee900d",
       "id" : "F444",
       "repository" : "porelo-frontend",
       "title" : "A move driven through the window against a rented host",
@@ -1766,6 +1812,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "4a52bb02f83a372b647e4e66e6cd6a586edd903d824a1a1895a11fd51b5179e5",
       "id" : "F445",
       "repository" : "porelo-frontend",
       "title" : "What a rehearsal cannot drive in the window, stood in for",
@@ -1785,6 +1832,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "6ee8438ff43ae0cbabfde44a1fdad8f5e0e6f1cdba6b70053d008f920aa72349",
       "id" : "HO158",
       "repository" : "porelo-host",
       "title" : "A move rehearsed on a rented server",
@@ -1804,6 +1852,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "ee9265adbe9eecc1ba3690bd8a3ccc69de3893875759dd56f242e13b85681c34",
       "id" : "MX89",
       "repository" : "porelo-message-matrix",
       "title" : "A test person signs in through the gate unattended",
@@ -1823,6 +1872,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2f82dbc5cb6dfaed54c8488ee8384cec0aa6a7d28f0b582dcdc6b60e3c42dc4e",
       "id" : "MX90",
       "repository" : "porelo-message-matrix",
       "title" : "The room’s scenarios are rehearsed on a host",
@@ -1842,6 +1892,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "48556a36d037df05edde104e26e3e5637909ccce77adfda1589f07246edbe9c3",
       "id" : "MX91",
       "repository" : "porelo-message-matrix",
       "title" : "The rehearsal says a wake was answered",
@@ -1931,6 +1982,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "71548c985ad17166b43d562079a203e6846f4521a9dfe5098bb81e840c7b9829",
     "id" : "ST293",
     "title" : "Every agent works in a Porelo task, moved one at a time",
     "state" : "Backlog",
@@ -1999,6 +2051,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "4add71c0aa5b163c6a165b5fe2056b76d302bd6dd1a156f2a29df53a71bbec2b",
     "id" : "ST23",
     "title" : "The room and the usage records outlive the host",
     "state" : "Backlog",
@@ -2009,6 +2062,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST23",
     "issues" : [ {
+      "version" : "608d21290d5b1eec118b4b0fa32f60aabf8ea126ac0ddd9b87bce00dc4922a63",
       "id" : "MX24",
       "repository" : "porelo-message-matrix",
       "title" : "Planning work",
@@ -2028,6 +2082,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "a6682307bad497519ab445e3491db9c9b28c5708f186e44d68b5f756a78aa028",
       "id" : "MX36",
       "repository" : "porelo-message-matrix",
       "title" : "Planning work",
@@ -2047,6 +2102,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "6f5e1f9b94625c34c17d536cee3192b75a9c8c0141140ac1209140daa5e72154",
       "id" : "MX39",
       "repository" : "porelo-message-matrix",
       "title" : "Planning work",
@@ -2066,6 +2122,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "eeb359e463d6fff6075116a8bc26234d9e1c7eb257ccebe489135641b1bc77c6",
       "id" : "HO07",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -2085,6 +2142,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "d2b9665979104b75849951534a8329598009b084adf0c15e400276828def4b95",
       "id" : "B231",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -2165,6 +2223,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "0719f74e1719a53cede10baa76e8a6480dbe6166b4582228bc12a3e316b2994b",
     "id" : "ST6",
     "title" : "porelo-agy and porelo-codex each in its own task",
     "state" : "Backlog",
@@ -2233,6 +2292,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "1439549871cd646c87481fcb59a3a474a13c023c9e2db2946f5e1b96270633be",
     "id" : "ST27",
     "title" : "Every workflow runs on the local forge as on the central one",
     "state" : "Implementing",
@@ -2243,6 +2303,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST27",
     "issues" : [ {
+      "version" : "5093c122d29ebf692d7f45094224f9e0e7e661ae27e93c2b51d052e160a9f920",
       "id" : "IJ14",
       "repository" : "porelo-intellij",
       "title" : "Planning work",
@@ -2323,6 +2384,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "d150be8e32240d52e560be01783ea27532b591f8b12db967557e1a256f6b82b4",
     "id" : "ST12",
     "title" : "The release and pipeline tools the move rests on",
     "state" : "Implementing",
@@ -2333,6 +2395,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST12",
     "issues" : [ {
+      "version" : "559ff89e8a2f6fbdf4faf5c4e3d584629731b94ded028f36db99c8a88db2911c",
       "id" : "BT35",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2352,6 +2415,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "67176fc6f77fa51938d781957768ce744537e1c9ee87c9a0992a8e492669e97f",
       "id" : "BT36",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2371,6 +2435,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2ba69e40e79b37adf779386a3b0c09911d6c247ebb0d8443e2d992d4f3f5e02c",
       "id" : "BT38",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2390,6 +2455,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "341588e9715713c05e6403aa4a8609c8c253fe5fd6dd1e5de595789cd4ed6947",
       "id" : "BT43",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2409,6 +2475,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "e78db303776655518b7c808a55f8bb4834c2956547f273b6a482771e99fde055",
       "id" : "BT44",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2428,6 +2495,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "c282afc60ad996d8a25895e5468fde5b52977f12abe34974eb9f25e0e6e5557b",
       "id" : "BT45",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2447,6 +2515,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2dce5c5ddaa5b341dfb9193de7b5fd08bb4bc2cfbd9829e40d39baf0067d429c",
       "id" : "BT46",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2527,6 +2596,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "a89e06cd21d96028c5b7aba223c87f41cf9810d51868606be294fcd634ce46a9",
     "id" : "ST5",
     "title" : "porelo-pi, porelo-omp and porelo-claude-code each in its own task",
     "state" : "Implementing",
@@ -2537,6 +2607,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST5",
     "issues" : [ {
+      "version" : "f00eecb0b86ca40610fd73b1977adba3a50a0288125217f9a85e0cb41c1affd8",
       "id" : "PI43",
       "repository" : "porelo-pi",
       "title" : "Planning work",
@@ -2556,6 +2627,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "899d14d85a2c075e19e9dce126e6a8107214f608ff4e9eb4decf95f344805892",
       "id" : "OM44",
       "repository" : "porelo-omp",
       "title" : "Planning work",
@@ -2575,6 +2647,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "88110544c71520715d48f06362f68597e12a3808f0141620e416cb872f6bc309",
       "id" : "CC45",
       "repository" : "porelo-claude-code",
       "title" : "Planning work",
@@ -2594,6 +2667,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "dbfd56f83a035a2a3ccc2e11fc20078ced12d5ef4527f07bbc7e293c16fddf77",
       "id" : "PI39",
       "repository" : "porelo-pi",
       "title" : "Planning work",
@@ -2613,6 +2687,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "89cd4c330cc1b57d0f2361c28a2203f03dfab2535d140c101f1706b57a75737f",
       "id" : "OM36",
       "repository" : "porelo-omp",
       "title" : "Planning work",
@@ -2632,6 +2707,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "46e19f5f2bd8d48d44413df0ada90f35d44ff907cd1c5babb4697333408977a7",
       "id" : "CC39",
       "repository" : "porelo-claude-code",
       "title" : "Planning work",
@@ -2712,6 +2788,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "86fcd443488d17fe5541afd5e1eab1e9581c0fca82b04350c8ff21ae10e0fefc",
     "id" : "ST193",
     "title" : "Choose drive areas for each host",
     "state" : "Implementing",
@@ -2722,6 +2799,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST193",
     "issues" : [ {
+      "version" : "d2722746a528a20361a9be801ad3b808feec18d082235a57b7fc208732fd1262",
       "id" : "PJ106",
       "repository" : "porelo-project",
       "title" : "Planning work",
@@ -2802,6 +2880,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "6544b828d0d9ffafb7464a434236007934a23b657009804da736c905da6e5637",
     "id" : "ST127",
     "title" : "Keep container limits on large hosts",
     "state" : "Implementing",
@@ -2870,6 +2949,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "0b10a0d172e041e71367e70189682fd01707e921c081ca669bcd54302b048725",
     "id" : "ST1",
     "title" : "Builds on the host’s forge resolve snapshots with a read-only token",
     "state" : "Review",
@@ -2880,6 +2960,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST1",
     "issues" : [ {
+      "version" : "7497594fd05634a0d656bb0407f5775bb90e47ab0a117331e8143caf5afff8f7",
       "id" : "BT42",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2899,6 +2980,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "69dedf59554867f62c26483412b4a1c8759c62cc42a9795bd74d2ae5530de7ef",
       "id" : "BT39",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2918,6 +3000,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "3387effdf81468ba63da3975fd5be5372c93a088c7ffa5dad47803d0c5177bd6",
       "id" : "HO52",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -2937,6 +3020,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2a3014125e63c6122873dd3191956964987a123db0256c2fafe567ef668aa59e",
       "id" : "SL36",
       "repository" : "porelo-message-sluice",
       "title" : "Planning work",
@@ -2956,6 +3040,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "758badc13f873d61c760ee648e53a1db021dd60bc703dcdb75736f062f5484dd",
       "id" : "BT40",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2975,6 +3060,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "34a9f82bd9f4ec5bebd0342e99fce0ca589300af816a069d67a9dddfc68bc75b",
       "id" : "BT41",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -2994,6 +3080,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "2d028b34db72cce085e7d2fa373c3da6fd216502e5d2391d578904f436c88133",
       "id" : "HO53",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -3071,6 +3158,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "b896e53ae2aec4e9637469621bb1cf8e102a2713568af322bb00249a484ad175",
     "id" : "ST2",
     "title" : "porelo-message-sluice works wholly in its task",
     "state" : "Review",
@@ -3081,6 +3169,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST2",
     "issues" : [ {
+      "version" : "203f8153a461bab0c8319c77db2a46456f7c26128eb3bed88b6d4a7d755783ef",
       "id" : "SL35",
       "repository" : "porelo-message-sluice",
       "title" : "Planning work",
@@ -3158,6 +3247,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "e380b60cdf3ad991e604a66e332c61789c5844546cdf2dc084a93b3815d08538",
     "id" : "ST3",
     "title" : "porelo’s Build on the host’s Forgejo",
     "state" : "Review",
@@ -3168,6 +3258,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST3",
     "issues" : [ {
+      "version" : "577e90eb32d350162ceb1b50616b5bbc82e79e744557063591fde51bd7e762a2",
       "id" : "B306",
       "repository" : "porelo",
       "title" : "Planning work",
@@ -3245,6 +3336,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "d42f7b97ed466c1d42a04c3d73f835caa67d75d1e81f3f8060d785274aad5442",
     "id" : "ST10",
     "title" : "Test machines by kind from the VM pool",
     "state" : "Review",
@@ -3255,6 +3347,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST10",
     "issues" : [ {
+      "version" : "e84260a96719cf1c59265c154157d0b242cc3532ed07563427b662d7362f8a3e",
       "id" : "HO12",
       "repository" : "porelo-host",
       "title" : "Planning work",
@@ -3274,6 +3367,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "f38a243823ee5b46cf9d502f3aecb838542f1387745bec6d45511c3f074a37b6",
       "id" : "BT24",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -3293,6 +3387,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "4da0760002e0b2c1a8195fcd31b6f600a8ce1035eada8aa43c103df4a0fc2815",
       "id" : "BT25",
       "repository" : "porelo-buildtools",
       "title" : "Planning work",
@@ -3370,6 +3465,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "35f1d0fe598f50b6f3200466cb4be1502af7c213df6e4801326479cd4f274915",
     "id" : "ST295",
     "title" : "Hand the sluice's last checks to a person",
     "state" : "Review",
@@ -3380,6 +3476,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST295",
     "issues" : [ {
+      "version" : "1bca852037b98c80196f13583001be619be9caa04497641afda23dd1d90b73f3",
       "id" : "SL37",
       "repository" : "porelo-message-sluice",
       "title" : "Planning work",
@@ -3399,6 +3496,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "3db11229fe7d8ce0cdb920ad08acf9a6238ca2fe0247928dca961d0e52010c0f",
       "id" : "SL38",
       "repository" : "porelo-message-sluice",
       "title" : "Planning work",
@@ -3479,6 +3577,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "49de22f7299a273164a89ecd36841d2bb6b400b7d73cc01f7fe96342fe1337f7",
     "id" : "ST264",
     "title" : "A host prepared with no project or person",
     "state" : "Finished",
@@ -3547,6 +3646,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "b054a2f7cd98a5409c2cc3ae75be354950fcd88c524854fe04a6fd8ca5605d15",
     "id" : "ST268",
     "title" : "Each person’s one key and card, kept in the registry",
     "state" : "Finished",
@@ -3615,6 +3715,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "358c9568031fd6898fbeb91a6c2717133a5991f3cabdc6ed51470c7190d6923d",
     "id" : "ST243",
     "title" : "Both adapters pass one contract suite",
     "state" : "Finished",
@@ -3625,6 +3726,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST243",
     "issues" : [ {
+      "version" : "2a0a745443a846089a59806a0cf83daf07ff815dd96d1fdb30205d6d2d3ac317",
       "id" : "PJ62",
       "repository" : "porelo-project",
       "title" : "Planning work",
@@ -3644,6 +3746,7 @@
       "attention" : "NONE",
       "warnings" : [ ]
     }, {
+      "version" : "9bf24a6a8d885b039f9c69b5af744205ade457e46740a7e39ea410d481345631",
       "id" : "GH18",
       "repository" : "porelo-adapters",
       "title" : "Planning work",
@@ -3721,6 +3824,7 @@
     },
     "warnings" : [ ]
   }, {
+    "version" : "bb375a5086ee428ec00a7236b4bdd7da0a1af5a4e9207972bfc6fb6eaa901121",
     "id" : "ST296",
     "title" : "Items the planner could not fully read",
     "state" : "Backlog",
@@ -3731,6 +3835,7 @@
     "size" : null,
     "link" : "https://example.org/stories/ST296",
     "issues" : [ {
+      "version" : "d3ee960ec0429eee14ac3a3fa4031969c69b48adee5cd2777bee2c534cd18ec4",
       "id" : "B870",
       "repository" : "porelo",
       "title" : "An issue in a state outside the workflow",
@@ -3758,6 +3863,7 @@
         }
       } ]
     }, {
+      "version" : "e2d0581d9d2ddceed853bf389d7a8342e4df8b4c06d0da5a7f36faa222469cac",
       "id" : "B871",
       "repository" : "porelo",
       "title" : "An issue whose priority the planner does not know",
@@ -3781,6 +3887,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "360767b973b2595546489ac333caa9e2d82ecf7db7c3de8efbf3b0d816d8eb82",
       "id" : "B872",
       "repository" : "porelo",
       "title" : "An issue whose id stands twice",
@@ -3805,6 +3912,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "fb47658fea91aff19074428c1fbeeaee81fa63b3d51a2d5a9a485778b9d494ac",
       "id" : "B872",
       "repository" : "porelo-host",
       "title" : "The other issue whose id stands twice",
@@ -3829,6 +3937,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "f42cd14509128c7cc947dfb64738134508b57f2d42216bb6c15c374ddf712ce8",
       "id" : "B873",
       "repository" : "porelo",
       "title" : "An issue whose parent is outside the project",
@@ -3853,6 +3962,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "5a1a130061a7a0e5b496d4d19eefd330188decb8334e3ea81dd808f69971632f",
       "id" : "B874",
       "repository" : "porelo",
       "title" : "An issue waiting on an issue outside the project",
@@ -3877,6 +3987,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "c719ed9ba03f2eba19d421d152ff81e6caeb87d11c166100d8d0a6aa8793fa3e",
       "id" : "B875",
       "repository" : "porelo",
       "title" : "An issue under another parent than its id names",
@@ -3901,6 +4012,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "4a52f2ab62e0e26dc2bd196c9dfbedbde20eec28a734e2ceacf0ebf1514eed53",
       "id" : "B876",
       "repository" : "porelo",
       "title" : "An issue whose text has no sections",
@@ -3925,6 +4037,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "b6e47cbbb9f72fef1688263ddd9c5f31c76ed216afb6f7661fc4aee7e590f92b",
       "id" : "B877",
       "repository" : "porelo",
       "title" : "An issue marked a story outside the stories' repository",
@@ -3949,6 +4062,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "28450a0585c75771d77b87806bb1a8ec6d37bbb0a5a34bfce6f24938b2354386",
       "id" : "B878",
       "repository" : "porelo",
       "title" : "An issue whose parent is in another repository",
@@ -3973,6 +4087,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "cee5b8ecbb3274e9de0fd0242f9e5e5e058a677b0d3bd22981411816082fa3b1",
       "id" : "B879",
       "repository" : "porelo",
       "title" : "An issue blocked by a story",
@@ -3997,6 +4112,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "a3ae25786f188190348994dd07160f69791e953c83e9e6d038050471da6c298e",
       "id" : "B880",
       "repository" : "porelo",
       "title" : "An issue whose parents lead back to it",
@@ -4021,6 +4137,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "b644a7b2af2be965bf39ee093d647a447206903a8de4d86fd6cd1d9334cff7c4",
       "id" : "B881",
       "repository" : "porelo",
       "title" : "A sub-issue of a sub-issue",
@@ -4045,6 +4162,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "b28021c7e5b9ddbdb73f4305339ab8ba4dfb02d57ec92bcd56afc3e34252ab8c",
       "id" : "B882",
       "repository" : "porelo",
       "title" : "An issue read past one page",
@@ -4069,6 +4187,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "57a854090dd3050b1beb99d358f0852315b6262408c102f32020653366dd4303",
       "id" : "B883",
       "repository" : "porelo",
       "title" : "An issue that hangs on one the board does not place",
@@ -4093,6 +4212,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "053af971cfd468b2c56dee6811daf13fcc236e9ab3bbb3f4e2fc7ab21640f5d8",
       "id" : "B884",
       "repository" : "porelo",
       "title" : "An issue whose text is longer than GitHub takes",
@@ -4117,6 +4237,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "651078f24a73eac0cf9e3b028b4cdb8b67af5c818c2fb911f6515926562bc1b3",
       "id" : "B885",
       "repository" : "porelo",
       "title" : "An issue whose size the planner does not know",
@@ -4141,6 +4262,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "9761b06cddb33925db4dfd0acaed39d22b0b412ba8743e09a4a3c6fba22f60cb",
       "id" : "B886",
       "repository" : "porelo",
       "title" : "An issue whose number field holds no number",
@@ -4165,6 +4287,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "de9af40a78a85c2cdc91ed7e45f175a15d11a5121417e0caf79e7b1f6303bfde",
       "id" : "B887",
       "repository" : "porelo",
       "title" : "An issue closed on GitHub under an open state",
@@ -4189,6 +4312,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "1237fa6f3f4107b16c0b472578fb4ced9288845b97c005a783809712685c752e",
       "id" : "B888",
       "repository" : "porelo",
       "title" : "An issue open on GitHub under a closed state",
@@ -4213,6 +4337,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "e9386bc583ba054ac0f0ba277c6dd05ed223dbcfabe0e881c2d13fba724b6311",
       "id" : "B889",
       "repository" : "porelo",
       "title" : "An issue whose worker the planner does not know",
@@ -4237,6 +4362,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "22f0abfafe662564835214681d811a78df198c35eacca9f5235d6ef209f67709",
       "id" : "B890",
       "repository" : "porelo",
       "title" : "An issue whose risk the planner does not know",
@@ -4261,6 +4387,7 @@
         "correction" : null
       } ]
     }, {
+      "version" : "3acf73ba9e9e5864c4f78206260b3a35b57734e4638c8db3b281008d42b38a49",
       "id" : "B889.1",
       "repository" : "porelo",
       "title" : "A part held with its parent, whose worker the planner does not know",
@@ -4284,6 +4411,7 @@
     "open" : null,
     "warnings" : [ ]
   }, {
+    "version" : "91e9f938cf4f3fbeb6d9f021e908eb8f4c4d9bf5618fe86973431b0322bd1a9c",
     "id" : "ST297",
     "title" : "A story whose state cannot be told",
     "state" : "",
@@ -4360,6 +4488,7 @@
       }
     } ]
   }, {
+    "version" : "b2be8f54f60bb813e0a38d3eccece21c9d5f35bbcebb928b8846f22f61d97935",
     "id" : "ST298",
     "title" : "A story naming an issue outside the project",
     "state" : "New",
@@ -4379,6 +4508,7 @@
       "correction" : null
     } ]
   }, {
+    "version" : "615915e454c0ae1fe5d2c53220ac9bd04ba29dca724c21fde5631104115c03b9",
     "id" : "ST299",
     "title" : "A story edited by hand where the planner cannot follow",
     "state" : "New",

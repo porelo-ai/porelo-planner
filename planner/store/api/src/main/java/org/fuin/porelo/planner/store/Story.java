@@ -23,6 +23,8 @@ import org.jspecify.annotations.Nullable;
  * @param warnings what the store could not read in it; its state may be none of the workflow's, or
  *     empty, only with a warning about the state; a warning's correction stands only while no other
  *     of them holds the story back
+ * @param version its own stored edit basis, as its store keeps it; a state its issues give is not
+ *     part of it
  */
 public record Story(
         String id,
@@ -35,7 +37,8 @@ public record Story(
         String description,
         @Nullable URI link,
         boolean issuesWhole,
-        List<Warning> warnings) {
+        List<Warning> warnings,
+        Version version) {
 
     /** The priorities a story may have, the highest first. */
     public static final List<String> PRIORITIES =
@@ -89,6 +92,68 @@ public record Story(
     }
 
     /**
+     * A story whose version is taken over its own stored values, for a store that keeps no edit
+     * basis of its own; a state its issues give is left out.
+     */
+    public Story(
+            final String id,
+            final String title,
+            final String state,
+            final boolean stateGiven,
+            final String priority,
+            final @Nullable String size,
+            final List<String> issues,
+            final String description,
+            final @Nullable URI link,
+            final boolean issuesWhole,
+            final List<Warning> warnings) {
+        this(
+                id,
+                title,
+                state,
+                stateGiven,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                warnings,
+                Version.of(
+                        "story",
+                        id,
+                        title,
+                        stateGiven ? state : null,
+                        priority,
+                        size,
+                        issues,
+                        description,
+                        link));
+    }
+
+    /**
+     * This story with another version, as its store reads it.
+     *
+     * @param version its own stored edit basis
+     * @return the story with that version
+     */
+    public Story withVersion(final Version version) {
+        return new Story(
+                id,
+                title,
+                state,
+                stateGiven,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                warnings,
+                version);
+    }
+
+    /**
      * This story with other warnings.
      *
      * @param warnings its warnings
@@ -106,7 +171,8 @@ public record Story(
                 description,
                 link,
                 issuesWhole,
-                warnings);
+                warnings,
+                version);
     }
 
     /**

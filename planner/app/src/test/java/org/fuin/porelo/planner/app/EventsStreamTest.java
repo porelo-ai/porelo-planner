@@ -43,7 +43,9 @@ class EventsStreamTest {
             final String first = lastRevision(events);
             assertThat(events.getContentAsString())
                     .as("the first board's data")
-                    .contains("\"stories\":[{\"id\":\"ST7\"", "\"kind\":\"WORKING\"");
+                    .containsPattern(
+                            "\"stories\":\\[\\{\"version\":\"[0-9a-f]{64}\",\"id\":\"ST7\"")
+                    .contains("\"kind\":\"WORKING\"");
             assertThat(events.getContentAsString())
                     .as("the project's repositories, which the window offers a new issue in")
                     .contains("\"repositories\":[\"porelo-store\"]");

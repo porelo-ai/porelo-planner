@@ -148,6 +148,9 @@ class GitHubUnlistedStreamTest {
                     firstBoard(events.getContentAsString())
                             .orElseThrow(() -> new AssertionError("no board was streamed"));
             Assertions.assertThat(board)
+                    .as("the issue outside the project with its version")
+                    .containsPattern("\"unlisted\":\\[\\{\"version\":\"[0-9a-f]{64}\",");
+            Assertions.assertThat(board.replaceAll("\"version\":\"[0-9a-f]{64}\",", ""))
                     .as("the board streamed")
                     .contains(LOW)
                     .contains(

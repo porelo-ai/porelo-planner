@@ -19,6 +19,8 @@ import org.jspecify.annotations.Nullable;
  *     login's form
  * @param authorAssociation how that account stands to the repository, as the forge names it, or
  *     null when it named none the planner knows
+ * @param version its own edit basis: its id, title, kind, author and the author's standing, an
+ *     unlisted issue being open
  */
 public record UnlistedIssue(
         String id,
@@ -27,7 +29,8 @@ public record UnlistedIssue(
         Kind kind,
         URI link,
         @Nullable String author,
-        @Nullable String authorAssociation) {
+        @Nullable String authorAssociation,
+        Version version) {
 
     /**
      * A login as a forge gives it: letters, digits and single hyphens inside, at most 39, and an
@@ -75,6 +78,36 @@ public record UnlistedIssue(
         if (authorAssociation != null && !ASSOCIATIONS.contains(authorAssociation)) {
             throw new IllegalArgumentException("An author's association is none the forge names");
         }
+    }
+
+    /**
+     * An issue whose version is taken over its id, title, kind and author.
+     *
+     * @param id its tracker reference
+     * @param repository the name of the repository that holds it
+     * @param title its title, as the forge holds it
+     * @param kind whether the forge marks it as a story or as an issue
+     * @param link where a person reads it on the forge
+     * @param author the login of the account that opened it, or null
+     * @param authorAssociation how that account stands to the repository, or null
+     */
+    public UnlistedIssue(
+            final String id,
+            final String repository,
+            final String title,
+            final Kind kind,
+            final URI link,
+            final @Nullable String author,
+            final @Nullable String authorAssociation) {
+        this(
+                id,
+                repository,
+                title,
+                kind,
+                link,
+                author,
+                authorAssociation,
+                Version.of("unlisted", id, title, kind, author, authorAssociation, "open"));
     }
 
     /**

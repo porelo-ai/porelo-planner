@@ -352,7 +352,8 @@ public final class IssueMapping {
                 issue.minutes(),
                 issue.priority(),
                 warnings,
-                issue.waitsOn());
+                issue.waitsOn(),
+                issue.version());
     }
 
     /** The warnings with one more, each kind once. */
@@ -532,7 +533,8 @@ public final class IssueMapping {
                 minutes,
                 priority,
                 warnings,
-                waitsOn);
+                waitsOn,
+                ItemVersions.of(item));
     }
 
     /** An owner's or a repository's name as GitHub allows it in an address. */
@@ -763,7 +765,8 @@ public final class IssueMapping {
                         body,
                         item.link(),
                         whole)
-                .withWarnings(warnings);
+                .withWarnings(warnings)
+                .withVersion(ItemVersions.of(item));
     }
 
     /**

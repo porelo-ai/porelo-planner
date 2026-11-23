@@ -36,7 +36,8 @@ class IssueTest {
         assertThat(worked.worker()).as("the parent's worker").isEqualTo(Worker.MANUAL);
         assertThat(worked.risk()).as("the higher risk").isEqualTo(Risk.HARM);
         assertThat(worked)
-                .as("everything else as it was")
+                .as(
+                        "everything else as it was, its own version too: an inherited worker is none of it")
                 .isEqualTo(
                         new Issue(
                                 "AB1.1",
@@ -54,6 +55,7 @@ class IssueTest {
                                 3.0,
                                 "High",
                                 List.of(Warning.stateOutsideWorkflow()),
-                                List.of(new Wait("owner/lib#7", false, null))));
+                                List.of(new Wait("owner/lib#7", false, null)),
+                                sub.version()));
     }
 }
