@@ -19,6 +19,18 @@ public interface ChangeProbe {
     boolean unchanged(Snapshot current);
 
     /**
+     * Answers whether nothing outside the project's item list changed since the snapshot was read,
+     * for a look whose item list found no item changed: a page of items answered anew is then no
+     * change, since the list compared its items one by one.
+     *
+     * @param current the snapshot the store holds
+     * @return true only when GitHub says nothing outside the item list changed
+     */
+    default boolean unlistedUnchanged(final Snapshot current) {
+        return unchanged(current);
+    }
+
+    /**
      * Answers the pace GitHub asks for; a probe that knows none never holds.
      *
      * @return the pace

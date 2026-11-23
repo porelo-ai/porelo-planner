@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.time.InstantSource;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -26,6 +28,7 @@ import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -183,6 +186,76 @@ class ConditionalChangeProbeTest {
         assertThat(reads.get())
                 .as("whole reads after a later page of the project's items changed")
                 .isEqualTo(before + 2);
+    }
+
+    @Test
+    void anItemPageAnsweredAnewThatTheItemListFindsUnchangedStartsNoWholeRead() {
+        // Harm: GitHub answers a page of the project's items anew at every look though no item on
+        // it changed, and the whole project is read again at every poll, minutes each time.
+        final GitHubStore store = listingStore(nothingListed());
+        store.refresh();
+        store.poll();
+        store.poll();
+        final int before = reads.get();
+
+        for (int look = 0; look < 3; look++) {
+            github.pageTags.set(0, "\"items-0-" + look + "\"");
+            store.poll();
+        }
+
+        assertThat(reads.get())
+                .as("whole reads while only the item pages' tags move and the list shows nothing")
+                .isEqualTo(before);
+
+        github.issueTags.put("example-two", "\"two-2\"");
+        store.poll();
+
+        assertThat(reads.get())
+                .as("whole reads after an issue outside the item list changed")
+                .isEqualTo(before + 1);
+    }
+
+    @Test
+    void anItemPageMoreOrFewerThatTheItemListFindsUnchangedStartsNoWholeRead() {
+        // Harm: GitHub's item list grows by a page whose items the list finds unchanged, and the
+        // whole project is read again, minutes long, though the board shows nothing new.
+        final GitHubStore store = listingStore(nothingListed());
+        store.refresh();
+        store.poll();
+        store.poll();
+        final int before = reads.get();
+
+        // The last page now links a next one, so GitHub gives it a new tag too.
+        github.pageTags.set(1, "\"items-1b\"");
+        github.pageTags.add("\"items-2\"");
+        store.poll();
+        store.poll();
+
+        assertThat(reads.get())
+                .as("whole reads after the item pages grew while the list shows nothing")
+                .isEqualTo(before);
+    }
+
+    /** A look at GitHub's item list that names no item changed. */
+    private static TrackerChanges nothingListed() {
+        return (config, token, cursor, known) ->
+                Optional.of(
+                        new TrackerChanges.Changed(
+                                Set.of(), Set.of(), Set.of(), ChangeCursor.NONE));
+    }
+
+    /** A store that looks at GitHub's item list beside the probe, as a GitHub project does. */
+    private GitHubStore listingStore(final TrackerChanges changes) {
+        return new GitHubStore(
+                CONFIG,
+                () -> CONFIG,
+                GitHubStore.Parts.reading(
+                                config -> snapshot("read-" + reads.incrementAndGet()),
+                                states -> null)
+                        .changes(changes)
+                        .probe(probe(github)),
+                origin -> TOKEN,
+                Duration.ofMillis(500));
     }
 
     @Test

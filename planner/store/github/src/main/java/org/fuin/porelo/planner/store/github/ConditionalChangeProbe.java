@@ -26,6 +26,8 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Asks GitHub, with the entity tags of the last answers and in parallel, whether any issue of the
@@ -37,6 +39,8 @@ import org.jspecify.annotations.Nullable;
  * probe keeps, never an ask to GitHub, so the board's faults are never kept waiting by a look.
  */
 public final class ConditionalChangeProbe implements ChangeProbe, Pace {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ConditionalChangeProbe.class);
 
     /** How long all the asks of one look may take together, before the factor {@code services}. */
     static final Duration DEADLINE = Duration.ofSeconds(30);
@@ -57,8 +61,16 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         static final Tags NONE = new Tags(Map.of(), List.of());
     }
 
-    /** One look's answers: their tags, whether all were 304, the lowest rate limit seen. */
-    private record Look(Tags tags, boolean unchanged, ConditionalReads.@Nullable Answer lowest) {}
+    /**
+     * One look's answers: their tags, the asks GitHub answered anew (none when all were 304), the
+     * lowest rate limit seen.
+     */
+    private record Look(Tags tags, List<String> seen, ConditionalReads.@Nullable Answer lowest) {
+
+        boolean unchanged() {
+            return seen.isEmpty();
+        }
+    }
 
     private final ConditionalReads reads;
 
@@ -214,6 +226,21 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
 
     @Override
     public boolean unchanged(final Snapshot current) {
+        return unchanged(current, true);
+    }
+
+    @Override
+    public boolean unlistedUnchanged(final Snapshot current) {
+        return unchanged(current, false);
+    }
+
+    /**
+     * Asks GitHub whether the project changed.
+     *
+     * @param pages whether a page of items answered anew counts as a change; a look whose item list
+     *     compared every item already passes false
+     */
+    private boolean unchanged(final Snapshot current, final boolean pages) {
         final Tags known;
         final long began;
         final boolean adopting;
@@ -234,7 +261,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         final String token = tokens.token(config.forge());
         final Look look;
         try {
-            look = look(config, token, known);
+            look = look(config, token, known, pages);
         } catch (final StoreException.Unreachable e) {
             failed = null;
             throw e;
@@ -273,6 +300,8 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             }
             return true;
         }
+        // Names only where GitHub answered anew, so the log shows what each whole read follows.
+        LOG.info("The change check saw a change in: {}", String.join(", ", look.seen()));
         changedUnlessHeld(config);
         synchronized (this) {
             if (era == began) {
@@ -442,7 +471,8 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         return false;
     }
 
-    private Look look(final ProjectConfig config, final String token, final Tags known) {
+    private Look look(
+            final ProjectConfig config, final String token, final Tags known, final boolean pages) {
         final String owner = config.project().owner();
         final long end = System.nanoTime() + deadline.toNanos();
         final AtomicBoolean over = new AtomicBoolean();
@@ -493,7 +523,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             if (!failures.isEmpty()) {
                 throw failures.get(0);
             }
-            return judged(known, issueAnswers, paged);
+            return judged(known, issueAnswers, paged, pages);
         } finally {
             // No ask outlives its look: the pages stop, and what has not begun never does.
             over.set(true);
@@ -505,23 +535,31 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
     private static Look judged(
             final Tags known,
             final Map<String, ConditionalReads.Answer> issueAnswers,
-            final List<Paged> paged) {
+            final List<Paged> paged,
+            final boolean pages) {
         final Map<String, @Nullable String> issueTags = new LinkedHashMap<>();
         final List<ConditionalReads.Answer> answers = new ArrayList<>();
-        boolean unchanged = true;
+        final List<String> seen = new ArrayList<>();
         for (final Map.Entry<String, ConditionalReads.Answer> each : issueAnswers.entrySet()) {
             final ConditionalReads.Answer answer = each.getValue();
             issueTags.put(each.getKey(), kept(answer, known.issues().get(each.getKey())));
             answers.add(answer);
-            unchanged &= !answer.changed();
+            if (answer.changed()) {
+                seen.add("the issues of " + each.getKey());
+            }
         }
         final List<PageTag> pageTags = new ArrayList<>();
-        for (final Paged page : paged) {
+        for (int at = 0; at < paged.size(); at++) {
+            final Paged page = paged.get(at);
             pageTags.add(page.tag());
             answers.add(page.answer());
-            unchanged &= !page.answer().changed();
+            if (pages && page.answer().changed()) {
+                seen.add("item page " + (at + 1));
+            }
         }
-        unchanged &= pageTags.size() == known.pages().size();
+        if (pages && pageTags.size() != known.pages().size()) {
+            seen.add(known.pages().size() + " item pages before, " + pageTags.size() + " now");
+        }
         ConditionalReads.@Nullable Answer lowest = null;
         for (final ConditionalReads.Answer answer : answers) {
             if (answer.remaining() != null
@@ -530,7 +568,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
                 lowest = answer;
             }
         }
-        return new Look(new Tags(issueTags, pageTags), unchanged, lowest);
+        return new Look(new Tags(issueTags, pageTags), List.copyOf(seen), lowest);
     }
 
     /** The tag to send next time: a 304 that names none keeps the one sent. */

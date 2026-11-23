@@ -1010,7 +1010,7 @@ public final class GitHubStore implements PlanningStore {
                     }
                     // The item list carries only the board's items: an issue of the project's
                     // repositories it lacks changes only the probe's answer, and is read whole.
-                    return parts.probe().unchanged(looked.board())
+                    return parts.probe().unlistedUnchanged(looked.board())
                             ? waitsBesideSaves(now, looked.board())
                             : wholeBesideSaves(now, false, WholeRead.UNLISTED);
                 }
