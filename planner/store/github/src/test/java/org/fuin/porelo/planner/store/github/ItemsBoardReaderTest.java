@@ -1319,12 +1319,20 @@ class ItemsBoardReaderTest {
     }
 
     @Test
-    void aReadWhoseLastAnswerCameAfterTheDeadlineIsUnreachable() {
-        // Harm: a board answered as current although GitHub took longer than the window waits.
+    void aLargeProjectWhosePagesKeepComingIsReadToItsEnd() {
+        // Harm: a project too large to read within a fixed time is cut off at every read and
+        // can never be loaded, though GitHub answers each page.
         final GitHub github =
-                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, libIssue(3, refs(false)));
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage("i1", libIssue(3, refs(false)))
+                        .itemsPage("i2", libIssue(4, refs(false)))
+                        .itemsPage("i3", libIssue(5, refs(false)))
+                        .itemsPage("i4", libIssue(6, refs(false)))
+                        .itemsPage(null, libIssue(7, refs(false)));
         final Instant start = Instant.parse("2026-01-01T00:00:00Z");
         final AtomicInteger ticks = new AtomicInteger();
+        // Each look at the clock 25 s later: far longer than 60 s in all, never 60 s silent.
         final InstantSource slow = () -> start.plusSeconds(25L * ticks.getAndIncrement());
         final ItemsBoardReader reader =
                 new ItemsBoardReader(
@@ -1335,11 +1343,35 @@ class ItemsBoardReaderTest {
                         slow,
                         Duration.ofSeconds(60));
 
+        final Snapshot snapshot = reader.read(CONFIG);
+
+        assertThat(slow.instant())
+                .as("a read far longer than the deadline")
+                .isAfter(start.plusSeconds(180));
+        assertThat(snapshot.board().issues()).as("every page's issue").hasSize(5);
+    }
+
+    @Test
+    void anAnswerGitHubGivesOnlyAfterTheDeadlineIsUnreachable() {
+        // Harm: a GitHub that has stopped answering holds the board and every save behind it.
+        final GitHub github =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, libIssue(3, refs(false)));
+        final Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        final AtomicInteger ticks = new AtomicInteger();
+        final InstantSource silent = () -> start.plusSeconds(70L * ticks.getAndIncrement());
+        final ItemsBoardReader reader =
+                new ItemsBoardReader(
+                        github.queries(),
+                        origin -> TOKEN,
+                        AccessRefusals.DEFAULT,
+                        FIRST_OPEN,
+                        silent,
+                        Duration.ofSeconds(60));
+
         assertThatThrownBy(() -> reader.read(CONFIG))
-                .as("the read whose last page came late")
+                .as("the read GitHub left without an answer for 70 s")
                 .isInstanceOf(StoreException.Unreachable.class)
-                .hasMessageContaining("within 60 s");
-        assertThat(github.calls).as("every page was asked for").hasSize(2);
+                .hasMessageContaining("no answer to the project's read within 60 s");
     }
 
     @Test
@@ -1772,33 +1804,6 @@ class ItemsBoardReaderTest {
                 .hasMessageNotContaining(TOKEN)
                 .hasMessageContaining(Scrubbed.MARK);
         assertThat(github.tokenAsks).as("no second ask for the token").hasValue(1);
-    }
-
-    @Test
-    void aReadPastItsDeadlineIsUnreachable() {
-        // Harm: a slow GitHub holds the board and every save behind it for minutes.
-        final GitHub github =
-                new GitHub()
-                        .fieldsPage(FIELDS, null)
-                        .itemsPage("i1", libIssue(3, refs(false)))
-                        .itemsPage(null, libIssue(4, refs(false)));
-        final Instant start = Instant.parse("2026-01-01T00:00:00Z");
-        final AtomicInteger ticks = new AtomicInteger();
-        final InstantSource slow = () -> start.plusSeconds(25L * ticks.getAndIncrement());
-        final ItemsBoardReader reader =
-                new ItemsBoardReader(
-                        github.queries(),
-                        origin -> TOKEN,
-                        AccessRefusals.DEFAULT,
-                        FIRST_OPEN,
-                        slow,
-                        Duration.ofSeconds(60));
-
-        assertThatThrownBy(() -> reader.read(CONFIG))
-                .as("the read past its deadline")
-                .isInstanceOf(StoreException.Unreachable.class)
-                .hasMessageContaining("within 60 s");
-        assertThat(github.calls).as("no call after the deadline").hasSize(2);
     }
 
     @Test

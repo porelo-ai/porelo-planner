@@ -101,7 +101,10 @@ public final class ItemsBoardReader implements BoardReader {
     /** An owner's or a repository's name as GitHub allows it in an address. */
     private static final Pattern REPOSITORY_PART = Pattern.compile("[A-Za-z0-9._-]{1,100}");
 
-    /** How long one read of the whole project may take. */
+    /**
+     * How long GitHub may leave a read of the project without an answer; a read whose answers keep
+     * coming takes as long as the project needs.
+     */
     static final Duration DEADLINE = Duration.ofSeconds(60);
 
     /** The tag of a value that is missing; a length-prefixed text begins with a digit. */
@@ -1042,8 +1045,6 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
         completeItems(call, read, items);
-        // The last answer may come after the deadline as well.
-        call.inTime();
         return mapped(items, read, fieldNames, Map.of());
     }
 
@@ -1195,7 +1196,11 @@ public final class ItemsBoardReader implements BoardReader {
 
         private final String token;
 
-        private final Instant until;
+        /**
+         * When the read is refused: for the issue lists a fixed end, for the project the moment
+         * GitHub has left it without an answer for the deadline, moved on by each answer.
+         */
+        private Instant until;
 
         /** Whether it reads the repositories' issue lists, whose deadline ends only their read. */
         private final boolean lists;
@@ -1223,10 +1228,23 @@ public final class ItemsBoardReader implements BoardReader {
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(
                         config.own(),
-                        "GitHub did not give the whole project within "
+                        "GitHub gave no answer to the project's read within "
                                 + deadline.toSeconds()
                                 + " s");
             }
+        }
+
+        /**
+         * Takes an answer. For the project, one that came after the deadline is refused, and
+         * otherwise the deadline starts again from it, so a large project whose pages keep coming
+         * is read to its end; the issue lists keep their fixed end.
+         */
+        private <T> T answered(final T answer) {
+            if (!lists) {
+                inTime();
+                until = clock.instant().plus(deadline);
+            }
+            return answer;
         }
 
         <T> T of(final String what, final Supplier<T> read) {
@@ -1245,7 +1263,7 @@ public final class ItemsBoardReader implements BoardReader {
             inTime();
             try {
                 try {
-                    return read.get();
+                    return answered(read.get());
                 } catch (final GitHubException e) {
                     if (e.rateLimited() || (e.status() != 0 && e.status() < 500)) {
                         throw e;
@@ -1259,7 +1277,7 @@ public final class ItemsBoardReader implements BoardReader {
                             e.delivery());
                     pauseBeforeRetry();
                     inTime();
-                    return read.get();
+                    return answered(read.get());
                 }
             } catch (final StoreException
                     | UnsupportedOperationException

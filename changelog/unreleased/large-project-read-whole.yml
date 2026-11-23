@@ -1,0 +1,2 @@
+title: A GitHub project too large to read within 60 s is now read to its end while GitHub keeps answering, and only a GitHub that leaves the read without an answer for 60 s is reported as unreachable.
+type: fixed
