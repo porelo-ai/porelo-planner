@@ -1,0 +1,2 @@
+title: The local store opens, judges and reads each item file and its lock file through the open file itself on Linux and Windows, so a named pipe, a link, a second name or a file another account owns or may change is refused at once instead of read or waited on.
+type: fixed

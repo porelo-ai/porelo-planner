@@ -1416,6 +1416,12 @@ class WorkRecordTest {
                     public void requireOwnFile(final Path file, final boolean alone) {
                         real.requireOwnFile(file, alone);
                     }
+
+                    @Override
+                    public byte[] readItemFile(final Path file, final int most)
+                            throws java.io.IOException {
+                        return real.readItemFile(file, most);
+                    }
                 };
         try (WorkRecord records = new WorkRecord(environment, false, counted)) {
             final WorkRun.Record store =

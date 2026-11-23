@@ -3,7 +3,9 @@ package org.fuin.porelo.planner.store.files;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import org.junit.jupiter.api.Tag;
@@ -85,22 +87,39 @@ class ExistingDirectoryTest {
                         PosixFilePermissions.asFileAttribute(
                                 PosixFilePermissions.fromString("rwx------")));
         final Path written = Files.writeString(own.resolve("engine-1.md"), "by hand");
-        Files.setPosixFilePermissions(written, PosixFilePermissions.fromString("rw-r--r--"));
+        Files.setPosixFilePermissions(written, PosixFilePermissions.fromString("rw-rw-r--"));
         final Path secret = Files.writeString(temp.resolve("secret"), "a secret");
 
-        files.requireItemFile(written);
+        assertThat(files.readItemFile(written, 100))
+                .as("read whatever mode the editor gave it")
+                .isEqualTo("by hand".getBytes(StandardCharsets.UTF_8));
+        assertThat(files.readItemFile(written, 2))
+                .as("one byte past the bound tells a larger file")
+                .hasSize(3);
         assertThatThrownBy(
                         () ->
-                                files.requireItemFile(
+                                files.readItemFile(
                                         Files.createSymbolicLink(
-                                                own.resolve("engine-2.md"), secret)))
+                                                own.resolve("engine-2.md"), secret),
+                                        100))
                 .as("a symbolic link")
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("is a link");
         assertThatThrownBy(
                         () ->
-                                files.requireItemFile(
-                                        Files.createLink(own.resolve("engine-3.md"), secret)))
+                                files.readItemFile(
+                                        Files.createLink(own.resolve("engine-3.md"), secret), 100))
                 .as("a second name of another file")
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has a second name");
+        final Path pipe = own.resolve("engine-4.md");
+        assertThat(new ProcessBuilder("mkfifo", pipe.toString()).start().waitFor()).isZero();
+        assertThatThrownBy(() -> files.readItemFile(pipe, 100))
+                .as("a pipe, refused at once instead of waited on")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("is not a regular file");
+        assertThatThrownBy(() -> files.readItemFile(own.resolve("engine-5.md"), 100))
+                .as("a file gone")
+                .isInstanceOf(NoSuchFileException.class);
     }
 }

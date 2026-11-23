@@ -373,6 +373,12 @@
                                         <!-- Apache Fory, which writes the board's copy, is made and compiles its
                                              serializers when the image is built, as Fory asks for GraalVM. -->
                                         <buildArg>--initialize-at-build-time=org.fuin.porelo.planner.store.cache.ForyEncoding</buildArg>
+                                        <!-- The local store opens and judges its files through the C library's own
+                                             calls, whose descriptors its reachability metadata registers. -->
+                                        <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                        <buildArg>-H:+ForeignAPISupport</buildArg>
+                                        <buildArg>-H:-UnlockExperimentalVMOptions</buildArg>
+                                        <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
                                     </buildArgs>
                                 </configuration>
                             </execution>

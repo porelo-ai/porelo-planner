@@ -395,12 +395,13 @@ public final class WindowsPrivateFiles implements PrivateFiles {
         access.requireOwnersAlone(directory, paths.size() - 1, true, true);
     }
 
+    /**
+     * Reads an item file judged on its open handle: its owner and access control list are read from
+     * the handle itself, so no PowerShell starts per item and the file read is the one judged.
+     */
     @Override
-    public void requireItemFile(final Path file) {
-        // The directory is checked as the account's alone, passing its control to every entry
-        // made in it, so a file in it is checked only for being a plain file, never a reparse
-        // point; asking its owner here would start one PowerShell per item at every read.
-        requireOwnFile(file, false);
+    public byte[] readItemFile(final Path file, final int most) throws IOException {
+        return WindowsFiles.read(file, most);
     }
 
     @Override

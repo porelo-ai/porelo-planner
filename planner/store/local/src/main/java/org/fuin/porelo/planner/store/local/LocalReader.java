@@ -1,10 +1,8 @@
 package org.fuin.porelo.planner.store.local;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.Channels;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
@@ -12,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -166,23 +163,23 @@ final class LocalReader {
                                 file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
                 add(digest, Long.toString(attributes.size()));
                 add(digest, attributes.lastModifiedTime().toString());
-                try {
-                    files.requireItemFile(file);
-                } catch (final UncheckedIOException e) {
-                    if (e.getCause() instanceof NoSuchFileException gone) {
-                        throw gone;
-                    }
-                    throw new Refused("it is a link, another account's or has a second name");
-                } catch (final IllegalStateException e) {
-                    throw new Refused("it is a link, another account's or has a second name");
-                }
                 if (attributes.size() > MOST_BYTES) {
                     throw new Refused("it is larger than 1 MiB");
                 }
                 if (total + attributes.size() > MOST_TOTAL) {
                     return tooLarge(digest, numbers);
                 }
-                final byte[] content = bounded(file);
+                final byte[] content;
+                try {
+                    // Judged on the file opened itself, so the file read is the one judged.
+                    content = files.readItemFile(file, MOST_BYTES);
+                } catch (final IllegalStateException e) {
+                    throw new Refused(
+                            "it is no plain file, a link, another account's or has a second name");
+                }
+                if (content.length > MOST_BYTES) {
+                    throw new Refused("it is larger than 1 MiB");
+                }
                 final BasicFileAttributes after =
                         Files.readAttributes(
                                 file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -225,21 +222,6 @@ final class LocalReader {
                 Map.of(),
                 List.of("The item files hold more than 64 MiB together; none is read"),
                 numbers);
-    }
-
-    /** Reads a file, never following a link and never more than one byte past the bound. */
-    private static byte[] bounded(final Path file) throws IOException {
-        try (InputStream input =
-                Channels.newInputStream(
-                        Files.newByteChannel(
-                                file,
-                                Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)))) {
-            final byte[] content = input.readNBytes(MOST_BYTES + 1);
-            if (content.length > MOST_BYTES) {
-                throw new Refused("it is larger than 1 MiB");
-            }
-            return content;
-        }
     }
 
     /**

@@ -113,6 +113,89 @@ class NativeStartIT {
 
     @Test
     @Tag("linux")
+    void theNativeExecutableReadsALocalProjectThroughTheCLibrary(@TempDir final Path dir)
+            throws Exception {
+        // The local store opens, judges, locks and reads its files through the C library's own
+        // calls; one the image does not register fails only in a native run, and the window
+        // would get a planner that answers no local project.
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        final Path runtime = RuntimeDirectories.create();
+        final Path output = Files.createTempFile("porelo-planner-local", ".log");
+        final Path data =
+                Files.createDirectory(
+                        dir.resolve("data"),
+                        java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                                java.nio.file.attribute.PosixFilePermissions.fromString(
+                                        "rwx------")));
+        try (FixtureProject project =
+                FixtureProject.serve(
+                        dir,
+                        """
+                        repositories:
+                            engine:
+                                central: "https://github.com/porelo-ai/engine"
+                                issues: ["E"]
+                        tracker:
+                            kind: local
+                        """)) {
+            final ProcessBuilder builder =
+                    new ProcessBuilder(executable.toString())
+                            .redirectErrorStream(true)
+                            .redirectOutput(output.toFile());
+            builder.environment().clear();
+            builder.environment().putAll(project.environment());
+            builder.environment().put("XDG_RUNTIME_DIR", runtime.toString());
+            builder.environment().put("XDG_DATA_HOME", data.toString());
+            final Process planner = builder.start();
+            try {
+                final RuntimeDirectories.Address address =
+                        addressWithin(runtime, planner, output, PLANNER_CALLS);
+                assertThat(call(address, "PUT", "/projects/alpha", project.source()))
+                        .as("the project given; the planner wrote:%n" + Files.readString(output))
+                        .startsWith("204 ");
+                assertThat(call(address, "GET", "/projects/alpha/workflow", null))
+                        .as("the local tracker; the planner wrote:%n" + Files.readString(output))
+                        .startsWith("200 ")
+                        .contains("\"kind\":\"local\"");
+                final Path items =
+                        Files.createDirectories(
+                                data.resolve("porelo-planner/items/alpha"),
+                                java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                                        java.nio.file.attribute.PosixFilePermissions.fromString(
+                                                "rwx------")));
+                Files.writeString(
+                        items.resolve("engine-1.md"),
+                        "```json\n{\n  \"format\": \"local-item-1\",\n  \"kind\": \"issue\",\n"
+                                + "  \"title\": \"Read through the C library\",\n"
+                                + "  \"repository\": \"engine\",\n  \"number\": 1,\n"
+                                + "  \"parent\": null,\n  \"issues\": [],\n"
+                                + "  \"blockedBy\": []\n}\n```\n");
+                // A tracked project's refresh answers before its read, so the list is asked until
+                // the read has landed.
+                assertThat(call(address, "POST", "/projects/alpha/refresh", null))
+                        .as("the refresh; the planner wrote:%n" + Files.readString(output))
+                        .startsWith("200 ");
+                final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                String listed = call(address, "GET", "/projects/alpha/issues?story=none", null);
+                while (!listed.contains("engine#1") && System.nanoTime() < deadline) {
+                    Thread.sleep(200);
+                    listed = call(address, "GET", "/projects/alpha/issues?story=none", null);
+                }
+                assertThat(listed)
+                        .as("the item read; the planner wrote:%n" + Files.readString(output))
+                        .startsWith("200 ")
+                        .contains("\"id\":\"engine#1\"", "Read through the C library");
+            } finally {
+                stop(planner);
+            }
+        } finally {
+            Files.deleteIfExists(output);
+            RuntimeDirectories.delete(runtime);
+        }
+    }
+
+    @Test
+    @Tag("linux")
     void theNativeExecutablePersistsOffersAndReportsAgainstARealStore(@TempDir final Path dir)
             throws Exception {
         // Prevents missing native JSON bindings from losing offers, task bindings or accepted ends.

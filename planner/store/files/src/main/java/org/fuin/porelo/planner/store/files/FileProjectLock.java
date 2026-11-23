@@ -2,17 +2,11 @@ package org.fuin.porelo.planner.store.files;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.file.FileSystems;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
+import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -20,7 +14,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link ProjectLock} that is a lock in the process and a lock on a file in the project's cache
- * directory.
+ * directory. The file is opened and judged as the account's own regular file with one name through
+ * the system's own calls, so a pipe, a link or another account's file in its place is refused at
+ * once and never waited on.
  */
 public final class FileProjectLock implements ProjectLock {
 
@@ -29,18 +25,6 @@ public final class FileProjectLock implements ProjectLock {
             new ConcurrentHashMap<>();
 
     private static final Duration POLL = Duration.ofMillis(50);
-
-    /**
-     * A new lock file's mode where the file system has modes, so it is the account's alone whatever
-     * the umask; elsewhere it inherits the private directory's access list.
-     */
-    private static final FileAttribute<?>[] OWNER_ONLY =
-            FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
-                    ? new FileAttribute<?>[] {
-                        PosixFilePermissions.asFileAttribute(
-                                PosixFilePermissions.fromString("rw-------"))
-                    }
-                    : new FileAttribute<?>[0];
 
     private final ReentrantLock inProcess;
 
@@ -58,39 +42,10 @@ public final class FileProjectLock implements ProjectLock {
 
     @Override
     public Held acquire() {
-        // The process lock comes first: a second FileChannel.lock in one process throws instead of
-        // waiting.
+        // The process lock comes first, so one process asks the system for the file lock once.
         inProcess.lock();
-        FileChannel channel = null;
-        try {
-            channel =
-                    FileChannel.open(
-                            file,
-                            Set.of(
-                                    StandardOpenOption.CREATE,
-                                    StandardOpenOption.WRITE,
-                                    LinkOption.NOFOLLOW_LINKS),
-                            OWNER_ONLY);
-            final FileLock lock = channel.lock();
-            final FileChannel open = channel;
-            return () -> {
-                try (open) {
-                    lock.release();
-                } catch (final IOException e) {
-                    throw new UncheckedIOException(e);
-                } finally {
-                    inProcess.unlock();
-                }
-            };
-        } catch (final IOException e) {
-            close(channel, e);
-            inProcess.unlock();
-            throw new UncheckedIOException("the project's lock could not be taken", e);
-        } catch (final RuntimeException | Error e) {
-            close(channel, e);
-            inProcess.unlock();
-            throw e;
-        }
+        return taken(null)
+                .orElseThrow(() -> new IllegalStateException("the project's lock was not taken"));
     }
 
     @Override
@@ -104,61 +59,92 @@ public final class FileProjectLock implements ProjectLock {
             Thread.currentThread().interrupt();
             return Optional.empty();
         }
-        FileChannel channel = null;
+        return taken(deadline);
+    }
+
+    /**
+     * Takes the file lock, the process lock held: until the deadline when one is given, otherwise
+     * as long as another holds it. The process lock is let go unless the file lock is taken.
+     */
+    private Optional<Held> taken(final @Nullable Long deadline) {
         try {
-            channel =
-                    FileChannel.open(
-                            file,
-                            Set.of(
-                                    StandardOpenOption.CREATE,
-                                    StandardOpenOption.WRITE,
-                                    LinkOption.NOFOLLOW_LINKS),
-                            OWNER_ONLY);
-            // A file lock has no wait with a bound, so it is tried until the deadline.
-            FileLock lock = channel.tryLock();
-            while (lock == null && System.nanoTime() < deadline) {
+            while (true) {
+                final OptionalLong held = Platform.take(file, deadline == null);
+                if (held.isPresent()) {
+                    final long token = held.getAsLong();
+                    return Optional.of(
+                            () -> {
+                                try {
+                                    Platform.release(token);
+                                } catch (final IOException e) {
+                                    throw new UncheckedIOException(e);
+                                } finally {
+                                    inProcess.unlock();
+                                }
+                            });
+                }
+                if (deadline == null || System.nanoTime() >= deadline) {
+                    inProcess.unlock();
+                    return Optional.empty();
+                }
                 Thread.sleep(POLL.toMillis());
-                lock = channel.tryLock();
             }
-            if (lock == null) {
-                channel.close();
-                inProcess.unlock();
-                return Optional.empty();
-            }
-            final FileLock held = lock;
-            final FileChannel open = channel;
-            return Optional.of(
-                    () -> {
-                        try (open) {
-                            held.release();
-                        } catch (final IOException e) {
-                            throw new UncheckedIOException(e);
-                        } finally {
-                            inProcess.unlock();
-                        }
-                    });
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
-            close(channel, e);
             inProcess.unlock();
             return Optional.empty();
         } catch (final IOException e) {
-            close(channel, e);
             inProcess.unlock();
             throw new UncheckedIOException("the project's lock could not be taken", e);
         } catch (final RuntimeException | Error e) {
-            close(channel, e);
             inProcess.unlock();
             throw e;
         }
     }
 
-    private static void close(final @Nullable FileChannel channel, final Throwable failure) {
-        if (channel != null) {
-            try {
-                channel.close();
-            } catch (final IOException e) {
-                failure.addSuppressed(e);
+    /**
+     * The system's own lock, which Java's own file lock also keeps to: an open file's {@code fcntl}
+     * lock on Linux, {@code LockFileEx} on Windows.
+     */
+    private enum Platform {
+        LINUX,
+        WINDOWS,
+        OTHER;
+
+        private static final Platform CURRENT = current();
+
+        private static Platform current() {
+            final String name = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+            if (name.equals("linux")) {
+                return LINUX;
+            }
+            return name.startsWith("windows") ? WINDOWS : OTHER;
+        }
+
+        /** The lock's token, or none while another holds it and no wait was asked. */
+        static OptionalLong take(final Path file, final boolean wait) throws IOException {
+            return switch (CURRENT) {
+                case LINUX -> {
+                    final int fd = LinuxFiles.lock(file, wait);
+                    yield fd < 0 ? OptionalLong.empty() : OptionalLong.of(fd);
+                }
+                case WINDOWS -> {
+                    final long handle = WindowsFiles.lock(file, wait);
+                    yield handle == 0 ? OptionalLong.empty() : OptionalLong.of(handle);
+                }
+                case OTHER ->
+                        throw new IllegalStateException(
+                                "The project's lock cannot be taken on this system ("
+                                        + System.getProperty("os.name", "unknown")
+                                        + "); only Linux and Windows are supported");
+            };
+        }
+
+        static void release(final long token) throws IOException {
+            switch (CURRENT) {
+                case LINUX -> LinuxFiles.unlock((int) token);
+                case WINDOWS -> WindowsFiles.unlock(token);
+                case OTHER -> throw new IllegalStateException("No lock is taken on this system");
             }
         }
     }

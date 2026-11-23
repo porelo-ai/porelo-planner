@@ -205,4 +205,59 @@ class WindowsAccessTest {
                 .as("an answer without the account")
                 .hasMessageContaining("without the account");
     }
+
+    private static WindowsAccess.Ace allow(
+            final String sid, final long rights, final int propagation) {
+        return new WindowsAccess.Ace(true, sid, rights, 0, propagation);
+    }
+
+    private static void item(final String owner, final WindowsAccess.Ace... aces) {
+        new WindowsAccess(
+                        ME,
+                        java.util.List.of(
+                                new WindowsAccess.Entry(
+                                        owner, false, false, java.util.List.of(aces))))
+                .requireOwnItem("engine-1.md", 0);
+    }
+
+    @Test
+    void anItemFileAnotherAccountOwnsOrMayChangeIsRefusedButOneOthersMayReadIsNot() {
+        // Harm: an item another account wrote, or may still change, is read as the person's own.
+        final long full = WindowsAccess.FULL_CONTROL;
+        assertThatCode(() -> item(ME, allow(ME, full, 0), allow(USERS, 0x120089L, 0)))
+                .as("the account's own, others reading")
+                .doesNotThrowAnyException();
+        assertThatCode(() -> item(WindowsAccess.ADMINISTRATORS, allow(ME, full, 0)))
+                .as("owned by Administrators, as an elevated editor saves it")
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> item(OTHER, allow(ME, full, 0)))
+                .as("another account's file")
+                .hasMessageContaining("belongs to " + OTHER);
+        assertThatThrownBy(() -> item(WindowsAccess.TRUSTED_INSTALLER, allow(ME, full, 0)))
+                .as("the system's own installer is no owner of an item")
+                .hasMessageContaining("belongs to");
+        for (final long right :
+                new long[] {
+                    WindowsAccess.WRITE_DATA,
+                    WindowsAccess.APPEND_DATA,
+                    WindowsAccess.WRITE_DAC,
+                    WindowsAccess.WRITE_OWNER,
+                    WindowsAccess.DELETE,
+                    WindowsAccess.GENERIC_WRITE,
+                    WindowsAccess.GENERIC_ALL
+                }) {
+            assertThatThrownBy(() -> item(ME, allow(ME, full, 0), allow(AUTHENTICATED, right, 0)))
+                    .as("another may change it by right %x", right)
+                    .hasMessageContaining("lets " + AUTHENTICATED + " write");
+        }
+        assertThatCode(
+                        () ->
+                                item(
+                                        ME,
+                                        allow(ME, full, 0),
+                                        new WindowsAccess.Ace(false, AUTHENTICATED, full, 0, 0),
+                                        allow(CREATOR_OWNER, full, WindowsAccess.INHERIT_ONLY)))
+                .as("a denying entry and one that applies only below grant nothing")
+                .doesNotThrowAnyException();
+    }
 }

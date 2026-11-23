@@ -39,6 +39,18 @@ final class FixtureProject implements AutoCloseable {
      * @throws Exception when it cannot be served
      */
     static FixtureProject serve(final Path dir) throws Exception {
+        return serve(dir, "repositories: {}\n");
+    }
+
+    /**
+     * Writes and serves the project, its repositories and tracker as given.
+     *
+     * @param dir the test's own directory
+     * @param rest the project file's lines after its name: its repositories and tracker
+     * @return the served project
+     * @throws Exception when it cannot be served
+     */
+    static FixtureProject serve(final Path dir, final String rest) throws Exception {
         final ServedRepositories repositories = new ServedRepositories(dir);
         repositories.repository(
                 "porelo-store",
@@ -48,8 +60,8 @@ final class FixtureProject implements AutoCloseable {
                         project:
                             name: "alpha"
                             central: "git@github.com:porelo-ai/porelo-store.git"
-                        repositories: {}
-                        """,
+                        """
+                                + rest,
                         "stories/workflow.yml",
                         """
                         states:

@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.store.files;
 
+import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
@@ -141,13 +142,19 @@ public interface PrivateFiles {
     }
 
     /**
-     * Checks an item placed by a person, including its owner and private access rights.
+     * Reads an item a person placed in a checked private directory, judged on the file opened
+     * itself, so the file read is the one judged: a regular file of the account's with one name,
+     * never reached through a link and never waited on as a pipe.
      *
-     * @param file the regular file in a checked private directory
+     * @param file the file
+     * @param most the most bytes wanted; one more is read to tell a larger file
+     * @return its bytes, at most {@code most + 1}
+     * @throws java.nio.file.NoSuchFileException when it is gone
+     * @throws IllegalStateException when it is a link, no regular file, another account's or has a
+     *     second name
+     * @throws IOException when it cannot be read
      */
-    default void requireItemFile(final Path file) {
-        requireOwnFile(file, true);
-    }
+    byte[] readItemFile(Path file, int most) throws IOException;
 
     /** The planner's kinds of private directories. */
     enum Kind {

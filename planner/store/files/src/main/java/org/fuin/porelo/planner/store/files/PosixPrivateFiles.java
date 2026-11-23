@@ -105,33 +105,12 @@ public final class PosixPrivateFiles implements PrivateFiles {
     }
 
     /**
-     * Refuses an item file that is no regular file, a link, another account's, or one with a second
-     * name; its mode is not asked, since its directory is the account's alone and a file a person
-     * writes by hand takes the mode of their editor.
+     * Reads an item file judged on its open descriptor; its mode is not asked, since its directory
+     * is the account's alone and a file a person writes by hand takes the mode of their editor.
      */
     @Override
-    public void requireItemFile(final Path file) {
-        try {
-            final BasicFileAttributes attributes =
-                    Files.readAttributes(
-                            file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-            if (!attributes.isRegularFile()) {
-                throw new IllegalStateException(file + " is not a file, or is a link");
-            }
-            final int owner =
-                    (Integer) Files.getAttribute(file, "unix:uid", LinkOption.NOFOLLOW_LINKS);
-            if (owner != ownUid()) {
-                throw new IllegalStateException(file + " belongs to another account");
-            }
-            final int names =
-                    ((Number) Files.getAttribute(file, "unix:nlink", LinkOption.NOFOLLOW_LINKS))
-                            .intValue();
-            if (names != 1) {
-                throw new IllegalStateException(file + " has a second name");
-            }
-        } catch (final IOException e) {
-            throw new UncheckedIOException(file + " cannot be checked: " + e.getMessage(), e);
-        }
+    public byte[] readItemFile(final Path file, final int most) throws IOException {
+        return LinuxFiles.read(file, most);
     }
 
     @Override

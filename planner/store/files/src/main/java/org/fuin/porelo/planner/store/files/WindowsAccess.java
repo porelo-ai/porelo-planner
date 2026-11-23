@@ -300,11 +300,29 @@ public record WindowsAccess(String self, List<WindowsAccess.Entry> paths) {
      * @throws IllegalStateException when another account could change it
      */
     public void requireSafeProgram(final Object path, final int index) {
-        final Entry entry = paths.get(index);
+        requireUnchangeable(path, paths.get(index), true);
+    }
+
+    /**
+     * Refuses an item file a person placed that another account could have written or could change:
+     * a reparse point or a directory, an owner other than the account, SYSTEM or Administrators, or
+     * an entry, inherited or not, that lets anyone else write, delete, re-permission or take it.
+     * Reading by others is no harm to the planner and is let be.
+     *
+     * @param path the path, for the refusal's words
+     * @param index its place in the answer
+     * @throws IllegalStateException when another account could change it
+     */
+    public void requireOwnItem(final Object path, final int index) {
+        requireUnchangeable(path, paths.get(index), false);
+    }
+
+    private void requireUnchangeable(
+            final Object path, final Entry entry, final boolean installer) {
         if (entry.reparse() || entry.directory()) {
             throw new IllegalStateException(path + " is not a file, or is a link or junction");
         }
-        if (!trusted(entry.owner()) && !entry.owner().equals(TRUSTED_INSTALLER)) {
+        if (!trusted(entry.owner()) && !(installer && entry.owner().equals(TRUSTED_INSTALLER))) {
             throw new IllegalStateException(
                     path
                             + " belongs to "
@@ -315,7 +333,7 @@ public record WindowsAccess(String self, List<WindowsAccess.Entry> paths) {
             if (ace.allow()
                     && !ace.inheritOnly()
                     && !trusted(ace.sid())
-                    && !ace.sid().equals(TRUSTED_INSTALLER)
+                    && !(installer && ace.sid().equals(TRUSTED_INSTALLER))
                     && (ace.rights() & CHANGES_FILE) != 0) {
                 throw new IllegalStateException(
                         path + " lets " + ace.sid() + " write, delete or re-permission it");

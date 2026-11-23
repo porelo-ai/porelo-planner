@@ -103,5 +103,10 @@ class StartRequestsTest {
         public void requireOwnFile(final Path file, final boolean alone) {
             throw new IllegalStateException("not asked here");
         }
+
+        @Override
+        public byte[] readItemFile(final Path file, final int most) {
+            throw new IllegalStateException("not asked here");
+        }
     }
 }

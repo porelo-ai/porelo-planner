@@ -661,6 +661,44 @@ class LocalDirectoryStoreTest {
     }
 
     @Test
+    void aPipeSwappedInForAnItemFileAfterItWasListedIsLeftOutAtOnce() throws Exception {
+        // Harm: a named pipe put in an item file's place between the look at it and its read
+        // blocks the read until a writer comes, holding the project's lock, so no poll or save of
+        // the project ever ends.
+        final HookedFiles hooked = new HookedFiles();
+        final LocalDirectoryStore store = store(hooked);
+        issue(store);
+        issue(store);
+        final Path file = items.resolve("engine-2.md");
+        hooked.beforeReadOf(
+                "engine-2.md",
+                () -> {
+                    Files.delete(file);
+                    if (new ProcessBuilder("mkfifo", file.toString()).start().waitFor() != 0) {
+                        throw new IllegalStateException("the pipe could not be made");
+                    }
+                });
+        final java.util.concurrent.CompletableFuture<Board> polled =
+                java.util.concurrent.CompletableFuture.supplyAsync(
+                        store::poll,
+                        run -> {
+                            final Thread thread = new Thread(run, "poll");
+                            thread.setDaemon(true);
+                            thread.start();
+                        });
+        try {
+            final Board read = polled.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(read.issue("engine#2")).as("the pipe is no item").isEmpty();
+            assertThat(read.issue("engine#1")).as("the others are read").isPresent();
+        } finally {
+            if (!polled.isDone()) {
+                // The reader hung on the pipe is let go by a writer that comes and goes.
+                Files.newOutputStream(file).close();
+            }
+        }
+    }
+
+    @Test
     void aFileGoneOrChangedWhileReadIsLeftOutOfThatReadAlone() throws Exception {
         // Harm: an editor saving a file while the board is polled makes the item a fault or the
         // whole project unreadable.
@@ -668,7 +706,7 @@ class LocalDirectoryStoreTest {
         final LocalDirectoryStore store = store(hooked);
         issue(store);
         issue(store);
-        hooked.afterCheckOf("engine-2.md", () -> Files.delete(items.resolve("engine-2.md")));
+        hooked.beforeReadOf("engine-2.md", () -> Files.delete(items.resolve("engine-2.md")));
         final Board gone = store.poll();
         assertThat(gone.issue("engine#2")).as("the vanished file is no item").isEmpty();
         assertThat(gone.issue("engine#1")).as("the others are read").isPresent();
@@ -676,7 +714,7 @@ class LocalDirectoryStoreTest {
 
         final Path file = items.resolve("engine-1.md");
         final String text = Files.readString(file);
-        hooked.afterCheckOf(
+        hooked.beforeReadOf(
                 "engine-1.md",
                 () -> Files.writeString(file, text.replace("Keep the data", "Keep all data")));
         final Board changing = store.poll();
@@ -791,7 +829,7 @@ class LocalDirectoryStoreTest {
         final LocalDirectoryStore store = store(hooked);
         issue(store);
         final Board shown = store.board();
-        hooked.afterCheckOf(
+        hooked.beforeReadOf(
                 "engine-1.md",
                 () -> Files.writeString(items.resolve("engine-2.md"), "written by hand"));
 

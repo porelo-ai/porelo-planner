@@ -2,16 +2,81 @@ package org.fuin.porelo.planner.store.files;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 /** The lock of one project's clones, as two stores of one project in one process take it. */
 class FileProjectLockTest {
 
+    /** Each call on a thread of its own that never keeps the test's process alive. */
+    private static final Executor DAEMON =
+            run -> {
+                final Thread thread = new Thread(run, "lock-taker");
+                thread.setDaemon(true);
+                thread.start();
+            };
+
     @TempDir Path dir;
+
+    @Test
+    @Tag("linux")
+    @EnabledOnOs(OS.LINUX)
+    void aPipeInPlaceOfTheLockFileIsRefusedAtOnceAndNeverWaitedOn() throws Exception {
+        // Harm: a named pipe put where the lock file belongs blocks its open until a reader comes,
+        // past every bound, and with it every save of the project.
+        final Path lock = dir.resolve("lock");
+        assertThat(new ProcessBuilder("mkfifo", lock.toString()).start().waitFor())
+                .as("the pipe is made")
+                .isZero();
+        final CompletableFuture<Throwable> bounded =
+                CompletableFuture.supplyAsync(
+                        () ->
+                                refusal(
+                                        () ->
+                                                new FileProjectLock(dir)
+                                                        .acquire(Duration.ofSeconds(1))),
+                        DAEMON);
+        try {
+            assertThat(bounded.get(5, TimeUnit.SECONDS))
+                    .as("the bounded wait is refused, not left waiting on the pipe")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("is not a regular file");
+            assertThat(
+                            CompletableFuture.supplyAsync(
+                                            () -> refusal(() -> new FileProjectLock(dir).acquire()),
+                                            DAEMON)
+                                    .get(5, TimeUnit.SECONDS))
+                    .as("the wait without bound is refused as well")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("is not a regular file");
+        } finally {
+            if (!bounded.isDone()) {
+                // The writer hung on the pipe is let go by a reader that comes and goes.
+                try (FileChannel reader = FileChannel.open(lock, StandardOpenOption.READ)) {
+                    bounded.get(5, TimeUnit.SECONDS);
+                }
+            }
+        }
+    }
+
+    private static Throwable refusal(final Callable<?> taking) {
+        try {
+            return new AssertionError("taken: " + taking.call());
+        } catch (final Exception e) {
+            return e;
+        }
+    }
 
     @Test
     @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.LINUX)
@@ -66,12 +131,23 @@ class FileProjectLockTest {
     void aBoundedWaitGivesUpWhileAnotherProcessHoldsTheProjectAndTakesItOnceFree()
             throws Exception {
         // A save waiting without bound on a hung fetch would hang the window's call with it.
+        heldElsewhere(ProjectLockHolder.class);
+    }
+
+    @Test
+    void aLockJavasOwnFileLockHoldsKeepsTheProjectToItsHolder() throws Exception {
+        // Harm: a planner that locks as Java's own file lock does and one that does not both take
+        // the project at once, and one's save is lost under the other's.
+        heldElsewhere(ChannelLockHolder.class);
+    }
+
+    private void heldElsewhere(final Class<?> holder) throws Exception {
         final Process other =
                 new ProcessBuilder(
                                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                                 "-cp",
                                 System.getProperty("java.class.path"),
-                                ProjectLockHolder.class.getName(),
+                                holder.getName(),
                                 dir.toString())
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start();
