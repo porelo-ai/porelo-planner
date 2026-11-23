@@ -3892,7 +3892,11 @@
       "warnings" : [ {
         "kind" : "StateOutsideWorkflow",
         "text" : "Its state is none of the workflow's states, so no work starts on it.",
-        "holds" : true
+        "holds" : true,
+        "correction" : {
+          "kind" : "Move",
+          "states" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
+        }
       } ]
     }, {
       "id" : "B871",
@@ -3914,7 +3918,8 @@
       "warnings" : [ {
         "kind" : "UnknownPriority",
         "text" : "Its priority is none the planner knows, so it is sorted as Medium.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B872",
@@ -3936,8 +3941,9 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "IdTwice",
-        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
-        "holds" : true
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed by hand; it is kept in issues/B872-An-issue-whose-id-stands-twice.md of porelo and issues/B872-The-other-issue-whose-id-stands-twice.md of porelo-host.",
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B872",
@@ -3959,8 +3965,9 @@
       "attention" : "NONE",
       "warnings" : [ {
         "kind" : "IdTwice",
-        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed.",
-        "holds" : true
+        "text" : "Its id names another item too, so it can be neither worked nor moved until one id is changed by hand; it is kept in issues/B872-An-issue-whose-id-stands-twice.md of porelo and issues/B872-The-other-issue-whose-id-stands-twice.md of porelo-host.",
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B873",
@@ -3983,7 +3990,8 @@
       "warnings" : [ {
         "kind" : "ParentOutsideProject",
         "text" : "Its parent is outside the project and is not shown.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B874",
@@ -4006,7 +4014,8 @@
       "warnings" : [ {
         "kind" : "BlockerOutsideProject",
         "text" : "An issue it waits on is outside the project and is not shown.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B875",
@@ -4029,7 +4038,8 @@
       "warnings" : [ {
         "kind" : "WrongParent",
         "text" : "It stands under another parent than its id names.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B876",
@@ -4052,7 +4062,8 @@
       "warnings" : [ {
         "kind" : "BodyNotSectioned",
         "text" : "Its text has no sections the planner can read; it is shown as it stands.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B877",
@@ -4075,7 +4086,8 @@
       "warnings" : [ {
         "kind" : "StoryOutsideOwnRepository",
         "text" : "It is marked a story outside the repository that holds the stories, so it is shown as an issue and no work starts on it.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B878",
@@ -4098,7 +4110,8 @@
       "warnings" : [ {
         "kind" : "ParentInOtherRepository",
         "text" : "Its parent is in another repository, so it is shown without its parent.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B879",
@@ -4121,7 +4134,8 @@
       "warnings" : [ {
         "kind" : "BlockedByStory",
         "text" : "It is blocked by a story, which only an issue can block, so it is shown without that blocker.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B880",
@@ -4144,7 +4158,8 @@
       "warnings" : [ {
         "kind" : "ParentCircle",
         "text" : "Its parents lead back to it, so it is shown without its parent.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B881",
@@ -4167,7 +4182,8 @@
       "warnings" : [ {
         "kind" : "SubIssueOfSubIssue",
         "text" : "Its parent is a sub-issue itself, which the board cannot hold, so it is shown without its parent.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B882",
@@ -4190,7 +4206,8 @@
       "warnings" : [ {
         "kind" : "PastOnePage",
         "text" : "It has more sub-issues, blockers, labels or field values than one page carries, so it is shown as far as it was read.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B883",
@@ -4213,7 +4230,8 @@
       "warnings" : [ {
         "kind" : "DependsOnUnplaced",
         "text" : "An issue it stands under or waits on is not placed on the board, so it is shown without that link.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B884",
@@ -4236,7 +4254,8 @@
       "warnings" : [ {
         "kind" : "BodyTooLong",
         "text" : "Its text is longer than GitHub takes, so it is shown without it.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B885",
@@ -4259,7 +4278,8 @@
       "warnings" : [ {
         "kind" : "UnknownSize",
         "text" : "Its size is none the planner knows, so it is shown without one.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B886",
@@ -4282,7 +4302,8 @@
       "warnings" : [ {
         "kind" : "UnreadableNumber",
         "text" : "Its field Minutes holds no number in the range the planner reads, so the board counts it as none and saves no stage over it.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B887",
@@ -4305,7 +4326,8 @@
       "warnings" : [ {
         "kind" : "ClosedUnderOpenState",
         "text" : "It is closed on GitHub while its state is an open one, so no work starts on it; the board goes by its state, and only a move out of a closed state reopens it.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B888",
@@ -4328,7 +4350,8 @@
       "warnings" : [ {
         "kind" : "OpenUnderClosedState",
         "text" : "It is open on GitHub while its state is a closed one; the board goes by its state.",
-        "holds" : false
+        "holds" : false,
+        "correction" : null
       } ]
     }, {
       "id" : "B889",
@@ -4351,7 +4374,8 @@
       "warnings" : [ {
         "kind" : "UnknownWorker",
         "text" : "Its worker is none the planner knows, so no work starts on it until one it knows is set.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B890",
@@ -4374,7 +4398,8 @@
       "warnings" : [ {
         "kind" : "UnknownRisk",
         "text" : "Its risk is none the planner knows, so no work starts on it until one it knows is set.",
-        "holds" : true
+        "holds" : true,
+        "correction" : null
       } ]
     }, {
       "id" : "B889.1",
@@ -4469,7 +4494,11 @@
     "warnings" : [ {
       "kind" : "NoState",
       "text" : "No state can be told for it: it states none, and its issues give none.",
-      "holds" : true
+      "holds" : true,
+      "correction" : {
+        "kind" : "StateStated",
+        "states" : [ "Idea", "Accepted", "Analyzed", "Estimated", "Backlog", "Review", "Rework" ]
+      }
     } ]
   }, {
     "id" : "ST298",
@@ -4486,8 +4515,9 @@
     "open" : null,
     "warnings" : [ {
       "kind" : "IssueOutsideProject",
-      "text" : "It names an issue that is no issue of the project's repositories, which is not shown.",
-      "holds" : false
+      "text" : "It names an issue that is no issue of the project's repositories, which is not shown; it is set right by hand in stories/ST298-A-story-naming-an-issue-outside-the-project.md of porelo-project.",
+      "holds" : false,
+      "correction" : null
     } ]
   }, {
     "id" : "ST299",
@@ -4505,15 +4535,18 @@
     "warnings" : [ {
       "kind" : "StoryUnderIssue",
       "text" : "It stands under an issue, which a story never does, so it is shown without it.",
-      "holds" : false
+      "holds" : false,
+      "correction" : null
     }, {
       "kind" : "AlsoNeedsNotOnBoard",
       "text" : "A line under Also needs names no issue the board shows, so it is shown without it.",
-      "holds" : false
+      "holds" : false,
+      "correction" : null
     }, {
       "kind" : "NoPriority",
       "text" : "It has no priority, so it is sorted as Medium.",
-      "holds" : false
+      "holds" : false,
+      "correction" : null
     } ]
   } ],
   "unlisted" : [ ],
