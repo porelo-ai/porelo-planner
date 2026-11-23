@@ -32,6 +32,7 @@ import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -301,7 +302,12 @@ class GitHubStoreHeldTest {
         final ProjectWrites recorded = touched.recording(writes(github));
         if (github.recentIssues) {
             return new FieldsBoardWriter(
-                    recorded, origin -> TOKEN, AccessRefusals.DEFAULT, () -> SAVED, duration -> {});
+                    recorded,
+                    origin -> TOKEN,
+                    AccessRefusals.DEFAULT,
+                    () -> SAVED,
+                    duration -> {},
+                    LimitFactors.DEFAULT);
         }
         return new BoardWriter() {
             @Override

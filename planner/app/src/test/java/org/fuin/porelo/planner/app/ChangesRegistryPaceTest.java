@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.util.List;
@@ -14,6 +15,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.Test;
 
 /** A followed project is polled at the wait its store names, and a person's reload still asks. */
@@ -294,12 +296,79 @@ class ChangesRegistryPaceTest {
     }
 
     @Test
+    void theConfiguredIntervalsFollowThePollingFactor() throws Exception {
+        // Harm: a person who set polling=2.0 to spare a slow machine still polled at the default
+        // intervals.
+        final java.util.concurrent.BlockingQueue<List<Duration>> asked =
+                new java.util.concurrent.LinkedBlockingQueue<>();
+        final PlanningStore store =
+                new PlanningStore() {
+                    @Override
+                    public Board board() {
+                        return boardAt("one");
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        return boardAt("one");
+                    }
+
+                    @Override
+                    public Duration pollDelay(final Duration fetched, final Duration probed) {
+                        asked.add(List.of(fetched, probed));
+                        return Duration.ofHours(1);
+                    }
+                };
+        final Projects projects = new Projects((project, repository, branch) -> store, 8);
+        try (ChangesRegistry registry =
+                new StoreConfiguration()
+                        .changesRegistry(
+                                projects,
+                                Duration.ofMinutes(3),
+                                Duration.ofSeconds(30),
+                                factors(LimitFactors.parse("polling=2.0")))) {
+            projects.put("alpha", "one", null);
+            final Changes.Subscription one = registry.subscribe("alpha");
+
+            assertThat(asked.poll(5, TimeUnit.SECONDS))
+                    .as("the intervals the store's wait is asked with")
+                    .containsExactly(Duration.ofMinutes(6), Duration.ofMinutes(1));
+            one.close();
+        }
+    }
+
+    @Test
+    void anIntervalOfZeroIsRefusedAtStart() {
+        // Harm: a property of zero polling every project without a pause.
+        final Projects projects = new Projects((project, repository, branch) -> fetching(), 8);
+
+        assertThatThrownBy(
+                        () ->
+                                new StoreConfiguration()
+                                        .changesRegistry(
+                                                projects,
+                                                Duration.ZERO,
+                                                Duration.ofSeconds(30),
+                                                factors(LimitFactors.DEFAULT)))
+                .as("a poll interval of zero")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("planner.poll-interval");
+    }
+
+    private static org.springframework.beans.factory.ObjectProvider<LimitFactors> factors(
+            final LimitFactors limits) {
+        return new org.springframework.beans.factory.support.StaticListableBeanFactory(
+                        Map.of("limitFactors", limits))
+                .getBeanProvider(LimitFactors.class);
+    }
+
+    @Test
     void aWaitTooLongForMillisecondsIsClampedToADay() {
         // Harm: a store naming an endless wait overflows the scheduler's milliseconds, and its
         // project is never polled again.
         final Duration endless = Duration.ofSeconds(Long.MAX_VALUE);
 
-        assertThat(ChangesRegistry.clamped(endless).toMillis())
+        assertThat(ChangesRegistry.clamped(endless, ChangesRegistry.LONGEST_WAIT).toMillis())
                 .as("the wait taken, in milliseconds")
                 .isEqualTo(ChangesRegistry.LONGEST_WAIT.toMillis());
     }

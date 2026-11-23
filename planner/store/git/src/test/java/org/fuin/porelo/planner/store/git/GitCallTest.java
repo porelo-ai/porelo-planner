@@ -136,8 +136,9 @@ class GitCallTest {
                         key + ".helper=",
                         "-c",
                         key
-                                + ".helper=!'/opt/porelo/bin/porelo' vault credential --for"
-                                + " 'https://forge.example.org/team/store.git'",
+                                + ".helper=!'/opt/porelo/bin/porelo' --limits"
+                                + " services=1.0,machines=1.0,polling=1.0,retries=1.0 vault"
+                                + " credential --for 'https://forge.example.org/team/store.git'",
                         "-c",
                         key + ".useHttpPath=true",
                         "-c",

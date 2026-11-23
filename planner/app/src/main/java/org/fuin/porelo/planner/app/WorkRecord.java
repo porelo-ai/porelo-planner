@@ -36,6 +36,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +72,7 @@ public final class WorkRecord implements AutoCloseable {
     private final PrivateFiles files;
     private final boolean memory;
     private final Replace replace;
+    private final LimitFactors limits;
     private final LocalPaths paths;
     private final Map<String, Entry> entries = new HashMap<>();
 
@@ -95,6 +97,18 @@ public final class WorkRecord implements AutoCloseable {
     /** Keeps records with the given platform's private files. */
     WorkRecord(
             final Map<String, String> environment, final boolean memory, final PrivateFiles files) {
+        this(environment, memory, files, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Keeps records with the given platform's private files, a refused replacement tried as often
+     * as the factor {@code retries} of the planner's factors says.
+     */
+    WorkRecord(
+            final Map<String, String> environment,
+            final boolean memory,
+            final PrivateFiles files,
+            final LimitFactors limits) {
         this(
                 environment,
                 memory,
@@ -104,7 +118,8 @@ public final class WorkRecord implements AutoCloseable {
                                 written,
                                 target,
                                 StandardCopyOption.ATOMIC_MOVE,
-                                StandardCopyOption.REPLACE_EXISTING));
+                                StandardCopyOption.REPLACE_EXISTING),
+                limits);
     }
 
     /** Keeps records with the given private files, replacing a record as told. */
@@ -113,11 +128,27 @@ public final class WorkRecord implements AutoCloseable {
             final boolean memory,
             final PrivateFiles files,
             final Replace replace) {
+        this(environment, memory, files, replace, LimitFactors.DEFAULT);
+    }
+
+    /** Keeps records with the given private files and factors, replacing a record as told. */
+    WorkRecord(
+            final Map<String, String> environment,
+            final boolean memory,
+            final PrivateFiles files,
+            final Replace replace,
+            final LimitFactors limits) {
         this.environment = Map.copyOf(environment);
         this.memory = memory;
         this.files = files;
         this.replace = replace;
+        this.limits = limits;
         this.paths = LocalPaths.of(environment, files.windows());
+    }
+
+    /** The factors a refused replacement of a record follows. */
+    LimitFactors limits() {
+        return limits;
     }
 
     /** The versioned on-disk envelope binds runs to their planning source. */
@@ -674,7 +705,7 @@ public final class WorkRecord implements AutoCloseable {
                 }
                 final Path written = temporary;
                 step = "The work record cannot be put in place";
-                SharedFiles.whileShared(() -> replace.move(written, target));
+                SharedFiles.whileShared(() -> replace.move(written, target), limits);
                 temporary = null;
                 // Windows opens no directory as a file; its move is durable once it returns.
                 if (!files.windows()) {

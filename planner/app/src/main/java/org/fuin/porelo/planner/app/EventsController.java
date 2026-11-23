@@ -58,13 +58,14 @@ public class EventsController {
      * Makes the controller.
      *
      * @param changes the projects followed
-     * @param keepAlive how long the stream may be silent before it sends a keep-alive comment
+     * @param keepAlive how long the stream may be silent before it sends a keep-alive comment;
+     *     refused when it is zero or less
      */
     public EventsController(
             final ChangesRegistry changes,
             @Value("${planner.keep-alive:15s}") final Duration keepAlive) {
         this.changes = changes;
-        this.keepAlive = keepAlive;
+        this.keepAlive = StoreConfiguration.positive("planner.keep-alive", keepAlive);
     }
 
     /**

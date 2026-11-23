@@ -10,6 +10,7 @@ import '../hooks.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../planning_detail.dart';
+import '../planning_limits.dart';
 import '../story_work.dart';
 import '../story_work_order.dart';
 import 'actions.dart';
@@ -95,8 +96,12 @@ class PlanningScreen extends StatelessWidget {
     this.wizards,
     this.pageButton,
     this.pageNote,
+    this.limits,
     super.key,
   });
+
+  /// The factors the screen's own limits follow, the shown board's when null.
+  final PlanningLimits? limits;
 
   /// The window's own words for the page, such as a first visit's explanation, shown under the board's head row and
   /// under a story's or an issue's breadcrumb; none when null.
@@ -211,6 +216,7 @@ class PlanningScreen extends StatelessWidget {
               ),
               PlanningView.openWork => PlanningOpenWorkView(
                 key: ObjectKey(board),
+                limits: limits ?? board.limits,
                 pageButton: place.story == null ? pageButton : null,
                 pageNote: place.story == null ? pageNote : null,
                 board: board,

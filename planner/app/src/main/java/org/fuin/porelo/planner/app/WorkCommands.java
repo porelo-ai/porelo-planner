@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.store.git.stories.IssuesIndex;
 import org.fuin.porelo.planner.store.git.stories.Project;
 import org.fuin.porelo.planner.store.git.stories.StageCommand;
 import org.fuin.porelo.planner.store.git.stories.StoriesIndex;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * The work tools a repository's build runs: its issues and stories indexed and checked, and a
@@ -58,13 +59,20 @@ final class WorkCommands {
             "stories index <dir> | stories check <dir>"
                     + " | stories cut <version> <dir> --after <yyyy-mm-dd>";
 
+    /** How long one git call may run, before the factor {@code machines}. */
+    private static final java.time.Duration GIT_LIMIT = java.time.Duration.ofSeconds(60);
+
     private final PrintStream out;
 
     private final PrintStream err;
 
-    private WorkCommands(final PrintStream out, final PrintStream err) {
+    /** The factors the commands' time limits follow. */
+    private final LimitFactors limits;
+
+    private WorkCommands(final PrintStream out, final PrintStream err, final LimitFactors limits) {
         this.out = out;
         this.err = err;
+        this.limits = limits;
     }
 
     /**
@@ -79,7 +87,7 @@ final class WorkCommands {
     }
 
     /**
-     * Runs a work tool.
+     * Runs a work tool with every limit at its default.
      *
      * @param args the command line, its first argument one of the work commands' names
      * @param out where an answer goes
@@ -87,7 +95,25 @@ final class WorkCommands {
      * @return the exit code: 0, {@value #REFUSED} or {@value #UNANSWERED}
      */
     static int run(final List<String> args, final PrintStream out, final PrintStream err) {
-        final WorkCommands commands = new WorkCommands(out, err);
+        return run(args, out, err, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Runs a work tool.
+     *
+     * @param args the command line after the limits line, its first argument one of the work
+     *     commands' names
+     * @param out where an answer goes
+     * @param err where each fault and every failure goes
+     * @param limits the factors the commands' time limits follow
+     * @return the exit code: 0, {@value #REFUSED} or {@value #UNANSWERED}
+     */
+    static int run(
+            final List<String> args,
+            final PrintStream out,
+            final PrintStream err,
+            final LimitFactors limits) {
+        final WorkCommands commands = new WorkCommands(out, err, limits);
         try {
             final List<String> rest = args.subList(1, args.size());
             return switch (args.getFirst()) {
@@ -128,14 +154,14 @@ final class WorkCommands {
         if (event) {
             if (positional != 0 || outside) return usage(COMMITS);
             final Map<String, String> environment = System.getenv();
-            return said((sayer, faulter) -> checkEvent(environment, here, sayer, faulter));
+            return said((sayer, faulter) -> checkEvent(environment, here, sayer, faulter, limits));
         }
         if (positional != 1 || range == null) return usage(COMMITS);
         final String checked = range;
         final boolean fromOutside = outside;
         return said(
                 (sayer, faulter) ->
-                        new CommitRules(sayer, faulter, CommitRules.Git.in(here, Map.of()))
+                        new CommitRules(sayer, faulter, CommitRules.Git.in(here, Map.of(), limits))
                                 .check(checked, fromOutside));
     }
 
@@ -148,6 +174,7 @@ final class WorkCommands {
      * @param here the repository's root
      * @param out where the result goes
      * @param err where a refusal goes
+     * @param limits the factors the git calls' limits follow
      * @return as a range's check; {@value #REFUSED} when the event names no range, {@value
      *     #UNANSWERED} when it cannot be read
      */
@@ -155,7 +182,8 @@ final class WorkCommands {
             final Map<String, String> environment,
             final Path here,
             final PrintStream out,
-            final PrintStream err) {
+            final PrintStream err,
+            final LimitFactors limits) {
         final String path = environment.get("GITHUB_EVENT_PATH");
         if (path == null || path.isBlank()) {
             err.println(
@@ -169,7 +197,7 @@ final class WorkCommands {
                             GitHubEvent.read(
                                     environment,
                                     Files.readString(Path.of(path), StandardCharsets.UTF_8)),
-                            hash -> holds(here, hash));
+                            hash -> holds(here, hash, limits.machines(GIT_LIMIT)));
         } catch (IOException ex) {
             err.println("could not read the event: " + ex.getMessage());
             return UNANSWERED;
@@ -181,7 +209,7 @@ final class WorkCommands {
                 "NOTE  the event's commits: "
                         + decided.range()
                         + (decided.outside() ? ", from outside" : ", from inside"));
-        return new CommitRules(out, err, CommitRules.Git.in(here, Map.of()))
+        return new CommitRules(out, err, CommitRules.Git.in(here, Map.of(), limits))
                 .check(decided.range(), decided.outside());
     }
 
@@ -190,9 +218,11 @@ final class WorkCommands {
      *
      * @param here the repository's root
      * @param hash a full commit hash, never an option
+     * @param limit how long git may take
      * @return true when git finds that commit
      */
-    private static boolean holds(final Path here, final String hash) {
+    private static boolean holds(
+            final Path here, final String hash, final java.time.Duration limit) {
         final ProcessBuilder builder =
                 new ProcessBuilder(
                                 "git", "-C", here.toString(), "cat-file", "-e", hash + "^{commit}")
@@ -201,7 +231,7 @@ final class WorkCommands {
         builder.environment().put("LC_ALL", "C");
         try {
             final Process git = builder.start();
-            if (!git.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)) {
+            if (!git.waitFor(limit.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 git.destroyForcibly();
                 return false;
             }
@@ -235,14 +265,15 @@ final class WorkCommands {
                         new PushRules(
                                         sayer,
                                         faulter,
-                                        PushRules.Activity.overHttp(),
+                                        PushRules.Activity.overHttp(limits),
                                         System.getenv(),
                                         java.time.Clock.systemUTC(),
                                         range ->
                                                 new CommitRules(
                                                                 sayer,
                                                                 faulter,
-                                                                CommitRules.Git.in(here, Map.of()))
+                                                                CommitRules.Git.in(
+                                                                        here, Map.of(), limits))
                                                         .check(range, false))
                                 .check(java.time.Duration.ofHours(hours)));
     }
@@ -256,7 +287,8 @@ final class WorkCommands {
                                         java.time.Clock.systemUTC(),
                                         sayer,
                                         faulter,
-                                        System.getenv())
+                                        System.getenv(),
+                                        limits)
                                 .run(rest));
     }
 

@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,6 +45,7 @@ public final class PoreloTaskRecords implements TaskRecords {
     static final List<String> PASSED =
             List.of("PATH", "HOME", "LANG", "XDG_STATE_HOME", "XDG_RUNTIME_DIR");
 
+    /** How long one run of Porelo may take, before the factor {@code services}. */
     private static final Duration LIMIT = Duration.ofSeconds(60);
 
     /**
@@ -103,17 +105,39 @@ public final class PoreloTaskRecords implements TaskRecords {
 
     private final Map<String, String> environment;
 
+    /** The factors handed on to Porelo before its verb. */
+    private final LimitFactors limits;
+
     /**
      * Runs Porelo's executable as a process of its own.
      *
      * @param executable the absolute path of Porelo's executable
      */
     public PoreloTaskRecords(final Path executable) {
-        this(executable, new ProcessRunner(LIMIT), System.getenv());
+        this(executable, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Runs Porelo's executable as a process of its own, handing it the factors and giving it as
+     * long as the factor {@code services} says.
+     *
+     * @param executable the absolute path of Porelo's executable
+     * @param limits the factors
+     */
+    public PoreloTaskRecords(final Path executable, final LimitFactors limits) {
+        this(executable, new ProcessRunner(limits.services(LIMIT)), System.getenv(), limits);
     }
 
     PoreloTaskRecords(
             final Path executable, final Runner runner, final Map<String, String> source) {
+        this(executable, runner, source, LimitFactors.DEFAULT);
+    }
+
+    PoreloTaskRecords(
+            final Path executable,
+            final Runner runner,
+            final Map<String, String> source,
+            final LimitFactors limits) {
         if (!executable.isAbsolute()) {
             throw new IllegalArgumentException(
                     "Porelo's executable must be given by an absolute path");
@@ -128,6 +152,7 @@ public final class PoreloTaskRecords implements TaskRecords {
             }
         }
         this.environment = Map.copyOf(passed);
+        this.limits = limits;
     }
 
     /**
@@ -143,6 +168,8 @@ public final class PoreloTaskRecords implements TaskRecords {
                 runner.run(
                         List.of(
                                 executable.toString(),
+                                LimitFactors.OPTION,
+                                limits.line(),
                                 "task",
                                 "records",
                                 "-p",

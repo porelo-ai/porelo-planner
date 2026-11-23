@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Worker;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -70,6 +71,8 @@ final class NewItems {
 
     private final Snapshot current;
 
+    private final LimitFactors limits;
+
     /** The pace of this write's calls, started when it writes with the person's token. */
     private @Nullable WritePace pace;
 
@@ -99,18 +102,21 @@ final class NewItems {
      * @param clock tells the time a call is sent at
      * @param sleeper waits between calls and before a call is made again
      * @param current the snapshot the store holds
+     * @param limits the factors a call's tries and their waits follow
      */
     NewItems(
             final ProjectWrites github,
             final AccessRefusals refusals,
             final InstantSource clock,
             final WritePace.Sleeper sleeper,
-            final Snapshot current) {
+            final Snapshot current,
+            final LimitFactors limits) {
         this.github = github;
         this.refusals = refusals;
         this.clock = clock;
         this.sleeper = sleeper;
         this.current = current;
+        this.limits = limits;
     }
 
     /**
@@ -432,7 +438,7 @@ final class NewItems {
             throw new StoreException.Unreadable(
                     current.config().own(), "the GitHub project's id was not read");
         }
-        pace = new WritePace(clock, sleeper, token);
+        pace = new WritePace(clock, sleeper, token, limits);
         return projectId;
     }
 

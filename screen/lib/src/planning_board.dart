@@ -6,6 +6,7 @@ import 'client.dart';
 import 'issue_filter.dart';
 import 'open_work_filter.dart';
 import 'models.dart';
+import 'planning_limits.dart';
 import 'hooks.dart';
 import 'run_attention.dart';
 import 'task_runs.dart';
@@ -148,17 +149,31 @@ class PlanningMoveQuestion {
 /// A project's board, replaced only by whole replies from its machine.
 class PlanningBoard extends ChangeNotifier {
   /// Starts a watch with independently retained view choices.
+  ///
+  /// [unansweredWait] and [readWait] are their defaults times [limits]' `services` unless given.
   PlanningBoard(
     this.backend,
     this.project, {
     PlanningPreferences? preferences,
-    // Past the planner's own bounds on a save: 30 s for the store's lock and a few Git calls of 60 s each.
-    this.unansweredWait = const Duration(minutes: 5),
-    // The planner's own bound on a read, which the HTTP source also keeps.
-    this.readWait = const Duration(seconds: 30),
-  }) : preferences = preferences ?? PlanningPreferences() {
+    this.limits = PlanningLimits.ones,
+    Duration? unansweredWait,
+    Duration? readWait,
+  }) : preferences = preferences ?? PlanningPreferences(),
+       unansweredWait = unansweredWait ?? limits.servicesOf(defaultUnansweredWait),
+       readWait = readWait ?? limits.servicesOf(defaultReadWait) {
     _listen();
   }
+
+  /// How long moves of a save answered too late wait by default, before the factor `services`: past the planner's
+  /// own bounds on a save, 30 s for the store's lock and a few Git calls of 60 s each.
+  static const defaultUnansweredWait = Duration(minutes: 5);
+
+  /// How long a read beside the moves may take by default, before the factor `services`: the planner's own bound on
+  /// a read, which the HTTP source also keeps.
+  static const defaultReadWait = Duration(seconds: 30);
+
+  /// The factors this board's limits follow.
+  final PlanningLimits limits;
 
   /// The machine supplying the board.
   PlanningSource backend;
@@ -2727,6 +2742,9 @@ class PlanningBoards extends ChangeNotifier {
   ///
   /// With [seen], the rows the person marked seen leave [needsYou] and each board's cards, following its changes.
   /// With [taskChanges], each board it makes can stop its running work before any planning screen was shown.
+  ///
+  /// Each board it makes follows the limits of its source when that is a [PlanningLimited], 1.0 otherwise, so a
+  /// source the window makes after its `Limits()` read reaches every board made from it.
   PlanningBoards(
     this.client, {
     PlanningStartTask? startTask,
@@ -2807,6 +2825,10 @@ class PlanningBoards extends ChangeNotifier {
         entry.value,
         entry.key.$2,
         preferences: _preferences.putIfAbsent(entry.key.$2, PlanningPreferences.new),
+        limits: switch (entry.value) {
+          PlanningLimited(:final limits) => limits,
+          _ => PlanningLimits.ones,
+        },
       );
       board.startHooks = startHooks;
       if (taskChanges case final changes?) board.taskChanges = changes;

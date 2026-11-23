@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -309,7 +310,8 @@ class GitHubStoreWriterFailureTest {
                         origin -> TOKEN,
                         AccessRefusals.DEFAULT,
                         () -> AT,
-                        duration -> {});
+                        duration -> {},
+                        LimitFactors.DEFAULT);
         return new GitHubStore(
                 CONFIG,
                 () -> CONFIG,

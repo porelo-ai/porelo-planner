@@ -15,6 +15,7 @@ import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,11 +121,13 @@ public final class GitHubStoreOpener implements TrackedStores {
                 executor,
                 clock,
                 lockWait,
-                ItemsBoardReader.DEADLINE);
+                ItemsBoardReader.DEADLINE,
+                LimitFactors.DEFAULT);
     }
 
     /**
-     * Makes the opener above with its own limit on GitHub's silence during a project's read.
+     * Makes the opener above with its own limit on GitHub's silence during a project's read, its
+     * other limits following the factors.
      *
      * @param tokens gives the person's token for the forge
      * @param queries the GraphQL reads of a project
@@ -137,6 +140,7 @@ public final class GitHubStoreOpener implements TrackedStores {
      * @param clock tells the time a wait of GitHub's ends by
      * @param lockWait how long a call waits for another on the same project
      * @param readSilence how long GitHub may leave a project's read without an answer
+     * @param limits the factors every other limit of a project's reads, writes and looks follows
      */
     public GitHubStoreOpener(
             final TokenSource tokens,
@@ -147,7 +151,8 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Executor executor,
             final InstantSource clock,
             final Duration lockWait,
-            final Duration readSilence) {
+            final Duration readSilence,
+            final LimitFactors limits) {
         this(
                 tokens,
                 queries,
@@ -155,9 +160,10 @@ public final class GitHubStoreOpener implements TrackedStores {
                 conditional,
                 issuePages,
                 executor,
-                new GitHubPace(clock),
+                new GitHubPace(clock, limits),
                 lockWait,
-                readSilence);
+                readSilence,
+                limits);
     }
 
     private GitHubStoreOpener(
@@ -169,7 +175,8 @@ public final class GitHubStoreOpener implements TrackedStores {
             final Executor executor,
             final GitHubPace pace,
             final Duration lockWait,
-            final Duration readSilence) {
+            final Duration readSilence,
+            final LimitFactors limits) {
         this(
                 tokens,
                 states ->
@@ -179,11 +186,15 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 states,
-                                readSilence),
+                                readSilence,
+                                limits),
                 touched ->
                         new FieldsBoardWriter(
-                                touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
-                () -> new ConditionalChangeProbe(conditional, tokens, pace, executor),
+                                touched.recording(writes),
+                                tokens,
+                                new ForgeAccessRefusals(GITHUB),
+                                limits),
+                () -> new ConditionalChangeProbe(conditional, tokens, pace, executor, limits),
                 lockWait,
                 executor,
                 null,

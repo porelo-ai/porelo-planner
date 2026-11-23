@@ -8,6 +8,7 @@ import java.util.Map;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.wire.LimitFactors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -57,6 +58,7 @@ public class AccessConfiguration {
      * @param logBase A base for the log directory instead of the platform's.
      * @param stateBase A base for the state directory instead of the platform's.
      * @param mode Present only in the mock mode, which makes none of these directories.
+     * @param limits The factors from the command line, which a Windows PowerShell call follows.
      * @return The files.
      */
     @Bean
@@ -65,9 +67,11 @@ public class AccessConfiguration {
                     final String runtimeDirectory,
             @Value("${planner.log.base:}") final String logBase,
             @Value("${planner.state.base:}") final String stateBase,
-            final ObjectProvider<MockMode> mode) {
+            final ObjectProvider<MockMode> mode,
+            final ObjectProvider<LimitFactors> limits) {
         final Map<String, String> environment = System.getenv();
-        final PrivateFiles files = PrivateFiles.of(environment);
+        final PrivateFiles files =
+                PrivateFiles.of(environment, limits.getIfAvailable(() -> LimitFactors.DEFAULT));
         if (!files.windows()) {
             return files;
         }
@@ -155,6 +159,7 @@ public class AccessConfiguration {
      * @param mode Present only in the mock mode, which never writes where the person's window
      *     looks.
      * @param files The start's files.
+     * @param limits The factors its refused file steps follow.
      * @return The address file, written once the server listens and deleted when the planner stops.
      */
     @Bean(destroyMethod = "close")
@@ -162,11 +167,16 @@ public class AccessConfiguration {
             @Value("${planner.runtime-directory:${XDG_RUNTIME_DIR:}}")
                     final String runtimeDirectory,
             final ObjectProvider<MockMode> mode,
-            final PrivateFiles files) {
+            final PrivateFiles files,
+            final ObjectProvider<LimitFactors> limits) {
         if (mode.getIfAvailable() != null) {
             AddressFile.requireApartFromTheAccount(runtimeDirectory, Path.of("/run/user"));
         }
-        return AddressFile.open(runtimeDirectory, Path.of("/run/user"), files);
+        return AddressFile.open(
+                runtimeDirectory,
+                Path.of("/run/user"),
+                files,
+                limits.getIfAvailable(() -> LimitFactors.DEFAULT));
     }
 
     /**

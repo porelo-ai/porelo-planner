@@ -32,7 +32,10 @@ class StoreConfigurationTest {
         // computer, since Fory makes a record the image does not reflect on in the JVM alone.
         final RegisterReflectionForBinding hints =
                 StoreConfiguration.class
-                        .getDeclaredMethod("gitProjects", java.time.Duration.class)
+                        .getDeclaredMethod(
+                                "gitProjects",
+                                java.time.Duration.class,
+                                org.springframework.beans.factory.ObjectProvider.class)
                         .getAnnotation(RegisterReflectionForBinding.class);
 
         assertThat(hints).as("the native hints").isNotNull();

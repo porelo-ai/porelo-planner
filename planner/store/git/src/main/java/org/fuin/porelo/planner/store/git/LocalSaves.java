@@ -16,6 +16,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -57,7 +58,10 @@ public final class LocalSaves {
         }
     }
 
-    /** How often a push the remote rejects is made again on its new commit. */
+    /**
+     * How often a push the remote rejects is made again on its new commit, before the factor {@code
+     * retries}.
+     */
     private static final int ATTEMPTS = 3;
 
     /** A story's or an issue's file, whose name carries a number each repository gives once. */
@@ -71,6 +75,9 @@ public final class LocalSaves {
     private final LocalRefs refs;
 
     private final Executor background;
+
+    /** How often a push the remote rejects is made in all. */
+    private final int attempts;
 
     /** Guards the refs: a save's commits and a push's moves of them never interleave. */
     private final Object refsMonitor = new Object();
@@ -98,6 +105,25 @@ public final class LocalSaves {
             final Remote remote,
             final LocalRefs refs,
             final Executor background) {
+        this(repositories, remote, refs, background, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes the saves of a project, a rejected push made again as often as the factor {@code
+     * retries} says.
+     *
+     * @param repositories the project's repositories, its own first
+     * @param remote fetches and pushes them
+     * @param refs holds the saves not yet pushed
+     * @param background runs the pushes
+     * @param limits the factors
+     */
+    public LocalSaves(
+            final List<Repository> repositories,
+            final Remote remote,
+            final LocalRefs refs,
+            final Executor background,
+            final LimitFactors limits) {
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project has at least its own repository");
         }
@@ -105,6 +131,7 @@ public final class LocalSaves {
         this.remote = remote;
         this.refs = refs;
         this.background = background;
+        this.attempts = limits.tries(ATTEMPTS);
     }
 
     /**
@@ -345,7 +372,7 @@ public final class LocalSaves {
     private boolean pushed(final Repository repository, final boolean last) {
         final String name = repository.name();
         try {
-            for (int attempt = 0; attempt < ATTEMPTS; attempt++) {
+            for (int attempt = 0; attempt < attempts; attempt++) {
                 final Optional<String> local;
                 final String base;
                 synchronized (refsMonitor) {
@@ -390,7 +417,7 @@ public final class LocalSaves {
                 }
                 return true;
             }
-            failed(name, "the remote moved again during each of " + ATTEMPTS + " pushes");
+            failed(name, "the remote moved again during each of " + attempts + " pushes");
             return false;
         } catch (final GitFailure e) {
             failed(name, String.valueOf(e.getMessage()));

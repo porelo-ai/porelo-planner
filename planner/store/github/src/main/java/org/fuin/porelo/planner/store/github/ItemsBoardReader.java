@@ -36,6 +36,7 @@ import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,12 +55,18 @@ public final class ItemsBoardReader implements BoardReader {
     /**
      * How often, a second apart, the item list is read again while it lacks an issue whose own
      * project items name the project: GitHub's list lags an add for a moment, and a person opening
-     * the board waits a few seconds at most for it.
+     * the board waits a few seconds at most for it. Before the factor {@code retries}.
      */
     static final int MOST_REREADS = 3;
 
-    /** The pause before each read again of the item list. */
+    /**
+     * The pause before each read again of the item list, and before a failed read is sent again,
+     * before the factor {@code retries}.
+     */
     static final Duration REREAD_PAUSE = Duration.ofSeconds(1);
+
+    /** How often a read that failed on GitHub's side or on the way is sent, before its factor. */
+    static final int READ_TRIES = 2;
 
     /** The most pages of items or fields one read takes; a project beyond them is not read. */
     static final int MOST_PAGES = 50;
@@ -127,11 +134,20 @@ public final class ItemsBoardReader implements BoardReader {
 
     private final Pause pause;
 
+    /** How often the item list is read again while it lacks an issue that names the project. */
+    private final int mostRereads;
+
+    /** The pause before the item list is read again, or a failed read is sent again. */
+    private final Duration rereadPause;
+
+    /** How often a read that failed on GitHub's side or on the way is sent in all. */
+    private final int readTries;
+
     /** The pages of each repository's open issues, or null when they are not read. */
     private final RepositoryIssues.@Nullable Pages issuePages;
 
     /** Each repository's open issues as last read, with the tags of their pages. */
-    private final RepositoryIssues unlisted = new RepositoryIssues();
+    private final RepositoryIssues unlisted;
 
     /** How far the whole read under way has come, or null while none runs. */
     private volatile org.fuin.porelo.planner.store.@Nullable ReadProgress progress;
@@ -178,6 +194,7 @@ public final class ItemsBoardReader implements BoardReader {
      * @param refusals turns a failure of a read into the store's refusal
      * @param states derives a story's state from its issues' when its {@code Status} is empty
      * @param silence how long GitHub may leave the project's read without an answer
+     * @param limits the factors the lists' deadline, the reads again and their pauses follow
      */
     public ItemsBoardReader(
             final ProjectQueries queries,
@@ -185,7 +202,8 @@ public final class ItemsBoardReader implements BoardReader {
             final TokenSource tokens,
             final AccessRefusals refusals,
             final StoryStates states,
-            final Duration silence) {
+            final Duration silence,
+            final LimitFactors limits) {
         this(
                 queries,
                 tokens,
@@ -194,7 +212,8 @@ public final class ItemsBoardReader implements BoardReader {
                 InstantSource.system(),
                 silence,
                 Thread::sleep,
-                issuePages);
+                issuePages,
+                limits);
     }
 
     /**
@@ -261,7 +280,47 @@ public final class ItemsBoardReader implements BoardReader {
             final Duration deadline,
             final Pause pause,
             final RepositoryIssues.@Nullable Pages issuePages) {
+        this(
+                queries,
+                tokens,
+                refusals,
+                states,
+                clock,
+                deadline,
+                pause,
+                issuePages,
+                LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes the reader with its own clock, deadline and pause, reading the open issues of the
+     * project's repositories when it is given their pages, its other limits following the factors.
+     *
+     * @param queries the project's reads
+     * @param tokens the person's token, asked for once a read
+     * @param refusals turns a failure of a read into the store's refusal
+     * @param states derives a story's state from its issues' when its {@code Status} is empty
+     * @param clock tells the time the deadlines are measured by
+     * @param deadline how long GitHub may leave the project's read without an answer
+     * @param pause waits before the item list is read again
+     * @param issuePages the pages of a repository's open issues, or null when none are read
+     * @param limits the factors the lists' deadline, the reads again and their pauses follow
+     */
+    ItemsBoardReader(
+            final ProjectQueries queries,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final InstantSource clock,
+            final Duration deadline,
+            final Pause pause,
+            final RepositoryIssues.@Nullable Pages issuePages,
+            final LimitFactors limits) {
         this.issuePages = issuePages;
+        this.unlisted = new RepositoryIssues(limits.services(RepositoryIssues.DEADLINE));
+        this.mostRereads = limits.tries(MOST_REREADS);
+        this.rereadPause = limits.retryPause(REREAD_PAUSE);
+        this.readTries = limits.tries(READ_TRIES);
         this.queries = queries;
         this.tokens = tokens;
         this.refusals = refusals;
@@ -356,7 +415,7 @@ public final class ItemsBoardReader implements BoardReader {
         ItemsRead current = items(call, read, fieldNames);
         final Set<String> lagging = onProject(call, read, current.missing());
         int reads = 1;
-        while (current.lacksAny(lagging) && reads <= MOST_REREADS) {
+        while (current.lacksAny(lagging) && reads <= mostRereads) {
             pause(config);
             current = items(call, read, fieldNames);
             reads++;
@@ -390,9 +449,8 @@ public final class ItemsBoardReader implements BoardReader {
         if (pages == null) {
             return List.of();
         }
-        // The lists' own deadline: a read sent once more never runs into the project's.
-        final Call call =
-                new Call(config, token, clock.instant().plus(RepositoryIssues.DEADLINE), true);
+        // The lists' own deadline: a read sent again never runs into the project's.
+        final Call call = new Call(config, token, clock.instant().plus(unlisted.deadline()), true);
         final String owner = config.project().owner();
         final RepositoryIssues.Read read =
                 unlisted.read(
@@ -1183,7 +1241,7 @@ public final class ItemsBoardReader implements BoardReader {
     /** Waits before the item list is read again; a read stopped while it waits is refused. */
     private void pause(final ProjectConfig config) {
         try {
-            pause.take(REREAD_PAUSE);
+            pause.take(rereadPause);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new StoreException.Unreachable(
@@ -1225,13 +1283,13 @@ public final class ItemsBoardReader implements BoardReader {
         /** Refuses the read once its deadline has passed. */
         void inTime() {
             if (lists && clock.instant().isAfter(until)) {
-                throw new RepositoryIssues.OutOfTime();
+                throw new RepositoryIssues.OutOfTime(unlisted.deadline());
             }
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(
                         config.own(),
                         "GitHub gave no answer to the project's read within "
-                                + deadline.toSeconds()
+                                + Seconds.of(deadline)
                                 + " s");
             }
         }
@@ -1254,7 +1312,8 @@ public final class ItemsBoardReader implements BoardReader {
         }
 
         /**
-         * Answers a read, sent once more after a failure on GitHub's side or on the way.
+         * Answers a read, sent again after a failure on GitHub's side or on the way, as often as
+         * the factor {@code retries} says.
          *
          * @param what the read, named for the log
          * @param read the read
@@ -1262,24 +1321,29 @@ public final class ItemsBoardReader implements BoardReader {
          *     back as GitHub gave it, for the caller to keep that repository's list
          */
         <T> T of(final String what, final Supplier<T> read, final boolean repositoryRefusals) {
-            inTime();
             try {
-                try {
-                    return answered(read.get());
-                } catch (final GitHubException e) {
-                    if (e.rateLimited() || (e.status() != 0 && e.status() < 500)) {
-                        throw e;
-                    }
-                    // A read changes nothing on GitHub, so one that failed on GitHub's side or on
-                    // the way is sent once more before it is answered as unreachable.
-                    LOG.warn(
-                            "GitHub's read of {} failed (HTTP {}, {}); it is sent once more",
-                            what,
-                            e.status(),
-                            e.delivery());
-                    pauseBeforeRetry();
+                for (int attempt = 1; ; attempt++) {
                     inTime();
-                    return answered(read.get());
+                    try {
+                        return answered(read.get());
+                    } catch (final GitHubException e) {
+                        if (attempt >= readTries
+                                || e.rateLimited()
+                                || (e.status() != 0 && e.status() < 500)) {
+                            throw e;
+                        }
+                        // A read changes nothing on GitHub, so one that failed on GitHub's side or
+                        // on the way is sent again before it is answered as unreachable.
+                        LOG.warn(
+                                "GitHub's read of {} failed (HTTP {}, {}); it is sent again, try {}"
+                                        + " of {}",
+                                what,
+                                e.status(),
+                                e.delivery(),
+                                attempt + 1,
+                                readTries);
+                        pauseBeforeRetry();
+                    }
                 }
             } catch (final StoreException
                     | UnsupportedOperationException
@@ -1306,10 +1370,10 @@ public final class ItemsBoardReader implements BoardReader {
             }
         }
 
-        /** Waits a second before a read is sent once more; a stopped wait sends it at once. */
+        /** Waits before a read is sent again; a stopped wait sends it at once. */
         private void pauseBeforeRetry() {
             try {
-                pause.take(REREAD_PAUSE);
+                pause.take(rereadPause);
             } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

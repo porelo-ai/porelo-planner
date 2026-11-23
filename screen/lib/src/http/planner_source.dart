@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../client.dart';
 import '../models.dart';
+import '../planning_limits.dart';
 import '../story_work_order.dart';
 import '../task_runs.dart';
 import '../work_reply.dart';
@@ -76,7 +77,8 @@ class PlannerAddress {
   /// On Windows, [windows] by default, the base is [runtimeDirectory], `LOCALAPPDATA` of [environment] when null, and
   /// the file is held to the planner's own rules there, as [WindowsAccess] states them: every directory from the
   /// drive's root down to the base safe from other accounts, the base, `porelo-planner` and `planner.json` the
-  /// account's alone. [access] answers the paths in [WindowsAccess]'s form, or null when it cannot.
+  /// account's alone. [access] answers the paths in [WindowsAccess]'s form, or null when it cannot; by default
+  /// [WindowsAccess.ask] does, and it and the read of the file are given as long as [limits]' `machines` says.
   static Future<PlannerAddress> read({
     String? runtimeDirectory,
     String runUser = '/run/user',
@@ -84,11 +86,18 @@ class PlannerAddress {
     Future<List<({int owner, int mode})>?> Function(List<String> paths) stat = _stat,
     bool? windows,
     Map<String, String>? environment,
-    Future<String?> Function(List<String> paths, String systemRoot) access = _windowsAccess,
+    Future<String?> Function(List<String> paths, String systemRoot)? access,
     Future<String?> Function(String path) realPath = _realPath,
+    PlanningLimits limits = PlanningLimits.ones,
   }) async {
     if (windows ?? Platform.isWindows) {
-      return _readOnWindows(runtimeDirectory, environment ?? Platform.environment, access, realPath);
+      return _readOnWindows(
+        runtimeDirectory,
+        environment ?? Platform.environment,
+        access ?? (paths, systemRoot) => WindowsAccess.ask(paths, systemRoot: systemRoot, limits: limits),
+        realPath,
+        limits.machinesOf(_windowsRead),
+      );
     }
     var runtime = runtimeDirectory ?? Platform.environment['XDG_RUNTIME_DIR'] ?? '';
     if (runtime.trim().isEmpty) {
@@ -132,6 +141,7 @@ class PlannerAddress {
     Map<String, String> environment,
     Future<String?> Function(List<String> paths, String systemRoot) access,
     Future<String?> Function(String path) realPath,
+    Duration readLimit,
   ) async {
     final base = runtimeDirectory ?? _variable(environment, 'LOCALAPPDATA');
     if (base.trim().isEmpty) {
@@ -176,11 +186,12 @@ class PlannerAddress {
     ].nonNulls;
     if (faults.isNotEmpty) throw PlanningRefusal('BadAddress', const {}, faults.first);
     return _readBounded(path).timeout(
-      _windowsRead,
+      readLimit,
       onTimeout: () => throw PlanningRefusal('NoAddress', const {}, 'no planner runs: $path was not read in time'),
     );
   }
 
+  /// How long the address file may take to read on Windows, before the factor `machines`.
   static const _windowsRead = Duration(seconds: 10);
 
   /// [path] with every link and substituted drive resolved, or null when it cannot be.
@@ -210,9 +221,6 @@ class PlannerAddress {
   }
 
   static final _drive = RegExp(r'^[A-Za-z]:(\\[^\\\x00-\x1f/:]+)+$');
-
-  static Future<String?> _windowsAccess(List<String> paths, String systemRoot) =>
-      WindowsAccess.ask(paths, systemRoot: systemRoot);
 
   /// Reads [path], refusing more than the planner ever writes.
   static Future<PlannerAddress> _readBounded(String path) async {
@@ -354,20 +362,27 @@ class PlannerAnswer {
 /// a [PlanningRefusal] named `NoAddress` or `BadAddress` when the address file cannot be trusted, `PlannerUnreachable`
 /// when nothing listens, `TimedOut` past [timeout], and `AnswerTooLarge` past [maxBody]; any other status is
 /// answered as it is.
+///
+/// [timeout], 30 s, and [proofTimeout], 60 s, are times [limits]' `services` unless given; the back-off after a
+/// failed proof follows its `retries`, and the address file's read its `machines`.
 Future<PlannerAnswer> callPlanner(
   String method,
   List<String> segments, {
   Map<String, Object?>? json,
   String? runtimeDirectory,
   Future<PlannerAddress> Function()? address,
-  Duration timeout = const Duration(seconds: 30),
-  Duration proofTimeout = const Duration(seconds: 60),
+  Duration? timeout,
+  Duration? proofTimeout,
   int maxBody = 1024 * 1024,
+  PlanningLimits limits = PlanningLimits.ones,
 }) async {
+  final limit = timeout ?? limits.servicesOf(HttpPlanningSource.defaultTimeout);
   final link = PlannerLink(
-    address ?? () => PlannerAddress.read(runtimeDirectory: runtimeDirectory),
-    timeout: timeout,
-    proofTimeout: proofTimeout,
+    address ?? () => PlannerAddress.read(runtimeDirectory: runtimeDirectory, limits: limits),
+    timeout: limit,
+    proofTimeout: proofTimeout ?? limits.servicesOf(HttpPlanningSource.defaultProofTimeout),
+    backoff: limits.retryPauseOf(HttpPlanningSource.defaultBackoff),
+    backoffMost: limits.retryPauseOf(HttpPlanningSource.defaultBackoffMost),
   );
   final body = json == null ? null : utf8.encode(jsonEncode(json));
   try {
@@ -397,7 +412,7 @@ Future<PlannerAnswer> callPlanner(
             }
           }
           return (response, bytes.takeBytes());
-        }().timeout(timeout);
+        }().timeout(limit);
         if (response.statusCode == HttpStatus.unauthorized) {
           if (sent == 0 && await link.refused(proven)) continue;
           throw PlannerNotProven(PlannerProofFailure.signatureRefused, proven.address.port);
@@ -415,7 +430,7 @@ Future<PlannerAnswer> callPlanner(
         throw PlanningRefusal(
           signed == null ? 'PlannerUnreachable' : 'TimedOut',
           const {},
-          'the planner did not answer within ${timeout.inSeconds} s',
+          'the planner did not answer within ${limit.inSeconds} s',
         );
       } on SocketException catch (error) {
         throw PlanningRefusal(
@@ -438,28 +453,37 @@ Future<PlannerAnswer> callPlanner(
 /// and again once when a read answers `NoSuchProject`, such as after the planner restarted. An
 /// `application/problem+json` answer arrives as a [PlanningRefusal] named after `urn:porelo-planner:`; what the
 /// planner does not offer yet - run reads, stops and reading decisions - as [PlanningUnsupported].
-class HttpPlanningSource extends ChangeNotifier implements PlanningSource, PlanningReconnect {
+class HttpPlanningSource extends ChangeNotifier implements PlanningSource, PlanningReconnect, PlanningLimited {
   /// Calls the planner at [base], a loopback `http` address, signing under [token]; [projects] names each project's
   /// repository.
   ///
   /// Before its first request, and again after a connection error, a timeout, a stream it opens again or a 401, it
   /// has the listener prove the token, waiting at most [proofTimeout]; [address], when given, reads the address
   /// anew for each proof, as [fromAddressFile] reads the address file, and [base] and [token] are only the first.
+  ///
+  /// Each limit not given is its default times its group's factor in [limits]: [timeout], [writeTimeout] and
+  /// [proofTimeout] follow `services`, [backoff] and [backoffMost] follow `retries`. [loadStale] and [silence] are
+  /// built on the planner's own fixed intervals and follow none.
   HttpPlanningSource(
     Uri base,
     String token,
     this.projects, {
     this.label = 'planner',
-    this.timeout = const Duration(seconds: 30),
-    this.writeTimeout = const Duration(minutes: 2),
+    this.limits = PlanningLimits.ones,
+    Duration? timeout,
+    Duration? writeTimeout,
     this.loadStale = const Duration(seconds: 20),
     this.maxBody = 16 * 1024 * 1024,
     this.silence = const Duration(seconds: 45),
-    this.backoff = const Duration(seconds: 1),
-    this.backoffMost = const Duration(seconds: 30),
-    Duration proofTimeout = const Duration(seconds: 60),
+    Duration? backoff,
+    Duration? backoffMost,
+    Duration? proofTimeout,
     Future<PlannerAddress> Function()? address,
-  }) : _first = base {
+  }) : _first = base,
+       timeout = timeout ?? limits.servicesOf(defaultTimeout),
+       writeTimeout = writeTimeout ?? limits.servicesOf(defaultWriteTimeout),
+       backoff = backoff ?? limits.retryPauseOf(defaultBackoff),
+       backoffMost = backoffMost ?? limits.retryPauseOf(defaultBackoffMost) {
     final host = InternetAddress.tryParse(base.host);
     final bare = base.userInfo.isEmpty && !base.hasQuery && !base.hasFragment && (base.path == '' || base.path == '/');
     if (base.scheme != 'http' || host == null || !host.isLoopback || !base.hasPort || !bare) {
@@ -472,33 +496,59 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     _link = PlannerLink(
       address ?? () async => fixed,
       host: base.host,
-      timeout: timeout,
-      proofTimeout: proofTimeout,
-      backoff: backoff,
-      backoffMost: backoffMost,
+      timeout: this.timeout,
+      proofTimeout: proofTimeout ?? limits.servicesOf(defaultProofTimeout),
+      backoff: this.backoff,
+      backoffMost: this.backoffMost,
     );
   }
 
-  /// Calls the planner whose address [address] gives.
-  factory HttpPlanningSource.at(PlannerAddress address, PlannerProjects projects, {String label = 'planner'}) =>
-      HttpPlanningSource(address.base, address.token, projects, label: label);
+  /// Calls the planner whose address [address] gives, each limit its default times its group's factor in [limits].
+  factory HttpPlanningSource.at(
+    PlannerAddress address,
+    PlannerProjects projects, {
+    String label = 'planner',
+    PlanningLimits limits = PlanningLimits.ones,
+  }) => HttpPlanningSource(address.base, address.token, projects, label: label, limits: limits);
 
   /// Calls the planner this account runs, read from its address file under [runtimeDirectory], and read again before
-  /// each proof, so a planner started anew on another port or with another token is found.
+  /// each proof, so a planner started anew on another port or with another token is found; each limit, the address
+  /// file's read included, is its default times its group's factor in [limits].
   static Future<HttpPlanningSource> fromAddressFile(
     PlannerProjects projects, {
     String? runtimeDirectory,
     String label = 'planner',
+    PlanningLimits limits = PlanningLimits.ones,
   }) async {
-    final first = await PlannerAddress.read(runtimeDirectory: runtimeDirectory);
+    final first = await PlannerAddress.read(runtimeDirectory: runtimeDirectory, limits: limits);
     return HttpPlanningSource(
       first.base,
       first.token,
       projects,
       label: label,
-      address: () => PlannerAddress.read(runtimeDirectory: runtimeDirectory),
+      limits: limits,
+      address: () => PlannerAddress.read(runtimeDirectory: runtimeDirectory, limits: limits),
     );
   }
+
+  /// One request's limit before the factor `services`.
+  static const defaultTimeout = Duration(seconds: 30);
+
+  /// One write's limit before the factor `services`.
+  static const defaultWriteTimeout = Duration(minutes: 2);
+
+  /// The proof's limit before the factor `services`.
+  static const defaultProofTimeout = Duration(seconds: 60);
+
+  /// The first wait before the stream is opened again, or after a failed proof, before the factor `retries`.
+  static const defaultBackoff = Duration(seconds: 1);
+
+  /// The longest such wait before the factor `retries`.
+  static const defaultBackoffMost = Duration(seconds: 30);
+
+  /// The factors this source's limits follow, and those of each board made from it.
+  @override
+  final PlanningLimits limits;
 
   final Uri _first;
 
@@ -535,6 +585,9 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
 
   /// The longest wait before the stream is opened again.
   final Duration backoffMost;
+
+  /// How long the listener may take to prove it is this account's planner.
+  Duration get proofTimeout => _link.proofTimeout;
 
   late final PlannerLink _link;
   final Set<_Watch> _reconnecting = {};
@@ -1434,7 +1487,11 @@ class _Watch {
       final left = source.silence - now.difference(lost);
       if (left <= Duration.zero) return _end(connection.lost);
       _reconnect(true);
-      await _sleep(wait < left ? wait : left);
+      // Never past half the silence, so a wait a large retries factor stretches still opens the stream again before
+      // the silence it waits within runs out.
+      final most = source.silence ~/ 2;
+      final capped = wait < most ? wait : most;
+      await _sleep(capped < left ? capped : left);
       final doubled = wait * 2;
       wait = doubled > source.backoffMost ? source.backoffMost : doubled;
     }

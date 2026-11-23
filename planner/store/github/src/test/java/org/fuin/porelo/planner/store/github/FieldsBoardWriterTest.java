@@ -45,6 +45,7 @@ import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -353,12 +354,17 @@ class FieldsBoardWriterTest {
         }
 
         FieldsBoardWriter writer(final ProjectWrites writes) {
+            return writer(writes, LimitFactors.DEFAULT);
+        }
+
+        FieldsBoardWriter writer(final ProjectWrites writes, final LimitFactors limits) {
             return new FieldsBoardWriter(
                     writes,
                     origin -> TOKEN,
                     new ForgeAccessRefusals(URI.create("https://github.com")),
                     () -> NOW,
-                    waits::add);
+                    waits::add,
+                    limits);
         }
 
         @Override
@@ -1019,6 +1025,37 @@ class FieldsBoardWriterTest {
         assertThat(github.calls.stream().filter("updateIssue"::equals).count())
                 .as("asks to close it")
                 .isEqualTo(2);
+    }
+
+    @Test
+    void aWriteIsTriedAsOftenAsTheRetriesFactorSaysAfterTheLastBackoffOnceTheListEnds() {
+        // Harm: a retries factor above 1.0 ending a save in an internal error at its third try,
+        // since the backoff names waits for two tries only, or a slow network given no more tries.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final GitHub github = new GitHub().holding(one);
+        for (int failing = 0; failing < 4; failing++) {
+            github.answering(
+                    values -> {
+                        throw GitHubExceptions.refused(502, "bad gateway");
+                    });
+        }
+
+        github.writer(github, LimitFactors.parse("retries=2.0"))
+                .save(
+                        snapshot(one),
+                        SHOWN,
+                        new Writes(ordered("PL1", "Backlog"), Map.of(), List.of()));
+
+        assertThat(github.mutations)
+                .as("the mutation asked five times: the fifth of six tries answered")
+                .hasSize(5);
+        assertThat(github.waits)
+                .as("each backoff twice as long, the last one standing for the later tries")
+                .containsExactly(
+                        Duration.ofSeconds(4),
+                        Duration.ofSeconds(10),
+                        Duration.ofSeconds(10),
+                        Duration.ofSeconds(10));
     }
 
     @Test

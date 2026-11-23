@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.util.List;
 import java.util.Map;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * The planner's directories and files that only its account may read or change - the address file
@@ -20,9 +21,21 @@ public interface PrivateFiles {
      * @return POSIX modes where the file system has them, access control lists otherwise
      */
     static PrivateFiles of(final Map<String, String> environment) {
+        return of(environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The platform's own, a Windows PowerShell call given as long as the factor {@code machines}
+     * says.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return POSIX modes where the file system has them, access control lists otherwise
+     */
+    static PrivateFiles of(final Map<String, String> environment, final LimitFactors limits) {
         return FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
                 ? new PosixPrivateFiles()
-                : WindowsPrivateFiles.of(environment);
+                : WindowsPrivateFiles.of(environment, limits);
     }
 
     /**

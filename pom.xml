@@ -65,6 +65,8 @@
         <porelo.openapi.templates.version>0.1.0-SNAPSHOT</porelo.openapi.templates.version>
         <!-- The forge clients the GitHub store reads its refusals from; moved to their first release when there is one. -->
         <porelo.forge-clients.version>0.1.0-SNAPSHOT</porelo.forge-clients.version>
+        <!-- porelo's wire records, LimitFactors among them: the four factors every time limit follows. -->
+        <porelo.wire.version>0.5.1-SNAPSHOT</porelo.wire.version>
         <!-- Apache Fory, which writes a tracked board's local copy. -->
         <fory.version>1.7.7</fory.version>
     </properties>
@@ -95,6 +97,11 @@
                 <groupId>org.fuin.porelo</groupId>
                 <artifactId>porelo-forge-client-github</artifactId>
                 <version>${porelo.forge-clients.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.fuin.porelo</groupId>
+                <artifactId>porelo-wire</artifactId>
+                <version>${porelo.wire.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.fory</groupId>

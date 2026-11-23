@@ -1723,6 +1723,127 @@ void main() {
     expect(DateTime.now().difference(lost).inMilliseconds, lessThan(600), reason: 'the 300 ms bound and one attempt');
   });
 
+  // Harm: a large retries factor stretching the reconnect wait past the silence it waits within, so a stream lost for
+  // a moment is never opened again before the board is told as gone.
+  test('a stream lost under a large retries factor is opened again within the silence', () async {
+    final planner = _Planner();
+    await planner.start();
+    addTearDown(planner.stop);
+    final source = HttpPlanningSource(
+      planner.base,
+      _token,
+      (project) => PlannerProject('https://example.org/$project.git', 'main'),
+      silence: const Duration(milliseconds: 600),
+      limits: PlanningLimits(retries: 100),
+    );
+    addTearDown(source.close);
+    final streams = _Streams(planner);
+    final ended = Completer<void>();
+    source.watchStories('demo').listen((_) {}, onError: (_) {}, onDone: ended.complete);
+    await _until(() => streams.opened.isNotEmpty, 'the stream');
+    final again = <DateTime>[];
+    planner.routes['GET /projects/demo/events'] = () {
+      again.add(DateTime.now());
+      return _Reply(503, 'stopping', 'text/plain');
+    };
+
+    final lost = DateTime.now();
+    await streams.end();
+    await ended.future.timeout(const Duration(seconds: 5));
+
+    expect(source.backoff, const Duration(seconds: 100), reason: 'the first wait times the retries factor');
+    expect(again, isNotEmpty, reason: 'the stream opened again');
+    expect(
+      again.first.difference(lost).inMilliseconds,
+      lessThan(500),
+      reason: 'the first try again well within the 600 ms silence',
+    );
+  });
+
+  // Harm: the window's factors never reaching the limits of the planner's calls.
+  test('the limits of every factory follow their groups\' factors', () async {
+    final limits = PlanningLimits(services: 2, retries: 0.5);
+    final source = HttpPlanningSource(
+      Uri.parse('http://127.0.0.1:9'),
+      _token,
+      (project) => PlannerProject('https://example.org/$project.git'),
+      limits: limits,
+    );
+    addTearDown(source.close);
+    final at = HttpPlanningSource.at(
+      PlannerAddress(9, _token),
+      (project) => PlannerProject('https://example.org/$project.git'),
+      limits: limits,
+    );
+    addTearDown(at.close);
+    final runtime = await _ownRuntime();
+    final file = File('${runtime.path}/porelo-planner/planner.json');
+    await file.writeAsString('{"port": 9, "token": "$_token"}\n');
+    await Process.run('chmod', ['600', file.path]);
+    final read = await HttpPlanningSource.fromAddressFile(
+      (project) => PlannerProject('https://example.org/$project.git'),
+      runtimeDirectory: runtime.path,
+      limits: limits,
+    );
+    addTearDown(read.close);
+
+    for (final made in [source, at, read]) {
+      expect(made.limits, limits, reason: 'the factors each board made from it follows');
+      expect(made.timeout, const Duration(seconds: 60), reason: 'a request, times services');
+      expect(made.proofTimeout, const Duration(seconds: 120), reason: 'the proof, times services');
+      expect(made.writeTimeout, const Duration(minutes: 4), reason: 'a write, times services');
+      expect(made.backoff, const Duration(milliseconds: 500), reason: 'the first wait, times retries');
+      expect(made.backoffMost, const Duration(seconds: 15), reason: 'the longest wait, times retries');
+      expect(made.silence, const Duration(seconds: 45), reason: 'built on the planner\'s keep-alive, fixed');
+      expect(made.loadStale, const Duration(seconds: 20), reason: 'built on the planner\'s progress, fixed');
+    }
+  });
+
+  // Harm: the window's own call to the planner, an idea or a stage result, held at the default limits on a computer
+  // whose factors ask for shorter ones, or longer, so the person waits past what they set or is cut off before it.
+  test('the window\'s call waits for its proof and its answer as long as the services factor says', () async {
+    final limits = PlanningLimits(services: 0.1);
+    final planner = _Planner();
+    await planner.start();
+    addTearDown(planner.stop);
+    final held = Completer<_Reply>();
+    addTearDown(() => held.complete(_Reply(204)));
+    planner.routes['POST /projects/demo/ideas'] = () => held.future;
+
+    final unanswered = await _refusal(
+      callPlanner(
+        'POST',
+        const ['projects', 'demo', 'ideas'],
+        json: const {'idea': 'i'},
+        address: () async => PlannerAddress(planner.base.port, _token),
+        limits: limits,
+      ),
+    );
+    expect(unanswered.name, 'TimedOut', reason: 'the planner proved itself, then held its answer');
+    expect(unanswered.description, contains('within 3 s'), reason: 'a tenth of the 30 s request limit');
+
+    // A listener that never answers its proof.
+    final silent = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final requests = <HttpRequest>[];
+    silent.listen(requests.add);
+    addTearDown(() => silent.close(force: true));
+    final started = DateTime.now();
+    final unproven = await _refusal(
+      callPlanner(
+        'GET',
+        const ['projects', 'demo', 'stories'],
+        address: () async => PlannerAddress(silent.port, _token),
+        limits: limits,
+      ),
+    ).timeout(const Duration(seconds: 20));
+    expect(unproven, isA<PlannerNotProven>(), reason: 'the listener never proved itself');
+    expect(
+      DateTime.now().difference(started).inSeconds,
+      inInclusiveRange(5, 15),
+      reason: 'a tenth of the 60 s proof limit',
+    );
+  }, timeout: const Timeout(Duration(seconds: 40)));
+
   // Harm: one endless event fills the window's memory.
   test('an event past the bound ends the watch', () async {
     final (planner, source) = await _started(maxBody: 4096);

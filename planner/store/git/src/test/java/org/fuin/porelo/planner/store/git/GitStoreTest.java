@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -205,6 +206,50 @@ class GitStoreTest {
                 Duration.ofSeconds(10),
                 4,
                 background);
+    }
+
+    @Test
+    void aSaveWaitsForTheProjectAsLongAsTheMachinesFactorSays() {
+        // Harm: a slow machine named by the person's machines factor still refusing a save as
+        // busy after the default wait for a check under way.
+        final List<Duration> waits = new CopyOnWriteArrayList<>();
+        final ProjectLock held =
+                new ProjectLock() {
+                    @Override
+                    public Held acquire() {
+                        throw new AssertionError("a save waits a bounded time");
+                    }
+
+                    @Override
+                    public Optional<Held> acquire(final Duration most) {
+                        waits.add(most);
+                        return Optional.empty();
+                    }
+                };
+        final GitStore store =
+                new GitStore(
+                        List.of(OWN, OTHER),
+                        remote,
+                        READER,
+                        held,
+                        clock,
+                        Duration.ofSeconds(10),
+                        4,
+                        Runnable::run,
+                        LocalSaves.none(List.of(OWN, OTHER), remote),
+                        LimitFactors.parse("machines=2.0"));
+
+        assertThatThrownBy(
+                        () ->
+                                store.save(
+                                        new org.fuin.porelo.planner.store.Revision("any"),
+                                        new org.fuin.porelo.planner.store.Writes(
+                                                Map.of("PL1", "Backlog"), Map.of(), List.of())))
+                .as("the save of a project held by another")
+                .isInstanceOf(StoreException.Busy.class);
+        assertThat(waits)
+                .as("the save's wait for the project")
+                .containsExactly(Duration.ofMinutes(1));
     }
 
     private static String title(final Board board, final String id) {

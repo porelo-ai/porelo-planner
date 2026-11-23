@@ -17,6 +17,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,9 +25,10 @@ import org.slf4j.LoggerFactory;
 /**
  * The login Porelo's vault lends to Git for a project's https centrals, through Porelo's own
  * credential helper, {@code <porelo> vault credential --for <address>}, named by {@code
- * PORELO_EXECUTABLE}. Without the variable the person's own Git configuration is the only helper; a
- * login lent makes Porelo's helper the only one Git asks or tells about the address, and the token
- * passes only through a pipe: Git's to the helper, or the planner's own for a forge's API.
+ * PORELO_EXECUTABLE}, handed the planner's limits line before its verb. Without the variable the
+ * person's own Git configuration is the only helper; a login lent makes Porelo's helper the only
+ * one Git asks or tells about the address, and the token passes only through a pipe: Git's to the
+ * helper, or the planner's own for a forge's API.
  */
 final class LentLogin {
 
@@ -34,9 +36,9 @@ final class LentLogin {
     static final String VARIABLE = "PORELO_EXECUTABLE";
 
     /** Lends nothing: the variable is not set. */
-    static final LentLogin NONE = new LentLogin(null, null, Map.of());
+    static final LentLogin NONE = new LentLogin(null, null, Map.of(), LimitFactors.DEFAULT);
 
-    /** How long Porelo's helper may take to answer for a token. */
+    /** How long Porelo's helper may take to answer for a token, before the factor services. */
     static final Duration LIMIT = Duration.ofSeconds(15);
 
     /** The most the helper may write for one token; a credential answer is a few lines. */
@@ -56,13 +58,18 @@ final class LentLogin {
     /** The planner's environment, the one the helper runs in when asked for a token. */
     private final Map<String, String> environment;
 
+    /** The factors handed on to the helper, which the limit on its answer follows. */
+    private final LimitFactors limits;
+
     private LentLogin(
             final @Nullable String executable,
             final @Nullable String refusal,
-            final Map<String, String> environment) {
+            final Map<String, String> environment,
+            final LimitFactors limits) {
         this.executable = executable;
         this.refusal = refusal;
         this.environment = environment;
+        this.limits = limits;
     }
 
     /**
@@ -73,7 +80,19 @@ final class LentLogin {
      * @return the login lent, none without the variable; a refused one when the check refuses
      */
     static LentLogin of(final Map<String, String> environment) {
-        return of(environment, PoreloExecutable.of(environment, WINDOWS));
+        return of(environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The login the planner lends, its helper handed the factors and its check's own limit
+     * following them.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the login lent, none without the variable; a refused one when the check refuses
+     */
+    static LentLogin of(final Map<String, String> environment, final LimitFactors limits) {
+        return of(environment, PoreloExecutable.of(environment, WINDOWS, limits), limits);
     }
 
     /**
@@ -85,6 +104,23 @@ final class LentLogin {
      *     cannot run
      */
     static LentLogin of(final Map<String, String> environment, final PoreloExecutable check) {
+        return of(environment, check, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Reads the variable and checks the executable it names with the check given, its helper handed
+     * the factors.
+     *
+     * @param environment the planner's environment
+     * @param check the check of the executable
+     * @param limits the factors
+     * @return the login lent, none without the variable; a refused one when the check refuses or
+     *     cannot run
+     */
+    static LentLogin of(
+            final Map<String, String> environment,
+            final PoreloExecutable check,
+            final LimitFactors limits) {
         final String value = variable(environment);
         if (value == null) {
             return NONE;
@@ -92,12 +128,21 @@ final class LentLogin {
         try {
             final String path = check.checked(value);
             quoted(path);
-            return new LentLogin(path, null, new HashMap<>(environment));
+            return new LentLogin(path, null, new HashMap<>(environment), limits);
         } catch (final IllegalStateException | IllegalArgumentException | UncheckedIOException e) {
             final String why = GitRunner.scrubbed(e.getMessage());
             LOG.warn("Porelo's executable is refused, no login is lent: {}", LogText.of(why));
-            return new LentLogin(null, why, Map.of());
+            return new LentLogin(null, why, Map.of(), limits);
         }
+    }
+
+    /**
+     * How long Porelo's helper may take to answer for a token.
+     *
+     * @return {@link #LIMIT} times the factor {@code services}
+     */
+    Duration limit() {
+        return limits.services(LIMIT);
     }
 
     /**
@@ -124,7 +169,7 @@ final class LentLogin {
                 "-c",
                 key + ".helper=",
                 "-c",
-                key + ".helper=" + helper(executable, address),
+                key + ".helper=" + helper(executable, limits, address),
                 "-c",
                 key + ".useHttpPath=true",
                 "-c",
@@ -156,7 +201,15 @@ final class LentLogin {
         final String path =
                 uri.getRawPath().startsWith("/") ? uri.getRawPath().substring(1) : uri.getRawPath();
         final ProcessBuilder builder =
-                new ProcessBuilder(executable, "vault", "credential", "--for", address, "get");
+                new ProcessBuilder(
+                        executable,
+                        LimitFactors.OPTION,
+                        limits.line(),
+                        "vault",
+                        "credential",
+                        "--for",
+                        address,
+                        "get");
         builder.environment().clear();
         builder.environment().putAll(environment);
         final Process process;
@@ -279,7 +332,28 @@ final class LentLogin {
      * @throws IllegalArgumentException when either holds a {@code '}, which would end its quoting
      */
     static String helper(final String executable, final String address) {
-        return "!" + quoted(executable) + " vault credential --for " + quoted(address);
+        return helper(executable, LimitFactors.DEFAULT, address);
+    }
+
+    /**
+     * The helper's line, run by the shell Git runs helpers in, Git for Windows' too, handing the
+     * helper the factors before its verb.
+     *
+     * @param executable the checked executable
+     * @param limits the factors; their line holds nothing a shell reads specially
+     * @param address the central, as {@link CloneUrl} checked it
+     * @return the line, the executable and the address each a single-quoted argument
+     * @throws IllegalArgumentException when either holds a {@code '}, which would end its quoting
+     */
+    static String helper(final String executable, final LimitFactors limits, final String address) {
+        return "!"
+                + quoted(executable)
+                + " "
+                + LimitFactors.OPTION
+                + " "
+                + limits.line()
+                + " vault credential --for "
+                + quoted(address);
     }
 
     private static String quoted(final String value) {

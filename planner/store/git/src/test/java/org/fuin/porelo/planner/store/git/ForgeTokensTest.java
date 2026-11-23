@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -121,6 +122,17 @@ class ForgeTokensTest {
     }
 
     @Test
+    void theHelperIsHandedThePlannersLimitsLineBeforeItsVerb() throws IOException {
+        // Harm: Porelo's helper waiting on a slow vault with the default limits while the planner
+        // waits for it as long as the person's factors say, so it fails before its caller does.
+        ForgeTokens.of(person("answer"), LimitFactors.parse("services=2.5,retries=3"))
+                .token(ORIGIN, "team");
+        assertThat(Files.readString(beside("arguments")))
+                .as("the helper's arguments")
+                .startsWith("--limits\nservices=2.5,machines=1.0,polling=1.0,retries=3.0\nvault\n");
+    }
+
+    @Test
     void theTokenIsThePasswordPorelosHelperAnswers() {
         // Harm: the GitHub store calls the API with no login, or with another line of the answer.
         assertThat(ForgeTokens.of(person("answer")).token(ORIGIN, "team"))
@@ -135,7 +147,10 @@ class ForgeTokensTest {
         ForgeTokens.of(person("answer")).token(ORIGIN, "team");
         assertThat(Files.readString(beside("arguments")))
                 .as("the helper's arguments")
-                .isEqualTo("vault\ncredential\n--for\nhttps://forge.example.org/team\nget\n");
+                .isEqualTo(
+                        "--limits\n"
+                                + LimitFactors.DEFAULT.line()
+                                + "\nvault\ncredential\n--for\nhttps://forge.example.org/team\nget\n");
         assertThat(Files.readString(beside("request")))
                 .as("the request on the helper's input")
                 .isEqualTo("protocol=https\nhost=forge.example.org\npath=team\n\n");

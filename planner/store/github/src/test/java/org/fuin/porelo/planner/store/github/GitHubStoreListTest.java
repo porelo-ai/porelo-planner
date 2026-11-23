@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -283,7 +284,8 @@ class GitHubStoreListTest {
                         origin -> TOKEN,
                         AccessRefusals.DEFAULT,
                         () -> Instant.EPOCH,
-                        duration -> {});
+                        duration -> {},
+                        LimitFactors.DEFAULT);
         return new GitHubStore(
                 CONFIG,
                 () -> CONFIG,

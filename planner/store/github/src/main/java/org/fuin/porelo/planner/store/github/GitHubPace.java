@@ -14,6 +14,7 @@ import org.fuin.porelo.forge.github.Page;
 import org.fuin.porelo.forge.github.ProjectItemSummary;
 import org.fuin.porelo.forge.github.RateLimit;
 import org.fuin.porelo.forge.github.model.Issue;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -29,13 +30,16 @@ public final class GitHubPace implements Pace {
     /** How much longer the interval is while the limit is low. */
     static final int LENGTHENED = 10;
 
-    /** The wait when GitHub names none. */
+    /** The wait when GitHub names none, before the factor {@code retries}. */
     static final Duration WITHOUT_A_WORD = Duration.ofMinutes(1);
 
     /** The longest wait taken, GitHub's rate-limit window, whatever an answer names. */
     static final Duration MOST_WAIT = Duration.ofHours(1);
 
     private final InstantSource clock;
+
+    /** The wait when GitHub names none. */
+    private final Duration withoutAWord;
 
     private @Nullable Instant heldUntil;
 
@@ -49,7 +53,18 @@ public final class GitHubPace implements Pace {
      * @param clock tells the time a hold ends by
      */
     public GitHubPace(final InstantSource clock) {
+        this(clock, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes the pace whose wait, when GitHub names none, follows the factor {@code retries}.
+     *
+     * @param clock tells the time a hold ends by
+     * @param limits the factors
+     */
+    public GitHubPace(final InstantSource clock, final LimitFactors limits) {
         this.clock = clock;
+        this.withoutAWord = limits.retryPause(WITHOUT_A_WORD);
     }
 
     /**
@@ -77,7 +92,7 @@ public final class GitHubPace implements Pace {
     private Instant spentAt(final Instant now, final @Nullable Duration wait) {
         // A wait of nothing is no wait GitHub named, and an endless one would hold for good.
         final Duration named =
-                wait == null || wait.isNegative() || wait.isZero() ? WITHOUT_A_WORD : wait;
+                wait == null || wait.isNegative() || wait.isZero() ? withoutAWord : wait;
         final Instant until = now.plus(named.compareTo(MOST_WAIT) > 0 ? MOST_WAIT : named);
         final Instant before = heldUntil;
         if (before == null || until.isAfter(before)) {

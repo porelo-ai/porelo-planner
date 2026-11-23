@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -176,7 +177,8 @@ class UnlistedAddTest {
                     origin -> TOKEN,
                     AccessRefusals.DEFAULT,
                     () -> Instant.EPOCH,
-                    d -> {});
+                    d -> {},
+                    LimitFactors.DEFAULT);
         }
 
         /** The values written, as field name to option or number. */

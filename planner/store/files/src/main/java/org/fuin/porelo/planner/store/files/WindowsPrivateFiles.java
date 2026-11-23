@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.regex.Pattern;
+import org.fuin.porelo.wire.LimitFactors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +52,7 @@ public final class WindowsPrivateFiles implements PrivateFiles {
     /** A drive's absolute path, never a UNC, device or {@code \\?\} path. */
     private static final Pattern DRIVE_PATH = Pattern.compile("[A-Za-z]:\\\\[^\\x00-\\x1f]*");
 
+    /** How long one PowerShell call may run, before the factor {@code machines}. */
     private static final Duration LIMIT = Duration.ofSeconds(60);
 
     private static final Logger LOG = LoggerFactory.getLogger(WindowsPrivateFiles.class);
@@ -124,8 +126,21 @@ public final class WindowsPrivateFiles implements PrivateFiles {
      * @return the files
      */
     public static WindowsPrivateFiles of(final Map<String, String> environment) {
+        return of(environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The real one, each PowerShell call given as long as the factor {@code machines} says.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the files
+     */
+    public static WindowsPrivateFiles of(
+            final Map<String, String> environment, final LimitFactors limits) {
+        final Duration limit = limits.machines(LIMIT);
         return new WindowsPrivateFiles(
-                environment, (protect, paths) -> powershell(environment, protect, paths));
+                environment, (protect, paths) -> powershell(environment, protect, paths, limit));
     }
 
     @Override
@@ -468,9 +483,12 @@ public final class WindowsPrivateFiles implements PrivateFiles {
     }
 
     private static String powershell(
-            final Map<String, String> environment, final String protect, final String paths) {
+            final Map<String, String> environment,
+            final String protect,
+            final String paths,
+            final Duration limit) {
         final ProcessBuilder builder = powershellCall(environment, protect, paths);
-        return answerOnceMore(builder, builder.command().getFirst(), LIMIT);
+        return answerOnceMore(builder, builder.command().getFirst(), limit);
     }
 
     /**

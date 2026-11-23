@@ -23,7 +23,10 @@ public final class ChangesRegistry implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(ChangesRegistry.class);
 
-    /** The longest wait between two polls of a project, a day, whatever its store names. */
+    /**
+     * The longest wait between two polls of a project, a day, whatever its store names, before the
+     * factor {@code polling}.
+     */
     static final Duration LONGEST_WAIT = Duration.ofDays(1);
 
     private final Projects projects;
@@ -33,6 +36,9 @@ public final class ChangesRegistry implements AutoCloseable {
     private final Duration probed;
 
     private final ScheduledExecutorService scheduler;
+
+    /** The longest wait between two polls of a project. */
+    private final Duration longestWait;
 
     private final Map<String, Followed> followed = new HashMap<>();
 
@@ -98,10 +104,30 @@ public final class ChangesRegistry implements AutoCloseable {
             final Duration interval,
             final Duration probed,
             final ScheduledExecutorService scheduler) {
+        this(projects, interval, probed, scheduler, LONGEST_WAIT);
+    }
+
+    /**
+     * Makes the registry with its own longest wait between two polls.
+     *
+     * @param projects the projects the window has given
+     * @param interval how often a followed project's repositories are fetched
+     * @param probed how often a followed project whose store asks cheaply whether it changed is
+     *     asked, as its store's pace allows
+     * @param scheduler runs the polls; closed with the registry
+     * @param longestWait the longest wait between two polls of a project, whatever its store names
+     */
+    public ChangesRegistry(
+            final Projects projects,
+            final Duration interval,
+            final Duration probed,
+            final ScheduledExecutorService scheduler,
+            final Duration longestWait) {
         this.projects = projects;
         this.interval = interval;
         this.probed = probed;
         this.scheduler = scheduler;
+        this.longestWait = longestWait;
         projects.onRetired(this::drop);
     }
 
@@ -332,22 +358,23 @@ public final class ChangesRegistry implements AutoCloseable {
             final Duration least = interval.compareTo(probed) < 0 ? interval : probed;
             try {
                 final Duration wait = changes.pollDelay(interval, probed);
-                return clamped(wait.compareTo(least) < 0 ? least : wait);
+                return clamped(wait.compareTo(least) < 0 ? least : wait, longestWait);
             } catch (final RuntimeException e) {
-                return clamped(interval);
+                return clamped(interval, longestWait);
             }
         }
     }
 
     /**
-     * A wait no longer than {@link #LONGEST_WAIT}, so its milliseconds never overflow and no store
-     * stops its project's polls for good.
+     * A wait no longer than the longest, so its milliseconds never overflow and no store stops its
+     * project's polls for good.
      *
      * @param wait the wait asked for
+     * @param longest the longest wait taken
      * @return the wait taken
      */
-    static Duration clamped(final Duration wait) {
-        return wait.compareTo(LONGEST_WAIT) > 0 ? LONGEST_WAIT : wait;
+    static Duration clamped(final Duration wait, final Duration longest) {
+        return wait.compareTo(longest) > 0 ? longest : wait;
     }
 
     private void poll(final String project, final Changes changes) {

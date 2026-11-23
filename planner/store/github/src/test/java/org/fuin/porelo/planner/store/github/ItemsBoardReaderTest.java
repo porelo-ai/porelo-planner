@@ -47,6 +47,7 @@ import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -242,6 +243,20 @@ class ItemsBoardReaderTest {
 
         private Snapshot read() {
             return reader(AccessRefusals.DEFAULT).read(CONFIG);
+        }
+
+        private Snapshot read(final LimitFactors limits) {
+            return new ItemsBoardReader(
+                            queries(),
+                            origin -> TOKEN,
+                            AccessRefusals.DEFAULT,
+                            FIRST_OPEN,
+                            InstantSource.system(),
+                            ItemsBoardReader.DEADLINE,
+                            pauses::add,
+                            null,
+                            limits)
+                    .read(CONFIG);
         }
     }
 
@@ -1382,6 +1397,30 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void aDeadlineShorterThanASecondIsToldWithItsFraction() {
+        // Harm: a read under a small services factor refused as given no answer "within 0 s",
+        // which tells the person nothing of the limit the factor set.
+        final GitHub github =
+                new GitHub().fieldsPage(FIELDS, null).itemsPage(null, libIssue(3, refs(false)));
+        final Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        final AtomicInteger ticks = new AtomicInteger();
+        final InstantSource silent = () -> start.plusSeconds(ticks.getAndIncrement());
+        final ItemsBoardReader reader =
+                new ItemsBoardReader(
+                        github.queries(),
+                        origin -> TOKEN,
+                        AccessRefusals.DEFAULT,
+                        FIRST_OPEN,
+                        silent,
+                        Duration.ofMillis(500));
+
+        assertThatThrownBy(() -> reader.read(CONFIG))
+                .as("the read GitHub left without an answer for a second")
+                .isInstanceOf(StoreException.Unreachable.class)
+                .hasMessageContaining("no answer to the project's read within 0.5 s");
+    }
+
+    @Test
     void aFaultOfTheProjectAloneChangesTheRevision() {
         // Harm: a field added on GitHub to mend a fault never reaches the window, as the board
         // kept with the fault looks unchanged.
@@ -1970,6 +2009,30 @@ class ItemsBoardReaderTest {
                         "projectItems after null",
                         "issueBoard of [" + LIB_3 + "] in PVT_1");
         assertThat(github.pauses).as("no pause").isEmpty();
+    }
+
+    @Test
+    void theReadsAgainOfTheItemListAndTheirPausesFollowTheRetriesFactor() {
+        // Harm: a person whose retries factor asks for more patience with GitHub's lagging list
+        // shown a story without its issue after the default reads again.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3))
+                        .issuesOnProject(true);
+        for (int again = 0; again < 2 * ItemsBoardReader.MOST_REREADS; again++) {
+            github.itemsPage(null, story("High", LIB_3));
+        }
+
+        github.read(LimitFactors.parse("retries=2.0"));
+
+        assertThat(github.calls.stream().filter(call -> call.startsWith("projectItems")))
+                .as("the list read once and then twice as often as the default bound")
+                .hasSize(1 + 2 * ItemsBoardReader.MOST_REREADS);
+        assertThat(github.pauses)
+                .as("each pause twice the default")
+                .hasSize(2 * ItemsBoardReader.MOST_REREADS)
+                .containsOnly(ItemsBoardReader.REREAD_PAUSE.multipliedBy(2));
     }
 
     @Test

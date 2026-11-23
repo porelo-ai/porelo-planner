@@ -16,6 +16,7 @@ export 'src/http/planner_source.dart';
 export 'src/models.dart';
 export 'src/planning_board.dart';
 export 'src/planning_detail.dart';
+export 'src/planning_limits.dart';
 export 'src/run_attention.dart';
 export 'src/story_work.dart';
 export 'src/story_work_order.dart';

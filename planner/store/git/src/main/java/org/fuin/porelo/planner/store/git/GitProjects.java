@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.files.FileProjectLock;
 import org.fuin.porelo.planner.store.files.ProjectLock;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /** Opens a project's store from its own repository, over the project's cache directory. */
@@ -63,6 +64,8 @@ public final class GitProjects {
 
     private final TrackedStores tracked;
 
+    private final LimitFactors limits;
+
     /**
      * Makes an opener.
      *
@@ -78,11 +81,34 @@ public final class GitProjects {
             final Clock clock,
             final Executor background,
             final TrackedStores tracked) {
+        this(environment, settings, clock, background, tracked, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes an opener whose stores' own limits follow the factors; the settings' durations are
+     * given as they are kept.
+     *
+     * @param environment the planner's own environment, which holds the person's Git login
+     * @param settings the bounds of each store
+     * @param clock tells when a board was checked
+     * @param background runs the checks requests start
+     * @param tracked opens a project whose {@code project.yml} names a tracker
+     * @param limits the factors the stores' waits and tries, Porelo's helper and the platform's
+     *     calls follow
+     */
+    public GitProjects(
+            final Map<String, String> environment,
+            final Settings settings,
+            final Clock clock,
+            final Executor background,
+            final TrackedStores tracked,
+            final LimitFactors limits) {
         this.environment = Map.copyOf(environment);
         this.settings = settings;
         this.clock = clock;
         this.background = background;
         this.tracked = tracked;
+        this.limits = limits;
     }
 
     /**
@@ -108,10 +134,10 @@ public final class GitProjects {
 
     private PlanningStore opened(
             final String project, final CloneUrl own, final @Nullable String branch) {
-        final Path directory = CacheDirectory.of(environment, project);
+        final Path directory = CacheDirectory.of(environment, project, limits);
         final FileProjectLock lock = new FileProjectLock(directory);
         final GitRunner runner = new GitRunner(settings.callLimit(), settings.outputBytes());
-        final LentLogin login = LentLogin.of(environment);
+        final LentLogin login = LentLogin.of(environment, limits);
         final GitRemote remote =
                 new GitRemote(
                         directory,
@@ -153,7 +179,9 @@ public final class GitProjects {
                         remote,
                         new GitLocalRefs(
                                 directory, environment, settings.connectTimeout(), runner, login),
-                        background));
+                        background,
+                        limits),
+                limits);
     }
 
     /**

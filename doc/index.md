@@ -120,6 +120,27 @@ forgets the projects given. Only the option turns the mode on, and it refuses to
 is set - `XDG_RUNTIME_DIR`, or the property `planner.runtime-directory` - and is not the account's own, so the
 person's window never finds a mock.
 
+## Time limits
+
+Every time limit of the planner is its default times one of the four factors of Porelo's limits line, so a slow
+network or machine is met by one setting rather than a new build. The window reads the line from Porelo and starts
+the planner with it first on the command line, before the mode or work command:
+`porelo-planner --limits services=2.0,machines=1.0,polling=1.0,retries=1.0 --end-with-input`.
+
+- **Without the option every factor is 1.0**, so a planner started by hand runs as before. A bad line, the option
+  anywhere but first, given twice or written as `--limits=<line>` ends the planner with exit code 64 and
+  `--limits: <what is wrong>` before anything starts.
+- **`services`**: an answer from GitHub, a Git host or Porelo's own executable; **`machines`**: a git or PowerShell
+  call and a save's wait for the project; **`polling`**: how often a followed project is fetched or asked whether it
+  changed; **`retries`**: how often a failed read, write or push is made again, and the pause before each try.
+- **The duration properties follow their factor too**: `planner.github.read-silence` times `services`,
+  `planner.poll-interval` and `planner.github.poll-interval` times `polling`; a value of zero or less of these, or of
+  the fixed `planner.keep-alive`, is refused at start, in the mock mode too.
+- **Porelo's own executable is handed the same line** before its verb, for its task records and for its credential
+  helper.
+- **Protocol values stay fixed**: GitHub's rate-limit window, the window in which a change is taken as the
+  planner's own, sizes and counts.
+
 ## Where it keeps its files
 
 | What | Linux | Windows |

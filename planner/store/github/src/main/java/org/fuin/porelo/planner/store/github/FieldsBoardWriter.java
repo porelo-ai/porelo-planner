@@ -31,6 +31,7 @@ import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -63,6 +64,9 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     private final WritePace.Sleeper sleeper;
 
+    /** The factors a write's tries and their waits follow. */
+    private final LimitFactors limits;
+
     /**
      * Makes the writer.
      *
@@ -72,7 +76,23 @@ public final class FieldsBoardWriter implements BoardWriter {
      */
     public FieldsBoardWriter(
             final ProjectWrites github, final TokenSource tokens, final AccessRefusals refusals) {
-        this(github, tokens, refusals, InstantSource.system());
+        this(github, tokens, refusals, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes the writer whose tries and their waits follow the factors.
+     *
+     * @param github the calls a write is made of
+     * @param tokens the person's token, asked for once a write
+     * @param refusals turns a failure into the store's refusal, scrubbed of the token
+     * @param limits the factors a write's tries and their waits follow
+     */
+    public FieldsBoardWriter(
+            final ProjectWrites github,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final LimitFactors limits) {
+        this(github, tokens, refusals, InstantSource.system(), Thread::sleep, limits);
     }
 
     /**
@@ -88,7 +108,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             final TokenSource tokens,
             final AccessRefusals refusals,
             final InstantSource clock) {
-        this(github, tokens, refusals, clock, Thread::sleep);
+        this(github, tokens, refusals, clock, Thread::sleep, LimitFactors.DEFAULT);
     }
 
     /**
@@ -99,18 +119,21 @@ public final class FieldsBoardWriter implements BoardWriter {
      * @param refusals turns a failure into the store's refusal, scrubbed of the token
      * @param clock tells the time a new issue's call is sent at
      * @param sleeper waits between writes and before a write is made again
+     * @param limits the factors a write's tries and their waits follow
      */
     FieldsBoardWriter(
             final ProjectWrites github,
             final TokenSource tokens,
             final AccessRefusals refusals,
             final InstantSource clock,
-            final WritePace.Sleeper sleeper) {
+            final WritePace.Sleeper sleeper,
+            final LimitFactors limits) {
         this.github = github;
         this.tokens = tokens;
         this.refusals = refusals;
         this.clock = clock;
         this.sleeper = sleeper;
+        this.limits = limits;
     }
 
     @Override
@@ -168,7 +191,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         fresh(current, revision);
         final String storyId = issue.story();
         final @Nullable ItemView story = storyId == null ? null : storyItem(current, storyId);
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
         // Without a priority of its own an issue takes the Medium a new issue has in Git.
         final NewItems.Planned planned =
                 adding.issue(issue, Objects.requireNonNullElse(issue.priority(), "Medium"));
@@ -199,7 +222,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                         "", "the idea names " + issue.repository() + " twice");
             }
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
         final NewItems.Planned story = adding.story(idea);
         final List<NewItems.Planned> issues = new ArrayList<>();
         idea.issues().forEach(issue -> issues.add(adding.issue(issue, idea.priority())));
@@ -269,7 +292,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (story) {
             checkBlocksNoIssue(current, issue, offered.nodeId());
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
         adding.list(
                 token,
                 adding.existing(repository, number, offered.nodeId(), read.databaseId(), story));
@@ -462,7 +485,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             plan.read(id, item);
             existing.add(new NewItems.Over(id, item));
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current);
+        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
         final NewItems.Planned planned =
                 adding.story(
                         new NewIdea(
@@ -783,7 +806,8 @@ public final class FieldsBoardWriter implements BoardWriter {
         private final Map<String, GitHubGraphQl.BoardIssue> reads = new LinkedHashMap<>();
 
         /** The pace of this save's writes, made when it writes. */
-        private WritePace pace = new WritePace(InstantSource.system(), Thread::sleep, "");
+        private WritePace pace =
+                new WritePace(InstantSource.system(), Thread::sleep, "", LimitFactors.DEFAULT);
 
         Plan(final Snapshot current) {
             this.current = current;
@@ -1091,7 +1115,7 @@ public final class FieldsBoardWriter implements BoardWriter {
          * to a field that still stands there; and a reason is kept only with an item closed.
          */
         void write(final String token) {
-            pace = new WritePace(clock, sleeper, token);
+            pace = new WritePace(clock, sleeper, token, limits);
             final String own = current.config().own();
             if (current.config().projectId().isBlank()) {
                 throw new StoreException.Unreadable(own, "the GitHub project's id was not read");

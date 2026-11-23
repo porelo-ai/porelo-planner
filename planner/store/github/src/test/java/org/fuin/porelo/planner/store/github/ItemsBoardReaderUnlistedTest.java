@@ -21,6 +21,7 @@ import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -203,6 +204,19 @@ class ItemsBoardReaderUnlistedTest {
                 ItemsBoardReader.DEADLINE,
                 length -> {},
                 pages);
+    }
+
+    private ItemsBoardReader reader(final LimitFactors limits) {
+        return new ItemsBoardReader(
+                queries,
+                origin -> TOKEN,
+                AccessRefusals.DEFAULT,
+                issueStates -> issueStates.isEmpty() ? null : "Idea",
+                pages.clock(),
+                ItemsBoardReader.DEADLINE,
+                length -> {},
+                pages,
+                limits);
     }
 
     private static List<String> ids(final Board board) {
@@ -460,6 +474,56 @@ class ItemsBoardReaderUnlistedTest {
                 .singleElement()
                 .asString()
                 .contains(LIB);
+    }
+
+    @Test
+    void theListsDeadlineFollowsTheServicesFactor() {
+        // Harm: a slow network named by the person's services factor still cutting the lists of
+        // issues outside the project at the default deadline, so they are never all shown.
+        pages.holds(OWN, List.of(open(OWN, 5)));
+        pages.holds(LIB, List.of(open(LIB, 6)));
+        pages.perAsk = RepositoryIssues.DEADLINE.plusSeconds(5);
+
+        final Board board = reader(LimitFactors.parse("services=2.0")).read(CONFIG).board();
+
+        assertThat(ids(board))
+                .as("the issues read within the doubled deadline")
+                .containsExactly(OWN + "#5", LIB + "#6");
+        assertThat(board.faults()).as("the board's faults").isEmpty();
+    }
+
+    @Test
+    void aSpentBudgetNamesTheDeadlineAfterItsFactor() {
+        // Harm: the fault telling the person of a spent budget naming a deadline the planner did
+        // not keep.
+        pages.holds(OWN, List.of(open(OWN, 5)));
+        pages.holds(LIB, List.of(open(LIB, 6)));
+        pages.perAsk = Duration.ofSeconds(45);
+
+        final Board board = reader(LimitFactors.parse("services=2.0")).read(CONFIG).board();
+
+        assertThat(board.faults())
+                .as("the one fault of the budget")
+                .singleElement()
+                .asString()
+                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 40 s and ")
+                .contains(LIB);
+    }
+
+    @Test
+    void aSpentBudgetNamesADeadlineOfAFractionOfASecondWithItsFraction() {
+        // Harm: the fault naming a deadline cut to whole seconds, one the planner did not keep.
+        pages.holds(OWN, List.of(open(OWN, 5)));
+        pages.holds(LIB, List.of(open(LIB, 6)));
+        pages.perAsk = Duration.ofSeconds(3);
+
+        final Board board = reader(LimitFactors.parse("services=0.11")).read(CONFIG).board();
+
+        assertThat(board.faults())
+                .as("the one fault of the budget")
+                .singleElement()
+                .asString()
+                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 2.2 s and ");
     }
 
     @Test

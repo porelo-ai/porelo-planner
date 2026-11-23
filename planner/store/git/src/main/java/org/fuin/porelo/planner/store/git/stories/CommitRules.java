@@ -5,6 +5,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * Holds each commit of a range to the shared rules on commit messages, with the fault lines and
@@ -32,6 +34,9 @@ import java.util.regex.Pattern;
  * in the tracker.
  */
 public final class CommitRules {
+
+    /** How long one git call may run, before the factor {@code machines}. */
+    private static final Duration CALL_LIMIT = Duration.ofSeconds(60);
 
     /** The exit code of a range a commit of which breaks a rule. */
     public static final int REFUSED = 1;
@@ -168,6 +173,19 @@ public final class CommitRules {
          * @return the runner
          */
         public static Git in(Path directory, Map<String, String> environment) {
+            return in(directory, environment, LimitFactors.DEFAULT);
+        }
+
+        /**
+         * Runs git in a directory, each call given as long as the factor {@code machines} says.
+         *
+         * @param directory the checkout
+         * @param environment set for git on top of this process's own
+         * @param limits the factors
+         * @return the runner
+         */
+        public static Git in(Path directory, Map<String, String> environment, LimitFactors limits) {
+            final Duration limit = limits.machines(CALL_LIMIT);
             return new Git() {
                 /**
                  * Reads the requested range's log, refused when a name, an address or a message
@@ -178,7 +196,7 @@ public final class CommitRules {
                  */
                 @Override
                 public String log(String range) throws IOException {
-                    final String log = run(directory, environment, range);
+                    final String log = run(limit, directory, environment, range);
                     final long records = log.chars().filter(c -> c == RECORD).count();
                     final long fields = log.chars().filter(c -> c == FIELD).count();
                     if (fields > 5 * records) {
@@ -198,6 +216,7 @@ public final class CommitRules {
                 public OptionalLong count(String range) throws IOException {
                     final String counted =
                             execute(
+                                            limit,
                                             directory,
                                             environment,
                                             List.of(
@@ -215,9 +234,11 @@ public final class CommitRules {
             };
         }
 
-        private static String run(Path directory, Map<String, String> environment, String range)
+        private static String run(
+                Duration limit, Path directory, Map<String, String> environment, String range)
                 throws IOException {
             return execute(
+                    limit,
                     directory,
                     environment,
                     List.of(
@@ -232,7 +253,10 @@ public final class CommitRules {
         }
 
         private static String execute(
-                Path directory, Map<String, String> environment, List<String> arguments)
+                Duration limit,
+                Path directory,
+                Map<String, String> environment,
+                List<String> arguments)
                 throws IOException {
             final List<String> command =
                     new ArrayList<>(List.of("git", "-C", directory.toString()));
@@ -252,10 +276,14 @@ public final class CommitRules {
                         builder.redirectOutput(output.toFile())
                                 .redirectError(errors.toFile())
                                 .start();
-                if (!process.waitFor(60, TimeUnit.SECONDS)) {
+                if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly();
                     throw new IOException(
-                            "git " + arguments.getFirst() + " did not finish within 60 seconds");
+                            "git "
+                                    + arguments.getFirst()
+                                    + " did not finish within "
+                                    + limit.toSeconds()
+                                    + " seconds");
                 }
                 if (process.exitValue() != 0) {
                     throw new IOException(

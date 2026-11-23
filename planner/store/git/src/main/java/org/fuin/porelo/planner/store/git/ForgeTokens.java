@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Locale;
 import java.util.Map;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * The token a forge's API takes, asked of Porelo's credential helper as Git asks it, so a store
@@ -25,7 +26,19 @@ public final class ForgeTokens {
      * @return the tokens; each refused when the variable is not set or the executable is refused
      */
     public static ForgeTokens of(final Map<String, String> environment) {
-        return new ForgeTokens(LentLogin.of(environment));
+        return of(environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The tokens Porelo lends, its helper handed the factors and given as long to answer as the
+     * factor {@code services} says.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the tokens; each refused when the variable is not set or the executable is refused
+     */
+    public static ForgeTokens of(final Map<String, String> environment, final LimitFactors limits) {
+        return new ForgeTokens(LentLogin.of(environment, limits));
     }
 
     /**
@@ -41,7 +54,7 @@ public final class ForgeTokens {
      */
     public String token(final URI origin, final String name) {
         try {
-            return login.token(origin.toString(), name, LentLogin.LIMIT);
+            return login.token(origin.toString(), name, login.limit());
         } catch (final StoreException.CredentialRefused refused) {
             throw missing(origin, refused);
         }

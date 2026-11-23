@@ -7,6 +7,7 @@ import '../hooks.dart';
 import '../models.dart';
 import '../open_work_filter.dart';
 import '../planning_board.dart';
+import '../planning_limits.dart';
 import '../story_work_order.dart';
 import '../client.dart';
 import 'open_work_figures.dart';
@@ -34,8 +35,12 @@ class PlanningOpenWorkView extends StatefulWidget {
     required this.unavailableMachines,
     this.pageButton,
     this.pageNote,
+    this.limits,
     super.key,
   });
+
+  /// The factors the view's own limits follow, the board's when null: a description's read follows `services`.
+  final PlanningLimits? limits;
 
   /// The window's own button for the page, or null.
   final Widget? pageButton;
@@ -151,7 +156,7 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
   /// The most descriptions read at once, so a long list does not flood the planner.
   static const _atOnce = 8;
 
-  /// How long one description read may take before it counts as refused.
+  /// How long one description read may take before it counts as refused, before the factor `services`.
   static const _readTime = Duration(seconds: 30);
 
   /// Reads the descriptions not yet read of the listed stories: the first alone, so a planner that refuses is asked
@@ -169,7 +174,9 @@ class _PlanningOpenWorkViewState extends State<PlanningOpenWorkView> {
       _asked.add(id);
       try {
         // A read that never answers would hold the column at Reading for good, so it counts as refused.
-        final reply = await board.backend.getStory(board.project, id).timeout(_readTime);
+        final reply = await board.backend
+            .getStory(board.project, id)
+            .timeout((widget.limits ?? board.limits).servicesOf(_readTime));
         final story = reply.story;
         if (story == null || story.id != id) throw const FormatException('The planner did not return the story.');
         read[id] = planningFirstParagraph(story.description, story.descriptionFormat);

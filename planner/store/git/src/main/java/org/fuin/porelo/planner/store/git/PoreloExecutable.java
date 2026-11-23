@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.files.PosixPrivateFiles;
 import org.fuin.porelo.planner.store.files.WindowsAccess;
 import org.fuin.porelo.planner.store.files.WindowsPrivateFiles;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * Checks the program {@code PORELO_EXECUTABLE} names before Git may run it with a login: an
@@ -41,6 +42,22 @@ interface PoreloExecutable {
      * @return the check
      */
     static PoreloExecutable of(final Map<String, String> environment, final boolean windows) {
+        return of(environment, windows, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The platform's own check, its PowerShell call given as long as the factor {@code machines}
+     * says.
+     *
+     * @param environment the planner's environment
+     * @param windows whether this is Windows
+     * @param limits the factors
+     * @return the check
+     */
+    static PoreloExecutable of(
+            final Map<String, String> environment,
+            final boolean windows,
+            final LimitFactors limits) {
         return windows
                 ? new OnWindows(
                         new OnWindows.Paths() {
@@ -59,7 +76,7 @@ interface PoreloExecutable {
                                         WindowsPrivateFiles.powershellCall(
                                                 environment, protect, paths),
                                         "powershell",
-                                        Duration.ofSeconds(60)))
+                                        limits.machines(Duration.ofSeconds(60))))
                 : new OnPosix(new OnPosix.RealNodes());
     }
 

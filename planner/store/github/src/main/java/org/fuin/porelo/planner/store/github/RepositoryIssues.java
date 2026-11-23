@@ -37,7 +37,10 @@ public final class RepositoryIssues {
     /** The most pages one read of every repository's list takes, unchanged pages included. */
     static final int MOST_PAGES = ItemsBoardReader.MOST_PAGES;
 
-    /** How long one read of every repository's list may take, apart from the project's read. */
+    /**
+     * How long one read of every repository's list may take, apart from the project's read, before
+     * the factor {@code services}.
+     */
     static final Duration DEADLINE = Duration.ofSeconds(20);
 
     /** One page of a repository's open issues as GitHub answers it. */
@@ -111,39 +114,60 @@ public final class RepositoryIssues {
 
     private final Map<String, Held> held = new HashMap<>();
 
+    /** How long one read of every repository's list may take. */
+    private final Duration deadline;
+
     /**
      * The repository the last read did not reach, where the next starts; null after a whole one.
      */
     private @Nullable String nextFirst;
 
     /**
-     * The words of the fault of a read that spent its budget, before the repositories it names; the
-     * board's revision takes them without the names, so a slow GitHub alone changes no revision.
+     * The first words of the fault of a read that spent its budget, before its deadline and the
+     * repositories it names; the board's revision takes them alone, so a slow GitHub or another
+     * factor changes no revision.
      */
-    static final String BUDGET_SPENT =
-            "The issues outside the project were not all read within "
-                    + DEADLINE.toSeconds()
-                    + " s and "
-                    + MOST_PAGES
-                    + " pages; the list last read is shown for ";
+    static final String BUDGET_SPENT = "The issues outside the project were not all read";
 
     /** The deadline of the read met while a page was asked, after one failed on the way. */
     static final class OutOfTime extends RuntimeException {
 
         private static final long serialVersionUID = 1L;
 
-        /** Makes the failure. */
-        OutOfTime() {
+        /**
+         * Makes the failure.
+         *
+         * @param deadline the deadline met
+         */
+        OutOfTime(final Duration deadline) {
             super(
                     "GitHub did not give the open issues' lists within "
-                            + DEADLINE.toSeconds()
+                            + Seconds.of(deadline)
                             + " s");
         }
     }
 
-    /** Makes the list with nothing held. */
+    /** Makes the list with nothing held and the deadline before its factor. */
     RepositoryIssues() {
-        // Each repository is held from its first read on.
+        this(DEADLINE);
+    }
+
+    /**
+     * Makes the list with nothing held; each repository is held from its first read on.
+     *
+     * @param deadline how long one read of every repository's list may take
+     */
+    RepositoryIssues(final Duration deadline) {
+        this.deadline = deadline;
+    }
+
+    /**
+     * How long one read of every repository's list may take.
+     *
+     * @return the deadline
+     */
+    Duration deadline() {
+        return deadline;
     }
 
     /**
@@ -182,7 +206,7 @@ public final class RepositoryIssues {
             final Fetch fetch,
             final InstantSource clock,
             final String token) {
-        final Instant until = clock.instant().plus(DEADLINE);
+        final Instant until = clock.instant().plus(deadline);
         final List<String> faults = new ArrayList<>();
         final List<String> notRead = new ArrayList<>();
         int requests = 0;
@@ -265,7 +289,14 @@ public final class RepositoryIssues {
         }
         nextFirst = notRead.isEmpty() ? null : notRead.get(0);
         if (!notRead.isEmpty()) {
-            faults.add(BUDGET_SPENT + String.join(", ", notRead));
+            faults.add(
+                    BUDGET_SPENT
+                            + " within "
+                            + Seconds.of(deadline)
+                            + " s and "
+                            + MOST_PAGES
+                            + " pages; the list last read is shown for "
+                            + String.join(", ", notRead));
         }
         final List<Snapshot.Unlisted> issues = new ArrayList<>();
         for (final String repository : repositories) {

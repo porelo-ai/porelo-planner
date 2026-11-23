@@ -55,6 +55,7 @@ import org.fuin.porelo.planner.store.github.ProjectQueries;
 import org.fuin.porelo.planner.store.github.ProjectWrites;
 import org.fuin.porelo.planner.store.github.RepositoryIssues;
 import org.fuin.porelo.planner.store.local.LocalDirectoryStores;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
@@ -120,8 +121,12 @@ public class StoreConfiguration {
         TrackedUnlisted.class
     })
     public GitProjects gitProjects(
-            @Value("${planner.github.read-silence:60s}") final Duration readSilence) {
-        return gitProjects(System.getenv(), readSilence);
+            @Value("${planner.github.read-silence:60s}") final Duration readSilence,
+            final ObjectProvider<LimitFactors> limits) {
+        return gitProjects(
+                System.getenv(),
+                positive("planner.github.read-silence", readSilence),
+                limits.getIfAvailable(() -> LimitFactors.DEFAULT));
     }
 
     /**
@@ -131,32 +136,54 @@ public class StoreConfiguration {
      * @return the opener
      */
     static GitProjects gitProjects(final Map<String, String> environment) {
-        return gitProjects(environment, Duration.ofSeconds(60));
+        return gitProjects(environment, Duration.ofSeconds(60), LimitFactors.DEFAULT);
     }
 
     /**
-     * Opens projects with a given environment and limit on GitHub's silence during a read.
+     * Opens projects with a given environment, limit on GitHub's silence during a read, and the
+     * factors every limit follows.
      *
      * @param environment the environment, which holds the person's Git login
-     * @param readSilence how long GitHub may leave a tracked project's read without an answer
+     * @param readSilence how long GitHub may leave a tracked project's read without an answer,
+     *     before the factor {@code services}
+     * @param limits the factors
      * @return the opener
      */
     static GitProjects gitProjects(
-            final Map<String, String> environment, final Duration readSilence) {
+            final Map<String, String> environment,
+            final Duration readSilence,
+            final LimitFactors limits) {
         return new GitProjects(
                 environment,
                 new GitProjects.Settings(
-                        Duration.ofSeconds(10),
-                        Duration.ofSeconds(60),
+                        limits.services(Duration.ofSeconds(10)),
+                        limits.services(Duration.ofSeconds(60)),
                         16 << 20,
                         1 << 20,
                         10_000,
                         64,
-                        Duration.ofSeconds(30),
+                        limits.polling(Duration.ofSeconds(30)),
                         4),
                 Clock.systemUTC(),
                 Executors.newVirtualThreadPerTaskExecutor(),
-                tracked(environment, readSilence));
+                tracked(environment, limits.services(readSilence), limits),
+                limits);
+    }
+
+    /**
+     * Answers a duration property, refused at start when it is zero or less, which would poll
+     * without a pause or refuse every read at once.
+     *
+     * @param name the property's name
+     * @param value its value
+     * @return the value
+     * @throws IllegalStateException when it is zero or less
+     */
+    static Duration positive(final String name, final Duration value) {
+        if (value.isNegative() || value.isZero()) {
+            throw new IllegalStateException(name + " must be longer than zero, not " + value);
+        }
+        return value;
     }
 
     /** GitHub's API, to which the client adds each call's path. */
@@ -167,13 +194,15 @@ public class StoreConfiguration {
      * vault lends for its forge, or one whose items lie in a directory on this computer.
      */
     private static TrackedStores tracked(
-            final Map<String, String> environment, final Duration readSilence) {
-        final ForgeTokens tokens = ForgeTokens.of(environment);
+            final Map<String, String> environment,
+            final Duration readSilence,
+            final LimitFactors limits) {
+        final ForgeTokens tokens = ForgeTokens.of(environment, limits);
         // GitHub's answers are never followed elsewhere, so the token goes to GitHub's API alone.
         final HttpClient http =
                 HttpClient.newBuilder()
                         .followRedirects(HttpClient.Redirect.NEVER)
-                        .connectTimeout(Duration.ofSeconds(10))
+                        .connectTimeout(limits.services(Duration.ofSeconds(10)))
                         .build();
         final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
         final GitHubClient rest = new GitHubClient(GITHUB_API, http);
@@ -187,11 +216,11 @@ public class StoreConfiguration {
                                 task -> Thread.ofVirtual().name("github-probe").start(task),
                                 Clock.systemUTC(),
                                 // A save waits for a whole read under way rather than being refused
-                                // as
-                                // busy.
-                                Duration.ofMinutes(2),
-                                readSilence)
-                        .keepingCopies(() -> boardCopies(environment))
+                                // as busy.
+                                limits.services(Duration.ofMinutes(2)),
+                                readSilence,
+                                limits)
+                        .keepingCopies(() -> boardCopies(environment, limits))
                         .lookingForChanges(
                                 GitHubChanges.ItemPages.over(rest), ProjectQueries.over(graphQl));
         return TrackedStores.byKind(
@@ -200,7 +229,9 @@ public class StoreConfiguration {
                         github,
                         LocalDirectoryStores.KIND,
                         new LocalDirectoryStores(
-                                PrivateFiles.of(environment), environment, Clock.systemUTC())));
+                                PrivateFiles.of(environment, limits),
+                                environment,
+                                Clock.systemUTC())));
     }
 
     /**
@@ -220,7 +251,21 @@ public class StoreConfiguration {
      * @throws IllegalStateException when the directory, or one on its way, is not the person's own
      */
     static BoardCopies boardCopies(final Map<String, String> environment) {
-        final PrivateFiles files = PrivateFiles.of(environment);
+        return boardCopies(environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * The tracked boards' copies as above, a Windows PowerShell call given as long as the factor
+     * {@code machines} says.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the copies
+     * @throws IllegalStateException when the directory, or one on its way, is not the person's own
+     */
+    static BoardCopies boardCopies(
+            final Map<String, String> environment, final LimitFactors limits) {
+        final PrivateFiles files = PrivateFiles.of(environment, limits);
         final List<String> steps = new ArrayList<>(files.steps(PrivateFiles.Kind.CACHE));
         steps.add(BOARDS);
         final Path directory =
@@ -251,19 +296,24 @@ public class StoreConfiguration {
      * @param interval how often a followed project's repositories are fetched
      * @param probed how often a followed GitHub project is asked whether it changed, which costs no
      *     rate limit when it did not
+     * @param limits the factors from the command line; both intervals and the longest wait between
+     *     two polls follow {@code polling}
      * @return the registry
      */
     @Bean(destroyMethod = "close")
     public ChangesRegistry changesRegistry(
             final Projects projects,
             @Value("${planner.poll-interval:3m}") final Duration interval,
-            @Value("${planner.github.poll-interval:30s}") final Duration probed) {
+            @Value("${planner.github.poll-interval:30s}") final Duration probed,
+            final ObjectProvider<LimitFactors> limits) {
+        final LimitFactors factors = limits.getIfAvailable(() -> LimitFactors.DEFAULT);
         return new ChangesRegistry(
                 projects,
-                interval,
-                probed,
+                factors.polling(positive("planner.poll-interval", interval)),
+                factors.polling(positive("planner.github.poll-interval", probed)),
                 Executors.newSingleThreadScheduledExecutor(
-                        Thread.ofVirtual().name("poll-", 0).factory()));
+                        Thread.ofVirtual().name("poll-", 0).factory()),
+                factors.polling(ChangesRegistry.LONGEST_WAIT));
     }
 
     /**
@@ -314,8 +364,15 @@ public class StoreConfiguration {
         TaskEventReply.class,
         ReadingReply.class
     })
-    public WorkRecord workRecord(final ObjectProvider<MockMode> mode) {
-        return new WorkRecord(System.getenv(), mode.getIfAvailable() != null);
+    public WorkRecord workRecord(
+            final ObjectProvider<MockMode> mode, final ObjectProvider<LimitFactors> limits) {
+        final Map<String, String> environment = System.getenv();
+        final LimitFactors factors = limits.getIfAvailable(() -> LimitFactors.DEFAULT);
+        return new WorkRecord(
+                environment,
+                mode.getIfAvailable() != null,
+                PrivateFiles.of(environment, factors),
+                factors);
     }
 
     /**
@@ -326,6 +383,8 @@ public class StoreConfiguration {
      * @param gits opens a project from Git, made only outside the mock mode
      * @param mocks the mock store, made only in the mock mode
      * @param records the project's durable or mock work records
+     * @param readSilence how long a read of GitHub may wait for an answer, refused at start in the
+     *     mock mode too, which makes no Git opener to check it
      * @return the registry
      */
     @Bean
@@ -333,9 +392,11 @@ public class StoreConfiguration {
             final ObjectProvider<MockMode> mode,
             final ObjectProvider<GitProjects> gits,
             final ObjectProvider<MockStore> mocks,
-            final WorkRecord records) {
+            final WorkRecord records,
+            @Value("${planner.github.read-silence:60s}") final Duration readSilence) {
         // Decided at run time, not by @Profile: a native image fixes its beans when it is built.
         if (mode.getIfAvailable() != null) {
+            positive("planner.github.read-silence", readSilence);
             final MockStore mock = mocks.getObject();
             // The same refusals as a real start, so the window can test them against the mock.
             return new Projects(

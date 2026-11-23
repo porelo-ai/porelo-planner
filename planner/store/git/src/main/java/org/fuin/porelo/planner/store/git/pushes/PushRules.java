@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.git.stories.CommitRules;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -65,10 +66,10 @@ public final class PushRules {
 
     private static final Pattern REPOSITORY = Pattern.compile("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+");
 
-    /** How long a connection may take to open. */
+    /** How long a connection may take to open, before the factor {@code services}. */
     private static final Duration CONNECT = Duration.ofSeconds(10);
 
-    /** How long the whole answer may take, its body read to the end. */
+    /** How long the whole answer may take, its body read to the end, before its factor. */
     private static final Duration DEADLINE = Duration.ofSeconds(60);
 
     /** The longest body read; a page of activity is far shorter. */
@@ -121,7 +122,18 @@ public final class PushRules {
          * @return the reader
          */
         static Activity overHttp() {
-            return new HttpActivity();
+            return overHttp(LimitFactors.DEFAULT);
+        }
+
+        /**
+         * Reads over {@code java.net.http} as above, the connection's and the answer's limits times
+         * the factor {@code services}.
+         *
+         * @param limits the factors
+         * @return the reader
+         */
+        static Activity overHttp(final LimitFactors limits) {
+            return new HttpActivity(limits.services(CONNECT), limits.services(DEADLINE));
         }
     }
 
@@ -365,23 +377,34 @@ public final class PushRules {
     /** The reader over {@code java.net.http}. */
     private static final class HttpActivity implements Activity {
 
+        /** How long a connection may take to open. */
+        private final Duration connect;
+
+        /** How long the whole answer may take. */
+        private final Duration deadline;
+
+        HttpActivity(final Duration connect, final Duration deadline) {
+            this.connect = connect;
+            this.deadline = deadline;
+        }
+
         @Override
         public Answer read(URI address, Map<String, String> headers) throws IOException {
             final HttpRequest.Builder request =
-                    HttpRequest.newBuilder(address).timeout(DEADLINE).GET();
+                    HttpRequest.newBuilder(address).timeout(deadline).GET();
             headers.forEach(request::header);
             final HttpClient client =
                     HttpClient.newBuilder()
                             .followRedirects(HttpClient.Redirect.NEVER)
-                            .connectTimeout(CONNECT)
+                            .connectTimeout(connect)
                             .build();
             final Reading reading = new Reading(client, request.build());
             final FutureTask<Answer> task = new FutureTask<>(reading);
             Thread.ofVirtual().name("push-rules-activity").start(task);
             try {
-                return task.get(DEADLINE.toMillis(), TimeUnit.MILLISECONDS);
+                return task.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
             } catch (TimeoutException ex) {
-                throw new IOException("no answer within " + DEADLINE.toSeconds() + " seconds");
+                throw new IOException("no answer within " + deadline.toSeconds() + " seconds");
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 throw new InterruptedIOException("interrupted while reading");

@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -85,6 +86,9 @@ public final class StageCommand {
     /** The largest session file read; a larger one, or one that keeps growing, is refused. */
     static final long SESSION_LIMIT = 64L * 1024 * 1024;
 
+    /** How long {@code git rev-parse} may run, before the factor {@code machines}. */
+    private static final Duration GIT_LIMIT = Duration.ofSeconds(10);
+
     /** What git must not take from the caller: where its storage is, and the forge's token. */
     private static final Set<String> WITHHELD =
             Set.of("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GITHUB_TOKEN");
@@ -106,6 +110,9 @@ public final class StageCommand {
 
     private final Map<String, String> environment;
 
+    /** How long {@code git rev-parse} may run. */
+    private final Duration gitLimit;
+
     /**
      * A stage command for a repository.
      *
@@ -121,11 +128,33 @@ public final class StageCommand {
             final PrintStream out,
             final PrintStream err,
             final Map<String, String> environment) {
+        this(root, clock, out, err, environment, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * A stage command for a repository whose git call is given as long as the factor {@code
+     * machines} says.
+     *
+     * @param root the repository's root
+     * @param clock what "now" is
+     * @param out where an answer goes
+     * @param err where a refusal goes
+     * @param environment where {@code PORELO_STAGE_CLAUDE_LOG} names the agent's own session
+     * @param limits the factors
+     */
+    public StageCommand(
+            final Path root,
+            final Clock clock,
+            final PrintStream out,
+            final PrintStream err,
+            final Map<String, String> environment,
+            final LimitFactors limits) {
         this.root = root.toAbsolutePath().normalize();
         this.clock = clock;
         this.out = out;
         this.err = err;
         this.environment = Map.copyOf(environment);
+        this.gitLimit = limits.machines(GIT_LIMIT);
     }
 
     /**
@@ -663,9 +692,10 @@ public final class StageCommand {
         env.put("LC_ALL", "C");
         final Process process = builder.start();
         try {
-            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+            if (!process.waitFor(gitLimit.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
-                throw new IOException("git rev-parse did not finish within 10 seconds");
+                throw new IOException(
+                        "git rev-parse did not finish within " + gitLimit.toSeconds() + " seconds");
             }
             require(
                     process.exitValue() == 0,

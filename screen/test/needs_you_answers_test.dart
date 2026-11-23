@@ -446,6 +446,30 @@ void main() {
     ], reason: 'a machine that has not supplied the project is named as unavailable');
   });
 
+  // Harm: the factors the window read from Porelo after it made the boards never reaching them, so a slow network
+  // still times out their saves and reads at the defaults for the whole session.
+  test('a board follows the limits of the source it is made from, read after the boards were made', () async {
+    final plain = MockPlanningSource()..boards['checkout'] = _board('STOPPED');
+    final client = FakePlanningClient([provider('local', plain, project: 'checkout')]);
+    final boards = PlanningBoards(client);
+    final limits = PlanningLimits(services: 1.5);
+    final source = _LimitedSource(limits)..boards['checkout'] = _board('STOPPED');
+    addTearDown(() async {
+      boards.dispose();
+      await plain.end();
+      await source.end();
+    });
+    expect(boards.sources.single.limits, PlanningLimits.ones, reason: 'a source without factors gives 1.0');
+
+    client.providers = [provider('local', source, project: 'checkout')];
+    await Future<void>.delayed(Duration.zero);
+
+    final made = boards.sources.single;
+    expect(made.limits, limits, reason: 'the board holds the factors its source carries');
+    expect(made.readWait, const Duration(seconds: 45), reason: 'a read beside the moves, times services');
+    expect(made.unansweredWait, const Duration(seconds: 450), reason: 'a save answered late, times services');
+  });
+
   // Harm: running work shown in Needs you before the planning screen ever was cannot be stopped.
   test('the boards hand the window\'s task changes to every board they make', () async {
     final source = MockPlanningSource()..boards['checkout'] = _board('NEXT_STEP_UNAVAILABLE');
@@ -467,4 +491,12 @@ void main() {
       reason: 'raised work is offered Stop work without the planning screen',
     );
   });
+}
+
+/// A source that carries the factors its window read, as the planner's own source does.
+class _LimitedSource extends MockPlanningSource implements PlanningLimited {
+  _LimitedSource(this.limits);
+
+  @override
+  final PlanningLimits limits;
 }

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
+import org.fuin.porelo.wire.LimitFactors;
 
 /**
  * The planner's clones of a project, under {@code $XDG_CACHE_HOME/porelo-planner/<project>/} on
@@ -28,7 +29,26 @@ public final class CacheDirectory {
      *     account
      */
     public static Path of(final Map<String, String> environment, final String project) {
-        return of(PrivateFiles.of(environment), environment, project);
+        return of(environment, project, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes or checks a project's cache directory, a Windows PowerShell call given as long as the
+     * factor {@code machines} says.
+     *
+     * @param environment the planner's environment, for {@code XDG_CACHE_HOME} and {@code HOME}, or
+     *     {@code LOCALAPPDATA} on Windows
+     * @param project the project's name
+     * @param limits the factors
+     * @return the directory, the person's alone
+     * @throws IllegalStateException when it, or a directory on its way, could be changed by another
+     *     account
+     */
+    public static Path of(
+            final Map<String, String> environment,
+            final String project,
+            final LimitFactors limits) {
+        return of(PrivateFiles.of(environment, limits), environment, project);
     }
 
     /**

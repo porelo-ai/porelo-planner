@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -54,6 +55,9 @@ public final class AddressFile implements AutoCloseable {
 
     private final PrivateFiles files;
 
+    /** The factors of the planner whose file this is, which its refused file steps follow. */
+    private final LimitFactors limits;
+
     /** Deletes the file at the process's end, before Spring waits for the calls in flight. */
     private final Thread atEnd;
 
@@ -67,8 +71,10 @@ public final class AddressFile implements AutoCloseable {
             final Path lockFile,
             final FileChannel lockChannel,
             final FileLock lock,
-            final PrivateFiles files) {
+            final PrivateFiles files,
+            final LimitFactors limits) {
         this.files = files;
+        this.limits = limits;
         this.directory = directory;
         this.lockFile = lockFile;
         this.lockChannel = lockChannel;
@@ -88,7 +94,7 @@ public final class AddressFile implements AutoCloseable {
             return;
         }
         try {
-            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)), limits);
         } catch (final IOException | RuntimeException e) {
             // Close tries again, if Spring gets to it.
         }
@@ -175,6 +181,24 @@ public final class AddressFile implements AutoCloseable {
      */
     static AddressFile open(
             final String runtimeDirectory, final Path runUser, final PrivateFiles files) {
+        return open(runtimeDirectory, runUser, files, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Checks the runtime directory and takes the lock as above, a refused file step tried as often
+     * as the factor {@code retries} of {@code limits} says.
+     *
+     * @param runtimeDirectory The account's runtime directory; may be empty when it is not set.
+     * @param runUser Where the system makes each account's runtime directory, named by its uid.
+     * @param files The platform's private files.
+     * @param limits The factors of the planner that opens it.
+     * @return The address file, not yet written.
+     */
+    static AddressFile open(
+            final String runtimeDirectory,
+            final Path runUser,
+            final PrivateFiles files,
+            final LimitFactors limits) {
         final Path runtime;
         if (!runtimeDirectory.isBlank()) {
             runtime = Path.of(runtimeDirectory);
@@ -213,8 +237,9 @@ public final class AddressFile implements AutoCloseable {
                     throw alreadyRuns(directory);
                 }
                 // Held, so a file here is a dead planner's; gone before a window reads its port.
-                SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
-                return new AddressFile(directory, lockFile, channel, lock, files);
+                SharedFiles.whileShared(
+                        () -> Files.deleteIfExists(directory.resolve(FILE)), limits);
+                return new AddressFile(directory, lockFile, channel, lock, files, limits);
             } catch (IOException | RuntimeException e) {
                 HELD.remove(lockFile);
                 throw e;
@@ -270,13 +295,19 @@ public final class AddressFile implements AutoCloseable {
                                     written,
                                     directory.resolve(FILE),
                                     StandardCopyOption.ATOMIC_MOVE,
-                                    StandardCopyOption.REPLACE_EXISTING));
+                                    StandardCopyOption.REPLACE_EXISTING),
+                    limits);
         } catch (IOException e) {
             throw new IllegalStateException(
                     "the address file " + directory.resolve(FILE) + " cannot be written: " + e, e);
         } finally {
             deleteQuietly(temporary);
         }
+    }
+
+    /** The factors its refused file steps follow. */
+    LimitFactors limits() {
+        return limits;
     }
 
     /** The file the window reads. */
@@ -298,7 +329,7 @@ public final class AddressFile implements AutoCloseable {
         org.slf4j.LoggerFactory.getLogger(AddressFile.class)
                 .info("The planner ends; its address file {} is removed", directory.resolve(FILE));
         try {
-            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)));
+            SharedFiles.whileShared(() -> Files.deleteIfExists(directory.resolve(FILE)), limits);
         } catch (IOException e) {
             throw new IllegalStateException(
                     "the address file " + directory.resolve(FILE) + " cannot be deleted: " + e, e);

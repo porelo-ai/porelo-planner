@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../planning_limits.dart';
+
 /// What Windows says about a path's owner and access control list, in the planner's own form, and the planner's rules
 /// that keep its files to the account alone.
 ///
@@ -195,12 +197,15 @@ foreach ($p in (Lines $env:PORELO_PATHS)) {
 ''';
 
   /// Runs [script] for [paths] with Windows PowerShell from [systemRoot]'s own directory, and answers what it printed,
-  /// or null when it cannot be run, fails, or does not end within [limit], when it is killed.
+  /// or null when it cannot be run, fails, or does not end within [limit], when it is killed; [limit] is 30 s times
+  /// [limits]' `machines` unless given.
   static Future<String?> ask(
     List<String> paths, {
     required String systemRoot,
-    Duration limit = const Duration(seconds: 30),
+    Duration? limit,
+    PlanningLimits limits = PlanningLimits.ones,
   }) async {
+    final bound = limit ?? limits.machinesOf(defaultLimit);
     final program = '$systemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
     final Process process;
     try {
@@ -220,8 +225,11 @@ foreach ($p in (Lines $env:PORELO_PATHS)) {
     } on ProcessException {
       return null;
     }
-    return answer(process, limit: limit);
+    return answer(process, limit: bound);
   }
+
+  /// How long one PowerShell call may take, before the factor `machines`.
+  static const defaultLimit = Duration(seconds: 30);
 
   /// What [process] printed once it ended with 0, or null when it failed, printed more than [bound] bytes on either
   /// output, or did not end within [limit]; it is killed in each such case, and nothing waits on its outputs past

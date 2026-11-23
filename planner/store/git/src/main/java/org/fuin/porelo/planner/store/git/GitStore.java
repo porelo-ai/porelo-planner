@@ -50,6 +50,7 @@ import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.fuin.porelo.planner.store.git.stories.StoryHead;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -63,7 +64,10 @@ public final class GitStore implements PlanningStore {
     private record Snapshot(
             Board board, Map<String, String> commits, Map<String, Part> parts, Instant checked) {}
 
-    /** How long a save waits for a check or another save of the project. */
+    /**
+     * How long a save waits for a check or another save of the project, before the factor {@code
+     * machines}.
+     */
     private static final Duration LOCK_WAIT = Duration.ofSeconds(30);
 
     /** A story's or an issue's file, its id the first group. */
@@ -101,6 +105,12 @@ public final class GitStore implements PlanningStore {
     private final AtomicReference<@Nullable StoreException> lastFailure = new AtomicReference<>();
 
     private final List<Consumer<Board>> listeners = new CopyOnWriteArrayList<>();
+
+    /** How long a save waits for a check or another save of the project. */
+    private final Duration lockWait;
+
+    /** How often a result is saved again on a board a check swapped in meanwhile. */
+    private final int resultAttempts;
 
     /**
      * Makes a store.
@@ -158,6 +168,46 @@ public final class GitStore implements PlanningStore {
             final int parallel,
             final Executor background,
             final LocalSaves saves) {
+        this(
+                repositories,
+                remote,
+                reader,
+                lock,
+                clock,
+                interval,
+                parallel,
+                background,
+                saves,
+                LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes a store whose saves stand in the planner's own clones and are pushed in the background,
+     * its wait for the project's lock and its saves again of a result following the factors.
+     *
+     * @param repositories the project's repositories, its own first
+     * @param remote reaches them
+     * @param reader reads one at a commit
+     * @param lock keeps a refresh and a save of the project apart
+     * @param clock tells when the last check was
+     * @param interval how old the last check may be before a request starts another
+     * @param parallel how many remotes are asked at once
+     * @param background runs a check a request started
+     * @param saves holds the saves and pushes them
+     * @param limits the factors: {@code machines} for the lock's wait, {@code retries} for a
+     *     result's saves again
+     */
+    public GitStore(
+            final List<Repository> repositories,
+            final Remote remote,
+            final PartReader reader,
+            final ProjectLock lock,
+            final Clock clock,
+            final Duration interval,
+            final int parallel,
+            final Executor background,
+            final LocalSaves saves,
+            final LimitFactors limits) {
         if (repositories.isEmpty()) {
             throw new IllegalArgumentException("A project has at least its own repository");
         }
@@ -173,6 +223,8 @@ public final class GitStore implements PlanningStore {
         this.parallel = parallel;
         this.background = background;
         this.saves = saves;
+        this.lockWait = limits.machines(LOCK_WAIT);
+        this.resultAttempts = limits.tries(RESULT_ATTEMPTS);
         saves.tell(this::pushed);
     }
 
@@ -290,7 +342,10 @@ public final class GitStore implements PlanningStore {
         return saved(revision, writes, List.of(), null, null).board();
     }
 
-    /** How often a result is saved again on a board a check swapped in meanwhile. */
+    /**
+     * How often a result is saved again on a board a check swapped in meanwhile, before the factor
+     * {@code retries}.
+     */
     private static final int RESULT_ATTEMPTS = 3;
 
     /**
@@ -307,13 +362,12 @@ public final class GitStore implements PlanningStore {
             // A hand-in waits a bounded time, so a long check answers it try later, never hangs it.
             final Board board =
                     refreshed(
-                            lock.acquire(LOCK_WAIT)
-                                    .orElseThrow(() -> new StoreException.Busy(own)));
+                            lock.acquire(lockWait).orElseThrow(() -> new StoreException.Busy(own)));
             try {
                 return saved(board.revision(), writes, List.of(), null, result).board();
             } catch (final StoreException.StaleRevision e) {
                 // A check swapped the board between the read and the save; the result is not stale.
-                if (attempt == RESULT_ATTEMPTS) {
+                if (attempt >= resultAttempts) {
                     throw e;
                 }
             }
@@ -399,7 +453,7 @@ public final class GitStore implements PlanningStore {
             final @Nullable StageResult result) {
         final String own = repositories.get(0).name();
         final ProjectLock.Held held =
-                lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own));
+                lock.acquire(lockWait).orElseThrow(() -> new StoreException.Busy(own));
         try (held) {
             requireActive();
             final Snapshot snapshot = current.get();

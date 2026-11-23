@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.app.PoreloTaskRecords.Result;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.Runner;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords.Unanswered;
+import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -102,6 +103,8 @@ class PoreloTaskRecordsTest {
                 .containsExactly(
                         List.of(
                                 PORELO.toString(),
+                                "--limits",
+                                "services=1.0,machines=1.0,polling=1.0,retries=1.0",
                                 "task",
                                 "records",
                                 "-p",
@@ -112,6 +115,26 @@ class PoreloTaskRecordsTest {
         assertThat(environments.getFirst())
                 .as("only PATH, HOME, LANG and the XDG directories")
                 .isEqualTo(Map.of("PATH", "/usr/bin", "HOME", "/home/user"));
+    }
+
+    @Test
+    void porelosIsHandedThePlannersLimitsLineBeforeItsVerb() {
+        // Harm: Porelo waiting on its records with the default limits while the planner waits for
+        // it as long as the person's factors say.
+        new PoreloTaskRecords(
+                        PORELO,
+                        fake,
+                        Map.of("PATH", "/usr/bin"),
+                        LimitFactors.parse("services=2.0,polling=0.5"))
+                .since("porelo-planner", SINCE);
+
+        assertThat(commands.getFirst())
+                .as("the command's first arguments")
+                .startsWith(
+                        PORELO.toString(),
+                        "--limits",
+                        "services=2.0,machines=1.0,polling=0.5,retries=1.0",
+                        "task");
     }
 
     // Prevents a velocity from counting tasks Porelo never answered.
@@ -554,6 +577,8 @@ class PoreloTaskRecordsTest {
         assertThat(Files.readAllLines(dir.resolve("args")))
                 .as("each argument as given")
                 .containsExactly(
+                        "--limits",
+                        "services=1.0,machines=1.0,polling=1.0,retries=1.0",
                         "task",
                         "records",
                         "-p",

@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,16 +36,20 @@ import org.slf4j.LoggerFactory;
 class LentLoginTest {
 
     /**
-     * Records each request but its password, and answers {@code get} with the token its environment
-     * holds, so the token is never on disk; with {@code STAND_IN_SHUT} it fails as a shut vault
-     * does.
+     * Records each request but its password, with the limits line it was handed, and answers {@code
+     * get} with the token its environment holds, so the token is never on disk; with {@code
+     * STAND_IN_SHUT} it fails as a shut vault does.
      */
     private static final String STAND_IN =
             """
             #!/bin/sh
+            [ "$1" = --limits ] || exit 2
+            limits=$2
+            shift 2
             [ "$1 $2 $3" = "vault credential --for" ] || exit 2
             request=$(grep -v '^password=')
-            printf 'action=%s\\nfor=%s\\n%s\\n--\\n' "$5" "$4" "$request" >> "$(dirname "$0")/requests"
+            printf 'limits=%s\\naction=%s\\nfor=%s\\n%s\\n--\\n' "$limits" "$5" "$4" "$request" \\
+              >> "$(dirname "$0")/requests"
             if [ -n "$STAND_IN_SHUT" ]; then
               echo "the vault is shut" >&2
               exit 1
@@ -169,6 +174,11 @@ class LentLoginTest {
     }
 
     private GitRemote remote(final Map<String, String> person) throws IOException {
+        return remote(person, LimitFactors.DEFAULT);
+    }
+
+    private GitRemote remote(final Map<String, String> person, final LimitFactors limits)
+            throws IOException {
         return new GitRemote(
                 Files.createDirectories(dir.resolve("cache")),
                 person,
@@ -176,7 +186,7 @@ class LentLoginTest {
                 new GitRunner(Duration.ofSeconds(20), 1 << 20),
                 1 << 16,
                 // Linux's own check, as the production entry takes it on this test's platform.
-                LentLogin.of(person, PoreloExecutable.of(person, false)));
+                LentLogin.of(person, PoreloExecutable.of(person, false, limits), limits));
     }
 
     private String requests() throws IOException {
@@ -202,9 +212,21 @@ class LentLoginTest {
                 .contains("Basic " + basic());
         assertThat(requests())
                 .as("the helper was asked for this repository by its path")
-                .contains("action=get\nfor=" + url.value() + "\n")
+                .contains("\naction=get\nfor=" + url.value() + "\n")
                 .contains("protocol=https\n")
                 .contains("path=store.git\n");
+    }
+
+    @Test
+    void theHelperGitRunsIsHandedThePlannersLimitsLineBeforeItsVerb() throws Exception {
+        // Harm: Porelo's helper, run by Git, waiting with the default limits on a vault the
+        // person's factors give longer, so a slow vault fails the fetch.
+        final GitHttpsServer server = server("person:" + token);
+        remote(person(true), LimitFactors.parse("services=2.0"))
+                .fetch("store", new CloneUrl(server.url("store.git")), "main");
+        assertThat(requests())
+                .as("the limits line the helper was handed")
+                .contains("limits=services=2.0,machines=1.0,polling=1.0,retries=1.0\naction=get\n");
     }
 
     @Test

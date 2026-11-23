@@ -24,6 +24,7 @@ import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -37,7 +38,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ConditionalChangeProbe implements ChangeProbe, Pace {
 
-    /** How long all the asks of one look may take together. */
+    /** How long all the asks of one look may take together, before the factor {@code services}. */
     static final Duration DEADLINE = Duration.ofSeconds(30);
 
     /** The most asks of one look in flight at once, so GitHub sees no burst. */
@@ -106,9 +107,12 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
 
     /**
      * How often the waits are read again while a look cannot ask about each of their repositories:
-     * too many of them, out of time or a failed ask.
+     * too many of them, out of time or a failed ask. Before the factor {@code polling}.
      */
     static final Duration WAITS_EVERY = Duration.ofMinutes(1);
+
+    /** How often the waits are read again, after its factor. */
+    private final Duration waitsEvery;
 
     /** When the waits were last read, on the monotonic clock; guarded by this probe. */
     private long waitsReadAt;
@@ -135,7 +139,33 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             final TokenSource tokens,
             final GitHubPace pace,
             final Executor executor) {
-        this(reads, tokens, pace, executor, DEADLINE);
+        this(reads, tokens, pace, executor, LimitFactors.DEFAULT);
+    }
+
+    /**
+     * Makes the probe of one project whose deadline and reads of the waits follow the factors.
+     *
+     * @param reads the conditional reads
+     * @param tokens the person's token, asked for once a look
+     * @param pace the pace of the person's token, told what the answers say of the rate limit
+     * @param executor runs the asks side by side
+     * @param limits the factors: {@code services} for the deadline, {@code polling} for how often
+     *     the waits are read again
+     */
+    public ConditionalChangeProbe(
+            final ConditionalReads reads,
+            final TokenSource tokens,
+            final GitHubPace pace,
+            final Executor executor,
+            final LimitFactors limits) {
+        this(
+                reads,
+                tokens,
+                pace,
+                executor,
+                limits.services(DEADLINE),
+                System::nanoTime,
+                limits.polling(WAITS_EVERY));
     }
 
     /** Makes the probe with its own deadline. */
@@ -156,6 +186,22 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             final Executor executor,
             final Duration deadline,
             final LongSupplier nanos) {
+        this(reads, tokens, pace, executor, deadline, nanos, WAITS_EVERY);
+    }
+
+    /**
+     * Makes the probe with its own deadline, monotonic clock, in nanoseconds, and interval of the
+     * waits' reads.
+     */
+    private ConditionalChangeProbe(
+            final ConditionalReads reads,
+            final TokenSource tokens,
+            final GitHubPace pace,
+            final Executor executor,
+            final Duration deadline,
+            final LongSupplier nanos,
+            final Duration waitsEvery) {
+        this.waitsEvery = waitsEvery;
         this.reads = reads;
         this.tokens = tokens;
         this.pace = pace;
@@ -163,7 +209,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         this.deadline = deadline;
         this.nanos = nanos;
         this.adoptUntil = nanos.getAsLong();
-        this.waitsReadAt = nanos.getAsLong() - WAITS_EVERY.toNanos();
+        this.waitsReadAt = nanos.getAsLong() - waitsEvery.toNanos();
     }
 
     @Override
@@ -318,9 +364,9 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         waitsReadAt = nanos.getAsLong();
     }
 
-    /** Whether the waits were read longer ago than {@link #WAITS_EVERY}. */
+    /** Whether the waits were read longer ago than their interval. */
     private synchronized boolean waitsDue() {
-        return nanos.getAsLong() - waitsReadAt >= WAITS_EVERY.toNanos();
+        return nanos.getAsLong() - waitsReadAt >= waitsEvery.toNanos();
     }
 
     @Override
