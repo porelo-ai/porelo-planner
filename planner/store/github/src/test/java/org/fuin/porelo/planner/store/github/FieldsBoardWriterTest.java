@@ -3,6 +3,8 @@ package org.fuin.porelo.planner.store.github;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -1165,6 +1167,68 @@ class FieldsBoardWriterTest {
                         FieldValue.option("PVTI_PL1", "F_Size", "O_S"),
                         FieldValue.number("PVTI_PL1", "F_Stages", 1));
         assertThat(github.comments).as("the stage comment written").hasSize(1);
+    }
+
+    @Test
+    void aStageResultAddsMinutesToTheFieldsWithoutKeepingItsFiguresInTheComment() throws Exception {
+        // Harm: a stage's figures kept twice, in the comment and the fields, where they can differ.
+        final Map<String, String> fields = new LinkedHashMap<>(state("Analysis"));
+        fields.put(FieldNames.MINUTES, "10");
+        fields.put(FieldNames.VM_MINUTES, "2");
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, fields);
+        final GitHub github = new GitHub().holding(one);
+        github.standing.add(
+                """
+                <!-- porelo:stage -->
+                implement: done
+                ```json
+                {"key":"task-1:1","stage":"implement","result":"done","actor":"agent",
+                 "model":"a-model","effort":"high","wall_min":50,"vm_min":20,"tokens":{},
+                 "base":{"wall_min":5,"vm_min":1,"tokens":0,"stages":0}}
+                ```
+                """);
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        assertThat(github.values.get("PVTI_PL1"))
+                .as("the stage's minutes added to the project fields")
+                .containsEntry("F_Minutes", FieldValue.number("PVTI_PL1", "F_Minutes", 14.5))
+                .containsEntry("F_VM_minutes", FieldValue.number("PVTI_PL1", "F_VM_minutes", 3.5));
+        assertThat(github.comments).as("one stage comment").hasSize(1);
+        final String comment = github.comments.get(0);
+        final JsonNode written =
+                new ObjectMapper()
+                        .readTree(
+                                comment.substring(
+                                        comment.indexOf("```json\n") + "```json\n".length(),
+                                        comment.lastIndexOf("```")));
+        assertThat(written.has("wall_min") || written.has("vm_min") || written.has("tokens"))
+                .as("the comment carries no stage figures")
+                .isFalse();
+        for (final Map.Entry<String, Double> field :
+                Map.of("wall_min", 10.0, "vm_min", 2.0, "tokens", 0.0, "stages", 0.0).entrySet()) {
+            final JsonNode base = written.path("base").path(field.getKey());
+            assertThat(base.isNumber()).as("the numeric base for %s", field.getKey()).isTrue();
+            assertThat(base.asDouble())
+                    .as("%s before the stage was added", field.getKey())
+                    .isEqualTo(field.getValue());
+        }
+        assertThat(written.path("key").asText())
+                .as("the stage key for duplicate detection")
+                .isEqualTo("task-1:2");
+        assertThat(written.path("stage").asText()).as("the stage").isEqualTo("implement");
+        assertThat(written.path("result").asText()).as("the stage result").isEqualTo("done");
+
+        final IssueMapping.Mapped mapped =
+                IssueMapping.read(
+                        List.of(asGitHubHolds(one, github)),
+                        CONFIG,
+                        states -> states.isEmpty() ? null : states.get(0));
+        assertThat(mapped.issues())
+                .as("the board reads Minutes from the field despite differing comment figures")
+                .extracting(Issue::minutes, Issue::warnings)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(14.5, List.of()));
+        assertThat(mapped.faults()).as("no fault over comment figures").isEmpty();
     }
 
     @Test

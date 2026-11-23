@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.jspecify.annotations.Nullable;
@@ -15,17 +16,31 @@ class StageCommentTest {
     private static final Instant END = Instant.parse("2026-11-20T09:44:45Z");
 
     @Test
-    void aStageWrittenWithItsBaseIsReadBackWithIt() {
+    void aCommentWithFiguresIsReadForDuplicateDetectionAndRecovery() {
         // Harm: a stage handed in again cannot tell whether its figures were added, as the
         // fields they were added to are lost in the comment.
         final StageEntry entry = stage("task-1:3", "implement", "agent", 30);
         final StageComment.Base base = new StageComment.Base(10, 0.5, 300, 2);
 
-        final StageComment.Read read =
-                StageComment.read(new CommentView("IC_1", StageComment.write(entry, base), END))
-                        .orElseThrow();
+        final String written = commentWithFigures();
+        for (final String comment :
+                List.of(
+                        written,
+                        written.replaceFirst("\"wall_min\" : [0-9.]+", "\"wall_min\" : -30.0"),
+                        written.replaceFirst("\"vm_min\" : [0-9.]+", "\"vm_min\" : 1e999"),
+                        written.replaceFirst(
+                                "\"claude_input_tokens\" : [0-9]+",
+                                "\"claude_input_tokens\" : 99999999999999999999999"),
+                        written.replaceFirst(
+                                "\"claude_input_tokens\" : [0-9]+",
+                                "\"claude_input_tokens\" : 9007199254740992"))) {
+            final StageComment.Read read =
+                    StageComment.read(new CommentView("IC_1", comment, END)).orElseThrow();
 
-        assertThat(read).isEqualTo(new StageComment.Stage(entry, END, base));
+            assertThat(read)
+                    .as("the stage context and numeric base, ignoring the stage's figures")
+                    .isEqualTo(new StageComment.Stage(withoutFigures(entry), END, base));
+        }
     }
 
     @Test
@@ -36,20 +51,22 @@ class StageCommentTest {
                         stage("task-1:3", "implement", "agent", 30),
                         new StageComment.Base(10, 0.5, 300, 2));
 
-        assertThat(
-                        StageComment.read(
-                                new CommentView(
-                                        "IC_1",
-                                        written.replace("\"stages\" : 2.0", "\"stages\" : \"two\""),
-                                        END)))
-                .as("a base with text for a figure")
-                .containsInstanceOf(StageComment.Broken.class);
+        for (final String comment : List.of(written, commentWithFigures())) {
+            assertThat(
+                            StageComment.read(
+                                    new CommentView(
+                                            "IC_1",
+                                            comment.replace(
+                                                    "\"stages\" : 2.0", "\"stages\" : \"two\""),
+                                            END)))
+                    .as("a base with an invalid value")
+                    .containsInstanceOf(StageComment.Broken.class);
+        }
     }
 
     @Test
-    void aStageWrittenAndReadBackIsTheSameStageEndingWhenTheCommentWasMade() {
-        // Harm: the course of an issue read back other than the planner wrote it, so the
-        // velocity counts other minutes.
+    void aStageWrittenAndReadBackKeepsItsContextWithoutItsFigures() {
+        // Harm: stage figures in comments are taken for the project's authoritative fields.
         final StageEntry entry = stage("task-1:3", "implement", "agent", 30);
 
         final StageComment.Read read =
@@ -58,10 +75,7 @@ class StageCommentTest {
 
         assertThat(read)
                 .as("the stage, its end the comment's createdAt")
-                .isEqualTo(new StageComment.Stage(entry, END, null));
-        assertThat(((StageComment.Stage) read).start())
-                .as("its start its end less its minutes")
-                .isEqualTo(END.minusSeconds(30 * 60));
+                .isEqualTo(new StageComment.Stage(withoutFigures(entry), END, null));
         assertThat(StageComment.write(entry, null))
                 .as("the marker as the first line, then the words, then the JSON block")
                 .startsWith(StageComment.MARKER + "\nimplement: done\n```json\n{");
@@ -83,32 +97,14 @@ class StageCommentTest {
 
     @Test
     void aHandEditedStageCommentIsReadAsBrokenAndNeverEchoed() {
-        // Harm: a hand edit on GitHub crashing a read of the course of an issue, taken as a stage
-        // with negative or infinite figures, or its text leaking into a fault.
-        final String written =
-                StageComment.write(stage("task-1:3", "implement", "agent", 30), null);
+        // Harm: a hand edit on GitHub crashes a stage read or leaks its text into a fault.
+        final String written = commentWithFigures();
         final Map<String, String> edits = new LinkedHashMap<>();
-        edits.put(
-                "negative minutes",
-                written.replaceFirst("\"wall_min\" : [0-9.]+", "\"wall_min\" : -30.0"));
         edits.put(
                 "an unknown field",
                 written.replace("\"key\" :", "\"leaked_field_name\" : 1,\n  \"key\" :"));
         edits.put("broken JSON", written.replace("\"stage\" :", "\"stage\" leaked-json-text"));
-        edits.put(
-                "an overflowing token count",
-                written.replaceFirst(
-                        "\"claude_input_tokens\" : [0-9]+",
-                        "\"claude_input_tokens\" : 99999999999999999999999"));
         edits.put("a renamed field", written.replace("\"model\" :", "\"leaked_model_name\" :"));
-        edits.put(
-                "a token count above what JSON carries exactly",
-                written.replaceFirst(
-                        "\"claude_input_tokens\" : [0-9]+",
-                        "\"claude_input_tokens\" : 9007199254740992"));
-        edits.put(
-                "an infinite number",
-                written.replaceFirst("\"vm_min\" : [0-9.]+", "\"vm_min\" : 1e999"));
         // Blank lines after the block are allowed, so only the bound refuses this one.
         edits.put("a huge comment", written + " \n".repeat(StageComment.LONGEST / 2));
         edits.put("no closing fence", written.replace("}\n```\n", "}\n"));
@@ -192,5 +188,49 @@ class StageCommentTest {
         }
         return new StageEntry(
                 key, kind, "done", actor, model, model == null ? null : "high", minutes, 2, tokens);
+    }
+
+    private static StageEntry withoutFigures(final StageEntry entry) {
+        return new StageEntry(
+                entry.key(),
+                entry.stage(),
+                entry.result(),
+                entry.actor(),
+                entry.model(),
+                entry.effort(),
+                0,
+                0,
+                Map.of());
+    }
+
+    private static String commentWithFigures() {
+        return """
+                <!-- porelo:stage -->
+                implement: done
+                ```json
+                {
+                  "key" : "task-1:3",
+                  "stage" : "implement",
+                  "result" : "done",
+                  "actor" : "agent",
+                  "model" : "claude-opus",
+                  "effort" : "high",
+                  "wall_min" : 30.0,
+                  "vm_min" : 2.0,
+                  "tokens" : {
+                    "claude_input_tokens" : 100,
+                    "claude_output_tokens" : 20,
+                    "claude_cache_read_tokens" : 9000,
+                    "claude_cache_write_tokens" : 5
+                  },
+                  "base" : {
+                    "wall_min" : 10.0,
+                    "vm_min" : 0.5,
+                    "tokens" : 300.0,
+                    "stages" : 2.0
+                  }
+                }
+                ```
+                """;
     }
 }

@@ -51,13 +51,12 @@ block opened in line 12 under Plan never closes". A read takes such a body and s
 
 Each stage is one comment, written with the person's access, so GitHub shows the person as its author. It starts
 with the line `<!-- porelo:stage -->`, says the stage and its result in words, and holds a JSON block: a key, the
-stage, the result, the actor, the model, the effort, the minutes, the VM minutes and the tokens by kind, and for a
-summed stage its `base`, the issue's Minutes, VM minutes, Tokens and Stages before the stage was added to them. The
-key names the task and the stage, so a stage written twice counts once.
+stage, the result, the actor, the model and the effort. A summed stage's `base` holds the issue's Minutes, VM minutes,
+Tokens and Stages as numbers before the stage was added to them. The base supports recovery; the stage's own figures
+are kept only in the project fields. The key names the task and the stage, so a stage written twice counts once.
 
-A stage ends at the comment's `createdAt`, the second GitHub wrote it, and starts that many minutes before; neither
-is stored. A person's move is no comment: GitHub's timeline shows each `Status` change with its time, its actor and
-the states before and after.
+A stage ends at the comment's `createdAt`, the second GitHub wrote it. A person's move is no comment: GitHub's
+timeline shows each `Status` change with its time, its actor and the states before and after.
 
 A move into a closed state may carry the person's one sentence why: what was built, or why not. It is written as a
 comment after the close, on the story whose shown state the move makes closed and on each issue the move closes; when
@@ -83,9 +82,9 @@ that still stands at the comment's base, so a result handed in again after a sav
 fields counts the stage once; with a comment that names no base, none is added again. A summed field that no longer
 stands at the base when the result is handed in again counts the stage as added there, so a person's edit of it
 between the two tries, or another stage of the issue saved in between, is kept and the stage's figure for that field
-is not added; such a field, one the board reads as none too, does not refuse the save. Only an agent's stages of the
-measured kinds are added, as the Markdown store's stage records count them; a pause and a person's move are shown, not
-summed.
+is not added; such a field, one the board reads as none too, does not refuse the save. A stage comment that carries
+its own figures is read with those figures ignored. Only an agent's stages of the measured kinds are added, as the
+Markdown store's stage records count them; a pause and a person's move are shown, not summed.
 
 ## States and ids
 

@@ -8,10 +8,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,9 +20,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The comment that holds one stage of an issue: the marker line, one line of words for a person,
- * and the stage's figures as a JSON block, with the number fields as they stood before the stage
- * was added to them. The comments are the course of the work a person reads; the board never reads
- * them, and its number fields are what GitHub holds.
+ * and its context as a JSON block, with the number fields as they stood before the stage was added
+ * to them. The comments are the course of the work a person reads; the board never reads them, and
+ * its number fields are what GitHub holds.
  */
 public final class StageComment {
 
@@ -48,18 +46,11 @@ public final class StageComment {
     /** The one actor whose stages add to an issue's number fields. */
     private static final String AGENT = "agent";
 
-    /** The JSON fields, in the order they are written. */
+    /** The stage context fields, in the order they are written. */
     private static final List<String> FIELDS =
-            List.of(
-                    "key",
-                    "stage",
-                    "result",
-                    "actor",
-                    "model",
-                    "effort",
-                    "wall_min",
-                    "vm_min",
-                    "tokens");
+            List.of("key", "stage", "result", "actor", "model", "effort");
+
+    private static final Set<String> FIGURES = Set.of("wall_min", "vm_min", "tokens");
 
     /** The JSON field that holds the number fields a summed stage was added to. */
     private static final String BASE = "base";
@@ -122,22 +113,12 @@ public final class StageComment {
     /**
      * A stage comment read whole.
      *
-     * @param entry the stage
+     * @param entry the stage context, with its figures ignored
      * @param end when it ended: the comment's {@code createdAt}
      * @param base the number fields the stage was added to, or null when the comment names none, as
      *     one written after its figures does
      */
-    public record Stage(StageEntry entry, Instant end, @Nullable Base base) implements Read {
-
-        /**
-         * Answers when the stage started: its end less its minutes.
-         *
-         * @return its start
-         */
-        public Instant start() {
-            return end.minus(Duration.ofMillis(Math.round(entry.minutes() * 60_000)));
-        }
-    }
+    public record Stage(StageEntry entry, Instant end, @Nullable Base base) implements Read {}
 
     /**
      * A comment that starts as a stage comment but cannot be read as one, such as one edited by
@@ -153,7 +134,7 @@ public final class StageComment {
      * @param entry the stage
      * @param base the number fields the stage is added to, or null for a stage not summed
      * @return the comment's text
-     * @throws IllegalArgumentException when a value would not read back as written
+     * @throws IllegalArgumentException when a value cannot be carried by a comment or number field
      */
     public static String write(final StageEntry entry, final @Nullable Base base) {
         checked(entry);
@@ -164,10 +145,6 @@ public final class StageComment {
         node.put("actor", entry.actor());
         node.put("model", entry.model());
         node.put("effort", entry.effort());
-        node.put("wall_min", entry.minutes());
-        node.put("vm_min", entry.vmMinutes());
-        final ObjectNode tokens = node.putObject("tokens");
-        entry.tokens().forEach(tokens::put);
         if (base != null) {
             final ObjectNode written = node.putObject(BASE);
             written.put("wall_min", base.minutes());
@@ -279,11 +256,12 @@ public final class StageComment {
 
     /** The stage a JSON block holds, or null when a field or a value is not one a stage has. */
     private static @Nullable StageEntry entry(final JsonNode node) {
-        if (!node.isObject() || node.size() != FIELDS.size()) {
+        if (!node.isObject()) {
             return null;
         }
         final Set<String> names = new HashSet<>();
         node.properties().forEach(field -> names.add(field.getKey()));
+        names.removeAll(FIGURES);
         if (!names.equals(new HashSet<>(FIELDS))) {
             return null;
         }
@@ -293,18 +271,12 @@ public final class StageComment {
         final String actor = text(node.get("actor"));
         final JsonNode model = node.get("model");
         final JsonNode effort = node.get("effort");
-        final JsonNode minutes = node.get("wall_min");
-        final JsonNode vmMinutes = node.get("vm_min");
-        final Map<String, Long> tokens = tokens(node.get("tokens"));
         if (key == null
                 || stage == null
                 || result == null
                 || actor == null
                 || !model.isNull() && !model.isTextual()
-                || !effort.isNull() && !effort.isTextual()
-                || !minutes.isNumber()
-                || !vmMinutes.isNumber()
-                || tokens == null) {
+                || !effort.isNull() && !effort.isTextual()) {
             return null;
         }
         final StageEntry entry;
@@ -317,9 +289,9 @@ public final class StageComment {
                             actor,
                             model.isNull() ? null : model.asText(),
                             effort.isNull() ? null : effort.asText(),
-                            minutes.asDouble(),
-                            vmMinutes.asDouble(),
-                            tokens);
+                            0,
+                            0,
+                            Map.of());
             checked(entry);
         } catch (final IllegalArgumentException e) {
             return null;
@@ -345,21 +317,6 @@ public final class StageComment {
 
     private static @Nullable String text(final @Nullable JsonNode node) {
         return node != null && node.isTextual() ? node.asText() : null;
-    }
-
-    private static @Nullable Map<String, Long> tokens(final JsonNode node) {
-        if (!node.isObject() || node.size() > MOST_TOKEN_KINDS) {
-            return null;
-        }
-        final Map<String, Long> tokens = new LinkedHashMap<>();
-        for (final Map.Entry<String, JsonNode> field : node.properties()) {
-            final JsonNode count = field.getValue();
-            if (!count.isIntegralNumber() || !count.canConvertToLong()) {
-                return null;
-            }
-            tokens.put(field.getKey(), count.asLong());
-        }
-        return tokens;
     }
 
     /** Refuses a value the comment's shape or the number fields cannot carry. */
