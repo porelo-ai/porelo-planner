@@ -2186,7 +2186,8 @@ components:
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 1048576 bytes (field
         empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, revision, task,
         priority, story or confirm), or the store cannot write it in its repository, such as a repository whose
-        issues give no prefix (field empty). A GitHub create's initial placement is refused before creation with
+        issues give no prefix (field empty) or a body longer than GitHub takes (field mustBeTrue, final: the same
+        text is refused again). A GitHub create's initial placement is refused before creation with
         StateNotAllowed for an unknown or closed state, EnteredOnlyByWork for an agent's issue entering a working
         state while a run in this planner's record works its story, or
         MoveNotAllowed for another move refusal; item is empty. A state the workflow lacks is refused with
@@ -2278,7 +2279,7 @@ components:
     ResultRefused:
       description: >-
         A stage's hand-in is refused (ResultRefused), with fixed words; what was sent is never repeated. The body is
-        no hand-in - larger than 1048576 bytes, not JSON, not an object, a member unknown, offer no lowercase UUID, or
+        no hand-in - larger than 1052672 bytes, not JSON, not an object, a member unknown, offer no lowercase UUID, or
         neither or both of result and missing - with one fault; or the offer takes no result now, with one fault
         starting with offer; or the result breaks the result format, at most 10 faults, each starting with the field
         it names (format, kind, issues, issues[0].plan, issues[0].toBeChecked[1], missing, counted from 0); or an
@@ -3235,10 +3236,10 @@ components:
         title:
           type: string
           description: >-
-            One line without control characters; the spaces around it are dropped. At most 120 characters, as an
-            issue's head holds its title.
+            One line without control characters; the spaces around it are dropped. At most 256 characters, as a
+            forge takes an issue's title.
           minLength: 1
-          maxLength: 120
+          maxLength: 256
         covers:
           type: string
           description: The first paragraph, which says what the issue covers; one paragraph, never removed.
@@ -3294,10 +3295,10 @@ components:
         title:
           type: string
           description: >-
-            One line without control characters; the spaces around it are dropped. At most 120 characters, as an
-            issue's head holds its title.
+            One line without control characters; the spaces around it are dropped. At most 256 characters, as a
+            forge takes an issue's title.
           minLength: 1
-          maxLength: 120
+          maxLength: 256
         gain:
           type: [string, 'null']
           description: The paragraph after the lead What a user gains; one paragraph; null removes it.
@@ -4429,7 +4430,7 @@ components:
     StageResultFile:
       description: >-
         The result format porelo-stage-result-1, as the task wrote it to analysis.json or estimate.json, within a
-        hand-in of at most 1048576 bytes including its envelope: one entry per issue the order named. ANALYSIS needs plan, size and sizeWhy and takes no
+        hand-in of at most 1052672 bytes including its envelope: one entry per issue the order named. ANALYSIS needs plan, size and sizeWhy and takes no
         estimateMinutes; ESTIMATE needs size, sizeWhy and estimateMinutes, and plan corrects the plan. No text holds a
         control or direction character, but a plan its newlines; lengths are in code points. Unknown members are
         refused, so a later format changes format.

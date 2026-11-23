@@ -99,9 +99,9 @@ exits. Each command is run from the repository's root:
 - **Each request is signed in its `Porelo-Signature` header**: an HMAC-SHA256 under the token over the method, the
   raw target, `Host`, `Content-Type`, the body's SHA-256, a time and a nonce, as `openapi/planner.yaml` gives the form.
   A request without one valid signature, with two, with an `Authorization` header, more than 60 s off the planner's
-  clock, with a nonce already taken, or with a body larger than 131072 bytes (266240 bytes for a stage's result) gets
-  `401` with `WWW-Authenticate: porelo-planner-request-1`, an empty body and one line in the log; no CORS header is
-  ever sent.
+  clock, with a nonce already taken, or with a body larger than 131072 bytes (1048576 bytes for a new idea, story or
+  issue, 1052672 bytes for a stage's result) gets `401` with `WWW-Authenticate: porelo-planner-request-1`, an empty
+  body and one line in the log; no CORS header is ever sent.
   Every other answer carries `Porelo-Answer`, an HMAC under the token over the request's nonce, the status and the
   body, so the window takes no board or result from a stranger; the changes stream proves its opening this way. Only
   `POST /proof` needs no signature; a proof asked with anything but one challenge gets `400`, empty and unlogged. The

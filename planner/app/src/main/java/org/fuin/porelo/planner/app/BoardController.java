@@ -568,7 +568,7 @@ public class BoardController {
         try {
             added = projects.work(name).withRuns(runs -> createIssue(name, revision, body, runs));
         } catch (final StoreException.NotSavable e) {
-            throw NewIssues.refused("", String.valueOf(e.getMessage()));
+            throw NewIssues.refused(e.field(), String.valueOf(e.getMessage()));
         } catch (final UnsupportedOperationException e) {
             throw new Refusal(
                     "NotOffered",

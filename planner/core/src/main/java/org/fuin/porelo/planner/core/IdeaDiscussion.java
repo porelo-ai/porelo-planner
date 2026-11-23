@@ -105,7 +105,7 @@ public record IdeaDiscussion(
                 + " it is known.\n\n"
                 + "When the person agrees, write the idea as this task's result, "
                 + RESULT
-                + ", at most 64 KiB of JSON valid against this schema:\n```json\n"
+                + ", at most 1 MiB of JSON valid against this schema:\n```json\n"
                 + FORMAT
                 + "```\n";
     }

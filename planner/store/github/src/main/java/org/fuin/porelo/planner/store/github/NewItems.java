@@ -1052,6 +1052,8 @@ final class NewItems {
         final String what;
         try {
             what = BodySections.read("").withWhatMustBeTrue(issue.mustBeTrue()).text();
+        } catch (final BodySections.TooLong e) {
+            throw tooLong();
         } catch (final IllegalArgumentException e) {
             throw new StoreException.NotSavable(
                     "",
@@ -1070,11 +1072,23 @@ final class NewItems {
         } else {
             body = what.strip() + "\n\n" + proposed + "\n";
         }
+        if (body.length() > BodySections.LONGEST) {
+            throw tooLong();
+        }
         if (BodySections.read(body).ambiguity().isPresent()) {
             throw new StoreException.NotSavable(
                     "", "what must be true would leave the new issue's sections unclear");
         }
         return body;
+    }
+
+    private static StoreException.NotSavable tooLong() {
+        return new StoreException.NotSavable(
+                "",
+                "what must be true and the new issue's other text are longer than the "
+                        + BodySections.LONGEST
+                        + " characters a GitHub issue's body takes",
+                "mustBeTrue");
     }
 
     private static String priority(final String priority) {

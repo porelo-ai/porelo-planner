@@ -2278,6 +2278,48 @@ class FieldsBoardWriterTest {
         return held;
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"65536:", "65500:task-1"})
+    void whatMustBeTrueBeyondABodyGitHubTakesIsRefusedInItsOwnWordsBeforeAnyCall(
+            final String given) {
+        // Harm: a new issue too long for GitHub refused as broken Markdown, or as an unreachable
+        // store, so the person cannot tell what to shorten.
+        final String[] parts = given.split(":", -1);
+        final String task = parts[1].isEmpty() ? null : parts[1];
+        final ItemView last =
+                item(
+                        "LB2",
+                        "example-lib",
+                        2,
+                        true,
+                        "",
+                        ordered(FieldNames.STATUS, "Idea", FieldNames.RANK, "4"));
+        final GitHub github = new GitHub().holding(last);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createIssue(
+                                                snapshot(last),
+                                                SHOWN,
+                                                new NewIssue(
+                                                        "example-lib",
+                                                        "A new thing",
+                                                        "w".repeat(Integer.parseInt(parts[0])),
+                                                        "S",
+                                                        Worker.MANUAL,
+                                                        task)))
+                .as("what must be true of %s characters, task %s", parts[0], task)
+                .isInstanceOf(StoreException.NotSavable.class)
+                .hasMessageContaining("longer than the 65536 characters a GitHub issue's body")
+                .satisfies(
+                        refused ->
+                                assertThat(((StoreException.NotSavable) refused).field())
+                                        .as("the field the window marks, so the refusal is final")
+                                        .isEqualTo("mustBeTrue"));
+        assertThat(github.made).as("no issue made").isEmpty();
+    }
+
     @Test
     void anIssueIsMadeOnTheProjectWithItsFieldsAndAnsweredByItsReference() {
         // Harm: an issue the person added that never reaches the board, stands there without its

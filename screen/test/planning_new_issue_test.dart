@@ -141,6 +141,21 @@ void main() {
     expect(source.added, isEmpty, reason: 'editing alone submits nothing');
   });
 
+  // Harm: a title the form takes as 256 characters but the planner counts as more is sent and refused.
+  testWidgets('the form sends no title of more code points than the planner takes', (tester) async {
+    final source = _Source();
+    await _show(tester, source);
+    await _openForm(tester);
+    await _pick(tester, 'repo');
+    final title = List.filled(256, 'e\u0301').join();
+    await tester.enterText(find.byKey(const Key('new-issue-title')), title);
+    await tester.enterText(find.byKey(const Key('new-issue-must-be-true')), 'It holds.');
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('new-issue-create')), warnIfMissed: false);
+    await settle(tester);
+    expect(source.added, isEmpty, reason: '256 accented letters are 512 code points');
+  });
+
   // Harm: an idea sent against another board than the one shown could take a number someone took since.
   testWidgets('the form sends the new issue with the revision of the board it was written on', (tester) async {
     final source = _Source();

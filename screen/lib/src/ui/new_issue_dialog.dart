@@ -40,7 +40,13 @@ class _NewIssueDialogState extends State<NewIssueDialog> {
     super.dispose();
   }
 
-  bool get _complete => _repository != null && _title.text.trim().isNotEmpty && _mustBeTrue.text.trim().isNotEmpty;
+  /// The planner counts code points, while the fields count what a person sees as one character.
+  bool get _complete =>
+      _repository != null &&
+      _title.text.trim().isNotEmpty &&
+      _title.text.trim().runes.length <= 256 &&
+      _mustBeTrue.text.trim().isNotEmpty &&
+      _mustBeTrue.text.trim().runes.length <= 65536;
 
   Future<void> _create() async {
     final repository = _repository;

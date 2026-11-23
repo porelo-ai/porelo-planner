@@ -250,6 +250,8 @@ public abstract sealed class StoreException extends RuntimeException
     public static final class NotSavable extends StoreException {
         private static final long serialVersionUID = 1L;
 
+        private final String field;
+
         /**
          * Names the item and why.
          *
@@ -257,7 +259,29 @@ public abstract sealed class StoreException extends RuntimeException
          * @param reason why it cannot be written
          */
         public NotSavable(final String item, final String reason) {
+            this(item, reason, "");
+        }
+
+        /**
+         * Names the item, why, and the field of the request whose value the store cannot keep.
+         *
+         * @param item the story's or the issue's id, or empty for a new one
+         * @param reason why it cannot be written
+         * @param field the request's field, such as {@code mustBeTrue}, or empty when it is about
+         *     none
+         */
+        public NotSavable(final String item, final String reason, final String field) {
             super(item, reason);
+            this.field = field;
+        }
+
+        /**
+         * The field of the request whose value the store cannot keep.
+         *
+         * @return its name, or empty when the refusal is about none
+         */
+        public String field() {
+            return field;
         }
     }
 

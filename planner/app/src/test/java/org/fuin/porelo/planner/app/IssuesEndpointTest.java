@@ -558,6 +558,21 @@ class IssuesEndpointTest {
     }
 
     @Test
+    void aTextTheStoreCannotKeepIsRefusedNamingItsField() throws Exception {
+        // Harm: a text too long for the forge taken by the window as a passing fault and handed in
+        // again at every start.
+        failure =
+                new StoreException.NotSavable(
+                        "", "what must be true is longer than GitHub takes", "mustBeTrue");
+        issue(
+                        "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"revision\": \"r1\"}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:IssueNotAllowed"))
+                .andExpect(jsonPath("$.parameters.field").value("mustBeTrue"));
+    }
+
+    @Test
     void aStoreThatAddsNoIssuesIsAnsweredAsNotOffered() throws Exception {
         // A bare server error would leave the window unable to tell a missing feature from a fault.
         failure = new UnsupportedOperationException("This store does not add issues");

@@ -91,6 +91,15 @@ public final class BodySections {
         }
     }
 
+    /** The refusal of a body longer than the {@value #LONGEST} characters GitHub takes. */
+    public static final class TooLong extends IllegalArgumentException {
+        private static final long serialVersionUID = 1L;
+
+        private TooLong() {
+            super("The issue body is longer than the " + LONGEST + " characters GitHub takes");
+        }
+    }
+
     /**
      * The refusal to write a body whose sections cannot be told apart for certain. Its message says
      * the first thing a person must repair, naming lines by their number and sections only by the
@@ -783,8 +792,7 @@ public final class BodySections {
 
     private static void bounded(final String body) {
         if (body.length() > LONGEST) {
-            throw new IllegalArgumentException(
-                    "The issue body is longer than the " + LONGEST + " characters GitHub takes");
+            throw new TooLong();
         }
     }
 
