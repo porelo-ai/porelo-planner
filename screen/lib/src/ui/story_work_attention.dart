@@ -349,9 +349,7 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
     final target = board.state(issue.state)?.kind == 'WORKING'
         ? board.state(issue.state)
         : board.states.where((state) => state.kind == 'WORKING').firstOrNull;
-    final passOver = run == null
-        ? null
-        : PlanningPassOver(issue: issue.id, reason: row.reason, revision: row.revision, run: run);
+    final passOver = run == null ? null : PlanningPassOver(issue: issue.id, reason: row.reason, run: run);
     final left = _unpushedLeft();
     return PlanningAction(
       id: 'story-work.start/${issue.id}',

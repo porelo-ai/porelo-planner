@@ -10,11 +10,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
@@ -36,7 +39,7 @@ class WorkOrderTest {
                         board.work(),
                         board.repositories());
         final WorkOrder order =
-                WorkOrder.accept(board, "ST1", "Building", decision(null, null, null, null));
+                WorkOrder.accept(board, "ST1", "Building", decision(board, null, null, null, null));
         assertThat(order.tasks())
                 .as("two mains and one open builder")
                 .extracting(WorkOrder.Task::role)
@@ -80,7 +83,12 @@ class WorkOrderTest {
                         analysis(WorkProposalTest.board(WorkRule.Per.REPOSITORY)),
                         "ST1",
                         "Building",
-                        decision(null, null, null, null));
+                        decision(
+                                analysis(WorkProposalTest.board(WorkRule.Per.REPOSITORY)),
+                                null,
+                                null,
+                                null,
+                                null));
         final WorkOrder.Task main = order.tasks().getFirst();
         assertThat(main.result()).as("the analysis's result file").isEqualTo("analysis.json");
         assertThat(main.given())
@@ -114,7 +122,12 @@ class WorkOrderTest {
                         WorkProposalTest.board(WorkRule.Per.REPOSITORY),
                         "ST1",
                         "Building",
-                        decision(null, null, null, null));
+                        decision(
+                                WorkProposalTest.board(WorkRule.Per.REPOSITORY),
+                                null,
+                                null,
+                                null,
+                                null));
         assertThat(order.tasks())
                 .as("no task of a build hands back a result or is given a file")
                 .allSatisfy(
@@ -138,7 +151,12 @@ class WorkOrderTest {
                                     tracked("Example-Org", result, true),
                                     "project#1",
                                     "Building",
-                                    decision(null, null, null, null))
+                                    decision(
+                                            tracked("Example-Org", result, true),
+                                            null,
+                                            null,
+                                            null,
+                                            null))
                             .tasks();
             assertThat(tasks)
                     .as("the main over three issues and the builder of the sub-issue, " + result)
@@ -154,7 +172,12 @@ class WorkOrderTest {
                                         tracked("Example-Org", null, false),
                                         "project#1",
                                         "Building",
-                                        decision(null, null, null, null))
+                                        decision(
+                                                tracked("Example-Org", null, false),
+                                                null,
+                                                null,
+                                                null,
+                                                null))
                                 .tasks()
                                 .getFirst()
                                 .work())
@@ -165,7 +188,7 @@ class WorkOrderTest {
                                         tracked(null, null, true),
                                         "project#1",
                                         "Building",
-                                        decision(null, null, null, null))
+                                        decision(tracked(null, null, true), null, null, null, null))
                                 .tasks())
                 .as("a project no tracker keeps names no tracker's work")
                 .extracting(WorkOrder.Task::work)
@@ -253,7 +276,10 @@ class WorkOrderTest {
         assertThatThrownBy(
                         () ->
                                 WorkOrder.accept(
-                                        large, "ST1", "Building", decision(null, null, null, null)))
+                                        large,
+                                        "ST1",
+                                        "Building",
+                                        decision(large, null, null, null, null)))
                 .as("refused, naming the issue")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessageContaining("AA1");
@@ -293,7 +319,12 @@ class WorkOrderTest {
                         WorkProposalTest.board(WorkRule.Per.STORY),
                         "ST1",
                         "Building",
-                        decision(null, null, null, null));
+                        decision(
+                                WorkProposalTest.board(WorkRule.Per.STORY),
+                                null,
+                                null,
+                                null,
+                                null));
         assertThat(order.tasks().getFirst().repository())
                 .as("story main uses the own repository")
                 .isEqualTo("project");
@@ -319,6 +350,7 @@ class WorkOrderTest {
                         "ST1",
                         "Building",
                         decision(
+                                board,
                                 dropped,
                                 "Do it yourself.",
                                 3,
@@ -337,7 +369,7 @@ class WorkOrderTest {
                         board,
                         "ST1",
                         "Building",
-                        decision(replaced, "Use the other model.", null, null));
+                        decision(board, replaced, "Use the other model.", null, null));
         assertThat(replacement.tasks().get(1).agent())
                 .as("explicit offered replacement")
                 .isEqualTo("alpha");
@@ -350,8 +382,8 @@ class WorkOrderTest {
     }
 
     @Test
-    void aStaleDecisionIsRefusedBeforeRecordedRunningWork() {
-        // A repeated or outdated acceptance must not authorize duplicate work.
+    void aDecisionOverAChangedStoryIsRefusedBeforeRecordedRunningWork() {
+        // Harm: a repeated or outdated acceptance authorizes duplicate work.
         final Board board = WorkProposalTest.board(WorkRule.Per.STORY);
         final WorkProposal.RunningWork running =
                 story -> List.of("recorded-main", "recorded-builder");
@@ -362,26 +394,27 @@ class WorkOrderTest {
                                         "ST1",
                                         "Building",
                                         new WorkOrder.Decision(
-                                                "AGENT", "old", null, null, null, null),
+                                                "AGENT",
+                                                Basis.of(board).with("ST1", Version.of("old")),
+                                                null,
+                                                null,
+                                                null,
+                                                null),
                                         running))
-                .as("revision wins before the run check")
-                .isInstanceOf(WorkRefusal.class)
+                .as("the story's version wins before the run check")
+                .isInstanceOf(StoreException.Changed.class)
                 .satisfies(
-                        error -> {
-                            assertThat(((WorkRefusal) error).name())
-                                    .as("typed stale refusal")
-                                    .isEqualTo("StaleRevision");
-                            assertThat(((WorkRefusal) error).parameters())
-                                    .as("only the current revision is echoed")
-                                    .containsEntry("revision", "board@1");
-                        });
+                        error ->
+                                assertThat(((StoreException.Changed) error).ids())
+                                        .as("the story named")
+                                        .containsExactly("ST1"));
         assertThatThrownBy(
                         () ->
                                 WorkOrder.accept(
                                         board,
                                         "ST1",
                                         "Building",
-                                        decision(null, null, null, null),
+                                        decision(board, null, null, null, null),
                                         running))
                 .as("explicit active task records")
                 .isInstanceOf(WorkRefusal.class)
@@ -504,6 +537,7 @@ class WorkOrderTest {
                                             "ST1",
                                             "Building",
                                             decision(
+                                                    board,
                                                     changed(proposed, ignored -> fake),
                                                     "Changed.",
                                                     null,
@@ -584,7 +618,12 @@ class WorkOrderTest {
                                         "ST1",
                                         "Building",
                                         new WorkOrder.Decision(
-                                                "UNATTENDED", "board@1", null, null, null, null)))
+                                                "UNATTENDED",
+                                                Basis.of(board),
+                                                null,
+                                                null,
+                                                null,
+                                                null)))
                 .as("mode must be offered by the rule")
                 .isInstanceOf(WorkRefusal.class);
     }
@@ -601,6 +640,7 @@ class WorkOrderTest {
                         "ST1",
                         "Building",
                         decision(
+                                board,
                                 changed(
                                         withMain(proposed, "zeta", "medium-2"),
                                         sub -> sub(sub, "CHANGE", "alpha", "large")),
@@ -646,7 +686,7 @@ class WorkOrderTest {
                                             board,
                                             "ST1",
                                             "Building",
-                                            decision(null, null, invalid, null)))
+                                            decision(board, null, null, invalid, null)))
                     .as("overall rounds must be an integer from one to ten")
                     .isInstanceOf(WorkRefusal.class);
             assertThatThrownBy(
@@ -656,6 +696,7 @@ class WorkOrderTest {
                                             "ST1",
                                             "Building",
                                             decision(
+                                                    board,
                                                     null,
                                                     null,
                                                     null,
@@ -674,7 +715,7 @@ class WorkOrderTest {
                                             board,
                                             "ST1",
                                             "Building",
-                                            decision(null, null, null, invalid)))
+                                            decision(board, null, null, null, invalid)))
                     .as("overrides refer to each open proposed issue at most once")
                     .isInstanceOf(WorkRefusal.class);
         }
@@ -684,7 +725,7 @@ class WorkOrderTest {
                                         board,
                                         "ST1",
                                         "Building",
-                                        decision(null, "x".repeat(4001), null, null)))
+                                        decision(board, null, "x".repeat(4001), null, null)))
                 .as("comments are bounded")
                 .isInstanceOf(WorkRefusal.class);
         assertThat(
@@ -693,6 +734,7 @@ class WorkOrderTest {
                                 "ST1",
                                 "Building",
                                 decision(
+                                        board,
                                         null,
                                         "x".repeat(4000),
                                         10,
@@ -706,7 +748,7 @@ class WorkOrderTest {
         // An inline order suffix must not expose repository instructions as trusted prompt text.
         final Board board = WorkProposalTest.board(WorkRule.Per.REPOSITORY);
         final String prompt =
-                WorkOrder.accept(board, "ST1", "Building", decision(null, null, null, null))
+                WorkOrder.accept(board, "ST1", "Building", decision(board, null, null, null, null))
                         .tasks()
                         .getFirst()
                         .prompt();
@@ -760,7 +802,7 @@ class WorkOrderTest {
                                 board,
                                 "ST1",
                                 "Building",
-                                decision(null, "Operator instruction", null, null))
+                                decision(board, null, "Operator instruction", null, null))
                         .tasks()
                         .getFirst()
                         .prompt();
@@ -844,7 +886,7 @@ class WorkOrderTest {
                                         largePrompt,
                                         "ST1",
                                         "Building",
-                                        decision(null, null, null, null)))
+                                        decision(largePrompt, null, null, null, null)))
                 .as("a prompt is refused in full")
                 .isInstanceOf(WorkRefusal.class)
                 .satisfies(
@@ -886,6 +928,7 @@ class WorkOrderTest {
                         "ST1",
                         "Building",
                         decision(
+                                board,
                                 List.of(
                                         new WorkProposal.Repository(
                                                 first.repository(),
@@ -925,7 +968,12 @@ class WorkOrderTest {
                                         board,
                                         "ST1",
                                         "Building",
-                                        decision(mainEffort(proposed, "low"), null, null, null))
+                                        decision(
+                                                board,
+                                                mainEffort(proposed, "low"),
+                                                null,
+                                                null,
+                                                null))
                                 .tasks()
                                 .getFirst())
                 .as("the changed effort reaches the main's Start, and is the one it used")
@@ -936,7 +984,12 @@ class WorkOrderTest {
                                         board,
                                         "ST1",
                                         "Building",
-                                        decision(mainEffort(proposed, null), null, null, null))
+                                        decision(
+                                                board,
+                                                mainEffort(proposed, null),
+                                                null,
+                                                null,
+                                                null))
                                 .tasks()
                                 .getFirst()
                                 .effort())
@@ -1025,7 +1078,8 @@ class WorkOrderTest {
                                         .toList()),
                         proposed.get(1));
         final WorkOrder order =
-                WorkOrder.accept(board, "ST1", "Building", decision(forged, null, null, null));
+                WorkOrder.accept(
+                        board, "ST1", "Building", decision(board, forged, null, null, null));
         assertThat(order.repositories().getFirst().main().basis())
                 .as("the accepted main names the rule's choice")
                 .isEqualTo(main.basis());
@@ -1049,7 +1103,8 @@ class WorkOrderTest {
 
     private static WorkOrder.Task builder(
             final Board board, final List<WorkProposal.Repository> repos, final String comment) {
-        return WorkOrder.accept(board, "ST1", "Building", decision(repos, comment, null, null))
+        return WorkOrder.accept(
+                        board, "ST1", "Building", decision(board, repos, comment, null, null))
                 .tasks()
                 .stream()
                 .filter(task -> task.role().equals("BUILDER"))
@@ -1116,11 +1171,12 @@ class WorkOrderTest {
     }
 
     private static WorkOrder.Decision decision(
+            final Board board,
             final @Nullable List<WorkProposal.Repository> repos,
             final @Nullable String comment,
             final @Nullable Number rounds,
             final @Nullable List<WorkOrder.Limit> overrides) {
-        return new WorkOrder.Decision("AGENT", "board@1", repos, comment, rounds, overrides);
+        return new WorkOrder.Decision("AGENT", Basis.of(board), repos, comment, rounds, overrides);
     }
 
     private static List<WorkProposal.Repository> changed(
@@ -1161,7 +1217,7 @@ class WorkOrderTest {
                                         board,
                                         "ST1",
                                         "Building",
-                                        decision(repos, comment, null, null)))
+                                        decision(board, repos, comment, null, null)))
                 .as("forged or incomplete choices must not produce a task")
                 .isInstanceOf(WorkRefusal.class)
                 .satisfies(
@@ -1200,7 +1256,10 @@ class WorkOrderTest {
         assertThatThrownBy(
                         () ->
                                 WorkOrder.accept(
-                                        board, "ST1", "Building", decision(null, null, null, null)))
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        decision(board, null, null, null, null)))
                 .as("the start")
                 .isInstanceOf(WorkRefusal.class)
                 .hasMessage(words);

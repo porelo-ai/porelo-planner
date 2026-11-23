@@ -159,14 +159,15 @@ class MockModeTest {
                 move(
                         runtime,
                         "/projects/moved",
-                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"PJ74\", \"to\":"
-                                + " \"Estimated\"}]}");
+                        "{\"moves\": [{\"issue\": \"PJ74\", \"to\":" + " \"Estimated\"}]}");
         final HttpResponse<String> worker =
                 call(
                         runtime,
                         "PUT",
                         "/projects/worked/issues/PJ74/worker",
-                        "{\"worker\": \"MANUAL\", \"revision\": \"mock@1\"}");
+                        "{\"worker\": \"MANUAL\", \"seen\": "
+                                + seen(runtime, "/projects/worked")
+                                + "}");
         assertThat(worker.statusCode())
                 .as("the status of a worker change, against a move's: %s", worker.body())
                 .isEqualTo(move.statusCode());
@@ -189,8 +190,7 @@ class MockModeTest {
                         runtime,
                         "POST",
                         "/projects/any/moves/preview",
-                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
-                                + " \"Review\"}]}");
+                        "{\"moves\": [{\"issue\": \"B542\", \"to\":" + " \"Review\"}]}");
         assertThat(preview.statusCode()).as("the status: %s", preview.body()).isEqualTo(200);
         final JsonNode answer = JSON.readTree(preview.body());
         assertThat(answer.at("/issues/0/id").asString())
@@ -216,8 +216,7 @@ class MockModeTest {
                     move(
                             runtime,
                             "/projects/any",
-                            "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
-                                    + " \"Review\"}]}");
+                            "{\"moves\": [{\"issue\": \"B542\", \"to\":" + " \"Review\"}]}");
             assertThat(json(move).get("revision").asString())
                     .as("the revision the move answers")
                     .isEqualTo("mock@2");
@@ -240,8 +239,7 @@ class MockModeTest {
                 move(
                         runtime,
                         "/projects/any",
-                        "{\"revision\": \"mock@1\", \"moves\": [{\"story\": \"ST292\", \"to\":"
-                                + " \"Rejected\"}]}");
+                        "{\"moves\": [{\"story\": \"ST292\", \"to\": \"Rejected\"}]}");
         assertThat(move.statusCode()).as("the status: %s", move.body()).isEqualTo(502);
         final JsonNode problem = JSON.readTree(move.body());
         assertThat(problem.path("type").asString())
@@ -269,8 +267,7 @@ class MockModeTest {
                 move(
                         runtime,
                         "/projects/any",
-                        "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B540\", \"to\":"
-                                + " \"Finished\"}]}");
+                        "{\"moves\": [{\"issue\": \"B540\", \"to\":" + " \"Finished\"}]}");
         assertThat(JSON.readTree(move.body()).path("type").asString())
                 .as("the refusal of a parent closed over its open sub-issue: %s", move.body())
                 .isEqualTo("urn:porelo-planner:MoveNotAllowed");
@@ -291,8 +288,7 @@ class MockModeTest {
         move(
                 runtime,
                 "/projects/moved",
-                "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\":"
-                        + " \"Review\"}]}");
+                "{\"moves\": [{\"issue\": \"B542\", \"to\":" + " \"Review\"}]}");
         assertThat(revision("moved")).as("the moved project's revision").isEqualTo("mock@2");
         assertThat(revision("other")).as("the other project's revision").isEqualTo("mock@1");
 
@@ -312,7 +308,9 @@ class MockModeTest {
                         runtime,
                         "PUT",
                         "/projects/any/stories/ST294/priority",
-                        "{\"priority\": \"Lowest\", \"revision\": \"mock@1\"}");
+                        "{\"priority\": \"Lowest\", \"seen\": "
+                                + seen(runtime, "/projects/any")
+                                + "}");
         assertThat(priority.statusCode())
                 .as("the status of a priority change: %s", priority.body())
                 .isEqualTo(501);
@@ -331,7 +329,9 @@ class MockModeTest {
                         runtime,
                         "POST",
                         "/projects/any/items",
-                        "{\"issue\": \"porelo#7\", \"revision\": \"mock@1\"}");
+                        "{\"issue\": \"porelo#7\", \"seen\": "
+                                + seen(runtime, "/projects/any")
+                                + "}");
         assertThat(added.statusCode()).as("the status of an add: %s", added.body()).isEqualTo(501);
         assertThat(JSON.readTree(added.body()).path("type").asString())
                 .as("the refusal of an add")
@@ -554,6 +554,12 @@ class MockModeTest {
         final HttpResponse<String> preview =
                 call(runtime, "POST", project + "/moves/preview", batch);
         return call(runtime, "POST", project + "/moves", Previewed.moves(batch, preview.body()));
+    }
+
+    /** The versions of the project's items as its board answers them, as the window keeps them. */
+    private static String seen(final Path runtime, final String project)
+            throws IOException, InterruptedException {
+        return Seens.ofAnswer(call(runtime, "GET", project + "/stories", null).body());
     }
 
     private static HttpResponse<String> call(

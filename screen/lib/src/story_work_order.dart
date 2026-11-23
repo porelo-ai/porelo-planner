@@ -110,9 +110,9 @@ class StoryWorkOrder {
   }) {
     final revision = _text(map, 'revision');
     if (map.containsKey('type') || map.containsKey('error')) _invalid('The order is a refusal, not tasks.');
-    if (revision != request.revision || revision != proposal.revision || !proposal.modes.contains(request.mode)) {
-      _invalid('The order does not match the requested revision or mode.');
-    }
+    // The order's revision is the board's when the planner took it, which a change to an item the decision did not
+    // see may have moved past the proposal's; the versions seen bind the decision.
+    if (!proposal.modes.contains(request.mode)) _invalid('The order does not match the requested mode.');
     final selected = request.toMap()['repositories'];
     final repositories = selected == null
         ? [for (final repo in proposal.repositories) repo.toMap()]
@@ -246,7 +246,7 @@ class StoryWorkOrder {
     return StoryWorkProposal.from(jsonDecode(jsonEncode(map)) as Map<String, dynamic>);
   }
 
-  /// The unchanged store revision the choices were made against.
+  /// The board's revision when the planner took the order.
   final String revision;
 
   /// All checked Start arguments, in the planner's order.

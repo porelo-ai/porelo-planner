@@ -1,12 +1,14 @@
 package org.fuin.porelo.planner.app;
 
 import java.util.List;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.Story;
@@ -151,6 +153,63 @@ final class LoggedStore implements PlanningStore {
     @Override
     public Board setText(final Revision revision, final String id, final TextEdit edit) {
         return store.setText(revision, id, edit);
+    }
+
+    @Override
+    public Board save(final Basis basis, final Writes writes, final Recheck recheck) {
+        return store.save(basis, writes, recheck);
+    }
+
+    @Override
+    public NewIssue.Added createIssue(
+            final Basis basis, final NewIssue issue, final Recheck recheck) {
+        return store.createIssue(basis, issue, recheck);
+    }
+
+    @Override
+    public NewIdea.Added createIdea(final Basis basis, final NewIdea idea, final Recheck recheck) {
+        return store.createIdea(basis, idea, recheck);
+    }
+
+    @Override
+    public Board addUnlistedIssue(final Basis basis, final String issue, final Recheck recheck) {
+        return store.addUnlistedIssue(basis, issue, recheck);
+    }
+
+    @Override
+    public NewIdea.Added createStoryFromIssues(
+            final Basis basis, final StoryFromIssues story, final Recheck recheck) {
+        return store.createStoryFromIssues(basis, story, recheck);
+    }
+
+    @Override
+    public Board setFields(
+            final Basis basis, final String issue, final Fields fields, final Recheck recheck) {
+        return store.setFields(basis, issue, fields, recheck);
+    }
+
+    @Override
+    public Board setStoryIssues(
+            final Basis basis,
+            final String story,
+            final List<String> issues,
+            final Recheck recheck) {
+        return store.setStoryIssues(basis, story, issues, recheck);
+    }
+
+    @Override
+    public Board setBlockedBy(
+            final Basis basis,
+            final String issue,
+            final List<String> blockedBy,
+            final Recheck recheck) {
+        return store.setBlockedBy(basis, issue, blockedBy, recheck);
+    }
+
+    @Override
+    public Board setText(
+            final Basis basis, final String id, final TextEdit edit, final Recheck recheck) {
+        return store.setText(basis, id, edit, recheck);
     }
 
     @Override

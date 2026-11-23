@@ -111,7 +111,7 @@ class PriorityEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -127,7 +127,7 @@ class PriorityEndpointTest {
         // A priority the windows are not told of leaves every other window sorting the old way.
         final Changes.Subscription window = changes.subscribe("alpha");
 
-        priority("ST1", "{\"priority\": \"Lowest\", \"revision\": \"r1\"}")
+        priority("ST1", "{\"priority\": \"Lowest\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -145,29 +145,32 @@ class PriorityEndpointTest {
     @Test
     void thePriorityAStoryHasAlreadySavesNothingAndAnswersTheCurrentRevision() throws Exception {
         // A save of nothing would still commit and push an empty change to the store.
-        priority("ST1", "{\"priority\": \"High\", \"revision\": \"r1\"}")
+        priority("ST1", "{\"priority\": \"High\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r1"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
-    void aPriorityAgainstAnotherRevisionIsRefusedAsStaleAndSavesNothing() throws Exception {
-        // A save over a board the window no longer shows would undo someone else's change.
-        priority("ST1", "{\"priority\": \"Low\", \"revision\": \"r0\"}")
+    void aPriorityOverAStoryChangedSinceItWasSeenIsRefusedAndSavesNothing() throws Exception {
+        // A save over an item the window no longer shows as it stands would undo someone else's
+        // change.
+        priority("ST1", "{\"priority\": \"Low\", \"seen\": " + Seens.stale(current) + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
-                .andExpect(jsonPath("$.parameters.revision").value("r1"));
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("ST1"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
-    void aStoryTheBoardLacksIsNotFound() throws Exception {
-        // A priority saved for no story would write a head the board does not hold.
-        priority("ST9", "{\"priority\": \"Low\", \"revision\": \"r1\"}")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"))
-                .andExpect(jsonPath("$.parameters.story").value("ST9"));
+    void aStoryTheBoardNoLongerHoldsIsAnsweredAsGone() throws Exception {
+        // A priority saved for no story would write a head the board does not hold; the window
+        // that saw it is told it is gone, so it reads the board again.
+        priority("ST9", "{\"priority\": \"Low\", \"seen\": {\"ST9\": \"" + "a".repeat(64) + "\"}}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.items[0].id").value("ST9"))
+                .andExpect(jsonPath("$.parameters.items[0].gone").value(true));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
@@ -177,14 +180,16 @@ class PriorityEndpointTest {
         // why, and a refusal repeating the body would show whatever a caller put there.
         for (final String body :
                 List.of(
-                        "{\"priority\": \"Urgent\", \"revision\": \"r1\"}",
-                        "{\"priority\": \"high\", \"revision\": \"r1\"}",
-                        "{\"priority\": \"token123secret\", \"revision\": \"r1\"}",
-                        "{\"priority\": 1, \"revision\": \"r1\"}",
+                        "{\"priority\": \"Urgent\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"priority\": \"high\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"priority\": \"token123secret\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"priority\": 1, \"seen\": " + Seens.of(current) + "}",
                         "{\"priority\": \"Low\"}",
-                        "{\"revision\": \"r1\"}",
+                        "{\"seen\": " + Seens.of(current) + "}",
                         "{\"priority\": \"Low\", \"revision\": 1}",
-                        "{\"priority\": \"Low\", \"revision\": \"r1\", \"token123secret\": 1}",
+                        "{\"priority\": \"Low\", \"seen\": "
+                                + Seens.of(current)
+                                + ", \"token123secret\": 1}",
                         "{\"revision\": token123secret}",
                         "[]")) {
             final String answer =
@@ -201,7 +206,7 @@ class PriorityEndpointTest {
                     .as("the refusal of %s does not repeat it", body)
                     .doesNotContain("token123secret");
         }
-        priority("st1", "{\"priority\": \"Low\", \"revision\": \"r1\"}")
+        priority("st1", "{\"priority\": \"Low\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"));
         assertThat(saved).as("nothing saved").isEmpty();
@@ -211,7 +216,7 @@ class PriorityEndpointTest {
     void aStoryTheStoreCannotSaveIsRefusedAsNotAllowedNamingIt() throws Exception {
         // The window must learn why the priority stayed unsaved, and which story holds it.
         failure = new StoreException.NotSavable("ST1", "its head holds 2 priority members");
-        priority("ST1", "{\"priority\": \"Low\", \"revision\": \"r1\"}")
+        priority("ST1", "{\"priority\": \"Low\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
                 .andExpect(jsonPath("$.parameters.item").value("ST1"));
@@ -221,7 +226,7 @@ class PriorityEndpointTest {
     void aStoreThatSavesNoPriorityIsAnsweredAsNotOffered() throws Exception {
         // A bare server error would leave the window unable to tell a missing feature from a fault.
         failure = new UnsupportedOperationException("This store does not save");
-        priority("ST1", "{\"priority\": \"Low\", \"revision\": \"r1\"}")
+        priority("ST1", "{\"priority\": \"Low\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
     }

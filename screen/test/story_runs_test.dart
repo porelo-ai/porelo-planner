@@ -94,7 +94,7 @@ class _Source extends FakePlanningSource {
     String issue,
     int round,
     String choice,
-    String revision, {
+    Map<String, String> seen, {
     String? comment,
     PlanningRework? rework,
   }) async {
@@ -104,7 +104,7 @@ class _Source extends FakePlanningSource {
       'issue': issue,
       'round': round,
       'choice': choice,
-      'revision': revision,
+      'seen': seen,
       'comment': comment,
       'rework': rework,
     });
@@ -642,7 +642,7 @@ void main() {
       'issue': 'PR1',
       'round': 2,
       'choice': 'REWORK',
-      'revision': 'r1',
+      'seen': allOf(containsPair('ST1', isA<String>()), containsPair('PR1', isA<String>())),
       'comment': '  Keep the key inside.\n',
       'rework': null,
     });

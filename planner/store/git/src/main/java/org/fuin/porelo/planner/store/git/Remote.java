@@ -63,6 +63,20 @@ public interface Remote {
     Optional<String> read(String repository, String commit, String path);
 
     /**
+     * Answers the object id of a plain planning file of a fetched commit, from the listing the
+     * commit's files are read with, so no Git process runs per file. Equal ids mean equal bytes.
+     *
+     * @param repository the repository's name
+     * @param commit the commit id
+     * @param path the file's path in the repository
+     * @return its blob's id, or empty when the commit has no such plain file or the remote cannot
+     *     tell, as one that reads nothing from Git
+     */
+    default Optional<String> object(String repository, String commit, String path) {
+        return Optional.empty();
+    }
+
+    /**
      * Lists the files of a directory of a fetched commit, not those of its subdirectories.
      *
      * @param repository the repository's name

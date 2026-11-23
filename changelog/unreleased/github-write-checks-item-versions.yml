@@ -1,0 +1,2 @@
+title: A write to the GitHub store can be checked against the versions its caller saw of the items it changes, so a change elsewhere on the project no longer refuses it, and its rules run on what GitHub holds right before the write.
+type: changed

@@ -153,6 +153,23 @@ public record Writes(
     }
 
     /**
+     * Answers the items whose own stored state the writes change: each issue and story they move,
+     * give a worker, a priority or a reason.
+     *
+     * @return the ids, sorted
+     */
+    public java.util.Set<String> targets() {
+        final java.util.Set<String> targets = new java.util.TreeSet<>();
+        targets.addAll(issues.keySet());
+        targets.addAll(stories.keySet());
+        targets.addAll(workers.keySet());
+        targets.addAll(priorities.keySet());
+        targets.addAll(issueReasons.keySet());
+        targets.addAll(storyReasons.keySet());
+        return Collections.unmodifiableSet(targets);
+    }
+
+    /**
      * Writes that set no priority.
      *
      * @param issues the issues' new states, by id

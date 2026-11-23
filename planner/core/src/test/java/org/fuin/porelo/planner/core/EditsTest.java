@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
@@ -15,6 +16,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
@@ -60,33 +62,43 @@ class EditsTest {
     }
 
     @Test
-    void anEditAgainstAnotherRevisionIsRefusedAsStaleNamingTheBoardsRevision() {
-        // An edit planned on an old board would undo what someone saved since.
-        for (final Runnable edit :
-                List.<Runnable>of(
-                        () -> Edits.fields(board, "r0", "AB1", SIZE),
-                        () -> Edits.storyIssues(board, "r0", "ST1", List.of("AB1")),
-                        () -> Edits.blockedBy(board, "r0", "AB1", List.of()))) {
-            final StoreException.StaleRevision stale =
-                    catchThrowableOfType(StoreException.StaleRevision.class, edit::run);
-            assertThat(stale).as("an edit against r0").isNotNull();
-            assertThat(stale.current()).as("the revision named").isEqualTo("r1");
-        }
+    void anEditOverAnOlderVersionIsRefusedAsChangedAndOneWithoutAVersionAsIncomplete() {
+        // Harm: an edit planned on an old version of its item undoes what someone saved since,
+        // and one that names no version of it is taken as checked.
+        final Basis seen = Basis.of(board);
+        final Set<String> targets = Set.of("AB1", "ST1");
+        Edits.unchanged(board, seen, targets);
+        final StoreException.Changed changed =
+                catchThrowableOfType(
+                        StoreException.Changed.class,
+                        () ->
+                                Edits.unchanged(
+                                        board, seen.with("AB1", Version.of("older")), targets));
+        assertThat(changed).as("an edit over an older AB1").isNotNull();
+        assertThat(changed.ids()).as("the item named").containsExactly("AB1");
+        final StoreException.BasisIncomplete missing =
+                catchThrowableOfType(
+                        StoreException.BasisIncomplete.class,
+                        () ->
+                                Edits.unchanged(
+                                        board, Basis.none().with("AB1", Version.of("x")), targets));
+        assertThat(missing).as("an edit that names no version of ST1").isNotNull();
+        assertThat(missing.missing()).as("the item named").containsExactly("ST1");
     }
 
     @Test
     void anItemTheBoardLacksIsRefusedAsNotFound() {
         // An edit of an item nobody can see would write to whatever the store finds by that id.
-        assertThat(refusal(() -> Edits.fields(board, "r1", "AB9", SIZE)).name())
+        assertThat(refusal(() -> Edits.fields(board, "AB9", SIZE)).name())
                 .as("the fields of an unknown issue")
                 .isEqualTo("NoSuchIssue");
-        assertThat(refusal(() -> Edits.storyIssues(board, "r1", "ST9", List.of())).name())
+        assertThat(refusal(() -> Edits.storyIssues(board, "ST9", List.of())).name())
                 .as("the issues of an unknown story")
                 .isEqualTo("NoSuchStory");
-        assertThat(refusal(() -> Edits.storyIssues(board, "r1", "ST3", List.of("AB9"))).name())
+        assertThat(refusal(() -> Edits.storyIssues(board, "ST3", List.of("AB9"))).name())
                 .as("an unknown issue hung into a story")
                 .isEqualTo("NoSuchIssue");
-        assertThat(refusal(() -> Edits.blockedBy(board, "r1", "AB5", List.of("AB9"))).name())
+        assertThat(refusal(() -> Edits.blockedBy(board, "AB5", List.of("AB9"))).name())
                 .as("an unknown blocker")
                 .isEqualTo("NoSuchIssue");
         assertThat(refusal(() -> Edits.comment(board, "AB9", "A comment.")).name())
@@ -98,7 +110,7 @@ class EditsTest {
     void anIssueOfAnotherStoryIsRefusedAsASecondParentNamingTheStory() {
         // An issue has one story on a tracker that allows one parent; a second would be lost.
         final Moves.Refused refused =
-                refusal(() -> Edits.storyIssues(board, "r1", "ST3", List.of("AB3")));
+                refusal(() -> Edits.storyIssues(board, "ST3", List.of("AB3")));
 
         assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
         assertThat(refused.parameters())
@@ -111,12 +123,10 @@ class EditsTest {
     @Test
     void aSubIssueOfAnIssueOrAnIssueNamedTwiceIsRefused() {
         // A sub-issue hung into a story would have two parents; a doubled one two places.
-        assertThat(refusal(() -> Edits.storyIssues(board, "r1", "ST3", List.of("AB1.1"))).name())
+        assertThat(refusal(() -> Edits.storyIssues(board, "ST3", List.of("AB1.1"))).name())
                 .as("a sub-issue of an issue")
                 .isEqualTo(Edits.REFUSED);
-        assertThat(
-                        refusal(() -> Edits.storyIssues(board, "r1", "ST3", List.of("AB5", "AB5")))
-                                .name())
+        assertThat(refusal(() -> Edits.storyIssues(board, "ST3", List.of("AB5", "AB5"))).name())
                 .as("an issue named twice")
                 .isEqualTo(Edits.REFUSED);
         assertThat(
@@ -124,7 +134,6 @@ class EditsTest {
                                         () ->
                                                 Edits.storyIssues(
                                                         board,
-                                                        "r1",
                                                         "ST3",
                                                         Collections.nCopies(
                                                                 Edits.MOST_ISSUES + 1, "AB5")))
@@ -136,13 +145,13 @@ class EditsTest {
     @Test
     void theStorysOwnIssuesReorderedOrAFreeIssueHungInIsTaken() {
         // A list a story may hold must be written, and one it holds already must write nothing.
-        assertThat(Edits.storyIssues(board, "r1", "ST1", List.of("AB2", "AB1")))
+        assertThat(Edits.storyIssues(board, "ST1", List.of("AB2", "AB1")))
                 .as("the story's issues in another order")
                 .isTrue();
-        assertThat(Edits.storyIssues(board, "r1", "ST1", List.of("AB1", "AB2", "AB5")))
+        assertThat(Edits.storyIssues(board, "ST1", List.of("AB1", "AB2", "AB5")))
                 .as("a free issue hung in")
                 .isTrue();
-        assertThat(Edits.storyIssues(board, "r1", "ST1", List.of("AB1", "AB2")))
+        assertThat(Edits.storyIssues(board, "ST1", List.of("AB1", "AB2")))
                 .as("the list the story holds")
                 .isFalse();
     }
@@ -150,23 +159,22 @@ class EditsTest {
     @Test
     void blockersLeadingBackToTheIssueAreRefusedBeforeAnythingIsWritten() {
         // A circle of blockers leaves every issue in it waiting forever, and the board unreadable.
-        final Moves.Refused circle =
-                refusal(() -> Edits.blockedBy(board, "r1", "AB4", List.of("AB2")));
+        final Moves.Refused circle = refusal(() -> Edits.blockedBy(board, "AB4", List.of("AB2")));
         assertThat(circle.name()).as("a circle through AB2 and AB3").isEqualTo(Edits.REFUSED);
         assertThat(circle.parameters())
                 .as("the issue and the member refused")
                 .containsEntry("item", "AB4")
                 .containsEntry("field", "blockedBy");
-        assertThat(refusal(() -> Edits.blockedBy(board, "r1", "AB4", List.of("AB4"))).name())
+        assertThat(refusal(() -> Edits.blockedBy(board, "AB4", List.of("AB4"))).name())
                 .as("an issue blocking itself")
                 .isEqualTo(Edits.REFUSED);
-        assertThat(refusal(() -> Edits.blockedBy(board, "r1", "AB4", List.of("AB5", "AB5"))).name())
+        assertThat(refusal(() -> Edits.blockedBy(board, "AB4", List.of("AB5", "AB5"))).name())
                 .as("a blocker named twice")
                 .isEqualTo(Edits.REFUSED);
-        assertThat(Edits.blockedBy(board, "r1", "AB2", List.of("AB4")))
+        assertThat(Edits.blockedBy(board, "AB2", List.of("AB4")))
                 .as("a blocker replaced by one further down, no circle")
                 .isTrue();
-        assertThat(Edits.blockedBy(board, "r1", "AB2", List.of("AB3")))
+        assertThat(Edits.blockedBy(board, "AB2", List.of("AB3")))
                 .as("the blockers the issue has")
                 .isFalse();
     }
@@ -210,10 +218,9 @@ class EditsTest {
                         issues,
                         new Work(Map.of(), List.of()));
 
-        final Moves.Refused refused =
-                refusal(() -> Edits.blockedBy(waiting, "r1", "AB1", blockers));
+        final Moves.Refused refused = refusal(() -> Edits.blockedBy(waiting, "AB1", blockers));
         assertThat(refused.name()).as("one more than GitHub takes").isEqualTo(Edits.REFUSED);
-        assertThat(Edits.blockedBy(waiting, "r1", "AB1", blockers.subList(1, blockers.size())))
+        assertThat(Edits.blockedBy(waiting, "AB1", blockers.subList(1, blockers.size())))
                 .as("as many as GitHub takes, the waits included")
                 .isTrue();
     }
@@ -245,14 +252,13 @@ class EditsTest {
                                         () ->
                                                 Edits.fields(
                                                         board,
-                                                        "r1",
                                                         "AB1",
                                                         new Fields(
                                                                 Set.of(), null, null, null, null)))
                                 .name())
                 .as("no field named")
                 .isEqualTo(Edits.REFUSED);
-        Edits.fields(board, "r1", "AB1", SIZE);
+        Edits.fields(board, "AB1", SIZE);
     }
 
     @Test
@@ -275,7 +281,7 @@ class EditsTest {
                                         false)),
                         board.issues(),
                         board.work());
-        assertThat(refusal(() -> Edits.storyIssues(partial, "r1", "ST1", List.of("AB1"))).name())
+        assertThat(refusal(() -> Edits.storyIssues(partial, "ST1", List.of("AB1"))).name())
                 .as("a story whose issues the board does not all show")
                 .isEqualTo(Edits.REFUSED);
     }
@@ -302,22 +308,13 @@ class EditsTest {
     }
 
     @Test
-    void aTextEditAgainstAnotherRevisionIsStaleAndOneOfAnItemOfTheOtherKindIsNotFound() {
-        // An edit planned on an old board would write over what someone saved since; a story's
-        // text written to an issue of the same id would change the wrong item.
-        final StoreException.StaleRevision stale =
-                catchThrowableOfType(
-                        StoreException.StaleRevision.class,
-                        () ->
-                                Edits.text(
-                                        board, "r0", "AB1", title(TextEdit.Kind.ISSUE, "A title")));
-        assertThat(stale).as("a text edit against r0").isNotNull();
+    void aTextEditOfAnItemOfTheOtherKindIsNotFound() {
+        // A story's text written to an issue of the same id would change the wrong item.
         assertThat(
                         refusal(
                                         () ->
                                                 Edits.text(
                                                         board,
-                                                        "r1",
                                                         "AB1",
                                                         title(TextEdit.Kind.STORY, "A title")))
                                 .name())
@@ -328,7 +325,6 @@ class EditsTest {
                                         () ->
                                                 Edits.text(
                                                         board,
-                                                        "r1",
                                                         "ST1",
                                                         title(TextEdit.Kind.ISSUE, "A title")))
                                 .name())
@@ -341,22 +337,13 @@ class EditsTest {
         // A line break in a title breaks the tracker's one-line head; a blank part would leave a
         // lead or a heading with nothing under it, a part past the tracker's limit is cut off.
         // Harm: an item made with a title a forge takes cannot be given another as long.
-        assertThatCode(
-                        () ->
-                                Edits.text(
-                                        board,
-                                        "r1",
-                                        "AB1",
-                                        title(TextEdit.Kind.ISSUE, "😀".repeat(256))))
+        assertThatCode(() -> Edits.text(board, "AB1", title(TextEdit.Kind.ISSUE, "😀".repeat(256))))
                 .as("a title of 256 characters")
                 .doesNotThrowAnyException();
         for (final String title :
                 List.of("One\nTwo", "One\rTwo", "One\u2028Two", "  ", "x".repeat(257))) {
             final Moves.Refused refused =
-                    refusal(
-                            () ->
-                                    Edits.text(
-                                            board, "r1", "AB1", title(TextEdit.Kind.ISSUE, title)));
+                    refusal(() -> Edits.text(board, "AB1", title(TextEdit.Kind.ISSUE, title)));
             assertThat(refused.name()).as("the title refused").isEqualTo(Edits.REFUSED);
             assertThat(refused.parameters()).as("its member").containsEntry("field", "title");
         }
@@ -366,7 +353,6 @@ class EditsTest {
                             () ->
                                     Edits.text(
                                             board,
-                                            "r1",
                                             "AB1",
                                             new TextEdit(
                                                     TextEdit.Kind.ISSUE,
@@ -380,7 +366,6 @@ class EditsTest {
                                         () ->
                                                 Edits.text(
                                                         board,
-                                                        "r1",
                                                         "ST1",
                                                         new TextEdit(
                                                                 TextEdit.Kind.STORY,
@@ -398,7 +383,6 @@ class EditsTest {
         final TextEdit checked =
                 Edits.text(
                         board,
-                        "r1",
                         "ST1",
                         new TextEdit(
                                 TextEdit.Kind.STORY,
@@ -448,10 +432,10 @@ class EditsTest {
                         + " moved until one id is changed.";
         for (final Runnable edit :
                 List.<Runnable>of(
-                        () -> Edits.fields(twice, "r1", "AB1", SIZE),
-                        () -> Edits.blockedBy(twice, "r1", "AB1", List.of()),
-                        () -> Edits.text(twice, "r1", "AB1", title(TextEdit.Kind.ISSUE, "New")),
-                        () -> Edits.storyIssues(twice, "r1", "ST1", List.of("AB1")),
+                        () -> Edits.fields(twice, "AB1", SIZE),
+                        () -> Edits.blockedBy(twice, "AB1", List.of()),
+                        () -> Edits.text(twice, "AB1", title(TextEdit.Kind.ISSUE, "New")),
+                        () -> Edits.storyIssues(twice, "ST1", List.of("AB1")),
                         () -> Edits.comment(twice, "AB1", "A note."))) {
             final Moves.Refused refused = refusal(edit);
             assertThat(refused.name())
@@ -459,7 +443,7 @@ class EditsTest {
                     .isEqualTo(Edits.REFUSED);
             assertThat(refused.getMessage()).as("naming both repositories").isEqualTo(words);
         }
-        assertThat(refusal(() -> Edits.fields(twice, "r1", "AB2", SIZE)).getMessage())
+        assertThat(refusal(() -> Edits.fields(twice, "AB2", SIZE)).getMessage())
                 .as("an issue warned about its parent")
                 .isEqualTo("AB2: " + Warning.parentOutsideProject().text());
     }
@@ -478,12 +462,10 @@ class EditsTest {
                         Warning.blockedByStory());
         final List<Map.Entry<String, Runnable>> edits =
                 List.of(
-                        Map.entry(
-                                "AB5", () -> Edits.storyIssues(held, "r1", "ST3", List.of("AB5"))),
-                        Map.entry(
-                                "AB2", () -> Edits.storyIssues(held, "r1", "ST1", List.of("AB1"))),
-                        Map.entry("AB5", () -> Edits.blockedBy(held, "r1", "AB1", List.of("AB5"))),
-                        Map.entry("AB4", () -> Edits.blockedBy(held, "r1", "AB3", List.of())));
+                        Map.entry("AB5", () -> Edits.storyIssues(held, "ST3", List.of("AB5"))),
+                        Map.entry("AB2", () -> Edits.storyIssues(held, "ST1", List.of("AB1"))),
+                        Map.entry("AB5", () -> Edits.blockedBy(held, "AB1", List.of("AB5"))),
+                        Map.entry("AB4", () -> Edits.blockedBy(held, "AB3", List.of())));
         for (final Map.Entry<String, Runnable> edit : edits) {
             final String id = edit.getKey();
             final Moves.Refused refused = refusal(edit.getValue());
@@ -492,7 +474,7 @@ class EditsTest {
                     .as("the held issue's warning, for " + id)
                     .isEqualTo(id + ": " + held.issue(id).orElseThrow().warnings().get(0).text());
         }
-        assertThat(Edits.storyIssues(held, "r1", "ST1", List.of("AB2", "AB1")))
+        assertThat(Edits.storyIssues(held, "ST1", List.of("AB2", "AB1")))
                 .as("a held issue kept in the list, only reordered, is neither added nor removed")
                 .isTrue();
     }
@@ -503,7 +485,7 @@ class EditsTest {
         // cut parent or blocker, an item read in part - built on by the planner's own write.
         for (final Warning warning : HeldBoards.HAND_EDITS) {
             final Board held = HeldBoards.warned(board, "AB5", warning);
-            assertThat(refusal(() -> Edits.fields(held, "r1", "AB5", SIZE)).getMessage())
+            assertThat(refusal(() -> Edits.fields(held, "AB5", SIZE)).getMessage())
                     .as("an edit of an issue warned " + warning.kind())
                     .isEqualTo("AB5: " + warning.text());
         }
@@ -542,20 +524,14 @@ class EditsTest {
                         "porelo-ai",
                         List.of(made));
 
-        assertThat(Edits.unlisted(offering, "r1", "porelo-store#7"))
+        assertThat(Edits.unlisted(offering, "porelo-store#7"))
                 .as("the offered issue")
                 .isEqualTo(made);
         for (final String id : List.of("porelo-store#3", "porelo-store#8")) {
-            final Moves.Refused refused = refusal(() -> Edits.unlisted(offering, "r1", id));
+            final Moves.Refused refused = refusal(() -> Edits.unlisted(offering, id));
             assertThat(refused.name()).as("the refusal of %s", id).isEqualTo("NotUnlisted");
             assertThat(refused.parameters()).as("what it names").isEqualTo(Map.of("issue", id));
         }
-        assertThat(
-                        catchThrowableOfType(
-                                StoreException.StaleRevision.class,
-                                () -> Edits.unlisted(offering, "r0", "porelo-store#7")))
-                .as("an add against an old board")
-                .isNotNull();
     }
 
     private static Moves.Refused refusal(final Runnable edit) {

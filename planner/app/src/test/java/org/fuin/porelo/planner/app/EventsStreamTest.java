@@ -111,7 +111,7 @@ class EventsStreamTest {
                 MockMvcBuilders.standaloneSetup(
                                 new BoardController(changes.projects(), changes),
                                 new EventsController(changes, Duration.ofSeconds(2)))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(changes.projects()))
                         .build();
         mvc.perform(
                         put("/projects/alpha")

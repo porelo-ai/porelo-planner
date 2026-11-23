@@ -207,7 +207,7 @@ and an item whose `Status` is an option the workflow does not have is warned. A 
 result overwrites the sections of the body its kind writes and no other byte.
 
 A new issue and an idea are added with the person's own access too, and get no `Id`. Before its first call the
-planner checks the revision the window showed, the repositories, every field and option it sets and each body, so
+planner checks the version the window saw of the story it names, if one, the repositories, every field and option it sets and each body, so
 what the project cannot hold is refused with nothing made. A new issue is made in its repository with *What must be
 true* as the lead's paragraph followed by the task that proposed it, or, for a text of several paragraphs, as a
 section of its own below the task's paragraph, with its `Priority` (Medium, or the idea's priority); it is added to
@@ -220,9 +220,9 @@ an issue type in silence for an account that may not set one, so a story made or
 write.
 
 An issue offered under "Issues not on the project" is added with the person's own access, in one save. The planner
-checks the revision the window showed and that the board still offers the issue, then reads the issue right before the
+checks the version the window saw of the issue and that the board still offers it, then reads the issue right before the
 write: one GitHub no longer holds is no longer offered; one that is closed, moved to another repository or already an
-item of the project, as when a person added it on GitHub meanwhile, is a stale revision, and none of these writes
+item of the project, as when a person added it on GitHub meanwhile, is refused as changed (ItemChanged), and none of these writes
 anything. One the board would show only as a warned issue no work starts on is refused with nothing written, naming its
 warning: of the type `Story` outside the project's own repository (`StoryOutsideOwnRepository`); under a parent that is
 no item of the project (`ParentOutsideProject`) or that the board does not place, as one archived, listed apart outside
@@ -278,7 +278,7 @@ section above every other section otherwise, the other form taken out. The new b
 read, part by part, and written only when the body splits into sections unambiguously before and after; a part whose
 text would open a part of its own, leave a code block, an HTML comment, a `pre` or a `details` block open, or grow the
 body past the 65536 characters GitHub takes is refused before anything is written. Title and body go to GitHub in one
-update, which sends neither labels, assignees nor state. The edit is checked against the board's revision, and right
+update, which sends neither labels, assignees nor state. The edit is checked against the version the window saw of the item, and right
 before the update the item is read again and compared, title and body included; the body sent is built from exactly the
 body that read confirms, so a section not named keeps every byte. GitHub takes no condition on an issue's update, so a
 person's edit made in the one round trip between that read and the update is overwritten; it stays in GitHub's own

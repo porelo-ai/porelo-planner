@@ -19,12 +19,14 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.ReadProgress;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
@@ -684,6 +686,145 @@ public final class GitHubStore implements PlanningStore {
     @Override
     public Board setText(final Revision revision, final String id, final TextEdit edit) {
         return edited(snapshot -> parts.writer().setText(snapshot, revision, id, edit));
+    }
+
+    @Override
+    public Board save(final Basis basis, final Writes writes, final Recheck recheck) {
+        return served(
+                writing(
+                                () -> {
+                                    final Snapshot now = rechecked(recheck);
+                                    parts.writer().save(now, basis, writes);
+                                    return readAfterWriting();
+                                })
+                        .board());
+    }
+
+    @Override
+    public NewIssue.Added createIssue(
+            final Basis basis, final NewIssue issue, final Recheck recheck) {
+        final String[] id = new String[1];
+        final Snapshot after =
+                writing(
+                        () -> {
+                            final Snapshot now = rechecked(recheck);
+                            id[0] = parts.writer().createIssue(now, basis, issue);
+                            return readAfterMaking(List.of(id[0]));
+                        });
+        return new NewIssue.Added(Objects.requireNonNull(id[0]), served(after.board()));
+    }
+
+    @Override
+    public NewIdea.Added createIdea(final Basis basis, final NewIdea idea, final Recheck recheck) {
+        final BoardWriter.IdeaIds[] ids = new BoardWriter.IdeaIds[1];
+        final Snapshot after =
+                writing(
+                        () -> {
+                            final Snapshot now = rechecked(recheck);
+                            ids[0] = parts.writer().createIdea(now, basis, idea);
+                            final List<String> made = new ArrayList<>();
+                            made.add(ids[0].story());
+                            made.addAll(ids[0].issues());
+                            return readAfterMaking(made);
+                        });
+        final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
+        return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
+    }
+
+    @Override
+    public Board addUnlistedIssue(final Basis basis, final String issue, final Recheck recheck) {
+        final Snapshot after =
+                writing(
+                        () -> {
+                            final Snapshot now = rechecked(recheck);
+                            try {
+                                parts.writer().addUnlistedIssue(now, basis, issue);
+                            } catch (final StoreException.NoSuchIssue gone) {
+                                // The tracker no longer gives the issue: the board held still
+                                // offers it, so only a whole read shows the offer as it is.
+                                drop();
+                                throw gone;
+                            }
+                            return readAfterMaking(List.of(issue));
+                        });
+        return served(after.board());
+    }
+
+    @Override
+    public NewIdea.Added createStoryFromIssues(
+            final Basis basis, final StoryFromIssues story, final Recheck recheck) {
+        final BoardWriter.IdeaIds[] ids = new BoardWriter.IdeaIds[1];
+        final Snapshot after =
+                writing(
+                        () -> {
+                            final Snapshot now = rechecked(recheck);
+                            ids[0] = parts.writer().createStoryFromIssues(now, basis, story);
+                            return readAfterMaking(List.of(ids[0].story()));
+                        });
+        final BoardWriter.IdeaIds saved = Objects.requireNonNull(ids[0]);
+        return new NewIdea.Added(saved.story(), saved.issues(), served(after.board()));
+    }
+
+    @Override
+    public Board setFields(
+            final Basis basis, final String issue, final Fields fields, final Recheck recheck) {
+        return edited(
+                recheck, snapshot -> parts.writer().setFields(snapshot, basis, issue, fields));
+    }
+
+    @Override
+    public Board setStoryIssues(
+            final Basis basis,
+            final String story,
+            final List<String> issues,
+            final Recheck recheck) {
+        return edited(
+                recheck, snapshot -> parts.writer().setStoryIssues(snapshot, basis, story, issues));
+    }
+
+    @Override
+    public Board setBlockedBy(
+            final Basis basis,
+            final String issue,
+            final List<String> blockedBy,
+            final Recheck recheck) {
+        return edited(
+                recheck,
+                snapshot -> parts.writer().setBlockedBy(snapshot, basis, issue, blockedBy));
+    }
+
+    @Override
+    public Board setText(
+            final Basis basis, final String id, final TextEdit edit, final Recheck recheck) {
+        return edited(recheck, snapshot -> parts.writer().setText(snapshot, basis, id, edit));
+    }
+
+    /** Runs an edit after its rules; the board is read again only when the edit wrote anything. */
+    private Board edited(final Recheck recheck, final Predicate<Snapshot> edit) {
+        return served(
+                writing(
+                                () -> {
+                                    final Snapshot now = rechecked(recheck);
+                                    return edit.test(now) ? readAfterWriting() : now;
+                                })
+                        .board());
+    }
+
+    /**
+     * Runs a write's rules, under the lock, on the dependencies they need read afresh from GitHub,
+     * and answers the board held, which the write is planned on; a rule that refuses ends the write
+     * before anything is written.
+     */
+    private Snapshot rechecked(final Recheck recheck) {
+        final Snapshot now = current();
+        recheck.rule()
+                .accept(
+                        new FreshDependencies(
+                                now,
+                                recheck,
+                                (base, ids) -> parts.reader().reread(configNow(), base, ids),
+                                parts.writer()));
+        return now;
     }
 
     /**
@@ -1554,7 +1695,9 @@ public final class GitHubStore implements PlanningStore {
                             drop();
                             throw staleNamingTheBoardNow(changed);
                         }
-                        final Snapshot kept = readAgainById(written, changed);
+                        final Snapshot kept =
+                                readAgainById(
+                                        written, changed == null ? List.of() : List.of(changed));
                         if (changed == null) {
                             throw e;
                         }
@@ -1562,13 +1705,17 @@ public final class GitHubStore implements PlanningStore {
                         // named instead, and a board not read again names none to save against.
                         throw new StoreException.StaleRevision(
                                 kept == null ? UNREAD : kept.board().revision().value(), changed);
+                    } catch (final StoreException.Changed e) {
+                        // The board shows the changed targets as GitHub holds them now.
+                        readAgainById(touched.ids(), e.ids());
+                        throw e;
                     } catch (final BoardWriter.AfterWriting e) {
                         // The read after the writes failed, so the board held may lack them.
                         saves.forget(touched.ids());
                         drop();
                         throw e;
                     } catch (final RuntimeException e) {
-                        readAgainById(touched.ids(), null);
+                        readAgainById(touched.ids(), List.of());
                         throw e;
                     } finally {
                         synchronized (fold) {
@@ -1604,21 +1751,23 @@ public final class GitHubStore implements PlanningStore {
      * whole.
      *
      * @param written what the save's writes touched
-     * @param changed the board's id of the item a person changed, or null
+     * @param changed the board's ids of the items a person changed
      * @return the board held afterwards, or null when it was forgotten
      */
     private @Nullable Snapshot readAgainById(
-            final Touched.Ids written, final @Nullable String changed) {
+            final Touched.Ids written, final List<String> changed) {
         final Snapshot held = snapshot;
         if (held == null) {
             return null;
         }
         final Set<String> issues = new LinkedHashSet<>(written.issues());
         final Set<String> items = new LinkedHashSet<>(written.items());
-        final ItemView item = changed == null ? null : held.items().get(changed);
-        if (item != null) {
-            issues.add(item.issueId());
-            items.add(item.itemId());
+        for (final String id : changed) {
+            final ItemView item = held.items().get(id);
+            if (item != null) {
+                issues.add(item.issueId());
+                items.add(item.itemId());
+            }
         }
         if (issues.isEmpty()
                 && items.isEmpty()

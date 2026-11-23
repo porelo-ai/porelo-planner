@@ -19,7 +19,7 @@ void main() {
         {'id': 'B900', 'state': 'Backlog'},
       ],
     };
-    await source.setStoryIssues('demo', 'S1', ['I1', 'B900'], 'r1');
+    await source.setStoryIssues('demo', 'S1', ['I1', 'B900'], seenOn(source.board('demo')));
     final story = mockPlanningStory(source.board('demo'), 'S1')!;
     expect((story['issues'] as List).map((dynamic issue) => (issue as Map)['id']), ['I1', 'B900']);
   });
@@ -35,7 +35,7 @@ void main() {
       await source.end();
     });
     await pumpEventQueue();
-    expect(await source.setStoryIssues('demo', 'S1', ['I1'], 'r1'), 'r1');
+    expect(await source.setStoryIssues('demo', 'S1', ['I1'], seenOn(source.board('demo'))), 'r1');
     await pumpEventQueue();
     expect(source.board('demo')['revision'], 'r1');
     expect(seen.map((reply) => reply.revision), ['r1']);
@@ -53,7 +53,7 @@ void main() {
       ],
     };
     await expectLater(
-      source.setStoryIssues('demo', 'S1', ['I1', 'B900'], 'r1'),
+      source.setStoryIssues('demo', 'S1', ['I1', 'B900'], seenOn(source.board('demo'))),
       throwsA(
         isA<PlanningRefusal>()
             .having((error) => error.name, 'name', 'EditNotAllowed')
@@ -62,7 +62,7 @@ void main() {
     );
     ((data['stories'] as List).first['issues'] as List).first['atWork'] = true;
     await expectLater(
-      source.setStoryIssues('demo', 'S1', [], 'r1'),
+      source.setStoryIssues('demo', 'S1', [], seenOn(source.board('demo'))),
       throwsA(
         isA<PlanningRefusal>()
             .having((error) => error.name, 'name', 'WorkRunning')
@@ -93,14 +93,13 @@ void main() {
   test('a mock new issue is numbered after standalone issues and is listed with its saved fields', () async {
     final source = MockPlanningSource();
     addTearDown(source.end);
-    final revision = source.board('demo')['revision'] as String;
     final added = await source.createIssue(
       'demo',
       'porelo',
       'New idea',
       'It works.',
       'M',
-      revision,
+      const {},
       worker: IssueWorker.manual,
     );
     expect(added.id, 'B901');
@@ -128,7 +127,7 @@ void main() {
         story: 'ST291',
         to: 'Implementing',
         mode: 'AGENT',
-        revision: proposal.revision,
+        seen: seenOn(source.board('demo')),
         subAgents: const [],
         proposedRepositories: proposal.repositories,
       ),
@@ -154,11 +153,15 @@ void main() {
   });
 
   test('a stand-in refusal is worded as the daemon words it', () {
-    final refusal = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'revision': 'r2'});
+    final refusal = mockRefusal('org.fuin.porelo.Tasks1.ItemChanged', {
+      'changed': ['S1'],
+    });
 
-    expect(refusal.name, 'StaleRevision');
-    expect(refusal.parameters, {'revision': 'r2'});
-    expect(refusal.toString(), 'org.fuin.porelo.Tasks1.StaleRevision {revision: r2}');
+    expect(refusal.name, 'ItemChanged');
+    expect(refusal.parameters, {
+      'changed': ['S1'],
+    });
+    expect(refusal.toString(), 'org.fuin.porelo.Tasks1.ItemChanged {changed: [S1]}');
     expect(refusal.notOffered, isFalse);
     expect(mockRefusal('org.varlink.service.MethodNotFound').notOffered, isTrue);
   });
@@ -233,13 +236,13 @@ void main() {
       ..refusalDetail = 'not now';
     final before = source.board('demo')['revision'] as String;
     const moves = [PlanningStoryMove('ST291', 'Rejected')];
-    final preview = await source.previewMoves('demo', moves, before);
+    final preview = await source.previewMoves('demo', moves);
 
     await expectLater(
-      source.saveMoves('demo', moves, before, digest: preview.digest),
+      source.saveMoves('demo', moves, preview.targets, digest: preview.digest),
       throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'WorkNotAllowed')),
     );
-    expect(source.moveCalls.single['revision'], before);
+    expect(source.moveCalls.single['seen'], preview.targets);
     expect(source.board('demo')['revision'], before);
   });
 
@@ -250,14 +253,14 @@ void main() {
     final before = source.board('demo')['revision'] as String;
 
     await expectLater(
-      source.previewMoves('demo', const [PlanningStoryMove('ST295', 'Review')], before),
+      source.previewMoves('demo', const [PlanningStoryMove('ST295', 'Review')]),
       throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'MoveNotAllowed')),
     );
     expect(source.board('demo')['revision'], before, reason: 'the refused move wrote nothing');
 
     const moves = [PlanningStoryMove('ST295', 'Rejected')];
-    final preview = await source.previewMoves('demo', moves, before);
-    await source.saveMoves('demo', moves, before, digest: preview.digest);
+    final preview = await source.previewMoves('demo', moves);
+    await source.saveMoves('demo', moves, preview.targets, digest: preview.digest);
     final story = mockPlanningStory(source.board('demo'), 'ST295')!;
     expect(story['state'], 'Rejected', reason: 'the story is closed');
     expect([for (final issue in story['issues'] as List) issue['state']], everyElement('Rejected'));
@@ -290,7 +293,7 @@ void main() {
         story: story['id'] as String,
         to: working['name'] as String,
         mode: 'AGENT',
-        revision: board['revision'] as String,
+        seen: seenOn(board),
         subAgents: const [],
       ),
     );

@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import '../models.dart';
+import 'planning_data.dart';
 import 'refusal.dart';
 import 'story_state.dart';
 
 /// Validates a complete save on a copy, publishing nothing on a refusal.
 Map<String, dynamic> applyPlanningMove(Map<String, dynamic> source, Map<String, dynamic> parameters) {
   Never refuse(String name, Map<String, dynamic> fields) => throw mockRefusal('org.fuin.porelo.Tasks1.$name', fields);
-  if (parameters['revision'] != source['revision']) refuse('StaleRevision', {'revision': source['revision']});
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final states = (board['states'] as List).cast<Map<String, dynamic>>();
   final stories = (board['stories'] as List).cast<Map<String, dynamic>>();
@@ -254,13 +254,24 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
       if (skipped.isNotEmpty) warnings.add({...warning('SKIPS_STATES', id, from, to), 'skipped': skipped});
     }
   }
-  final revision = source['revision'] as String;
+  // The items the batch changes: those it moves and every issue it carries, each with the version it stands at.
+  final versions = mockItemVersions(source);
+  final targets = {
+    for (final id in {
+      for (final move in batch) (move['story'] ?? move['issue']) as String,
+      ...(after['moved'] as List).cast<String>(),
+    })
+      id: ?versions[id],
+  };
   return {
-    'revision': revision,
+    'revision': source['revision'] as String,
+    'targets': [
+      for (final target in targets.entries) {'id': target.key, 'version': target.value},
+    ],
     // The reason decides no item, so the planner's digest leaves it out and a reason typed after the preview saves.
-    'digest': _digest(
+    'digest': mockDigest(
       jsonEncode([
-        revision,
+        targets,
         [for (final move in batch) Map.of(move)..remove('reason')],
         warnings,
       ]),
@@ -275,23 +286,38 @@ Map<String, dynamic> previewPlanningMove(Map<String, dynamic> source, Map<String
   };
 }
 
-/// A stand-in's digest: 64 hexadecimal characters that differ with what the preview showed.
-String _digest(String text) {
-  var hash = 0xcbf29ce484222325;
-  final out = StringBuffer();
-  for (var round = 0; out.length < 64; round++) {
-    for (final unit in '$round$text'.codeUnits) {
-      hash = ((hash ^ unit) * 0x100000001b3) & 0xFFFFFFFFFFFF;
-    }
-    out.write(hash.toRadixString(16).padLeft(12, '0'));
+/// Checks the versions [seen] of a write's [targets] on [board] as the planner does: a target without one is refused as
+/// `BasisIncomplete`, and one at another version, or no longer on the board, as `ItemChanged` naming it.
+void mockCheckSeen(Map<String, dynamic> board, Map<String, String> seen, Iterable<String> targets) {
+  final missing = [
+    for (final id in targets.toSet())
+      if (!seen.containsKey(id)) id,
+  ]..sort();
+  if (missing.isNotEmpty) throw mockRefusal('BasisIncomplete', {'missing': missing});
+  final versions = mockItemVersions(board);
+  final changed = [
+    for (final id in targets.toSet())
+      if (versions[id] != seen[id]) id,
+  ]..sort();
+  if (changed.isNotEmpty) {
+    throw mockRefusal('ItemChanged', {
+      'changed': changed,
+      'items': [
+        for (final id in changed) {'id': id, 'gone': !versions.containsKey(id)},
+      ],
+    });
   }
-  return out.toString().substring(0, 64);
 }
 
 /// Sets who works one issue on a copy, as the planner does, publishing nothing on a refusal.
-Map<String, dynamic> applyPlanningWorker(Map<String, dynamic> source, String id, String worker, String revision) {
+Map<String, dynamic> applyPlanningWorker(
+  Map<String, dynamic> source,
+  String id,
+  String worker,
+  Map<String, String> seen,
+) {
   Never refuse(String name, Map<String, dynamic> fields) => throw mockRefusal('org.fuin.porelo.Tasks1.$name', fields);
-  if (revision != source['revision']) refuse('StaleRevision', {'revision': source['revision']});
+  mockCheckSeen(source, seen, [id]);
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final states = (board['states'] as List).cast<Map<String, dynamic>>();
   final issues = (board['stories'] as List)
@@ -365,8 +391,8 @@ bool _runHolds(List<Map<String, dynamic>> stories, Map<String, dynamic> issue) =
 
 /// Adds an issue the board offers as made outside the project, on a copy: it leaves the offer and stands in no story
 /// in the first state, as the planner adds it.
-Map<String, dynamic> applyPlanningAddUnlisted(Map<String, dynamic> source, String issue, String revision) {
-  if (revision != source['revision']) throw mockRefusal('StaleRevision', {'revision': source['revision']});
+Map<String, dynamic> applyPlanningAddUnlisted(Map<String, dynamic> source, String issue, Map<String, String> seen) {
+  mockCheckSeen(source, seen, [issue]);
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final offer = (board['unlisted'] as List? ?? const []).cast<Map<String, dynamic>>();
   final offered = offer.where((each) => each['id'] == issue).firstOrNull;
@@ -397,7 +423,7 @@ Map<String, dynamic> applyPlanningAddUnlisted(Map<String, dynamic> source, Strin
       },
     ];
   }
-  board['revision'] = '$revision:listed';
+  board['revision'] = '${source['revision']}:listed';
   board.remove('rules');
   return board;
 }
@@ -407,12 +433,22 @@ Map<String, dynamic> applyPlanningStoryIssues(
   Map<String, dynamic> source,
   String story,
   List<String> ids,
-  String revision,
+  Map<String, String> seen,
 ) {
-  if (revision != source['revision']) throw mockRefusal('StaleRevision', {'revision': source['revision']});
   final board = jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
   final stories = (board['stories'] as List).cast<Map<String, dynamic>>();
   final target = stories.where((each) => each['id'] == story).firstOrNull;
+  // The story and every issue the list hangs in or takes out are the items it changes.
+  final before = {
+    for (final issue in (target?['issues'] as List? ?? const []).whereType<Map<String, dynamic>>()) issue['id'],
+  };
+  mockCheckSeen(source, seen, {
+    story,
+    for (final id in ids)
+      if (!before.contains(id)) id,
+    for (final id in before.whereType<String>())
+      if (!ids.contains(id)) id,
+  });
   if (target == null) throw mockRefusal('NoSuchStory', {'story': story});
   void refuse(String why) => throw mockRefusal('EditNotAllowed', {'item': story, 'field': 'issues', 'reason': why});
   if (target['issues'] is! List || ids.length > 100 || ids.toSet().length != ids.length) {
@@ -450,7 +486,7 @@ Map<String, dynamic> applyPlanningStoryIssues(
       if (!ids.contains(entry.key) && !elsewhere.contains(entry.key)) entry.value,
   ];
   settleStoryStates(board);
-  board['revision'] = '$revision:issues';
+  board['revision'] = '${source['revision']}:issues';
   // The fake does not judge the stories' rules, so a change shows none of the breaches it named.
   board.remove('rules');
   return board;

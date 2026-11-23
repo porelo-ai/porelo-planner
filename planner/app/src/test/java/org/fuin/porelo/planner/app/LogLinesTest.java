@@ -112,7 +112,7 @@ class LogLinesTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(
                         put("/projects/" + PROJECT)
@@ -134,8 +134,7 @@ class LogLinesTest {
         // Without the lines a person cannot tell why a board lacked an issue or when a save went
         // out; a fault's own line break would let a repository write lines of its own.
         mvc.perform(get("/projects/" + PROJECT + "/stories")).andExpect(status().isOk());
-        final String batch =
-                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}";
+        final String batch = "{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}";
         final String preview =
                 mvc.perform(
                                 post("/projects/" + PROJECT + "/moves/preview")

@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
@@ -25,6 +26,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.junit.jupiter.api.AfterEach;
@@ -154,6 +156,18 @@ class BoardEditsTest {
         changes.close();
     }
 
+    /** The versions of every item as the board holds them now. */
+    private Basis seen() {
+        return Basis.of(current);
+    }
+
+    /** Versions of every item that the board's items no longer stand at. */
+    private Basis stale() {
+        final Map<String, Version> old = new java.util.HashMap<>();
+        seen().items().keySet().forEach(id -> old.put(id, Version.of("seen before", id)));
+        return new Basis(old);
+    }
+
     private Board moved() {
         current =
                 new Board(
@@ -167,18 +181,17 @@ class BoardEditsTest {
     }
 
     @Test
-    void everyEditAgainstAnotherRevisionWritesNothing() {
-        // An edit planned on an old board would undo what someone saved since.
+    void everyEditOfAnItemThatChangedSinceItWasSeenWritesNothing() {
+        // Harm: an edit planned on an old board would undo what someone saved since.
         for (final Runnable edit :
                 List.<Runnable>of(
-                        () -> edits.setFields("alpha", "AB1", "r0", size()),
-                        () -> edits.setStoryIssues("alpha", "ST1", "r0", List.of("AB1")),
-                        () -> edits.setBlockedBy("alpha", "AB1", "r0", List.of("AB4")),
-                        () -> edits.setText("alpha", "AB1", "r0", title(TextEdit.Kind.ISSUE)),
-                        () -> edits.createStory("alpha", "r0", idea(), List.of()))) {
+                        () -> edits.setFields("alpha", "AB1", stale(), size()),
+                        () -> edits.setStoryIssues("alpha", "ST1", stale(), List.of("AB1")),
+                        () -> edits.setBlockedBy("alpha", "AB1", stale(), List.of("AB4")),
+                        () -> edits.setText("alpha", "AB1", stale(), title(TextEdit.Kind.ISSUE)))) {
             assertThat(catchThrowable(edit::run))
-                    .as("an edit against r0")
-                    .isInstanceOf(StoreException.StaleRevision.class);
+                    .as("an edit against versions the items no longer stand at")
+                    .isInstanceOf(StoreException.Changed.class);
         }
         assertThat(written).as("nothing written").isEmpty();
     }
@@ -191,7 +204,7 @@ class BoardEditsTest {
                         catchThrowable(
                                 () ->
                                         edits.setStoryIssues(
-                                                "alpha", "ST1", "r1", List.of("AB1", "AB3")));
+                                                "alpha", "ST1", seen(), List.of("AB1", "AB3")));
         assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
         assertThat(written).as("nothing written").isEmpty();
     }
@@ -202,24 +215,30 @@ class BoardEditsTest {
         final Moves.Refused refused =
                 (Moves.Refused)
                         catchThrowable(
-                                () -> edits.setBlockedBy("alpha", "AB3", "r1", List.of("AB2")));
+                                () -> edits.setBlockedBy("alpha", "AB3", seen(), List.of("AB2")));
         assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
         assertThat(written).as("nothing written").isEmpty();
     }
 
     @Test
-    void anUnknownIdIsRefusedAsNotFoundAndWritesNothing() {
-        // An edit of an item nobody can see would write to whatever the store finds by that id.
+    void anUnknownIdIsRefusedAsNotFoundOrUnseenAndWritesNothing() {
+        // An edit of an item nobody can see would write to whatever the store finds by that id; one
+        // the edit changes is a target no version was seen of, another one the board lacks.
         for (final Runnable edit :
                 List.<Runnable>of(
-                        () -> edits.setFields("alpha", "AB9", "r1", size()),
-                        () -> edits.setStoryIssues("alpha", "ST9", "r1", List.of()),
-                        () -> edits.setStoryIssues("alpha", "ST1", "r1", List.of("AB9")),
-                        () -> edits.setBlockedBy("alpha", "AB1", "r1", List.of("AB9")),
+                        () -> edits.setFields("alpha", "AB9", seen(), size()),
+                        () -> edits.setStoryIssues("alpha", "ST9", seen(), List.of()),
+                        () -> edits.setStoryIssues("alpha", "ST1", seen(), List.of("AB9")),
+                        () -> edits.setBlockedBy("alpha", "AB1", seen(), List.of("AB9")),
                         () -> edits.comment("alpha", "AB9", "A note."))) {
-            assertThat(((Moves.Refused) catchThrowable(edit::run)).name())
-                    .as("an unknown item")
-                    .isIn("NoSuchIssue", "NoSuchStory");
+            final Throwable refused = catchThrowable(edit::run);
+            if (refused instanceof StoreException.BasisIncomplete unseen) {
+                assertThat(unseen.missing()).as("the unknown target").containsAnyOf("AB9", "ST9");
+            } else {
+                assertThat(((Moves.Refused) refused).name())
+                        .as("an unknown item")
+                        .isIn("NoSuchIssue", "NoSuchStory");
+            }
         }
         assertThat(written).as("nothing written").isEmpty();
     }
@@ -229,7 +248,7 @@ class BoardEditsTest {
         // An edit the windows are not told of leaves every other window showing the old board.
         final Changes.Subscription window = changes.subscribe("alpha");
 
-        assertThat(edits.setBlockedBy("alpha", "AB1", "r1", List.of("AB4")))
+        assertThat(edits.setBlockedBy("alpha", "AB1", seen(), List.of("AB4")))
                 .as("the revision after the save")
                 .isEqualTo("r2");
 
@@ -242,10 +261,10 @@ class BoardEditsTest {
     @Test
     void aListOrBlockersTheItemHoldsWritesNothingAndAnswersTheRevision() {
         // A save of nothing would still announce a change nobody made.
-        assertThat(edits.setStoryIssues("alpha", "ST1", "r1", List.of("AB1", "AB2")))
+        assertThat(edits.setStoryIssues("alpha", "ST1", seen(), List.of("AB1", "AB2")))
                 .as("the list ST1 holds")
                 .isEqualTo("r1");
-        assertThat(edits.setBlockedBy("alpha", "AB2", "r1", List.of("AB3")))
+        assertThat(edits.setBlockedBy("alpha", "AB2", seen(), List.of("AB3")))
                 .as("the blockers AB2 has")
                 .isEqualTo("r1");
         assertThat(written).as("nothing written").isEmpty();
@@ -254,7 +273,7 @@ class BoardEditsTest {
     @Test
     void aStoryAndACommentReachTheStore() {
         // A use case that checked and then wrote nothing would answer a story or a note never kept.
-        assertThat(edits.createStory("alpha", "r1", idea(), List.of()).story())
+        assertThat(edits.createStory("alpha", seen(), idea(), List.of()).story())
                 .as("the story's id")
                 .isEqualTo("ST3");
         edits.comment("alpha", "AB1", "A note.");
@@ -269,7 +288,7 @@ class BoardEditsTest {
                                 () ->
                                         edits.createStory(
                                                 "alpha",
-                                                "r1",
+                                                seen(),
                                                 new NewIdeas.Idea(null, List.of()),
                                                 List.of())))
                 .as("an idea with no story and no issue")
@@ -287,7 +306,7 @@ class BoardEditsTest {
                         edits.setText(
                                 "alpha",
                                 "ST1",
-                                "r1",
+                                seen(),
                                 new TextEdit(
                                         TextEdit.Kind.STORY, " One more ", Map.of(), Set.of())))
                 .as("the revision after the save")
@@ -309,7 +328,7 @@ class BoardEditsTest {
                                         edits.setText(
                                                 "alpha",
                                                 "AB1",
-                                                "r1",
+                                                seen(),
                                                 new TextEdit(
                                                         TextEdit.Kind.ISSUE,
                                                         null,

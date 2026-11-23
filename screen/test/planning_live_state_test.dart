@@ -28,7 +28,7 @@ class _Source extends FakePlanningSource implements PlanningReconnect {
     changes.changed();
   }
 
-  void send(String project) => watches[project]!.add(PlanningSnapshot.from(board));
+  void send(String project) => watches[project]!.add(versioned(board));
 
   @override
   bool isReconnecting(String project) => reconnecting.contains(project);

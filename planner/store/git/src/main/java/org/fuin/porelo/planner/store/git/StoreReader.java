@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
@@ -21,6 +22,7 @@ import org.fuin.porelo.planner.store.git.stories.IssueIndex;
 import org.fuin.porelo.planner.store.git.stories.IssueIndexes;
 import org.fuin.porelo.planner.store.git.stories.IssueLinks;
 import org.fuin.porelo.planner.store.git.stories.StageRecords;
+import org.fuin.porelo.planner.store.git.stories.StoriesIndex;
 import org.fuin.porelo.planner.store.git.stories.Story;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.jspecify.annotations.Nullable;
@@ -161,12 +163,15 @@ public final class StoreReader implements PartReader {
             return new Part(null, List.of(), issues, null, paths, faults, twice(copies));
         }
         final List<Story> stories = new ArrayList<>();
+        final Map<String, Version> versions = new LinkedHashMap<>();
         final Set<String> twice = new HashSet<>();
         for (final String file : bounded(remote.list(name, commit, "stories"))) {
             if (STORY_FILE.matcher(file.substring(file.lastIndexOf('/') + 1)).matches()) {
                 final Story story;
+                final String text;
                 try {
-                    story = Story.readForBoard(text(name, commit, file), workflow);
+                    text = text(name, commit, file);
+                    story = Story.readForBoard(text, workflow);
                 } catch (final IllegalArgumentException e) {
                     faults.add(name + ": " + file + ": " + e.getMessage());
                     continue;
@@ -177,12 +182,20 @@ public final class StoreReader implements PartReader {
                     twice.add(story.id());
                 } else {
                     paths.put(Part.story(story.id()), file);
+                    // The part the stories index generates follows its issues; it is no edit.
+                    versions.put(
+                            Part.story(story.id()),
+                            Version.of("story", StoriesIndex.ownText(text)));
                 }
                 copies.computeIfAbsent(Part.story(story.id()), id -> new ArrayList<>()).add(file);
                 stories.add(story);
             }
         }
-        twice.forEach(id -> paths.remove(Part.story(id)));
+        twice.forEach(
+                id -> {
+                    paths.remove(Part.story(id));
+                    versions.remove(Part.story(id));
+                });
         return new Part(
                 workflow,
                 List.copyOf(stories),
@@ -190,7 +203,8 @@ public final class StoreReader implements PartReader {
                 WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
                 paths,
                 faults,
-                twice(copies));
+                twice(copies),
+                versions);
     }
 
     /** The files of each id two or more files carry. */

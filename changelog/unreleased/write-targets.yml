@@ -1,0 +1,2 @@
+title: The planner defines each write's item targets and checks their versions separately from rules over current dependencies.
+type: added

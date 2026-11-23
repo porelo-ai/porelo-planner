@@ -56,7 +56,7 @@ void main() {
           'issue': issue,
           'round': 3,
           'choice': choice,
-          'revision': 'design-1',
+          'seen': allOf(containsPair('ST291', isA<String>()), containsPair(issue, isA<String>())),
           // ResolveIssueReading takes the story and a comment that is never omitted.
           'comment': choice == 'REWORK' ? 'Keep the credential inside.' : '',
         },

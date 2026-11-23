@@ -51,7 +51,7 @@ class StageResultHttpTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
     }
 
@@ -179,7 +179,9 @@ class StageResultHttpTest {
                 call(
                         "/stories/ST1/work",
                         "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"In analysis\","
-                                + "\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                + "\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + ",\"readingRounds\":1}",
                         200);
         final String offer = order.at("/tasks/0/offer").asString();
         call(

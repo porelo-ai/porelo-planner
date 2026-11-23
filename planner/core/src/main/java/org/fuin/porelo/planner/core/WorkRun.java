@@ -20,10 +20,12 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -413,10 +415,9 @@ public final class WorkRun {
      *
      * @param issue the issue
      * @param reason its reason
-     * @param revision the board's revision the person saw
      * @param run the run the person saw
      */
-    public record PassOver(String issue, String reason, String revision, String run) {}
+    public record PassOver(String issue, String reason, String run) {}
 
     /**
      * The reasons a Start from a raised row may pass over; a blocked task said it cannot go on
@@ -485,11 +486,10 @@ public final class WorkRun {
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    if (!board.revision().value().equals(decision.revision())
-                            || passOver != null
-                                    && !board.revision().value().equals(passOver.revision())) {
-                        throw WorkRefusal.staleRevision(board.revision().value());
-                    }
+                    Edits.unchanged(
+                            board,
+                            decision.seen(),
+                            passOver == null ? Set.of(storyId) : Set.of(storyId, passOver.issue()));
                     final Run earlier = snapshot.runs().get(storyId);
                     standing(storyId, earlier, start);
                     passedOver(storyId, earlier, passOver);
@@ -1248,7 +1248,7 @@ public final class WorkRun {
      * @param round the round the person saw
      * @param choice the choice
      * @param comment the person's words
-     * @param revision the board's revision the person saw
+     * @param seen the versions the person saw: of the issue, and of every item the choice saves
      * @param rework the settings a rework runs with, null for the Reworking rule's first mode and
      *     model; only a rework takes them
      * @return the run and the offers that follow
@@ -1259,7 +1259,7 @@ public final class WorkRun {
             final int round,
             final ReadingCycle.Choice choice,
             final String comment,
-            final String revision,
+            final Basis seen,
             final NextStep.@Nullable Settings rework) {
         Ids.story(story);
         Ids.issue(issueId);
@@ -1298,9 +1298,7 @@ public final class WorkRun {
                                             && found.issues().contains(issue.parent()))) {
                         throw WorkRefusal.readingNotStopped(issueId);
                     }
-                    if (!board.revision().value().equals(revision)) {
-                        throw WorkRefusal.staleRevision(board.revision().value());
-                    }
+                    Edits.unchanged(board, seen, Set.of(issueId));
                     final ReadingCycle.Counted counted;
                     try {
                         counted =
@@ -1459,6 +1457,9 @@ public final class WorkRun {
                         }
                     }
                     writes = reconcile(board, draft, writes, following);
+                    final Set<String> targets = new java.util.TreeSet<>(writes.targets());
+                    targets.add(issueId);
+                    Edits.unchanged(board, seen, targets);
                     final Run saved =
                             save(session, snapshot, draft, writes, reading.id(), board, issueId);
                     return answer(saved, following);
@@ -1917,18 +1918,13 @@ public final class WorkRun {
      * nothing.
      *
      * @param moves the moves, in the order sent
-     * @param revision the revision the window shows
-     * @return the preview
-     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @return the preview, its targets with the versions the board holds
      * @throws Moves.Refused when the save would refuse the batch itself
      */
-    public MovePreview preview(final List<Moves.Move> moves, final String revision) {
+    public MovePreview preview(final List<Moves.Move> moves) {
         return record.locked(
                 session -> {
                     final Board board = store.board();
-                    if (!board.revision().value().equals(revision)) {
-                        throw new StoreException.StaleRevision(board.revision().value());
-                    }
                     final Snapshot snapshot = read(session);
                     return Moves.preview(board, moves, owners(snapshot), held(snapshot));
                 });
@@ -1979,10 +1975,11 @@ public final class WorkRun {
      * before anything is stopped or written, its digest must be the one sent. A confirmed save
      * stops each run with tasks at work over what moves, which the preview named and the digest
      * covers, and records the stop with the save; an unconfirmed one is refused while such a run
-     * stands.
+     * stands. Before the digest, the targets the preview finds now are checked against the versions
+     * the person saw.
      *
      * @param moves the moves, in the order sent
-     * @param revision the revision the preview was answered for
+     * @param basis the versions the person saw, the preview's targets among them
      * @param digest the preview's digest the window sends back
      * @param confirm whether the person confirmed the preview's warnings
      * @param repository the project's own repository, which the digest covers
@@ -1990,13 +1987,14 @@ public final class WorkRun {
      * @param save the save, given the runs the record holds under the lock
      * @param <T> what the save answers
      * @return what the save answered and the runs it stopped
-     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws StoreException.BasisIncomplete for a target the basis names no version for
+     * @throws StoreException.Changed for a target changed since the person saw it
      * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now, or
      *     {@code WorkRunning} while a running work owns what moves and the save is not confirmed
      */
     public <T> MoveSaved<T> moves(
             final List<Moves.Move> moves,
-            final String revision,
+            final Basis basis,
             final String digest,
             final boolean confirm,
             final String repository,
@@ -2006,12 +2004,10 @@ public final class WorkRun {
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    if (!board.revision().value().equals(revision)) {
-                        throw new StoreException.StaleRevision(board.revision().value());
-                    }
-                    final String now =
-                            Moves.preview(board, moves, owners(snapshot), held(snapshot))
-                                    .digest(repository, branch);
+                    final MovePreview again =
+                            Moves.preview(board, moves, owners(snapshot), held(snapshot));
+                    Edits.unchanged(board, basis, again.targets().keySet());
+                    final String now = again.digest(repository, branch);
                     if (!MessageDigest.isEqual(
                             now.getBytes(StandardCharsets.UTF_8),
                             digest.getBytes(StandardCharsets.UTF_8))) {
@@ -2041,20 +2037,14 @@ public final class WorkRun {
      * the work under the writer lock, writing nothing.
      *
      * @param asked the correction
-     * @param revision the revision the window shows
-     * @return the preview
-     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @return the preview, its targets with the versions the board holds
      * @throws Moves.Refused when the correction is refused, as {@link Corrections} checks it
      * @throws UnsupportedOperationException when the store offers no correction of the warning
      */
-    public Corrections.Preview correctionPreview(
-            final Corrections.Asked asked, final String revision) {
+    public Corrections.Preview correctionPreview(final Corrections.Asked asked) {
         return record.locked(
                 session -> {
                     final Board board = store.board();
-                    if (!board.revision().value().equals(revision)) {
-                        throw new StoreException.StaleRevision(board.revision().value());
-                    }
                     return Corrections.check(board, asked, owners(read(session)));
                 });
     }
@@ -2068,13 +2058,14 @@ public final class WorkRun {
      * stands.
      *
      * @param asked the correction
-     * @param revision the revision its preview was answered for
+     * @param basis the versions the person saw, its preview's targets among them
      * @param digest the preview's digest the window sends back
      * @param confirm whether the person confirmed the preview's warnings
      * @param repository the project's own repository, which the digest covers
      * @param branch its branch, or null
      * @return the board after the save and the runs it stopped
-     * @throws org.fuin.porelo.planner.store.StoreException.StaleRevision when the board moved
+     * @throws StoreException.BasisIncomplete for a target the basis names no version for
+     * @throws StoreException.Changed for a target changed since the person saw it
      * @throws WorkRefusal {@code PreviewChanged} when the preview answers another digest now, or
      *     {@code WorkRunning} while a run has tasks at work on the story and the save is not
      *     confirmed
@@ -2083,7 +2074,7 @@ public final class WorkRun {
      */
     public MoveSaved<Board> correction(
             final Corrections.Asked asked,
-            final String revision,
+            final Basis basis,
             final String digest,
             final boolean confirm,
             final String repository,
@@ -2092,11 +2083,12 @@ public final class WorkRun {
                 session -> {
                     final Snapshot snapshot = read(session);
                     final Board board = store.board();
-                    if (!board.revision().value().equals(revision)) {
-                        throw new StoreException.StaleRevision(board.revision().value());
-                    }
+                    // The item corrected is the target, so one changed since it was seen is
+                    // refused as changed before its warning is judged on what it stands at now.
+                    Edits.unchanged(board, basis, Set.of(asked.id()));
                     final Corrections.Preview preview =
                             Corrections.check(board, asked, owners(snapshot));
+                    Edits.unchanged(board, basis, preview.targets().keySet());
                     if (!MessageDigest.isEqual(
                             preview.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
                             digest.getBytes(StandardCharsets.UTF_8))) {
@@ -2108,7 +2100,7 @@ public final class WorkRun {
                     }
                     final List<StoppedRun> stopped = new ArrayList<>();
                     final Snapshot stopping = stopOwners(snapshot, Set.of(), stories, stopped);
-                    final Board saved = store.save(board.revision(), preview.writes());
+                    final Board saved = store.save(basis, preview.writes(), Recheck.none());
                     if (stopping != snapshot) {
                         session.write(stopping);
                     }

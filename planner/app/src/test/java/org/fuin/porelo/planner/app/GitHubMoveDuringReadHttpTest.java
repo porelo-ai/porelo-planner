@@ -139,7 +139,7 @@ class GitHubMoveDuringReadHttpTest {
                                             @Override
                                             public void save(
                                                     final Snapshot current,
-                                                    final Revision revision,
+                                                    final org.fuin.porelo.planner.store.Basis basis,
                                                     final Writes writes) {
                                                 saved.addAll(writes.issues().keySet());
                                             }
@@ -154,7 +154,7 @@ class GitHubMoveDuringReadHttpTest {
                         Executors.newSingleThreadScheduledExecutor());
         final MockMvc mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -179,10 +179,7 @@ class GitHubMoveDuringReadHttpTest {
         assertThat(reading.await(30, TimeUnit.SECONDS)).as("a whole read under way").isTrue();
         final int readsBefore = wholeReads.get();
         final String revision = stream.firstFrame().board().revision().value();
-        final String body =
-                "{\"revision\": \""
-                        + revision
-                        + "\", \"moves\": [{\"issue\": \"porelo-store#1\", \"to\": \"Backlog\"}]}";
+        final String body = "{\"moves\": [{\"issue\": \"porelo-store#1\", \"to\": \"Backlog\"}]}";
 
         final long start = System.nanoTime();
         final String preview =

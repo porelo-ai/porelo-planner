@@ -268,6 +268,7 @@ class PlanIssue {
   /// Applies destinations explicitly confirmed by the save answer.
   PlanIssue.withState(PlanIssue source, this.state)
     : id = source.id,
+      version = source.version,
       repository = source.repository,
       title = source.title,
       size = source.size,
@@ -296,6 +297,7 @@ class PlanIssue {
   /// Reads fields leniently.
   PlanIssue.from(Map<String, dynamic> map)
     : id = _planText(map, 'id'),
+      version = _planText(map, 'version'),
       repository = _planText(map, 'repository'),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
@@ -335,6 +337,9 @@ class PlanIssue {
 
   /// Its size, empty when unsaid.
   final String size;
+
+  /// The version it stands at, which a write that changes it sends back as seen; empty when unsaid.
+  final String version;
 
   /// The identifiers blocking it.
   final List<String> blockedBy;
@@ -406,6 +411,7 @@ class PlanStory {
   /// Applies destinations explicitly confirmed by the save answer.
   PlanStory.withMoves(PlanStory source, Map<String, String> moves, String? destination)
     : id = source.id,
+      version = source.version,
       title = source.title,
       state = destination ?? source.state,
       // The day it was closed is known again only from the planner's read after a move of the story itself.
@@ -426,6 +432,7 @@ class PlanStory {
   /// Reads fields leniently and preserves unknown priorities.
   PlanStory.from(Map<String, dynamic> map)
     : id = _planText(map, 'id'),
+      version = _planText(map, 'version'),
       title = _planText(map, 'title'),
       state = _planText(map, 'state'),
       closedAt = map['closedAt'] is String ? DateTime.tryParse(map['closedAt'] as String) : null,
@@ -443,6 +450,9 @@ class PlanStory {
 
   /// Its identifier.
   final String id;
+
+  /// The version it stands at, which a write that changes it sends back as seen; empty when unsaid.
+  final String version;
 
   /// Its title.
   final String title;
@@ -560,6 +570,7 @@ class PlanUnlistedIssue {
   /// Reads the fields the planner reports.
   PlanUnlistedIssue.from(Map<String, dynamic> map)
     : id = _planText(map, 'id'),
+      version = _planText(map, 'version'),
       repository = _planText(map, 'repository'),
       title = _planText(map, 'title'),
       story = _planText(map, 'kind') == 'story',
@@ -569,6 +580,9 @@ class PlanUnlistedIssue {
 
   /// Its tracker reference, `<repository>#<number>`.
   final String id;
+
+  /// The version it stands at, which its add sends back as seen; empty when unsaid.
+  final String version;
 
   /// Its repository.
   final String repository;
@@ -747,6 +761,27 @@ class PlanningSnapshot {
 
   /// What is still open of the whole board, as the planner counted it; null when it did not say.
   final PlanOpenWork? open;
+
+  /// The versions this board shows of [ids], by id: each story, issue of a story and issue made outside the project
+  /// it holds with a version; an id it does not show is left out, so the planner names it as missing.
+  Map<String, String> versionsOf(Iterable<String> ids) {
+    final wanted = ids.toSet();
+    final versions = <String, String>{};
+    void add(String id, String version) {
+      if (wanted.contains(id) && version.isNotEmpty) versions.putIfAbsent(id, () => version);
+    }
+
+    for (final story in stories) {
+      add(story.id, story.version);
+      for (final issue in story.issues) {
+        add(issue.id, issue.version);
+      }
+    }
+    for (final issue in unlisted) {
+      add(issue.id, issue.version);
+    }
+    return versions;
+  }
 }
 
 /// What is still open of a story or a board, as the planner counts it: its issues per state, those an open issue
@@ -1118,6 +1153,7 @@ class PlanningMovePreview {
   const PlanningMovePreview({
     required this.revision,
     required this.digest,
+    this.targets = const {},
     this.issues = const [],
     this.warnings = const [],
   });
@@ -1126,6 +1162,7 @@ class PlanningMovePreview {
   PlanningMovePreview.from(Map<String, dynamic> map)
     : revision = _planText(map, 'revision'),
       digest = _planText(map, 'digest'),
+      targets = planningTargets(map['targets']) ?? const {},
       issues = [
         if (map['issues'] case final List<dynamic> issues)
           for (final issue in issues.whereType<Map<String, dynamic>>()) PlanningMovedIssue.from(issue),
@@ -1141,6 +1178,9 @@ class PlanningMovePreview {
   /// What the save sends back, so it saves only what was shown.
   final String digest;
 
+  /// Every item the move changes with the version it stands at, by id; the save sends them back as seen.
+  final Map<String, String> targets;
+
   /// Every issue the move carries.
   final List<PlanningMovedIssue> issues;
 
@@ -1150,7 +1190,27 @@ class PlanningMovePreview {
   /// A copy with [more] warnings the window adds of its own knowledge.
   PlanningMovePreview withWarnings(List<PlanningMoveWarning> more) => more.isEmpty
       ? this
-      : PlanningMovePreview(revision: revision, digest: digest, issues: issues, warnings: [...warnings, ...more]);
+      : PlanningMovePreview(
+          revision: revision,
+          digest: digest,
+          targets: targets,
+          issues: issues,
+          warnings: [...warnings, ...more],
+        );
+}
+
+/// A preview's targets as the planner answers them, by id, or null unless each is an id with a version, named once.
+Map<String, String>? planningTargets(Object? targets) {
+  if (targets is! List) return null;
+  final read = <String, String>{};
+  for (final target in targets) {
+    if (target is! Map<String, dynamic>) return null;
+    final id = target['id'];
+    final version = target['version'];
+    if (id is! String || id.isEmpty || version is! String || version.isEmpty || read.containsKey(id)) return null;
+    read[id] = version;
+  }
+  return read;
 }
 
 /// A new issue the planner wrote: its id and the board's revision after the save.
@@ -1631,7 +1691,7 @@ class StoryWorkRequest {
     required this.story,
     required this.to,
     required this.mode,
-    required this.revision,
+    required this.seen,
     required this.subAgents,
     this.repositories = const [],
     this.proposedRepositories = const [],
@@ -1664,8 +1724,8 @@ class StoryWorkRequest {
   /// The explicitly selected wire mode.
   final String mode;
 
-  /// The opaque revision used to bind this decision.
-  final String revision;
+  /// The versions the person saw of the story and its issues, by id, which bind this decision.
+  final Map<String, String> seen;
 
   /// The proposed participants, or the explicit choices sent at start.
   final List<StoryWorkChoice> subAgents;
@@ -1725,7 +1785,7 @@ class StoryWorkRequest {
     'story': story,
     'to': to,
     'mode': mode,
-    'revision': revision,
+    'seen': seen,
     if (proposedRepositories.isNotEmpty)
       'repositories': [for (final repo in proposedRepositories) _selectedRepository(repo)],
     'comment': ?comment,
@@ -1743,8 +1803,8 @@ class StoryWorkRequest {
 /// The reason of one issue a Start from its row answers, as the row showed it.
 @immutable
 class PlanningPassOver {
-  /// Takes the issue, its reason, the board's revision and the run the row showed.
-  const PlanningPassOver({required this.issue, required this.reason, required this.revision, required this.run});
+  /// Takes the issue, its reason and the run the row showed.
+  const PlanningPassOver({required this.issue, required this.reason, required this.run});
 
   /// The reasons a row's Start may pass over; a blocked task said it cannot go on unless something changes.
   static const reasons = {'NEXT_STEP_UNAVAILABLE', 'SAVE_REFUSED', 'STOPPED', 'FAILED'};
@@ -1755,25 +1815,18 @@ class PlanningPassOver {
   /// The reason the row showed.
   final String reason;
 
-  /// The board's revision the row showed.
-  final String revision;
-
   /// The run the row showed.
   final String run;
 
   /// The fields sent to the planner.
-  Map<String, dynamic> toMap() => {'issue': issue, 'reason': reason, 'revision': revision, 'run': run};
+  Map<String, dynamic> toMap() => {'issue': issue, 'reason': reason, 'run': run};
 
   @override
   bool operator ==(Object other) =>
-      other is PlanningPassOver &&
-      other.issue == issue &&
-      other.reason == reason &&
-      other.revision == revision &&
-      other.run == run;
+      other is PlanningPassOver && other.issue == issue && other.reason == reason && other.run == run;
 
   @override
-  int get hashCode => Object.hash(issue, reason, revision, run);
+  int get hashCode => Object.hash(issue, reason, run);
 }
 
 /// The work and any ended outcome returned by GetStoryWork.

@@ -106,16 +106,6 @@ EOF
     FIXTURE_HEAD=$(git -C "$ST_DIR/work/$ALPHA" rev-parse HEAD)
 }
 
-# The board's revision, as the window holds it from its last read.
-revision() {
-    st_api GET "/projects/$PROJECT/stories"
-    [[ $ST_STATUS == 200 ]] || {
-        st_no "GET /projects/$PROJECT/stories answers 200" "$ST_STATUS $ST_BODY"
-        return 1
-    }
-    REVISION=$(jq -r '.revision' <<<"$ST_BODY")
-}
-
 # The state an issue's head gives in a clone: head_state DIR ID.
 head_state() {
     local file
@@ -135,17 +125,20 @@ step_1() {
 }
 
 step_2() {
-    revision || return 1
-    st_api POST "/projects/$PROJECT/moves" \
-        "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{issue: "AB01", to: "Estimated"}]}')"
+    local moves seen
+    moves='{"moves": [{"issue": "AB01", "to": "Estimated"}]}'
+    st_api POST "/projects/$PROJECT/moves/preview" "$moves"
+    st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
+    seen=$(st_seen "$ST_BODY")
+    st_api POST "/projects/$PROJECT/moves" "$(jq -c --argjson s "$seen" '. + {seen: $s}' <<<"$moves")"
     st_is "the move's status" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     st_is "the issues the move names" '["AB01"]' "$(jq -c '.moved' <<<"$ST_BODY")"
 }
 
 step_3() {
-    revision || return 1
-    st_api POST "/projects/$PROJECT/issues" "$(jq -nc --arg r "$REVISION" --arg repo "$ALPHA" --arg t "$IDEA_TITLE" \
-        '{repository: $repo, title: $t, mustBeTrue: "A person sees the idea as an issue.", revision: $r}')"
+    # An issue in no story changes no item that stands, so it is checked against no version.
+    st_api POST "/projects/$PROJECT/issues" "$(jq -nc --arg repo "$ALPHA" --arg t "$IDEA_TITLE" \
+        '{repository: $repo, title: $t, mustBeTrue: "A person sees the idea as an issue.", seen: {}}')"
     st_is "the new issue's status" 201 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     NEW_ID=$(jq -r '.id' <<<"$ST_BODY")
     st_is "the new issue's id, the next free number" AB03 "$NEW_ID"

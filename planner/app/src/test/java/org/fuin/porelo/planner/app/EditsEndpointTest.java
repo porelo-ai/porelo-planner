@@ -154,7 +154,7 @@ class EditsEndpointTest {
         mvc =
                 MockMvcBuilders.standaloneSetup(
                                 new EditsController(new BoardEdits(projects, changes)))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
     }
 
@@ -202,7 +202,9 @@ class EditsEndpointTest {
         send(
                         "PUT",
                         "/issues/AB1/fields",
-                        "{\"estimateMinutes\": 90, \"rank\": null, \"revision\": \"r1\"}")
+                        "{\"estimateMinutes\": 90, \"rank\": null, \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -221,7 +223,10 @@ class EditsEndpointTest {
     void aStorysListIsAnsweredWithTheNewRevision() throws Exception {
         // A list the store saved answered as refused or without its revision leaves the window
         // offering the edit again.
-        send("PUT", "/stories/ST1/issues", "{\"issues\": [\"AB1\", \"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/stories/ST1/issues",
+                        "{\"issues\": [\"AB1\", \"AB2\"], \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -231,39 +236,53 @@ class EditsEndpointTest {
     @Test
     void aMalformedBodyOrAnInvalidIdIsRefusedBeforeTheStore() throws Exception {
         // A body read loosely, or a path id taken as it came, would write what nobody meant.
-        send("PUT", "/issues/AB1/fields", "{\"size\": 3, \"revision\": \"r1\"}")
+        send("PUT", "/issues/AB1/fields", "{\"size\": 3, \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"));
         send(
                         "PUT",
                         "/issues/AB1/blockedBy",
-                        "{\"blockedBy\": [\"AB2\"], \"extra\": 1, \"revision\": \"r1\"}")
+                        "{\"blockedBy\": [\"AB2\"], \"extra\": 1, \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"));
-        send("PUT", "/issues/AB1/blockedBy", "{\"blockedBy\": [], \"revision\": \" \"}")
+        send("PUT", "/issues/AB1/blockedBy", "{\"blockedBy\": [], \"seen\": {\"AB1\": \" \"}}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"));
-        send("POST", "/stories", "{\"idea\": {}, \"revision\": \"\"}")
+        send("POST", "/stories", "{\"idea\": {}, \"seen\": \"\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("IdeaRefused"));
-        send("PUT", "/issues/ab-1/blockedBy", "{\"blockedBy\": [], \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/issues/ab-1/blockedBy",
+                        "{\"blockedBy\": [], \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isBadRequest());
         assertThat(written).as("nothing written").isEmpty();
     }
 
     @Test
-    void aStaleRevisionIsAConflictAndAnEditTheStoreDoesNotOfferIsNotOffered() throws Exception {
+    void aChangedItemIsAConflictAndAnEditTheStoreDoesNotOfferIsNotOffered() throws Exception {
         // A missing feature told as a refused write, or a lost edit as a success, misleads the
         // window about what to do next.
-        send("PUT", "/issues/AB1/blockedBy", "{\"blockedBy\": [\"AB2\"], \"revision\": \"r0\"}")
+        send(
+                        "PUT",
+                        "/issues/AB1/blockedBy",
+                        "{\"blockedBy\": [\"AB2\"], \"seen\": " + Seens.stale(current) + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.title").value("StaleRevision"));
+                .andExpect(jsonPath("$.title").value("ItemChanged"));
 
         offered = false;
-        send("PUT", "/issues/AB1/blockedBy", "{\"blockedBy\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/issues/AB1/blockedBy",
+                        "{\"blockedBy\": [\"AB2\"], \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
-        send("PUT", "/stories/ST1/issues", "{\"issues\": [\"AB1\", \"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/stories/ST1/issues",
+                        "{\"issues\": [\"AB1\", \"AB2\"], \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         send("POST", "/issues/AB1/comments", "{\"text\": \"A note.\"}")
@@ -280,7 +299,9 @@ class EditsEndpointTest {
                         + "T".repeat(256)
                         + "\",\"gain\":\"G\",\"test\":\"T\",\"priority\":\"High\"},"
                         + "\"issues\":[{\"repository\":\"porelo-store\",\"title\":\"I\","
-                        + "\"mustBeTrue\":\"W\",\"worker\":\"Agent\"}]},\"revision\":\"r1\"}";
+                        + "\"mustBeTrue\":\"W\",\"worker\":\"Agent\"}]},\"seen\": "
+                        + Seens.of(current)
+                        + "}";
         final String bounded = body + " ".repeat(1048576 - body.length());
         send("POST", "/stories", bounded + " ")
                 .andExpect(status().isUnprocessableContent())
@@ -295,7 +316,8 @@ class EditsEndpointTest {
     @Test
     void aStoryFromExistingIssuesKeepsItsBodyBound() throws Exception {
         // Harm: raising the idea limit also admits larger bodies to another kind of request.
-        final String body = "{" + HEAD + ",\"existing\":[\"AB2\"],\"revision\":\"r1\"}";
+        final String body =
+                "{" + HEAD + ",\"existing\":[\"AB2\"],\"seen\": " + Seens.of(current) + "}";
         final String bounded = body + " ".repeat(65536 - body.length());
         send("POST", "/stories", bounded + " ").andExpect(status().isUnprocessableContent());
         assertThat(written).as("the oversized request writes nothing").isEmpty();
@@ -316,7 +338,9 @@ class EditsEndpointTest {
                                 + " \"test\": \"A test.\", \"priority\": \"High\"}, \"issues\":"
                                 + " [{\"repository\": \"porelo-store\", \"title\": \"An issue\","
                                 + " \"mustBeTrue\": \"It works.\", \"worker\": \"Agent\"}]},"
-                                + " \"revision\": \"r1\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("ST2"))
                 .andExpect(jsonPath("$.issues[0]").value("AB3"))
@@ -332,10 +356,15 @@ class EditsEndpointTest {
                         "PUT",
                         "/issues/AB1/text",
                         "{\"title\": \"A title\", \"plan\": \"- step\", \"findings\": null,"
-                                + " \"revision\": \"r1\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
-        send("PUT", "/stories/ST1/text", "{\"gain\": \"More.\", \"revision\": \"r2\"}")
+        send(
+                        "PUT",
+                        "/stories/ST1/text",
+                        "{\"gain\": \"More.\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk());
 
         assertThat(written)
@@ -381,7 +410,11 @@ class EditsEndpointTest {
             send(
                             "PUT",
                             call[0],
-                            call[1] + (call[1].equals("{") ? "" : ",") + " \"revision\": \"r1\"}")
+                            call[1]
+                                    + (call[1].equals("{") ? "" : ",")
+                                    + " \"seen\": "
+                                    + Seens.of(current)
+                                    + "}")
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.title").value("EditNotAllowed"));
         }
@@ -392,19 +425,28 @@ class EditsEndpointTest {
     void aTextOnAChangedItemIsAConflictNamingItAndOneNotOfferedIsNotOffered() throws Exception {
         // A person's change on the tracker answered as a success would be lost unseen; a missing
         // feature told as a refused write misleads the window.
-        failure = new StoreException.StaleRevision("r1", "AB1");
-        send("PUT", "/issues/AB1/text", "{\"title\": \"A title\", \"revision\": \"r1\"}")
+        failure = new StoreException.Changed(List.of("AB1"));
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"title\": \"A title\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.title").value("StaleRevision"))
-                .andExpect(jsonPath("$.parameters.item").value("AB1"));
+                .andExpect(jsonPath("$.title").value("ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("AB1"));
         failure = new TextEdit.Refused("AB1", "A part of the body holds a heading.");
-        send("PUT", "/issues/AB1/text", "{\"plan\": \"## Plan\", \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"plan\": \"## Plan\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"))
                 .andExpect(jsonPath("$.parameters.item").value("AB1"));
         failure = null;
         offered = false;
-        send("PUT", "/stories/ST1/text", "{\"title\": \"A title\", \"revision\": \"r1\"}")
+        send(
+                        "PUT",
+                        "/stories/ST1/text",
+                        "{\"title\": \"A title\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         assertThat(written).as("nothing written").isEmpty();
@@ -421,7 +463,9 @@ class EditsEndpointTest {
                                 + " \"test\": \"A test.\", \"priority\": \"High\"}, \"issues\":"
                                 + " [{\"repository\": \"porelo-store\", \"title\": \"An issue\","
                                 + " \"mustBeTrue\": \"It works.\", \"worker\": \"Agent\"}]},"
-                                + " \"revision\": \"r1\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("IdeaRefused"));
     }
@@ -434,7 +478,14 @@ class EditsEndpointTest {
     void aStoryFromIssuesIsAnsweredAsCreatedWithTheIssuesInTheOrderNamed() throws Exception {
         // Harm: the second body the description names served unlike it, or answered without the
         // ids the window shows the new story by.
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("ST2"))
                 .andExpect(jsonPath("$.issues[0]").value("AB2"))
@@ -456,16 +507,34 @@ class EditsEndpointTest {
                         + " \"worker\": \"Agent\"}]}";
         final String ids101 = String.join(", ", java.util.Collections.nCopies(101, "\"AB2\""));
         final Map<String, String> bodies = new java.util.LinkedHashMap<>();
-        bodies.put("{" + idea + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}", "body: ");
         bodies.put(
-                "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\", \"more\": 1}",
+                "{" + idea + ", \"existing\": [\"AB2\"], \"seen\": " + Seens.of(current) + "}",
                 "body: ");
-        bodies.put("{" + HEAD + ", \"existing\": [], \"revision\": \"r1\"}", "existing: ");
         bodies.put(
-                "{" + HEAD + ", \"existing\": [" + ids101 + "], \"revision\": \"r1\"}",
+                "{"
+                        + HEAD
+                        + ", \"existing\": [\"AB2\"], \"seen\": "
+                        + Seens.of(current)
+                        + ", \"more\": 1}",
+                "body: ");
+        bodies.put(
+                "{" + HEAD + ", \"existing\": [], \"seen\": " + Seens.of(current) + "}",
                 "existing: ");
         bodies.put(
-                "{" + HEAD + ", \"existing\": [\"AB2\", \"<b>x</b>\"], \"revision\": \"r1\"}",
+                "{"
+                        + HEAD
+                        + ", \"existing\": ["
+                        + ids101
+                        + "], \"seen\": "
+                        + Seens.of(current)
+                        + "}",
+                "existing: ");
+        bodies.put(
+                "{"
+                        + HEAD
+                        + ", \"existing\": [\"AB2\", \"<b>x</b>\"], \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "existing[1]: The id must be an issue's id.");
         for (final Map.Entry<String, String> body : bodies.entrySet()) {
             final String answer =
@@ -486,11 +555,25 @@ class EditsEndpointTest {
             throws Exception {
         // Harm: a story made over a board the caller never saw, or a store that makes none, such
         // as the Git store, answered as a refused write the window would show as the person's.
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r0\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.stale(current)
+                                + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.title").value("StaleRevision"));
+                .andExpect(jsonPath("$.title").value("ItemChanged"));
         offered = false;
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         send("POST", "/stories", "{" + HEAD + ", \"existing\": [], \"more\": 1}")
@@ -506,14 +589,25 @@ class EditsEndpointTest {
         send(
                         "POST",
                         "/stories",
-                        "{" + HEAD + ", \"existing\": [\"AB2\", \"AB1\"], \"revision\": \"r1\"}")
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\", \"AB1\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.title").value("IssueInStory"))
                 .andExpect(jsonPath("$.parameters.issue").value("AB1"))
                 .andExpect(jsonPath("$.parameters.story").value("ST1"))
                 .andExpect(jsonPath("$.parameters.field").value("existing[1]"));
         failure = new StoreException.InStory("AB2", "porelo-store#9", "existing[0]");
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.title").value("IssueInStory"))
                 .andExpect(jsonPath("$.parameters.issue").value("AB2"))
@@ -528,7 +622,14 @@ class EditsEndpointTest {
         // Harm: a store's refusal of one issue answered without the field naming it, or a save
         // cut off midway answered as a success or a server fault.
         failure = new StoreException.NotSavable("AB2", "the issue AB2 is closed");
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("IdeaRefused"))
                 .andExpect(
@@ -537,7 +638,14 @@ class EditsEndpointTest {
         failure =
                 new StoreException.PartlySaved(
                         "porelo-store", List.of("porelo-store"), "GitHub refused a link");
-        send("POST", "/stories", "{" + HEAD + ", \"existing\": [\"AB2\"], \"revision\": \"r1\"}")
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ", \"existing\": [\"AB2\"], \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.title").value("PartlySaved"))
                 .andExpect(jsonPath("$.parameters.failed").value("porelo-store"))

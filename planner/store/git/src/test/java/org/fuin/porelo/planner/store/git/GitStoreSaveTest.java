@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -2069,6 +2070,446 @@ class GitStoreSaveTest {
                 .isEqualTo(issue("AB01", "New"));
     }
 
+    @Test
+    void anItemsVersionIsItsFilesBlobIdAndChangesWithItsOwnFileAlone() throws Exception {
+        // Harm: a save refused over another item's change, or let through over a change to its own
+        // target, because an item's version follows more or less than its own file.
+        final GitStore store = store();
+        final Board board = store.board();
+
+        assertThat(version(board, "AB01"))
+                .as("an issue's version is its file's blob id")
+                .isEqualTo(blob(OWN, "issues/AB01-Own.md"));
+        assertThat(version(board, "CD01"))
+                .as("in another repository too")
+                .isEqualTo(blob(OTHER, "issues/CD01-Other.md"));
+        final Path kept = repositories.work(OWN).resolve("issues/AB02-Kept.md");
+        Files.writeString(kept, Files.readString(kept) + "\nAnother's note.\n");
+        repositories.commit(OWN);
+        final Board after = store.refresh();
+
+        assertThat(version(after, "AB01"))
+                .as("unchanged beside another issue's change")
+                .isEqualTo(version(board, "AB01"));
+        assertThat(version(after, "AB02"))
+                .as("changed with its own file")
+                .isNotEqualTo(version(board, "AB02"))
+                .isEqualTo(blob(OWN, "issues/AB02-Kept.md"));
+    }
+
+    @Test
+    void aSaveWithTheVersionsSeenWhileAnotherIssueWasMovedIsBuiltOnTheNewTipKeepingBoth()
+            throws Exception {
+        // Harm: a save dropped at its push, or its issues index written from the old base and the
+        // other's row lost, because another issue of the same repository moved meanwhile.
+        final GitStore store = store();
+        final Board board = store.board();
+        final Path issues = repositories.work(OWN).resolve("issues");
+        Files.writeString(issues.resolve("AB02-Kept.md"), issue("AB02", "New"));
+        IssuesIndex.write(issues);
+        repositories.commit(OWN);
+        final String theirs = head(OWN);
+        // A check fetches the other's move after the person read the board.
+        store.refresh();
+
+        final Board saved =
+                store.save(
+                        Basis.none().with("AB01", board.issue("AB01").orElseThrow().version()),
+                        writes(Map.of("AB01", "Review"), Map.of()));
+
+        assertThat(git(OWN, "rev-parse", head(OWN) + "^").strip())
+                .as("the save's commit stands on the other's, pushed")
+                .isEqualTo(theirs);
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the move pushed")
+                .contains("\"state\": \"Review\"");
+        assertThat(read(OWN, "issues/AB02-Kept.md"))
+                .as("the other's move kept")
+                .isEqualTo(issue("AB02", "New"));
+        assertThat(rows(read(OWN, "issues/README.md"), "ab02"))
+                .as("the index, written from the new base, keeps the other's row once")
+                .hasSize(1);
+        assertThat(heading(read(OWN, "issues/README.md"), "ab02"))
+                .as("under the other's new state")
+                .isEqualTo("## New");
+        assertThat(saved.issue("AB02").orElseThrow().state())
+                .as("the answer reads the other's move")
+                .isEqualTo("New");
+        assertThat(saved.issue("AB01").orElseThrow().state())
+                .as("and the save's")
+                .isEqualTo("Review");
+        assertThat(store.board().faults()).as("no save dropped or failed").isEmpty();
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
+    }
+
+    @Test
+    void aSaveOverAnotherChangeToATargetsFileIsRefusedNamingItAndPushesNothing() throws Exception {
+        // Harm: another's edit of an issue written over by a save the person made on what they
+        // saw before it.
+        final GitStore store = store();
+        final Board board = store.board();
+        final Path file = repositories.work(OWN).resolve("issues/AB01-Own.md");
+        Files.writeString(file, Files.readString(file) + "\nAnother's note.\n");
+        repositories.commit(OWN);
+        final String own = head(OWN);
+        final String other = head(OTHER);
+        // A check fetches the other's edit after the person read the board.
+        store.refresh();
+
+        final StoreException.Changed refused =
+                catchThrowableOfType(
+                        StoreException.Changed.class,
+                        () ->
+                                store.save(
+                                        Basis.none()
+                                                .with(
+                                                        "AB01",
+                                                        board.issue("AB01").orElseThrow().version())
+                                                .with(
+                                                        "CD01",
+                                                        board.issue("CD01")
+                                                                .orElseThrow()
+                                                                .version()),
+                                        writes(
+                                                Map.of("AB01", "Review", "CD01", "Review"),
+                                                Map.of())));
+
+        assertThat(refused).as("refused as changed").isNotNull();
+        assertThat(refused.ids()).as("naming the changed target alone").containsExactly("AB01");
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed to either repository")
+                .containsExactly(own, other);
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the other's edit stands")
+                .endsWith("\nAnother's note.\n")
+                .contains("\"state\": \"Backlog\"");
+    }
+
+    @Test
+    void aSaveWhoseRepositoryMovedBeforeItsCommitsStoodIsBuiltAgainOnTheNewTip() throws Exception {
+        // Harm: a save refused, or its commit kept on a parent the repository left, because the
+        // repository moved between the save's read and its commits standing.
+        final java.util.concurrent.atomic.AtomicInteger commits =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final GitStore store =
+                store(
+                        real ->
+                                onCommit(
+                                        real,
+                                        repository -> {
+                                            if (repository.equals(OTHER)
+                                                    && commits.incrementAndGet() == 1) {
+                                                movedOther("Someone else's note.\n");
+                                            }
+                                        }));
+        final Board board = store.board();
+
+        store.save(
+                Basis.none().with("CD01", board.issue("CD01").orElseThrow().version()),
+                writes(Map.of("CD01", "New"), Map.of()));
+        final String theirs = git(OTHER, "rev-parse", "refs/heads/main^").strip();
+
+        assertThat(commits.get()).as("built a second time on the new tip").isEqualTo(2);
+        assertThat(read(OTHER, "doc/notes.md"))
+                .as("the other's change kept beneath the save")
+                .isEqualTo("Someone else's note.\n");
+        assertThat(log(OTHER, theirs, "%s"))
+                .as("the save's commit stands right on the other's")
+                .containsExactly(OTHER);
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the move pushed")
+                .contains("\"state\": \"New\"");
+    }
+
+    @Test
+    void aSaveWhoseRepositoryKeepsMovingUnderItIsRefusedAsBusyAfterItsAttemptsAndPushesNothing()
+            throws Exception {
+        // Harm: a save tried without end while a repository keeps moving, or one of its attempts
+        // kept on a parent the repository left.
+        final java.util.concurrent.atomic.AtomicInteger commits =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final GitStore store =
+                store(
+                        real ->
+                                onCommit(
+                                        real,
+                                        repository -> {
+                                            if (repository.equals(OTHER)) {
+                                                movedOther(
+                                                        "Note "
+                                                                + commits.incrementAndGet()
+                                                                + ".\n");
+                                            }
+                                        }));
+        final Board board = store.board();
+        final String own = head(OWN);
+
+        final StoreException.Busy refused =
+                catchThrowableOfType(
+                        StoreException.Busy.class,
+                        () ->
+                                store.save(
+                                        Basis.none()
+                                                .with(
+                                                        "CD01",
+                                                        board.issue("CD01")
+                                                                .orElseThrow()
+                                                                .version()),
+                                        writes(Map.of("CD01", "New"), Map.of())));
+        final String theirs = head(OTHER);
+
+        assertThat(refused).as("refused loud").isNotNull();
+        assertThat(commits.get())
+                .as("built once per attempt, never more")
+                .isEqualTo(GitStore.TIP_ATTEMPTS);
+        assertThat(List.of(head(OWN), read(OTHER, "issues/CD01-Other.md")))
+                .as("nothing of the save pushed")
+                .containsExactly(own, issue("CD01", "Backlog"));
+        assertThat(log(OTHER, theirs, "%s"))
+                .as("the repository's tip is the other's last change")
+                .containsExactly(OTHER);
+    }
+
+    @Test
+    void aStorysVersionStaysWhenOnlyAnIssueOfItMovesAndChangesWithItsOwnText() throws Exception {
+        // Harm: a story edit refused as changed after only one of its issues moved, since the
+        // stories index rewrote the part of its file that its issues give.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String file = blob(OWN, "stories/ST1-Served.md");
+
+        final Board moved = store.save(board.revision(), writes(Map.of("CD01", "New"), Map.of()));
+
+        assertThat(blob(OWN, "stories/ST1-Served.md"))
+                .as("the stories index rewrote the story's file")
+                .isNotEqualTo(file);
+        assertThat(moved.story("ST1").orElseThrow().version())
+                .as("the story's version stays after its issue moved")
+                .isEqualTo(board.story("ST1").orElseThrow().version());
+
+        final Path story = repositories.work(OWN).resolve("stories/ST1-Served.md");
+        Files.writeString(
+                story,
+                Files.readString(story)
+                        .replace("What a person wrote.\n", "What a person wrote, and more.\n"));
+        repositories.commit(OWN);
+
+        assertThat(store.refresh().story("ST1").orElseThrow().version())
+                .as("the story's own text edited changes its version")
+                .isNotEqualTo(moved.story("ST1").orElseThrow().version());
+    }
+
+    @Test
+    void aStorysVersionStaysWhenAnIssueOfItInItsOwnRepositoryMoves() throws Exception {
+        // Harm: a story edit refused as changed after an issue of its own repository moved, since
+        // the same commit rewrote the part of the story's file that its issues give.
+        final GitStore store = store();
+        final Board board = store.board();
+        final String file = blob(OWN, "stories/ST1-Served.md");
+
+        final Board moved =
+                store.save(
+                        Basis.none().with("AB01", board.issue("AB01").orElseThrow().version()),
+                        writes(Map.of("AB01", "New"), Map.of()));
+
+        assertThat(blob(OWN, "stories/ST1-Served.md"))
+                .as("the stories index rewrote the story's file")
+                .isNotEqualTo(file);
+        assertThat(moved.story("ST1").orElseThrow().version())
+                .as("the story's version stays after its own repository's issue moved")
+                .isEqualTo(board.story("ST1").orElseThrow().version());
+    }
+
+    @Test
+    void aSaveOverAnotherChangeToAStorysOwnTextIsRefusedNamingItAndPushesNothing()
+            throws Exception {
+        // Harm: another's edit of a story written over by a save of its stated state the person
+        // made on what they saw before it.
+        final GitStore store = store();
+        final Board board = store.board();
+        final Path story = repositories.work(OWN).resolve("stories/ST2-Alone.md");
+        Files.writeString(
+                story,
+                Files.readString(story)
+                        .replace("What a person wrote.\n", "What a person wrote, and more.\n"));
+        repositories.commit(OWN);
+        final String own = head(OWN);
+        final String other = head(OTHER);
+        // A check fetches the other's edit after the person read the board.
+        store.refresh();
+
+        final StoreException.Changed refused =
+                catchThrowableOfType(
+                        StoreException.Changed.class,
+                        () ->
+                                store.save(
+                                        Basis.none()
+                                                .with(
+                                                        "ST2",
+                                                        board.story("ST2").orElseThrow().version()),
+                                        writes(Map.of(), Map.of("ST2", "Backlog"))));
+
+        assertThat(refused).as("refused as changed").isNotNull();
+        assertThat(refused.ids()).as("naming the story").containsExactly("ST2");
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed to either repository")
+                .containsExactly(own, other);
+        assertThat(read(OWN, "stories/ST2-Alone.md"))
+                .as("the other's edit stands")
+                .contains("What a person wrote, and more.\n");
+    }
+
+    @Test
+    void aSaveOfAWorkerOverAnotherChangeToItsIssueIsRefusedNamingItAndPushesNothing()
+            throws Exception {
+        // Harm: another's edit of an issue written over by a save of its worker the person made on
+        // what they saw before it.
+        final GitStore store = store();
+        final Board board = store.board();
+        final Path file = repositories.work(OWN).resolve("issues/AB01-Own.md");
+        Files.writeString(file, Files.readString(file) + "\nAnother's note.\n");
+        repositories.commit(OWN);
+        final String own = head(OWN);
+        final String other = head(OTHER);
+        // A check fetches the other's edit after the person read the board.
+        store.refresh();
+
+        final StoreException.Changed refused =
+                catchThrowableOfType(
+                        StoreException.Changed.class,
+                        () ->
+                                store.save(
+                                        Basis.none()
+                                                .with(
+                                                        "AB01",
+                                                        board.issue("AB01")
+                                                                .orElseThrow()
+                                                                .version()),
+                                        new Writes(
+                                                Map.of(),
+                                                Map.of(),
+                                                Map.of("AB01", Worker.MANUAL))));
+
+        assertThat(refused).as("refused as changed").isNotNull();
+        assertThat(refused.ids()).as("naming the issue").containsExactly("AB01");
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing pushed to either repository")
+                .containsExactly(own, other);
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the other's edit stands, its worker unwritten")
+                .endsWith("\nAnother's note.\n")
+                .doesNotContain("\"worker\"");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"basis", "revision"})
+    void aSaveWhileTheRemotesCannotBeReachedStandsLocallyAndIsToldUnpushed(final String path)
+            throws Exception {
+        // Harm: a save refused while offline on the basis path that the revision path keeps in
+        // the clone and pushes once the remote answers again.
+        final java.util.concurrent.atomic.AtomicBoolean offline =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final GitStore store = store(real -> unreachableWhile(real, offline));
+        final Board board = store.board();
+        final String own = head(OWN);
+        final String other = head(OTHER);
+        offline.set(true);
+        final Writes writes = writes(Map.of("CD01", "New"), Map.of());
+
+        final Board saved =
+                path.equals("basis")
+                        ? store.save(
+                                Basis.none()
+                                        .with("CD01", board.issue("CD01").orElseThrow().version()),
+                                writes)
+                        : store.save(board.revision(), writes);
+
+        assertThat(saved.issue("CD01").orElseThrow().state())
+                .as("the answer shows the move")
+                .isEqualTo("New");
+        assertThat(List.of(head(OWN), head(OTHER)))
+                .as("nothing reached a remote")
+                .containsExactly(own, other);
+        assertThat(store.board().faults())
+                .as("the board tells the push that failed")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .as("names the repository")
+                                        .startsWith(OTHER + ": "));
+
+        offline.set(false);
+        store.refresh();
+
+        assertThat(read(OTHER, "issues/CD01-Other.md"))
+                .as("the next check pushes the save")
+                .contains("\"state\": \"New\"");
+    }
+
+    /** A remote whose head, fetch and push fail as unreachable while the flag is set. */
+    private static Remote unreachableWhile(
+            final Remote real, final java.util.concurrent.atomic.AtomicBoolean offline) {
+        return (Remote)
+                java.lang.reflect.Proxy.newProxyInstance(
+                        Remote.class.getClassLoader(),
+                        new Class<?>[] {Remote.class},
+                        (proxy, called, arguments) -> {
+                            if (offline.get()
+                                    && List.of("head", "fetch", "push")
+                                            .contains(called.getName())) {
+                                throw new GitFailure(
+                                        GitFailure.Kind.UNREACHABLE, "the remote gave no answer");
+                            }
+                            try {
+                                return called.invoke(real, arguments);
+                            } catch (final java.lang.reflect.InvocationTargetException e) {
+                                throw e.getCause();
+                            }
+                        });
+    }
+
+    /** A step run before each of the remote's commits, given the repository committed to. */
+    @FunctionalInterface
+    private interface BeforeCommit {
+        void run(String repository) throws Exception;
+    }
+
+    private static Remote onCommit(final Remote real, final BeforeCommit before) {
+        return (Remote)
+                java.lang.reflect.Proxy.newProxyInstance(
+                        Remote.class.getClassLoader(),
+                        new Class<?>[] {Remote.class},
+                        (proxy, called, arguments) -> {
+                            if (called.getName().equals("commit")) {
+                                before.run((String) arguments[0]);
+                            }
+                            try {
+                                return called.invoke(real, arguments);
+                            } catch (final java.lang.reflect.InvocationTargetException e) {
+                                throw e.getCause();
+                            }
+                        });
+    }
+
+    /**
+     * Pushes another's change of a file no planning reads to the other repository, and fetches it.
+     */
+    private void movedOther(final String note) throws Exception {
+        repositories.repository(OTHER, Map.of("doc/notes.md", note));
+        remote.fetch(OTHER, new CloneUrl(server.url(OTHER + ".git")), "main");
+    }
+
+    private static String version(final Board board, final String id) {
+        return board.issue(id).orElseThrow().version().value();
+    }
+
+    /** A file's blob id at the served repository's branch. */
+    private String blob(final String repository, final String path) throws Exception {
+        return git(repository, "rev-parse", "refs/heads/main:" + path).strip();
+    }
+
     /** Gives AB01 a file with every part a result writes, its index unchanged. */
     private void writeRich() throws Exception {
         Files.writeString(
@@ -2079,6 +2520,17 @@ class GitStoreSaveTest {
     }
 
     /** The index's lines that carry an issue's anchor. */
+    /** The state heading the row with the given anchor stands under, or null without one. */
+    private static @org.jspecify.annotations.Nullable String heading(
+            final String index, final String anchor) {
+        String heading = null;
+        for (final String line : index.lines().toList()) {
+            if (line.startsWith("## ")) heading = line.strip();
+            if (line.contains("<a id=\"" + anchor + "\">")) return heading;
+        }
+        return null;
+    }
+
     private static List<String> rows(final String index, final String anchor) {
         return index.lines().filter(line -> line.contains("<a id=\"" + anchor + "\">")).toList();
     }

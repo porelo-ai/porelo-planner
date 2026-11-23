@@ -7,10 +7,10 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.TextEdit;
@@ -29,9 +29,9 @@ final class EditRequests {
      * A new story with its issues, as the description names it.
      *
      * @param idea the idea, each member null where it is missing or no text
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record StoryRequest(NewIdeas.Idea idea, String revision) {}
+    record StoryRequest(NewIdeas.Idea idea, Basis seen) {}
 
     /** A body of the call that makes a story, one of the two the description names. */
     sealed interface StoryBody permits NewStory, FromIssues {}
@@ -50,10 +50,10 @@ final class EditRequests {
      * @param story the story, each member null where it is missing or no text; null when it is no
      *     object
      * @param existing the issues' checked ids, in the story's order
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
     record StoryFromIssuesRequest(
-            NewIdeas.@Nullable Story story, List<String> existing, String revision) {}
+            NewIdeas.@Nullable Story story, List<String> existing, Basis seen) {}
 
     /**
      * A new story over issues that stand, as read: the request and the faults of the story's shape.
@@ -67,33 +67,33 @@ final class EditRequests {
      * An issue's fields as read.
      *
      * @param fields the fields to set
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record FieldsEdit(Fields fields, String revision) {}
+    record FieldsEdit(Fields fields, Basis seen) {}
 
     /**
      * A story's whole issue list, as the description names it.
      *
      * @param issues the issues' checked ids, in the story's order
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record StoryIssuesRequest(List<String> issues, String revision) {}
+    record StoryIssuesRequest(List<String> issues, Basis seen) {}
 
     /**
      * An issue's whole list of blockers, as the description names it.
      *
      * @param blockedBy the blockers' checked ids
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record BlockedByRequest(List<String> blockedBy, String revision) {}
+    record BlockedByRequest(List<String> blockedBy, Basis seen) {}
 
     /**
      * An add of an issue made outside the project, as the description names it.
      *
      * @param issue the issue's checked tracker reference
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record ListRequest(String issue, String revision) {}
+    record ListRequest(String issue, Basis seen) {}
 
     /**
      * A comment, as the description names it.
@@ -106,9 +106,9 @@ final class EditRequests {
      * A story's or an issue's title and named parts as read.
      *
      * @param edit the change
-     * @param revision the revision the caller read
+     * @param seen the versions the caller saw
      */
-    record TextRequest(TextEdit edit, String revision) {}
+    record TextRequest(TextEdit edit, Basis seen) {}
 
     /** The members of an issue's text edit, each naming a part, in the description's order. */
     static final Map<String, TextEdit.Part> ISSUE_PARTS = parts(TextEdit.Kind.ISSUE);
@@ -118,15 +118,16 @@ final class EditRequests {
 
     private static final String NO_STORY = "The body is no new story.";
 
-    /** The members of a new story over issues that stand. */
-    private static final Set<String> FROM_ISSUES = Set.of("story", "existing", "revision");
+    private static final String SEEN =
+            "seen: The versions seen must be an object of versions by item id.";
 
-    /** A revision as the description's {@code Revision} gives it. */
-    private static final Pattern REVISION = Pattern.compile("[!-~]{1,200}");
+    /** The members of a new story over issues that stand. */
+    private static final Set<String> FROM_ISSUES = Set.of("story", "existing", "seen");
 
     /**
-     * Reads a new story: at most 1048576 bytes with exactly an idea object and a revision, or at
-     * most 65536 bytes with exactly a story, a list of existing issues' ids and a revision.
+     * Reads a new story: at most 1048576 bytes with exactly an idea object and the versions seen,
+     * or at most 65536 bytes with exactly a story, a list of existing issues' ids and the versions
+     * seen.
      *
      * @param request the request
      * @param fromIssuesOffered refuses a body naming existing issues when the store makes no story
@@ -153,28 +154,28 @@ final class EditRequests {
         if (FROM_ISSUES.equals(members)) {
             return fromIssues(body);
         }
-        if (!Set.of("idea", "revision").equals(members)) {
+        if (!Set.of("idea", "seen").equals(members)) {
             throw noStory(
-                    "body: The body must hold exactly an idea and a revision, or exactly a story,"
-                            + " the existing issues and a revision.");
+                    "body: The body must hold exactly an idea and seen, or exactly a story,"
+                            + " the existing issues and seen.");
         }
-        if (!isRevision(body.get("revision"))) {
-            throw noStory("revision: The revision must be a text.");
+        final Basis seen = WorkRequests.seen(body.get("seen"));
+        if (seen == null) {
+            throw noStory(SEEN);
         }
         final JsonNode idea = body.get("idea");
         if (!idea.isObject()) {
             throw noStory("idea: The idea must be an object with a story and issues.");
         }
         final List<String> shape = new ArrayList<>();
-        return new NewStory(
-                new StoryRequest(WorkRequests.idea(idea, shape), body.get("revision").asString()),
-                shape);
+        return new NewStory(new StoryRequest(WorkRequests.idea(idea, shape), seen), shape);
     }
 
     /** Reads a new story over issues that stand, its members known to be exactly those named. */
     private static FromIssues fromIssues(final JsonNode body) {
-        if (!isRevision(body.get("revision"))) {
-            throw noStory("revision: The revision must be a text.");
+        final Basis seen = WorkRequests.seen(body.get("seen"));
+        if (seen == null) {
+            throw noStory(SEEN);
         }
         final JsonNode list = body.get("existing");
         if (!list.isArray() || list.isEmpty() || list.size() > Edits.MOST_ISSUES) {
@@ -195,26 +196,24 @@ final class EditRequests {
         final List<String> shape = new ArrayList<>();
         return new FromIssues(
                 new StoryFromIssuesRequest(
-                        WorkRequests.story(body.get("story"), shape),
-                        existing,
-                        body.get("revision").asString()),
+                        WorkRequests.story(body.get("story"), shape), existing, seen),
                 shape);
     }
 
     /**
-     * Reads an issue's fields: at most 65536 bytes, one JSON object with a revision and any of
-     * size, estimateMinutes, priority and rank, each of its kind and within its bounds.
+     * Reads an issue's fields: at most 65536 bytes, one JSON object with the versions seen and any
+     * of size, estimateMinutes, priority and rank, each of its kind and within its bounds.
      *
      * @param request the request
      * @param issue the issue's checked id, which a refusal names
-     * @return the fields and the revision
+     * @return the fields and the versions seen
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
      *     no change of fields
      */
     static FieldsEdit fields(final HttpServletRequest request, final String issue) {
         final JsonNode body = object(request, issue, WorkRequests::read);
-        members(body, issue, Set.of("size", "estimateMinutes", "priority", "rank", "revision"));
-        final String revision = revision(body, issue);
+        members(body, issue, Set.of("size", "estimateMinutes", "priority", "rank", "seen"));
+        final Basis seen = seen(body, issue);
         final Set<Fields.Field> named = EnumSet.noneOf(Fields.Field.class);
         final String size = text(body, "size", issue, named, Fields.Field.SIZE);
         final Integer estimate =
@@ -222,7 +221,7 @@ final class EditRequests {
         final String priority = text(body, "priority", issue, named, Fields.Field.PRIORITY);
         final Integer rank = number(body, "rank", issue, named, Fields.Field.RANK);
         try {
-            return new FieldsEdit(new Fields(named, size, estimate, priority, rank), revision);
+            return new FieldsEdit(new Fields(named, size, estimate, priority, rank), seen);
         } catch (final IllegalArgumentException outOfBounds) {
             // Fields' words are fixed and never repeat a value.
             throw Edits.refused(issue, "", String.valueOf(outOfBounds.getMessage()));
@@ -231,58 +230,58 @@ final class EditRequests {
 
     /**
      * Reads a story's whole issue list: at most 65536 bytes, one JSON object with exactly a list of
-     * issue ids and a revision.
+     * issue ids and the versions seen.
      *
      * @param request the request
      * @param story the story's checked id, which a refusal names
-     * @return the list and the revision
+     * @return the list and the versions seen
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
      *     no issue list
      */
     static StoryIssuesRequest storyIssues(final HttpServletRequest request, final String story) {
         final JsonNode body = object(request, story, WorkRequests::read);
-        members(body, story, Set.of("issues", "revision"));
-        exactly(body, story, Set.of("issues", "revision"));
+        members(body, story, Set.of("issues", "seen"));
+        exactly(body, story, Set.of("issues", "seen"));
         return new StoryIssuesRequest(
-                ids(body, "issues", story, Edits.MOST_ISSUES), revision(body, story));
+                ids(body, "issues", story, Edits.MOST_ISSUES), seen(body, story));
     }
 
     /**
      * Reads an add of an issue made outside the project: at most 65536 bytes, one JSON object with
-     * exactly an issue's tracker reference and a revision; a fixed alias names no issue the tracker
-     * holds outside the project, so it is refused as any other id.
+     * exactly an issue's tracker reference and the versions seen; a fixed alias names no issue the
+     * tracker holds outside the project, so it is refused as any other id.
      *
      * @param request the request
-     * @return the issue and the revision
+     * @return the issue and the versions seen
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
      *     no such add
      */
     static ListRequest listed(final HttpServletRequest request) {
         final JsonNode body = object(request, "", WorkRequests::read);
-        exactly(body, "", Set.of("issue", "revision"));
+        exactly(body, "", Set.of("issue", "seen"));
         final JsonNode issue = body.get("issue");
         if (!issue.isString() || !Ids.isReference(issue.asString())) {
             throw Edits.refused("", "issue", "The issue must be a tracker reference.");
         }
-        return new ListRequest(issue.asString(), revision(body, ""));
+        return new ListRequest(issue.asString(), seen(body, ""));
     }
 
     /**
      * Reads an issue's whole list of blockers: at most 65536 bytes, one JSON object with exactly a
-     * list of issue ids and a revision.
+     * list of issue ids and the versions seen.
      *
      * @param request the request
      * @param issue the issue's checked id, which a refusal names
-     * @return the list and the revision
+     * @return the list and the versions seen
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
      *     no list of blockers
      */
     static BlockedByRequest blockedBy(final HttpServletRequest request, final String issue) {
         final JsonNode body = object(request, issue, WorkRequests::read);
-        members(body, issue, Set.of("blockedBy", "revision"));
-        exactly(body, issue, Set.of("blockedBy", "revision"));
+        members(body, issue, Set.of("blockedBy", "seen"));
+        exactly(body, issue, Set.of("blockedBy", "seen"));
         return new BlockedByRequest(
-                ids(body, "blockedBy", issue, Edits.MOST_BLOCKERS), revision(body, issue));
+                ids(body, "blockedBy", issue, Edits.MOST_BLOCKERS), seen(body, issue));
     }
 
     /**
@@ -311,13 +310,13 @@ final class EditRequests {
 
     /**
      * Reads a story's or an issue's title and named parts: at most {@link
-     * AccessFilter#MOST_TEXT_BODY} bytes, one JSON object with a revision and any of a title and
-     * the kind's parts, each a text, null removing a part that may be removed.
+     * AccessFilter#MOST_TEXT_BODY} bytes, one JSON object with the versions seen and any of a title
+     * and the kind's parts, each a text, null removing a part that may be removed.
      *
      * @param request the request
      * @param id the item's checked id, which a refusal names
      * @param kind whether a story or an issue is changed
-     * @return the change and the revision
+     * @return the change and the versions seen
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
      *     no change of that kind's text
      */
@@ -329,9 +328,9 @@ final class EditRequests {
                 kind == TextEdit.Kind.STORY ? STORY_PARTS : ISSUE_PARTS;
         final Set<String> known = new java.util.HashSet<>(parts.keySet());
         known.add("title");
-        known.add("revision");
+        known.add("seen");
         members(body, id, known);
-        final String revision = revision(body, id);
+        final Basis seen = seen(body, id);
         @Nullable String title = null;
         if (body.has("title")) {
             final JsonNode value = body.get("title");
@@ -359,7 +358,7 @@ final class EditRequests {
                 throw Edits.refused(id, name, "The member " + name + " must be a text or null.");
             }
         }
-        return new TextRequest(new TextEdit(kind, title, written, removed), revision);
+        return new TextRequest(new TextEdit(kind, title, written, removed), seen);
     }
 
     private static Map<String, TextEdit.Part> parts(final TextEdit.Kind kind) {
@@ -401,17 +400,12 @@ final class EditRequests {
         members(body, item, all);
     }
 
-    private static String revision(final JsonNode body, final String item) {
-        final JsonNode revision = body.get("revision");
-        if (revision == null || !isRevision(revision)) {
-            throw Edits.refused(item, "revision", "The body names no revision.");
+    private static Basis seen(final JsonNode body, final String item) {
+        final Basis seen = WorkRequests.seen(body.get("seen"));
+        if (seen == null) {
+            throw Edits.refused(item, "seen", "The body names no versions seen by item id.");
         }
-        return revision.asString();
-    }
-
-    /** Whether a member is a revision as the description gives it: 1 to 200 printable ASCII. */
-    private static boolean isRevision(final JsonNode revision) {
-        return revision.isString() && REVISION.matcher(revision.asString()).matches();
+        return seen;
     }
 
     private static @Nullable String text(

@@ -3221,7 +3221,64 @@ List<Map<String, dynamic>> mockPlanningNoStoryIssues(Map<String, dynamic> board)
   ];
 }
 
+/// A stand-in's digest: 64 hexadecimal characters that differ with [text].
+String mockDigest(String text) {
+  var hash = 0xcbf29ce484222325;
+  final out = StringBuffer();
+  for (var round = 0; out.length < 64; round++) {
+    for (final unit in '$round$text'.codeUnits) {
+      hash = ((hash ^ unit) * 0x100000001b3) & 0xFFFFFFFFFFFF;
+    }
+    out.write(hash.toRadixString(16).padLeft(12, '0'));
+  }
+  return out.toString().substring(0, 64);
+}
+
+/// The version a stand-in gives an item, over its own fields as the planner's changes with them: a story's issues
+/// count by their ids, a version it carried not at all.
+String mockItemVersion(Map<String, dynamic> item) {
+  final own = Map<String, dynamic>.of(item)..remove('version');
+  if (own['issues'] case final List<dynamic> issues) {
+    own['issues'] = [for (final issue in issues) issue is Map ? issue['id'] : issue];
+  }
+  return mockDigest(jsonEncode(own));
+}
+
+/// Each item [board] holds by id with its version: its stories, their issues, the issues in no story and those made
+/// outside the project; the first copy of an id stands for it.
+Map<String, String> mockItemVersions(Map<String, dynamic> board) {
+  final versions = <String, String>{};
+  void add(Object? item) {
+    if (item is Map<String, dynamic> && item['id'] is String) {
+      versions.putIfAbsent(item['id'] as String, () => mockItemVersion(item));
+    }
+  }
+
+  for (final story in (board['stories'] as List? ?? const [])) {
+    add(story);
+    if (story is Map<String, dynamic>) (story['issues'] as List? ?? const []).forEach(add);
+  }
+  (board['issues'] as List? ?? const []).forEach(add);
+  (board['unlisted'] as List? ?? const []).forEach(add);
+  return versions;
+}
+
+/// [board]'s stories as they are, each and each of its issues with the version it stands at.
+List<Map<String, dynamic>> mockVersionedStories(Map<String, dynamic> board) => [
+  for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
+    {
+      ...story,
+      'version': mockItemVersion(story),
+      if (story['issues'] case final List<dynamic> issues)
+        'issues': [
+          for (final issue in issues)
+            if (issue is Map<String, dynamic>) {...issue, 'version': mockItemVersion(issue)} else issue,
+        ],
+    },
+];
+
 Map<String, dynamic> _planningIssueSummary(Map<String, dynamic> issue) => Map<String, dynamic>.of(issue)
+  ..['version'] = mockItemVersion(issue)
   ..remove('text')
   ..remove('textFormat')
   ..remove('whatMustBeTrue')
@@ -3234,6 +3291,7 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
     for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
       {
         ...story,
+        'version': mockItemVersion(story),
         'description': '',
         if (story['issues'] case final List<dynamic> issues)
           'issues': [for (final issue in issues.cast<Map<String, dynamic>>()) _planningIssueSummary(issue)],
@@ -3243,7 +3301,12 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   if (board['open'] case final Map<String, dynamic> open) 'open': open,
   if (board['repositories'] case final List<dynamic> repositories) 'repositories': repositories,
   // A planner's event is a whole board, so the screen takes changed rules from it.
-  for (final part in const ['states', 'phases', 'work', 'faults', 'unlisted', 'rules'])
+  for (final part in const ['states', 'phases', 'work', 'faults', 'rules'])
     if (board[part] case final List<dynamic> value) part: value,
+  if (board['unlisted'] case final List<dynamic> unlisted)
+    'unlisted': [
+      for (final item in unlisted)
+        if (item is Map<String, dynamic>) {...item, 'version': mockItemVersion(item)} else item,
+    ],
   if (board['reasons'] case final bool reasons) 'reasons': reasons,
 };

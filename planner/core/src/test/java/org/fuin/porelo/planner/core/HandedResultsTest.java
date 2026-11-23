@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -707,8 +708,7 @@ class HandedResultsTest {
             return run.order(
                     "ST1",
                     WORKING,
-                    new WorkOrder.Decision(
-                            "AGENT", store.board().revision().value(), null, "", 1, null),
+                    new WorkOrder.Decision("AGENT", Basis.of(store.board()), null, "", 1, null),
                     WorkRun.Start.NONE);
         }
 

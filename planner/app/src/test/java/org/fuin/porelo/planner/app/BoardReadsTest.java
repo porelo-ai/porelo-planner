@@ -185,7 +185,7 @@ class BoardReadsTest {
                                                 projects,
                                                 Duration.ofHours(1),
                                                 Executors.newSingleThreadScheduledExecutor())))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
     }
 

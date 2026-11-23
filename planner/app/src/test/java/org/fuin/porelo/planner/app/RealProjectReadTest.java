@@ -34,13 +34,12 @@ class RealProjectReadTest {
     void aProjectGivenByItsOwnRepositoryIsReadFromGitAndServed() throws Exception {
         // The window's only way in: a PUT that reads nothing would leave every read a 404.
         try (FixtureProject project = FixtureProject.serve(dir)) {
+            final Projects projects =
+                    StoreConfiguration.fromGit(
+                            StoreConfiguration.gitProjects(project.environment()));
             final MockMvc mvc =
-                    MockMvcBuilders.standaloneSetup(
-                                    controller(
-                                            StoreConfiguration.fromGit(
-                                                    StoreConfiguration.gitProjects(
-                                                            project.environment()))))
-                            .setControllerAdvice(new Problems())
+                    MockMvcBuilders.standaloneSetup(controller(projects))
+                            .setControllerAdvice(new Problems(projects))
                             .build();
             final MockHttpServletResponse given =
                     mvc.perform(

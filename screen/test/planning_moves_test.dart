@@ -37,10 +37,24 @@ Map<String, dynamic> _fixture() => {
   'revision': 'initial',
 };
 
+/// [data] at [revision] with [story] changed by another writer.
+Map<String, dynamic> _retitled(Map<String, dynamic> data, String story, String revision) => {
+  ...data,
+  'revision': revision,
+  'stories': [
+    for (final each in (data['stories'] as List).cast<Map<String, dynamic>>())
+      each['id'] == story ? {...each, 'title': 'Changed elsewhere'} : each,
+  ],
+};
+
 class _Backend extends Fake implements PlanningSource {
   Map<String, dynamic> data = _fixture();
   final changes = StreamController<PlanningSnapshot>.broadcast(sync: true);
   final calls = <Map<String, dynamic>>[];
+  final seens = <Map<String, String>>[];
+
+  /// What a save leaves in the store before it answers, as a partly saved one does.
+  Map<String, dynamic>? landed;
   String? refusedStory;
   Object? failure;
   Object? readFailure;
@@ -70,7 +84,7 @@ class _Backend extends Fake implements PlanningSource {
       return waiting.future;
     }
     if (readFailure case final error?) throw error;
-    return PlanningSnapshot.from(data);
+    return PlanningSnapshot.from({...data, 'stories': mockVersionedStories(data)});
   }
 
   final previewed = <Map<String, dynamic>>[];
@@ -80,15 +94,17 @@ class _Backend extends Fake implements PlanningSource {
   Object? previewFailure;
 
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
-    previewed.add({'moves': moves.map((move) => move.toMap()).toList(), 'revision': revision});
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) async {
+    previewed.add({'moves': moves.map((move) => move.toMap()).toList(), 'revision': data['revision']});
     if (previewFailure case final error?) throw error;
-    if (revision != data['revision']) {
-      throw mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'revision': data['revision']});
-    }
+    final versions = mockItemVersions(data);
     return PlanningMovePreview.from({
-      'revision': revision,
-      'digest': FakePlanningSource.digestAt(revision),
+      'revision': data['revision'],
+      'targets': [
+        for (final move in moves)
+          if (versions[move.id] case final version?) {'id': move.id, 'version': version},
+      ],
+      'digest': FakePlanningSource.digestAt(data['revision']),
       'issues': <Object>[],
       'warnings': warnings,
     });
@@ -98,15 +114,22 @@ class _Backend extends Fake implements PlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
-    final parameters = {'project': project, 'moves': moves.map((move) => move.toMap()).toList(), 'revision': revision};
+    final parameters = {
+      'project': project,
+      'moves': moves.map((move) => move.toMap()).toList(),
+      'revision': data['revision'],
+    };
     calls.add(parameters);
+    seens.add(seen);
+    mockCheckSeen(data, seen, seen.keys);
     digests.add(digest);
     confirms.add(confirm);
     if (gate case final waiting?) await waiting.future;
+    if (landed case final partly?) data = partly;
     if (failure case final error?) throw error;
     if (moves.any((move) => move is PlanningStoryMove && move.story == refusedStory)) {
       throw mockRefusal('org.fuin.porelo.Tasks1.WorkNotAllowed', {
@@ -128,7 +151,7 @@ class _SlowSource extends FakePlanningSource {
   _SlowSource() : super(smallBoard());
 
   bool _timesOut = true;
-  (String, List<PlanningMove>, String, String)? _late;
+  (String, List<PlanningMove>, Map<String, String>, String)? _late;
 
   /// Whether a landed save's board is kept from every watch, as one not streamed yet.
   bool holding = false;
@@ -143,28 +166,28 @@ class _SlowSource extends FakePlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
     if (_timesOut) {
       _timesOut = false;
-      _late = (project, moves, revision, digest);
+      _late = (project, moves, seen, digest);
       throw const PlanningRefusal('TimedOut', {}, 'the planner did not answer within 30 s');
     }
     if (refuseNext case final refusal?) {
       refuseNext = null;
       throw refusal;
     }
-    final saved = await super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
+    final saved = await super.saveMoves(project, moves, seen, digest: digest, confirm: confirm);
     written++;
     return saved;
   }
 
   /// Lands the save the screen stopped waiting for.
   Future<void> land() async {
-    final (project, moves, revision, digest) = _late!;
-    await saveMoves(project, moves, revision, digest: digest);
+    final (project, moves, seen, digest) = _late!;
+    await saveMoves(project, moves, seen, digest: digest);
   }
 
   @override
@@ -185,7 +208,7 @@ void main() {
     disposed = false;
     backend = _Backend();
     board = PlanningBoard(backend, 'demo');
-    backend.changes.add(PlanningSnapshot.from(backend.data));
+    backend.changes.add(PlanningSnapshot.from({...backend.data, 'stories': mockVersionedStories(backend.data)}));
     await Future<void>.delayed(Duration.zero);
     backend.workflowReads = 0;
   });
@@ -292,7 +315,7 @@ void main() {
 
   // Harm: a partly pushed save hides the store's actual states or loses which repositories failed.
   test('a partly saved move reloads the board and retains its typed refusal', () async {
-    backend.data = applyPlanningMove(backend.data, {
+    backend.landed = applyPlanningMove(backend.data, {
       'revision': 'initial',
       'moves': [
         {'story': 'StoryTwo', 'to': 'Rejected'},
@@ -471,7 +494,7 @@ void main() {
   });
 
   // Harm: a refused issue batch leaves earlier issue changes published.
-  test('issue batches remain atomic and reject stale or working destinations', () {
+  test('issue batches remain atomic and reject working destinations', () {
     final source = _fixture();
     // Building measured, the planner's rule reads the workflow: Elsewhere before it, Building its review.
     source['states'] = [
@@ -498,12 +521,6 @@ void main() {
           {'issue': 'IssueOne', 'to': 'Building'},
         ],
       },
-      {
-        'revision': 'old',
-        'moves': [
-          {'issue': 'IssueOne', 'to': 'Rejected'},
-        ],
-      },
     ]) {
       expect(() => applyPlanningMove(source, parameters), throwsA(isA<PlanningRefusal>()));
     }
@@ -526,25 +543,27 @@ void main() {
     backend.warnings = [
       {'kind': 'ISSUES_ALONG', 'item': 'StoryTwo', 'from': 'Ready', 'to': 'Rejected', 'issues': <Object>[]},
     ];
+    final shown = mockItemVersions(backend.data)['StoryTwo'];
     final moving = board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
-    backend.data = {...backend.data, 'revision': 'changed'};
+    backend.data = _retitled(backend.data, 'StoryTwo', 'changed');
+    final changed = mockItemVersions(backend.data)['StoryTwo'];
     await board.confirmMove();
     await pumpEventQueue();
 
-    expect(backend.calls.single['revision'], 'initial', reason: 'the confirmed save went against the board shown');
+    expect(backend.seens.single, {'StoryTwo': shown}, reason: 'the confirmed save went against the board shown');
     expect(board.snapshot!.revision, 'changed', reason: 'the board is read again');
     expect(board.question?.again, isTrue, reason: 'the move is asked about anew');
     expect(backend.previewed.last['revision'], 'changed');
     await board.confirmMove();
     await moving;
-    expect(backend.calls.last['revision'], 'changed');
+    expect(backend.seens.last, {'StoryTwo': changed});
     expect(board.stories.last.state, 'Rejected');
   });
 
   // Harm: a gesture begun on an older board previewed against the new one.
   test('a preview refused as stale moves nothing and reads the board again', () async {
-    backend.data = {...backend.data, 'revision': 'changed'};
+    backend.data = _retitled(backend.data, 'StoryTwo', 'changed');
     await board.move('StoryTwo', 'Rejected');
     await pumpEventQueue();
     expect(backend.calls, isEmpty);
@@ -586,7 +605,7 @@ void main() {
       backend.listing = Completer<PlanningSnapshot>();
       backend.listingStarted = Completer<void>();
       if (call == 'stale save') {
-        backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+        backend.failure = mockRefusal('org.fuin.porelo.Tasks1.ItemChanged', {'detail': 'Board changed'});
       }
       final operation = call == 'reload' ? board.reload() : board.move('StoryOne', 'Rejected');
       await backend.listingStarted!.future;
@@ -623,7 +642,7 @@ void main() {
 
   // Harm: after a stale save the board shows one streamed before the save over the newer one read for it.
   test('a board streamed while a stale save waits loses to the read after the refusal', () async {
-    backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+    backend.failure = mockRefusal('org.fuin.porelo.Tasks1.ItemChanged', {'detail': 'Board changed'});
     backend.gate = Completer<void>();
     final operation = board.move('StoryOne', 'Rejected');
     await pumpEventQueue();
@@ -662,7 +681,7 @@ void main() {
     test(
       'a stale save whose board now shows the story in $stands ${refused ? 'refuses' : 'counts'} the move',
       () async {
-        backend.failure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'detail': 'Board changed'});
+        backend.failure = mockRefusal('org.fuin.porelo.Tasks1.ItemChanged', {'detail': 'Board changed'});
         backend.listing = Completer<PlanningSnapshot>();
         backend.listingStarted = Completer<void>();
         final operation = board.move('StoryOne', 'Rejected');
@@ -1242,7 +1261,7 @@ void main() {
       'story': 'ST291',
       'to': 'Reading',
       'mode': 'UNATTENDED',
-      'revision': board['revision'],
+      'seen': {'ST291': mockItemVersions(board)['ST291']!},
     });
     expect(order['tasks'], isNotEmpty);
     expect(published, isEmpty);
@@ -1258,7 +1277,7 @@ void main() {
       'round': 2,
       'choice': 'REVIEW_ANYWAY',
       'comment': '',
-      'revision': board['revision'],
+      'seen': {stopped['id'] as String: mockItemVersions(board)[stopped['id']]!},
     });
     expect(story(published['demo']!, 'ST1')['state'], 'Review');
   });
@@ -1326,6 +1345,7 @@ void main() {
     final gone = _fixture();
     ((gone['stories'] as List).first['issues'] as List).removeAt(0);
     gone['revision'] = 'issue gone';
+    backend.data = gone;
     backend.changes.add(PlanningSnapshot.from(gone));
     await Future<void>.delayed(Duration.zero);
     await board.moveIssue('IssueOne', 'Rejected', reported: shown);

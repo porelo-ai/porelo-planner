@@ -39,29 +39,43 @@ public final class Corrections {
     public record Asked(boolean story, String id, String warning, String state) {}
 
     /**
-     * What a correction writes, checked against the board at a revision.
+     * What a correction writes, checked against the board the store holds.
      *
-     * @param revision the board's revision
+     * @param revision the board's revision the preview was read at
      * @param asked the correction
      * @param from the item's state now, empty when none is told
      * @param writes what saving it writes: the one item's state, nothing else
      * @param warnings what it can do harm by, as a move's preview names it: a run with tasks at
      *     work on the story ({@link MovePreview#RUNNING_WORK}), which a confirmed save stops
+     * @param targets every item the correction changes with the version it stands at, by id,
+     *     sorted; the save checks exactly these
      */
     public record Preview(
             String revision,
             Asked asked,
             String from,
             Writes writes,
-            List<MovePreview.Warning> warnings) {
+            List<MovePreview.Warning> warnings,
+            Map<String, String> targets) {
 
-        /** Copies the list. */
+        /** Copies the list and the targets, keeping the targets sorted. */
         public Preview {
             warnings = List.copyOf(warnings);
+            targets = java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(targets));
         }
 
         /**
-         * Answers the digest over what this preview showed and where its save goes.
+         * The preview's targets as the versions a caller who saw it sends back with the save.
+         *
+         * @return each target with the version it stood at
+         */
+        public org.fuin.porelo.planner.store.Basis basis() {
+            return MovePreview.basis(targets);
+        }
+
+        /**
+         * Answers the digest over what this preview showed and where its save goes, every target
+         * with its version among it; never the board's revision.
          *
          * @param repository the project's own repository, as the planner was given it
          * @param branch its branch, or null for the remote's default
@@ -69,10 +83,15 @@ public final class Corrections {
          */
         public String digest(final String repository, final @Nullable String branch) {
             final MovePreview.Digest digest = new MovePreview.Digest();
-            digest.add("porelo-planner correction preview 1");
-            digest.add(revision);
+            digest.add("porelo-planner correction preview 2");
             digest.add(repository);
             digest.add(branch == null ? "\u0000" : branch);
+            digest.count(targets.size());
+            targets.forEach(
+                    (target, version) -> {
+                        digest.add(target);
+                        digest.add(version);
+                    });
             digest.add(asked.story() ? "story" : "issue");
             digest.add(asked.id());
             digest.add(asked.warning());

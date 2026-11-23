@@ -6,15 +6,20 @@ import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/fake_planning.dart';
 
-Map<String, dynamic> _looseIssue() => {
-  'id': 'B900',
-  'repository': 'porelo',
-  'title': 'Planning work in no story',
-  'state': 'Backlog',
-  'size': 'S',
-  'worker': 'AGENT',
-  'blockedBy': <String>[],
-};
+Map<String, dynamic> _looseIssue() {
+  final issue = <String, dynamic>{
+    'id': 'B900',
+    'repository': 'porelo',
+    'title': 'Planning work in no story',
+    'state': 'Backlog',
+    'size': 'S',
+    'worker': 'AGENT',
+    'blockedBy': <String>[],
+  };
+  return _stamped(issue);
+}
+
+Map<String, dynamic> _stamped(Map<String, dynamic> issue) => {...issue, 'version': mockItemVersion(issue)};
 
 class _Source extends MockPlanningSource {
   final reads = <Completer<PlanIssueList>>[];
@@ -36,27 +41,27 @@ class _Source extends MockPlanningSource {
   }
 
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) {
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) {
     previews++;
     if (b902TimesOut && moves.any((move) => move.id == 'B902')) {
       return Future.value(
         PlanningMovePreview.from({
-          'revision': revision,
-          'digest': FakePlanningSource.digestAt(revision),
+          'revision': board(project)['revision'],
+          'digest': FakePlanningSource.digestAt(board(project)['revision']),
           'issues': <Object>[],
           'stories': <Object>[],
           'warnings': <Object>[],
         }),
       );
     }
-    return super.previewMoves(project, moves, revision);
+    return super.previewMoves(project, moves);
   }
 
   @override
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
@@ -81,7 +86,7 @@ class _Source extends MockPlanningSource {
     if (b902TimesOut && moves.any((move) => move.id == 'B902')) {
       throw const PlanningRefusal('TimedOut');
     }
-    return super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
+    return super.saveMoves(project, moves, seen, digest: digest, confirm: confirm);
   }
 
   @override
@@ -100,10 +105,10 @@ class _Source extends MockPlanningSource {
   }
 
   @override
-  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async {
-    lists.add((project, story, List.of(issues), revision));
+  Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen) async {
+    lists.add((project, story, List.of(issues), board(project)['revision'] as String));
     if (editFailure case final error?) throw error;
-    return super.setStoryIssues(project, story, issues, revision);
+    return super.setStoryIssues(project, story, issues, seen);
   }
 }
 
@@ -186,7 +191,7 @@ void main() {
         'revision': 'unknown-state',
         'issues': [
           _looseIssue(),
-          {..._looseIssue(), 'id': 'B902', 'state': 'Accepted'},
+          _stamped({..._looseIssue(), 'id': 'B902', 'state': 'Accepted'}),
         ],
       }),
     );
@@ -203,7 +208,7 @@ void main() {
         'revision': 'returned',
         'issues': [
           _looseIssue(),
-          {..._looseIssue(), 'id': 'B902'},
+          _stamped({..._looseIssue(), 'id': 'B902'}),
         ],
       }),
     );
@@ -221,13 +226,7 @@ void main() {
     await _turn();
     expect(source.previews, 1);
     source.reads.last.complete(
-      PlanIssueList.from({
-        'revision': 'changed-preview',
-        'issues': [
-          _looseIssue(),
-          {..._looseIssue(), 'id': 'I1'},
-        ],
-      }),
+      PlanIssueList.from({'revision': 'changed-preview', 'issues': mockPlanningNoStoryIssues(source.board('demo'))}),
     );
     await moving;
     expect(source.previews, 2);
@@ -289,7 +288,7 @@ void main() {
       PlanIssueList.from({
         'revision': 'r3',
         'issues': [
-          {..._looseIssue(), 'id': 'B901'},
+          _stamped({..._looseIssue(), 'id': 'B901'}),
         ],
       }),
     );
@@ -309,7 +308,7 @@ void main() {
     expect(source.lists, hasLength(1));
   });
 
-  for (final name in ['StaleRevision', 'PartlySaved']) {
+  for (final name in ['ItemChanged', 'PartlySaved']) {
     // Harm: a refused assignment leaves the board showing planning that the store no longer holds.
     test('a $name hang refusal rereads the board and its standalone list', () async {
       final (source, board) = await _opened(automatic: true);
@@ -320,7 +319,7 @@ void main() {
       expect(board.snapshot!.revision, 'new-store');
       expect(board.noStory, isEmpty);
       expect(board.moveRefusal?.name, name);
-      expect(board.moveProblem, contains('save refused'));
+      expect(board.moveProblem, contains(name == 'ItemChanged' ? 'Changed meanwhile' : 'save refused'));
     });
   }
 
@@ -339,7 +338,7 @@ void main() {
   // Harm: a parent's worker changes while a standalone sub-issue still has an unanswered move.
   test('a moving standalone sub-issue holds its parent worker change', () async {
     final (source, board) = await _opened();
-    final child = {..._looseIssue(), 'id': 'B901', 'parent': 'B900'};
+    final child = _stamped({..._looseIssue(), 'id': 'B901', 'parent': 'B900'});
     source.push('demo', {
       ...source.board('demo'),
       'revision': 'family',
@@ -402,7 +401,7 @@ void main() {
       PlanIssueList.from({
         'revision': 'taken-out',
         'issues': [
-          {..._looseIssue(), 'id': 'I1'},
+          _stamped({..._looseIssue(), 'id': 'I1'}),
         ],
       }),
     );
@@ -452,7 +451,7 @@ void main() {
       PlanIssueList.from({
         'revision': board.snapshot!.revision,
         'issues': [
-          {..._looseIssue(), 'id': 'B901'},
+          _stamped({..._looseIssue(), 'id': 'B901'}),
         ],
       }),
     );
@@ -495,7 +494,7 @@ void main() {
       PlanIssueList.from({
         'revision': board.snapshot!.revision,
         'issues': [
-          {..._looseIssue(), 'state': 'Finished'},
+          _stamped({..._looseIssue(), 'state': 'Finished'}),
         ],
       }),
     );
@@ -531,7 +530,7 @@ void main() {
       PlanIssueList.from({
         'revision': 'r3',
         'issues': [
-          {..._looseIssue(), 'state': 'Finished'},
+          _stamped({..._looseIssue(), 'state': 'Finished'}),
         ],
       }),
     );
@@ -562,7 +561,7 @@ void main() {
       PlanIssueList.from({
         'revision': board.snapshot!.revision,
         'issues': [
-          {..._looseIssue(), 'state': 'Finished'},
+          _stamped({..._looseIssue(), 'state': 'Finished'}),
         ],
       }),
     );
@@ -594,7 +593,7 @@ void main() {
       ...source.board('demo'),
       'issues': [
         _looseIssue(),
-        {..._looseIssue(), 'id': 'B901'},
+        _stamped({..._looseIssue(), 'id': 'B901'}),
       ],
     };
     var finished = false;

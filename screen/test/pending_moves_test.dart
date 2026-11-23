@@ -15,12 +15,12 @@ class _HeldSource extends FakePlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
     await gate.future;
-    return super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
+    return super.saveMoves(project, moves, seen, digest: digest, confirm: confirm);
   }
 }
 

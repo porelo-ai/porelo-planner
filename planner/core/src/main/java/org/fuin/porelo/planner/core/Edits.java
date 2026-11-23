@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Issue;
@@ -58,33 +59,30 @@ public final class Edits {
     private Edits() {}
 
     /**
-     * Refuses an edit against a revision the board no longer holds.
+     * Checks only this write's targets against the versions the caller saw. Missing versions are
+     * reported together before any changed item; extra basis entries do not affect the write.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
-     * @throws StoreException.StaleRevision naming the board's revision when they differ
+     * @param basis the versions the caller saw
+     * @param targets the ids determined by {@link Targets}
+     * @throws StoreException.BasisIncomplete for every target without a version
+     * @throws StoreException.Changed for targets changed, absent or duplicated on the board
      */
-    public static void fresh(final Board board, final String revision) {
-        if (!board.revision().value().equals(revision)) {
-            throw new StoreException.StaleRevision(board.revision().value());
-        }
+    public static void unchanged(final Board board, final Basis basis, final Set<String> targets) {
+        basis.unchanged(board, targets);
     }
 
     /**
-     * Checks an add of an issue made outside the project: the board read at that revision offers it
-     * among the issues that are no items of the project.
+     * Checks an add of an issue made outside the project: the board the store holds offers it among
+     * the issues that are no items of the project.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
      * @param issue the issue's tracker reference
      * @return the issue as the board offers it
-     * @throws StoreException.StaleRevision when the board moved since that revision
      * @throws Moves.Refused {@value #NOT_UNLISTED} for an issue the board does not offer, one on
      *     the board or outside its workflow among them
      */
-    public static UnlistedIssue unlisted(
-            final Board board, final String revision, final String issue) {
-        fresh(board, revision);
+    public static UnlistedIssue unlisted(final Board board, final String issue) {
         for (final UnlistedIssue offered : board.unlisted()) {
             if (offered.id().equals(issue)) {
                 return offered;
@@ -108,19 +106,15 @@ public final class Edits {
     }
 
     /**
-     * Checks a change of an issue's fields: the issue stands on the board read at that revision.
+     * Checks a change of an issue's fields: the issue stands on the board the store holds.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
      * @param issue the issue's id
      * @param fields the fields to set
-     * @throws StoreException.StaleRevision when the board moved since that revision
      * @throws Moves.Refused {@code NoSuchIssue} for an issue the board lacks, {@value #REFUSED} for
      *     a change that names no field
      */
-    public static void fields(
-            final Board board, final String revision, final String issue, final Fields fields) {
-        fresh(board, revision);
+    public static void fields(final Board board, final String issue, final Fields fields) {
         known(board, issue);
         notHeld(board, issue);
         if (fields.none()) {
@@ -134,20 +128,14 @@ public final class Edits {
      * out is held back by nothing.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
      * @param story the story's id
      * @param issues the issues' ids, in the story's order
      * @return whether the list differs from the story's, so anything is written
-     * @throws StoreException.StaleRevision when the board moved since that revision
      * @throws Moves.Refused {@code NoSuchStory} or {@code NoSuchIssue} for an item the board lacks,
      *     {@value #REFUSED} for a list the board cannot hold
      */
     public static boolean storyIssues(
-            final Board board,
-            final String revision,
-            final String story,
-            final List<String> issues) {
-        fresh(board, revision);
+            final Board board, final String story, final List<String> issues) {
         final Story found = story(board, story);
         notHeld(board, story);
         if (!found.issuesWhole()) {
@@ -202,20 +190,14 @@ public final class Edits {
      * held back.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
      * @param issue the issue's id
      * @param blockedBy the blockers' ids
      * @return whether the blockers differ from the issue's, so anything is written
-     * @throws StoreException.StaleRevision when the board moved since that revision
      * @throws Moves.Refused {@code NoSuchIssue} for an issue the board lacks, {@value #REFUSED} for
      *     blockers the board cannot hold
      */
     public static boolean blockedBy(
-            final Board board,
-            final String revision,
-            final String issue,
-            final List<String> blockedBy) {
-        fresh(board, revision);
+            final Board board, final String issue, final List<String> blockedBy) {
         final Issue found = known(board, issue);
         notHeld(board, issue);
         // GitHub counts the issues it waits on outside the board among its blockers too.
@@ -267,23 +249,19 @@ public final class Edits {
 
     /**
      * Checks a change of a story's or an issue's title and named parts: the item stands on the
-     * board read at that revision, the change names anything, the title is one line of 1 to {@value
+     * board the store holds, the change names anything, the title is one line of 1 to {@value
      * #MOST_TITLE} characters without control characters, and each part written is not blank and at
      * most {@value #MOST_PART} characters. A task at work on the issue does not refuse it: its
-     * result is checked against the revision it read, as every write is.
+     * result is checked against the versions it read, as every write is.
      *
      * @param board the board the store holds
-     * @param revision the revision the caller read
      * @param id the story's or the issue's id
      * @param edit the change
      * @return the change with its title without the spaces around it
-     * @throws StoreException.StaleRevision when the board moved since that revision
      * @throws Moves.Refused {@code NoSuchStory} or {@code NoSuchIssue} for an item the board lacks,
      *     {@value #REFUSED} for a change that names nothing or a title or part out of bounds
      */
-    public static TextEdit text(
-            final Board board, final String revision, final String id, final TextEdit edit) {
-        fresh(board, revision);
+    public static TextEdit text(final Board board, final String id, final TextEdit edit) {
         if (edit.kind() == TextEdit.Kind.STORY) {
             story(board, id);
         } else {

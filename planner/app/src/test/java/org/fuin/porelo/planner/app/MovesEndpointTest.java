@@ -132,7 +132,7 @@ class MovesEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -148,7 +148,7 @@ class MovesEndpointTest {
         // A save the windows are not told of leaves every other window showing the old board.
         final Changes.Subscription window = changes.subscribe("alpha");
 
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"))
                 .andExpect(jsonPath("$.moved[0]").value("AB01"));
@@ -161,19 +161,23 @@ class MovesEndpointTest {
     }
 
     @Test
-    void aBatchAgainstAnotherRevisionIsRefusedAsStaleAndSavesNothing() throws Exception {
-        // A save over a board the window no longer shows would undo someone else's move.
-        moves("{\"revision\": \"r0\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+    void aBatchOverAnItemChangedSinceItWasSeenIsRefusedAndSavesNothing() throws Exception {
+        // A save over an item the window no longer shows as it stands would undo someone else's
+        // change.
+        moves(
+                        "{\"seen\": "
+                                + Seens.stale(current)
+                                + ", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
-                .andExpect(jsonPath("$.parameters.revision").value("r1"));
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("AB01"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
     void aMoveIntoAWorkingStateIsRefusedByNameWithItsParameters() throws Exception {
         // The window offers the work only when it reads this refusal by its name.
-        moves("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Building\"}]}")
+        moves("{\"moves\": [{\"story\": \"ST1\", \"to\": \"Building\"}]}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:EnteredOnlyByWork"))
                 .andExpect(jsonPath("$.parameters.item").value("ST1"))
@@ -185,7 +189,7 @@ class MovesEndpointTest {
     void anAgentsIssueNoRunWorksIsMovedIntoAWorkingStateAndReadsAsWorkStartedElsewhere()
             throws Exception {
         // Harm: work begun outside this planner kept off the board, or shown as this planner's.
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Building\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Building\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"))
                 .andExpect(jsonPath("$.moved[0]").value("AB01"));
@@ -203,14 +207,12 @@ class MovesEndpointTest {
     @Test
     void aMoveNamingBothOrNeitherItemIsRefusedBeforeTheStoreIsAsked() throws Exception {
         // A move naming both would save whichever the planner happened to read.
-        moves(
-                        "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"issue\": \"AB01\","
-                                + " \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"story\": \"ST1\", \"issue\": \"AB01\"," + " \"to\": \"Review\"}]}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
-        moves("{\"revision\": \"r1\", \"moves\": [{\"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"to\": \"Review\"}]}")
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
-        moves("{\"revision\": \"r1\"}")
+        moves("{\"seen\": " + Seens.of(current) + "}")
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
@@ -218,7 +220,7 @@ class MovesEndpointTest {
     @Test
     void aBodyOrStateThatIsNoNameIsRefusedWithoutRepeatingIt() throws Exception {
         // A refusal repeating the body would show whatever a caller put there, a secret too.
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"/home/x:pw\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"/home/x:pw\"}]}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
                 .andExpect(jsonPath("$.parameters.to").value(""));
@@ -230,7 +232,7 @@ class MovesEndpointTest {
                         .getResponse()
                         .getContentAsString();
         assertThat(body).as("the parser's words are not repeated").doesNotContain("token123secret");
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"../x\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"../x\", \"to\": \"Review\"}]}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"));
     }
@@ -242,7 +244,7 @@ class MovesEndpointTest {
                 new StoreException.NotSavable(
                         "AB01",
                         "stats/AB01.jsonl cannot take the move: invalid JSON in a stage record");
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
                 .andExpect(jsonPath("$.parameters.item").value("AB01"))
@@ -261,7 +263,7 @@ class MovesEndpointTest {
         final Changes.Subscription window = changes.subscribe("alpha");
         failure =
                 new StoreException.PartlySaved("porelo-store", List.of("porelo-other"), "refused");
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isBadGateway());
         assertThat(window.next(Duration.ofSeconds(2)).map(board -> board.revision().value()))
                 .as("the window is told the board the pushed repositories hold")
@@ -274,13 +276,13 @@ class MovesEndpointTest {
         failure =
                 new StoreException.PartlySaved(
                         "porelo-store", List.of("porelo-other", "porelo-third"), "refused");
-        moves("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:PartlySaved"))
                 .andExpect(jsonPath("$.parameters.pushed").value("porelo-other,porelo-third"))
                 .andExpect(jsonPath("$.parameters.failed").value("porelo-store"));
         failure = new StoreException.Busy("porelo-store");
-        moves("{\"revision\": \"r2\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:Busy"));
     }
@@ -289,7 +291,7 @@ class MovesEndpointTest {
     void aPreviewAnswersEveryIssueThatMovesWithItsDigestAndSavesNothing() throws Exception {
         // Harm: a preview that writes, so a person who cancels has moved the story already.
         current = board("r1", "Review", "Review");
-        preview("{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\": \"Finished\"}]}")
+        preview("{\"moves\": [{\"story\": \"ST1\", \"to\": \"Finished\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r1"))
                 .andExpect(
@@ -311,8 +313,7 @@ class MovesEndpointTest {
     void aSaveSentWithTheDigestOfAnotherBatchIsRefusedAndSavesNothing() throws Exception {
         // Harm: a confirmation given for one batch saving another.
         final String shown =
-                preview(
-                                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+                preview("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
                         .andReturn()
                         .getResponse()
                         .getContentAsString();
@@ -322,7 +323,7 @@ class MovesEndpointTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         Previewed.moves(
-                                                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Finished\"}]}",
+                                                "{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Finished\"}]}",
                                                 shown)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:PreviewChanged"));
@@ -336,7 +337,7 @@ class MovesEndpointTest {
                         post("/projects/alpha/moves")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
+                                        "{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
         assertThat(saved).as("nothing saved").isEmpty();
@@ -349,32 +350,20 @@ class MovesEndpointTest {
                         post("/projects/unknown/moves/preview")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
+                                        "{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchProject"));
-        preview("{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB99\", \"to\": \"Review\"}]}")
+        preview("{\"moves\": [{\"issue\": \"AB99\", \"to\": \"Review\"}]}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchIssue"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
-    void aPreviewAgainstAnotherRevisionIsRefusedAsStale() throws Exception {
-        // Harm: a gesture begun on an older board previewed against the new one, so the person
-        // confirms what they never saw.
-        preview("{\"revision\": \"r0\", \"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
-                .andExpect(jsonPath("$.parameters.revision").value("r1"));
-    }
-
-    @Test
     void aStoryBreakingTheStoriesRulesIsPreviewedAndSavedAsAnyOther() throws Exception {
         // Harm: a breach that is only to be shown holds back or warns a move the person chose.
         current = ranked(board("r1", "Review", "Review"), "Lowest", "Highest");
-        final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
-                        + " \"Finished\"}]}";
+        final String body = "{\"moves\": [{\"story\": \"ST1\", \"to\":" + " \"Finished\"}]}";
 
         // The finish's own warning alone: the breach adds none.
         preview(body)
@@ -393,7 +382,7 @@ class MovesEndpointTest {
         keeps = true;
         current = board("r1", "Review");
         final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
+                "{\"moves\": [{\"story\": \"ST1\", \"to\":"
                         + " \"Finished\", \"reason\": \" Built as asked. \"}]}";
 
         moves(body).andExpect(status().isOk());
@@ -410,7 +399,7 @@ class MovesEndpointTest {
         // Harm: a sentence for a close written to an open item, or refused only after a write.
         keeps = true;
         final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\":"
+                "{\"moves\": [{\"issue\": \"AB01\", \"to\":"
                         + " \"Review\", \"reason\": \"Why not.\"}], \"confirm\": true}";
 
         preview(body)
@@ -434,7 +423,7 @@ class MovesEndpointTest {
         keeps = true;
         current = board("r1", "Finished");
         final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"story\": \"ST1\", \"to\":"
+                "{\"moves\": [{\"story\": \"ST1\", \"to\":"
                         + " \"Finished\", \"reason\": \"Built.\"}]}";
 
         moves(body).andExpect(status().isOk());
@@ -450,7 +439,7 @@ class MovesEndpointTest {
         // Harm: a window that offered a reason anyway learns only after the person confirmed.
         current = board("r1", "Review");
         final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"AB01\", \"to\":"
+                "{\"moves\": [{\"issue\": \"AB01\", \"to\":"
                         + " \"Finished\", \"reason\": \"Built.\"}], \"confirm\": true}";
 
         preview(body)
@@ -460,7 +449,12 @@ class MovesEndpointTest {
         mvc.perform(
                         post("/projects/alpha/moves")
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(body))
+                                .content(
+                                        body.replace(
+                                                "\"confirm\"",
+                                                "\"seen\": "
+                                                        + Seens.of(current)
+                                                        + ", \"confirm\"")))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(
                         jsonPath("$.detail")
@@ -527,10 +521,25 @@ class MovesEndpointTest {
                         .content(Previewed.moves(body, preview)));
     }
 
+    /** Previews a batch as the window does: without the versions its save sends. */
     private ResultActions preview(final String body) throws Exception {
         return mvc.perform(
                 post("/projects/alpha/moves/preview")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body));
+                        .content(withoutSeen(body)));
+    }
+
+    private static String withoutSeen(final String body) {
+        try {
+            final tools.jackson.databind.JsonNode parsed =
+                    new tools.jackson.databind.json.JsonMapper().readTree(body);
+            if (parsed instanceof tools.jackson.databind.node.ObjectNode object) {
+                object.remove("seen");
+                return object.toString();
+            }
+        } catch (final tools.jackson.core.JacksonException e) {
+            // A body that is no JSON goes as it is, so its own refusal is what the test reads.
+        }
+        return body;
     }
 }

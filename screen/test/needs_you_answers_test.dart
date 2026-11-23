@@ -193,7 +193,6 @@ void main() {
     expect(sent.single['passOver'], {
       'issue': 'AA1',
       'reason': 'FAILED',
-      'revision': 'r1',
       'run': _run,
     }, reason: 'the Start passes over exactly the failure the row showed');
   });
@@ -310,9 +309,8 @@ void main() {
     expect(sent.single['passOver'], {
       'issue': 'AA1',
       'reason': 'SAVE_REFUSED',
-      'revision': 'r1',
       'run': _run,
-    }, reason: 'the Start names the issue, its reason, the revision and the run the row showed');
+    }, reason: 'the Start names the issue, its reason and the run the row showed');
     expect(sent.single['replaces'], _run, reason: 'the Start names the run it replaces');
   });
 

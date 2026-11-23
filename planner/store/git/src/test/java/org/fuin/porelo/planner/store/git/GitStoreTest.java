@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store.git;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -18,9 +19,11 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.files.ProjectLock;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
 import org.fuin.porelo.wire.LimitFactors;
@@ -845,5 +848,153 @@ class GitStoreTest {
         assertThat(told)
                 .as("the first board and the changed one, not the unchanged one")
                 .hasSize(2);
+    }
+
+    @Test
+    void aSaveWithTheVersionSeenOfATargetChangedAtTheClonesTipIsRefusedNamingItBeforeAnyWrite() {
+        // Harm: a save written over another's change to the same issue, because it was checked
+        // against the board in memory instead of the tip the store's clone holds now.
+        final GitStore store = store(queue);
+        final Board seen = store.board();
+        final Basis basis = Basis.none().with("XY1", seen.issue("XY1").orElseThrow().version());
+        // The own clone's tip moves, as a round of pushes moves it, while the board in memory
+        // stays; the part read there gives XY1 another title.
+        remote.clones.put("store", "c".repeat(40));
+        final int asked = remote.asked.get();
+
+        final StoreException.Changed refused =
+                catchThrowableOfType(
+                        StoreException.Changed.class,
+                        () -> store.save(basis, new Writes(Map.of("XY1", "Backlog"), Map.of())));
+
+        assertThat(refused)
+                .as("refused as changed, before the save reached its writes")
+                .isNotNull();
+        assertThat(refused.ids()).as("naming the target alone").containsExactly("XY1");
+        assertThat(title(store.board(), "XY1"))
+                .as("the board in memory read at the tip the check read")
+                .isEqualTo("c".repeat(40));
+        assertThat(remote.asked.get())
+                .as("no remote asked, as a save on the revision asks none")
+                .isEqualTo(asked);
+    }
+
+    @Test
+    void aSaveWhoseBasisLacksAnItemItChangesIsRefusedNamingEveryOneMissing() {
+        // Harm: an item the caller never saw written over, a missing version taken as "do not
+        // check".
+        final GitStore store = store(queue);
+        final Board seen = store.board();
+        final Basis basis = Basis.none().with("XY1", seen.issue("XY1").orElseThrow().version());
+
+        final StoreException.BasisIncomplete refused =
+                catchThrowableOfType(
+                        StoreException.BasisIncomplete.class,
+                        () ->
+                                store.save(
+                                        basis,
+                                        new Writes(
+                                                Map.of("XY1", "Backlog", "QZ1", "Backlog"),
+                                                Map.of())));
+
+        assertThat(refused).as("refused as incomplete").isNotNull();
+        assertThat(refused.missing())
+                .as("naming the item without a version")
+                .containsExactly("QZ1");
+    }
+
+    @Test
+    void aSavesTargetsAreEveryItemItsWritesChange() {
+        // Harm: an item a save changes left unchecked, so a change to it since it was seen is
+        // written over.
+        final Writes writes =
+                new Writes(
+                        Map.of("XY1", "Backlog"),
+                        Map.of("ST1", "Backlog"),
+                        Map.of("XY2", org.fuin.porelo.planner.store.Worker.MANUAL),
+                        Map.of("ST3", "High"),
+                        Map.of(),
+                        Map.of());
+
+        assertThat(
+                        GitStore.targets(
+                                held(org.fuin.porelo.planner.store.Worker.AGENT, "Low"), writes))
+                .as("each moved, worked and prioritized item")
+                .containsExactly("ST1", "ST3", "XY1", "XY2");
+    }
+
+    @Test
+    void aSavesTargetsLeaveOutAWorkerOrPriorityTheBoardHoldsAlready() {
+        // Harm: a save that writes an issue's worker or a story's priority as it stands refused
+        // because the item moved since it was seen, though the save leaves it unwritten.
+        final Writes writes =
+                new Writes(
+                        Map.of(),
+                        Map.of(),
+                        Map.of(
+                                "XY2",
+                                org.fuin.porelo.planner.store.Worker.MANUAL,
+                                "XY9",
+                                org.fuin.porelo.planner.store.Worker.MANUAL),
+                        Map.of("ST3", "High", "ST9", "High"),
+                        Map.of(),
+                        Map.of());
+
+        assertThat(
+                        GitStore.targets(
+                                held(org.fuin.porelo.planner.store.Worker.MANUAL, "High"), writes))
+                .as("the items the board does not hold, never the unchanged ones")
+                .containsExactly("ST9", "XY9");
+    }
+
+    @Test
+    void aSaveOfAnUnchangedWorkerIsNotRefusedAfterItsIssueMoved() {
+        // Harm: a save that keeps an issue's worker as it stands refused as changed because the
+        // issue's file changed in another way since it was seen.
+        final GitStore store = store(queue);
+        final Board seen = store.board();
+        final Basis basis = Basis.none().with("XY1", seen.issue("XY1").orElseThrow().version());
+        // The own clone's tip moves, so the part read there gives XY1 another title.
+        remote.clones.put("store", "c".repeat(40));
+
+        final Board saved =
+                store.save(
+                        basis,
+                        new Writes(
+                                Map.of(),
+                                Map.of(),
+                                Map.of("XY1", seen.issue("XY1").orElseThrow().worker()),
+                                Map.of(),
+                                Map.of(),
+                                Map.of()));
+
+        assertThat(title(saved, "XY1"))
+                .as("answered with the board at the moved tip, nothing written")
+                .isEqualTo("c".repeat(40));
+    }
+
+    /** A board holding the issue XY2 with the worker and the story ST3 with the priority. */
+    private static Board held(
+            final org.fuin.porelo.planner.store.Worker worker, final String priority) {
+        return new Board(
+                new org.fuin.porelo.planner.store.Revision("r1"),
+                new org.fuin.porelo.planner.store.Workflow(List.of("Idea"), List.of(), List.of()),
+                List.of(
+                        new org.fuin.porelo.planner.store.Story(
+                                "ST3", "A story", "Idea", priority, null, List.of(), "", null)),
+                List.of(
+                        new Issue(
+                                        "XY2",
+                                        "store",
+                                        "An issue",
+                                        "Idea",
+                                        null,
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "")
+                                .withWorkerAndRisk(
+                                        worker, org.fuin.porelo.planner.store.Risk.ORDINARY)),
+                new org.fuin.porelo.planner.store.Work(Map.of(), List.of()));
     }
 }

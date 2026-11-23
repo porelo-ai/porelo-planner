@@ -545,7 +545,7 @@ class StoryWork extends ChangeNotifier {
       story: id,
       to: to,
       mode: mode!,
-      revision: revision,
+      seen: origin.seenOfStory(id, [for (final repository in proposal!.repositories) ...repository.issues]),
       subAgents: choices.values.toList(),
       repositories: repositories.values.toList(),
       proposedRepositories: proposal!.repositories,
@@ -572,9 +572,10 @@ class StoryWork extends ChangeNotifier {
         identical(backend, source) &&
         project == name &&
         story.id == id;
+    final asked = revision;
     bool valid() =>
         owned() &&
-        revision == request.revision &&
+        revision == asked &&
         current &&
         origin.startUnavailable(story, ownStart: token, passOver: passOver) == null;
     token = origin.beginStoryStart(story, passOver: passOver);
@@ -620,7 +621,9 @@ class StoryWork extends ChangeNotifier {
         if (planningRefused(error, 'NotYetBuilt') || planningRefused(error, 'NotOffered')) {
           origin.unavailableActions['StartStoryWork'] = problem!;
         }
-        if (planningRefused(error, 'StaleRevision')) unawaited(origin.reload());
+        if (planningRefused(error, 'ItemChanged') || planningRefused(error, 'BasisIncomplete')) {
+          unawaited(origin.reload());
+        }
       }
       return false;
     } finally {
@@ -959,7 +962,8 @@ class ReadingDecision extends ChangeNotifier {
         }
         if (planningRefused(error, 'SaveRefused')) row.board.runOf(row.story.id).cancel();
         if ([
-          'StaleRevision',
+          'ItemChanged',
+          'BasisIncomplete',
           'ReadingNotStopped',
           'ReadingRoundChanged',
           'ReworkNeedsFindings',
@@ -1019,7 +1023,7 @@ class ReadingDecision extends ChangeNotifier {
         row.issue!.id,
         row.issue!.rounds!,
         choice,
-        revision,
+        row.board.seenOfStory(row.story.id, [row.issue!.id]),
         comment: choice == 'REWORK' ? comment : '',
         rework: rework,
       );
@@ -1038,7 +1042,8 @@ class ReadingDecision extends ChangeNotifier {
         }
         if (planningRefused(error, 'SaveRefused')) row.board.runOf(row.story.id).cancel();
         if ([
-          'StaleRevision',
+          'ItemChanged',
+          'BasisIncomplete',
           'ReadingNotStopped',
           'ReadingRoundChanged',
           'ReworkNeedsFindings',

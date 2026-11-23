@@ -218,7 +218,7 @@ void main() {
       story: 'ST1',
       to: 'Reading',
       mode: 'AGENT',
-      revision: 'r1',
+      seen: const {'ST1': servedVersion},
       subAgents: const [],
       proposedRepositories: proposal.repositories,
       issues: const ['PR1', 'PR2'],
@@ -287,7 +287,7 @@ void main() {
   test('an order rejects the whole answer when any task or envelope is invalid', () {
     final proposal = StoryWorkOrder.readProposal(servedProposal());
     final changes = <void Function(Map<String, dynamic>)>[
-      (answer) => answer['revision'] = 'r2',
+      (answer) => answer.remove('revision'),
       (answer) => answer.remove('tasks'),
       (answer) => answer['tasks'] = [false],
       (answer) => (answer['tasks'] as List).removeLast(),
@@ -366,7 +366,7 @@ void main() {
         story: 'ST1',
         to: 'Building',
         mode: 'AGENT',
-        revision: 'r1',
+        seen: const {'ST1': servedVersion},
         subAgents: [
           StoryWorkChoice(repository: 'repo', name: 'builder', choice: choice, agent: 'other', model: 'chosen'),
         ],
@@ -399,7 +399,7 @@ void main() {
         story: 'ST1',
         to: 'Building',
         mode: 'AGENT',
-        revision: 'r1',
+        seen: const {'ST1': servedVersion},
         subAgents: const [
           StoryWorkChoice(repository: 'repo', name: 'builder', choice: 'CHANGE', agent: 'x', model: 'y'),
         ],
@@ -462,7 +462,7 @@ void main() {
       story: 'ST1',
       to: 'Building',
       mode: 'AGENT',
-      revision: 'r1',
+      seen: const {'ST1': servedVersion},
       subAgents: const [StoryWorkChoice(repository: 'repo', name: 'builder', choice: 'KEEP')],
       repositories: const [StoryWorkMainAgent(repository: 'repo', agent: 'codex', model: 'main-model', effort: 'low')],
       proposedRepositories: proposal.repositories,

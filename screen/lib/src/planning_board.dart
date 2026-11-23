@@ -794,15 +794,14 @@ class PlanningBoard extends ChangeNotifier {
         needsYou: work?.needsYou == true || issue?.needsYou == true,
       );
 
-  /// Whether [passOver] names the run and revision shown and exactly the reason that holds the start: its issue's,
-  /// with no other issue raised for another reason and no task at work.
+  /// Whether [passOver] names the run shown and exactly the reason that holds the start: its issue's, with no other
+  /// issue raised for another reason and no task at work; the versions the start sends bind it to the issue shown.
   bool _passes(PlanStory story, PlanningRunAttention attention, PlanningPassOver? passOver) {
     final work = workOf(story);
     if (passOver == null ||
         work == null ||
         work.atWork == true ||
         work.run != passOver.run ||
-        snapshot?.revision != passOver.revision ||
         !PlanningPassOver.reasons.contains(passOver.reason)) {
       return false;
     }
@@ -1022,6 +1021,36 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
+  /// The versions the board shows of [ids], by id, from its stories, their issues, the issues in no story read at its
+  /// revision and the issues made outside the project; an id it does not show is left out, so the planner names it as
+  /// missing rather than taking it as seen.
+  Map<String, String> seenOf(Iterable<String> ids) {
+    final wanted = ids.toSet();
+    final shown = snapshot;
+    final versions = shown == null ? <String, String>{} : shown.versionsOf(wanted);
+    final list = _noStory;
+    if (list != null && shown != null && list.revision == shown.revision) {
+      for (final issue in list.issues) {
+        if (wanted.contains(issue.id) && issue.version.isNotEmpty) versions.putIfAbsent(issue.id, () => issue.version);
+      }
+    }
+    return versions;
+  }
+
+  /// The versions the board shows of [story], each of its issues and their sub-issues, and of [more], by id: what a
+  /// decision over the story's work saw.
+  Map<String, String> seenOfStory(String story, [Iterable<String> more = const []]) {
+    final issues = snapshot?.stories.where((each) => each.id == story).firstOrNull?.issues ?? const <PlanIssue>[];
+    final ids = {for (final issue in issues) issue.id};
+    return seenOf({
+      story,
+      ...ids,
+      for (final each in stories.expand((each) => each.issues))
+        if (ids.contains(each.parent)) each.id,
+      ...more,
+    });
+  }
+
   /// The project's repositories, its own first, as the last whole board named them; empty before one did.
   List<String> get repositories => _repositories;
 
@@ -1058,18 +1087,18 @@ class PlanningBoard extends ChangeNotifier {
     }
     final source = backend;
     final name = project;
-    final revision = snapshot!.revision;
     actionBusy = true;
     _beginAction();
     _changed();
     try {
+      // A new issue in no story changes no item that stands, so it names no versions.
       return (await source.createIssue(
         name,
         repository,
         title,
         mustBeTrue,
         size,
-        revision,
+        const {},
         worker: worker,
         task: task,
       )).id;
@@ -1093,13 +1122,13 @@ class PlanningBoard extends ChangeNotifier {
     required PlanningSource source,
     required String name,
     required ({String? value})? Function(PlanningSnapshot) valueOn,
-    required Future<void> Function(String) save,
+    required Future<void> Function(Map<String, String>) save,
   }) async {
     try {
-      await save(revision);
+      await save(seenOf([id]));
       return true;
     } catch (error, stack) {
-      if (!planningRefused(error, 'StaleRevision')) rethrow;
+      if (!planningRefused(error, 'ItemChanged')) rethrow;
       if (!_sameBoard(source, name)) return false;
       if (snapshot?.revision == revision) {
         final (PlanningSnapshot, int) reply;
@@ -1126,7 +1155,8 @@ class PlanningBoard extends ChangeNotifier {
         reportActionProblem('$id changed meanwhile to ${found.value ?? 'none'}; choose again.');
         return false;
       }
-      await save(current.revision);
+      // Changed elsewhere but not in what was chosen: saved again over the version now shown.
+      await save(seenOf([id]));
       return true;
     }
   }
@@ -1180,9 +1210,9 @@ class PlanningBoard extends ChangeNotifier {
           final found? => (value: found.priority),
           null => null,
         },
-        save: (currentRevision) async {
-          pending.revision = currentRevision;
-          await source.setPriority(name, story, priority, currentRevision);
+        save: (seen) async {
+          pending.revision = snapshot?.revision ?? revision;
+          await source.setPriority(name, story, priority, seen);
         },
       );
       if (!saved) {
@@ -1277,8 +1307,8 @@ class PlanningBoard extends ChangeNotifier {
               final found? => (value: found.worker?.wire),
               null => null,
             },
-        save: (currentRevision) async {
-          await source.setWorker(name, issue.id, worker, currentRevision);
+        save: (seen) async {
+          await source.setWorker(name, issue.id, worker, seen);
         },
       );
       if (!saved) return actionProblem ?? 'The board changed before the worker could be saved.';
@@ -1464,8 +1494,8 @@ class PlanningBoard extends ChangeNotifier {
   /// Moves a story to a waiting or closed state at once: previewed, then saved, or first asked about when the preview
   /// warns.
   ///
-  /// [revision] is the board's revision when the gesture began; the preview goes against it, so a board that changed
-  /// during the gesture moves nothing.
+  /// [revision] is the board's revision when the gesture began; a board that changed during the gesture moves nothing,
+  /// since the person chose on items that may stand otherwise now.
   Future<void> move(String id, String to, {String? revision}) async {
     if (_disposed || !takesMoves) return;
     final story = stories.where((story) => story.id == id).firstOrNull;
@@ -1663,7 +1693,7 @@ class PlanningBoard extends ChangeNotifier {
         if (!current()) return;
       }
       throw const PlanningRefusal(
-        'StaleRevision',
+        'IssueListBehind',
         {},
         'The issues in no story could not be read at the board revision.',
       );
@@ -1714,8 +1744,9 @@ class PlanningBoard extends ChangeNotifier {
     }
     final source = backend;
     final name = project;
-    final at = snapshot!.revision;
     final issues = [for (final each in target.issues) each.id, issue];
+    // The story and the issue hung in are the items the list changes.
+    final seen = seenOf([story, issue]);
     _moveTurns++;
     saving = true;
     moveProblem = null;
@@ -1725,7 +1756,7 @@ class PlanningBoard extends ChangeNotifier {
     var refused = false;
     var readAfter = false;
     try {
-      await source.setStoryIssues(name, story, issues, at);
+      await source.setStoryIssues(name, story, issues, seen);
       if (!_sameBoard(source, name)) return;
       _savesLanded++;
       moveNotice = 'Issue changes saved.';
@@ -1736,7 +1767,7 @@ class PlanningBoard extends ChangeNotifier {
       if (!_sameBoard(source, name)) return;
       refused = true;
       moveProblem = planningFailureWords(error);
-      if (error is PlanningRefusal && {'StaleRevision', 'PartlySaved'}.contains(error.name)) {
+      if (error is PlanningRefusal && {'ItemChanged', 'BasisIncomplete', 'PartlySaved'}.contains(error.name)) {
         try {
           final reply = await _read();
           if (!_sameBoard(source, name)) return;
@@ -1784,7 +1815,7 @@ class PlanningBoard extends ChangeNotifier {
     }
     final source = backend;
     final name = project;
-    final at = snapshot!.revision;
+    final seen = seenOf([issue]);
     final story = unlisted.firstWhere((each) => each.id == issue).story;
     _moveTurns++;
     saving = true;
@@ -1796,7 +1827,7 @@ class PlanningBoard extends ChangeNotifier {
     var refused = false;
     var readAfter = false;
     try {
-      await source.addUnlistedIssue(name, issue, at);
+      await source.addUnlistedIssue(name, issue, seen);
       if (!_sameBoard(source, name)) return;
       _savesLanded++;
       moveNotice = '$issue added to the project.';
@@ -1898,7 +1929,7 @@ class PlanningBoard extends ChangeNotifier {
     final waits = holdsMoves || _queue.isNotEmpty || _anyUnanswered || actionBusy || inFlight != null;
     if (!waits) {
       _pending[key] = shown;
-      // The gesture's revision: a board that changed during it answers StaleRevision instead of being read anew.
+      // The gesture's revision: a board that changed during it is refused instead of being read anew.
       return _startMove(key, move, revision ?? snapshot!.revision);
     }
     // A queued move is saved against a later revision, so one made on a board that changed during it moves nothing.
@@ -1928,8 +1959,8 @@ class PlanningBoard extends ChangeNotifier {
     _changed();
   }
 
-  /// Previews and saves [move] of [key]'s pending card against [revision]; a [drained] one keeps the words of the
-  /// moves before it and adds its own.
+  /// Previews and saves [move] of [key]'s pending card, made on the board at [revision]; a [drained] one keeps the
+  /// words of the moves before it and adds its own.
   Future<void> _startMove(String key, PlanningMove move, String revision, {bool drained = false}) async {
     saving = true;
     if (!drained) {
@@ -1949,7 +1980,7 @@ class PlanningBoard extends ChangeNotifier {
   /// watch failed or opened again meanwhile, and never to another project's.
   bool _sameBoard(PlanningSource source, String name) => !_disposed && identical(backend, source) && project == name;
 
-  /// Previews [move]; with no warning it is saved at once, else asked about.
+  /// Previews [move] made on the board at [revision]; with no warning it is saved at once, else asked about.
   Future<void> _preview(
     String key,
     PlanningMove move,
@@ -1960,13 +1991,24 @@ class PlanningBoard extends ChangeNotifier {
   }) async {
     final PlanningMovePreview preview;
     try {
-      preview = await source.previewMoves(name, [move], revision);
-      if (preview.revision != revision) {
-        throw const PlanningRefusal('BadAnswer', {}, 'The planner previewed another revision than the one moved.');
+      // The gesture began on another board than the one shown: what the person chose on may have changed meanwhile.
+      if (revision != snapshot?.revision) {
+        throw PlanningRefusal('ItemChanged', {
+          'changed': [move.id],
+        });
       }
+      preview = await source.previewMoves(name, [move]);
+      // The planner previews the items as it holds them; one the board shows at another version changed while it was
+      // moved, so the move is made again on the board read now rather than saved over what the person did not see.
+      final shown = seenOf(preview.targets.keys);
+      final changed = [
+        for (final target in preview.targets.entries)
+          if (shown[target.key] case final version? when version != target.value) target.key,
+      ];
+      if (changed.isNotEmpty) throw PlanningRefusal('ItemChanged', {'changed': changed});
     } catch (error) {
       if (!_sameBoard(source, name)) return;
-      final stale = error is PlanningRefusal && error.name == 'StaleRevision';
+      final stale = error is PlanningRefusal && {'ItemChanged', 'BasisIncomplete'}.contains(error.name);
       final words = _refuseCard(
         key,
         stale
@@ -2352,7 +2394,7 @@ class PlanningBoard extends ChangeNotifier {
     var readAfter = false;
     final shown = _pending[key];
     try {
-      final reply = await source.saveMoves(name, [move], revision, digest: preview.digest, confirm: confirmed);
+      final reply = await source.saveMoves(name, [move], preview.targets, digest: preview.digest, confirm: confirmed);
       if (reply.stopped.isNotEmpty) {
         try {
           await _endStopped(source, name, reply.stopped);
@@ -2412,7 +2454,7 @@ class PlanningBoard extends ChangeNotifier {
       }
       refused = true;
       final detail = planningFailureWords(error);
-      if (error.name == 'StaleRevision' || error.name == 'PreviewChanged') {
+      if (error.name == 'ItemChanged' || error.name == 'BasisIncomplete' || error.name == 'PreviewChanged') {
         // Never saved unseen: the board is read again and the move previewed and asked about anew.
         try {
           final reply = await _read();
@@ -3050,6 +3092,17 @@ String _failureWords(Object error) {
     if (error.name == 'EnteredOnlyByWork') {
       return '${error.parameters['to']} is entered by hand only by an issue no run of this planner works.';
     }
+    if (error.name == 'ItemChanged') {
+      final changed = planningChangedItems(error);
+      return 'Changed meanwhile: ${changed.isEmpty ? 'an item this needs' : changed.join(', ')}. '
+          'Look at the board again and choose again.';
+    }
+    if (error.name == 'BasisIncomplete') {
+      final missing = error.parameters['missing'];
+      final ids = missing is List ? missing.whereType<String>().toList() : const <String>[];
+      return 'The board shown does not hold ${ids.isEmpty ? 'an item this needs' : ids.join(', ')}. '
+          'Look at the board again and choose again.';
+    }
     if (error.name == 'PartlySaved') {
       final pushed = error.parameters['pushed'];
       final failed = error.parameters['failed'];
@@ -3078,3 +3131,19 @@ class _PendingPriority {
 
 /// A move waiting in a board's queue: its card's key, the move, what its card shows, and the board it was made on.
 typedef _QueuedMove = ({String key, PlanningMove move, PendingPlanningMove shown, PlanningSource source, String name});
+
+/// The ids an `ItemChanged` refusal names, each once in its order, with ` (gone)` after one the planner no longer
+/// holds; empty for any other error.
+List<String> planningChangedItems(Object error) {
+  if (error is! PlanningRefusal || error.name != 'ItemChanged') return const [];
+  final gone = <String>{
+    if (error.parameters['items'] case final List<dynamic> items)
+      for (final item in items.whereType<Map<String, dynamic>>())
+        if (item['gone'] == true && item['id'] is String) item['id'] as String,
+  };
+  final changed = error.parameters['changed'];
+  return [
+    if (changed is List)
+      for (final id in changed.whereType<String>().toSet()) gone.contains(id) ? '$id (gone)' : id,
+  ];
+}

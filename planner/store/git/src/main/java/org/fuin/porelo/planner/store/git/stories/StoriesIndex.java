@@ -508,7 +508,21 @@ public final class StoriesIndex {
                         + "\n";
         final List<String> lines = head.lines();
         final int data0 = lines.lastIndexOf(Heads.DATA);
-        // The generated part ends with the issues' line, or with the list below it.
+        final int rest = ownStart(lines, data0);
+        return lines.getFirst()
+                + "\n\n"
+                + generated
+                + "\n"
+                + String.join("\n", lines.subList(rest, data0))
+                + (rest < data0 ? "\n" : "")
+                + data(head, data0);
+    }
+
+    /**
+     * The line a person's own text starts on below a story's heading: past the part the index
+     * generates, which ends with the issues' line or the list below it, and the blank lines after.
+     */
+    private static int ownStart(List<String> lines, int data0) {
         int rest = 1;
         for (int i = 1; i < data0; i++) {
             if (lines.get(i).startsWith(ISSUES.strip())) {
@@ -527,13 +541,26 @@ public final class StoriesIndex {
         while (rest < data0 && lines.get(rest).isBlank()) {
             rest++;
         }
+        return rest;
+    }
+
+    /**
+     * What a story's file holds of the story's own: its heading, the text a person wrote and its
+     * head under {@code ## Data}, without the part the index generates from its head and its
+     * issues, so a change of its issues alone leaves it as it was.
+     *
+     * @param text the story file's text
+     * @return the heading, then every line from the person's own text to the end
+     */
+    public static String ownText(String text) {
+        final List<String> lines = List.of(text.split("\n", -1));
+        final int data0 = lines.lastIndexOf(Heads.DATA);
+        if (data0 < 1) {
+            return text;
+        }
         return lines.getFirst()
-                + "\n\n"
-                + generated
                 + "\n"
-                + String.join("\n", lines.subList(rest, data0))
-                + (rest < data0 ? "\n" : "")
-                + data(head, data0);
+                + String.join("\n", lines.subList(ownStart(lines, data0), lines.size()));
     }
 
     private static String data(Heads.Head head, int data0) throws IOException {

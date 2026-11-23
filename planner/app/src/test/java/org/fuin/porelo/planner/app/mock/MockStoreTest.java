@@ -45,7 +45,12 @@ class MockStoreTest {
                         "ST14",
                         "In analysis",
                         new org.fuin.porelo.planner.core.WorkOrder.Decision(
-                                "AGENT", FIRST.value(), null, null, null, null));
+                                "AGENT",
+                                org.fuin.porelo.planner.store.Basis.of(board),
+                                null,
+                                null,
+                                null,
+                                null));
         final var main = order.tasks().getFirst();
         assertThat(main.result()).as("the analysis's result file").isEqualTo("analysis.json");
         assertThat(main.given())

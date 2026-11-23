@@ -16,6 +16,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -23,6 +24,7 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -374,7 +376,7 @@ class WorkRunTest {
                                 "ST2",
                                 "Building",
                                 new WorkOrder.Decision(
-                                        "AGENT", board.revision().value(), null, "", 1, null))
+                                        "AGENT", Basis.of(f.store.current), null, "", 1, null))
                         .tasks()
                         .getFirst();
         f.start(first);
@@ -456,7 +458,7 @@ class WorkRunTest {
                 1,
                 ReadingCycle.Choice.REWORK,
                 "Rework the parent",
-                f.store.board().revision().value(),
+                Basis.of(f.store.board()),
                 null);
         final var child =
                 f.run.choose(
@@ -465,7 +467,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "Rework the child",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst();
@@ -523,7 +525,7 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.REWORK,
                                         "",
-                                        f.store.board().revision().value(),
+                                        Basis.of(f.store.board()),
                                         null))
                 .as("an issue held back")
                 .isInstanceOf(WorkRefusal.class)
@@ -538,7 +540,7 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.REWORK,
                                         "",
-                                        f.store.board().revision().value(),
+                                        Basis.of(f.store.board()),
                                         null))
                 .as("an id naming two issues")
                 .isInstanceOf(WorkRefusal.class)
@@ -572,7 +574,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REWORK,
                         "Preserve bytes",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         new NextStep.Settings("AGENT", "codex", "model"));
         assertThat(waiting.tasks()).as("the stopped child holds its parent's rework").isEmpty();
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
@@ -585,7 +587,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REVIEW_ANYWAY,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("settling the child resumes the parent's recorded rework choice")
@@ -745,7 +747,7 @@ class WorkRunTest {
                 .as("the reading stopped at its limit")
                 .isTrue();
         f.store.current = ManualIssues.of(f.store.board(), "AA1");
-        final String revision = f.store.board().revision().value();
+        final Basis revision = Basis.of(f.store.board());
 
         assertThatThrownBy(
                         () ->
@@ -898,7 +900,7 @@ class WorkRunTest {
                 1,
                 ReadingCycle.Choice.REWORK,
                 "Rework it",
-                f.store.board().revision().value(),
+                Basis.of(f.store.board()),
                 null);
 
         assertThat(f.record.checkedBoard)
@@ -1127,9 +1129,9 @@ class WorkRunTest {
     }
 
     @Test
-    void aStaleStoryListIsRefusedAsStaleEvenWhenItTakesOutAnIssueAtWork() {
-        // A stale list answered as work running sends the window to wait for a task, when it
-        // must read the board again.
+    void aStoryListOverAChangedStoryIsRefusedAsChangedEvenWhenItTakesOutAnIssueAtWork() {
+        // A list over a changed story answered as work running sends the window to wait for a
+        // task, when it must read the board again.
         final Fixture f = new Fixture();
         f.store.current = NextStepTest.board("Backlog", "Backlog");
         f.start(f.order().tasks().getFirst());
@@ -1140,10 +1142,15 @@ class WorkRunTest {
                                 f.run.storyIssues(
                                         "ST1",
                                         list,
-                                        board -> Edits.storyIssues(board, "older", "ST1", list),
+                                        board ->
+                                                Edits.unchanged(
+                                                        board,
+                                                        Basis.none()
+                                                                .with("ST1", Version.of("older")),
+                                                        Set.of("ST1")),
                                         board -> board))
-                .as("a list against an older revision")
-                .isInstanceOf(StoreException.StaleRevision.class);
+                .as("a list against an older version of the story")
+                .isInstanceOf(StoreException.Changed.class);
     }
 
     @Test
@@ -1167,12 +1174,15 @@ class WorkRunTest {
                         () ->
                                 f.run.newStory(
                                         board -> {
-                                            Edits.fresh(board, "older");
+                                            Edits.unchanged(
+                                                    board,
+                                                    Basis.none().with("AA1", Version.of("older")),
+                                                    Set.of("AA1"));
                                             return board;
                                         },
                                         (board, checked) -> board))
-                .as("a new story against an older revision")
-                .isInstanceOf(StoreException.StaleRevision.class);
+                .as("a new story against an older version of an issue")
+                .isInstanceOf(StoreException.Changed.class);
         assertThat(f.record.value).as("the work record and its generation").isSameAs(before);
     }
 
@@ -1250,14 +1260,13 @@ class WorkRunTest {
                                         1,
                                         ReadingCycle.Choice.REVIEW_ANYWAY,
                                         "",
-                                        f.store.board().revision().value(),
+                                        Basis.of(f.store.board()),
                                         null))
                 .as("the refused choice save halts the run after a counted reading")
                 .isInstanceOf(StoreException.Busy.class);
         f.store.failure = null;
         final var decision =
-                new WorkOrder.Decision(
-                        "AGENT", f.store.board().revision().value(), null, "", 1, null);
+                new WorkOrder.Decision("AGENT", Basis.of(f.store.board()), null, "", 1, null);
         assertThatThrownBy(() -> f.run.order("ST1", "Reworking", decision))
                 .as("a halted run still needs an explicit stop before another order")
                 .isInstanceOf(WorkRefusal.class);
@@ -1294,7 +1303,8 @@ class WorkRunTest {
                 f.run.order(
                                 "ST1",
                                 "Building",
-                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 2, null))
                         .tasks()
                         .getFirst();
         f.start(build);
@@ -1336,7 +1346,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst();
@@ -1407,7 +1417,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("a reader is offered again").hasSize(1);
         assertThat(again.tasks().getFirst().task().reads())
@@ -1423,7 +1433,7 @@ class WorkRunTest {
         // Harm: a reader run the person never chose.
         final Fixture f = new Fixture();
         final int round = unreadableReading(f).work().issues().get("AA1").rounds().rounds();
-        final String revision = f.store.board().revision().value();
+        final Basis revision = Basis.of(f.store.board());
         final var again =
                 f.run.choose(
                                 "ST1",
@@ -1480,7 +1490,7 @@ class WorkRunTest {
                 1,
                 ReadingCycle.Choice.REVIEW_ANYWAY,
                 "",
-                f.store.board().revision().value(),
+                Basis.of(f.store.board()),
                 null);
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("review anyway saves the done state")
@@ -1492,7 +1502,7 @@ class WorkRunTest {
         // Harm: a rework started with nothing to work from.
         final Fixture f = new Fixture();
         unreadableReading(f);
-        final String revision = f.store.board().revision().value();
+        final Basis revision = Basis.of(f.store.board());
         assertThatThrownBy(
                         () ->
                                 f.run.choose(
@@ -1530,7 +1540,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst();
@@ -1581,7 +1591,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(failed.tasks()).as("no reader can be offered").isEmpty();
         assertThat(failed.work().issues().get("AA1").reason())
@@ -1590,7 +1600,7 @@ class WorkRunTest {
         assertThat(failed.work().issues().get("AA1").rounds().stopped())
                 .as("the reading still waits for a choice")
                 .isTrue();
-        final String revision = f.store.board().revision().value();
+        final Basis revision = Basis.of(f.store.board());
         assertThatThrownBy(
                         () ->
                                 f.run.choose(
@@ -1658,7 +1668,8 @@ class WorkRunTest {
                 f.run.order(
                                 "ST1",
                                 "Building",
-                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 2, null))
                         .tasks()
                         .getFirst();
         f.start(build);
@@ -2057,7 +2068,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("one more reading is offered").hasSize(1);
         assertThat(again.tasks().getFirst().task().reads())
@@ -2109,7 +2120,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("no reader without the build's landing").isEmpty();
         assertThat(again.work().issues().get("AA1").reason())
@@ -2486,7 +2497,7 @@ class WorkRunTest {
                         new NextStep.Settings("SHELL", "claude", "opus"))) {
             final Fixture f = stoppedOnFirstOfTwo();
             final int saves = f.store.saves;
-            final String revision = f.store.board().revision().value();
+            final Basis revision = Basis.of(f.store.board());
             assertThatThrownBy(
                             () ->
                                     f.run.choose(
@@ -2528,7 +2539,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                chosen.store.board().revision().value(),
+                                Basis.of(chosen.store.board()),
                                 new NextStep.Settings("AGENT", "codex", "model"))
                         .tasks()
                         .getFirst()
@@ -2549,7 +2560,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                first.store.board().revision().value(),
+                                Basis.of(first.store.board()),
                                 null)
                         .tasks()
                         .getFirst()
@@ -2576,7 +2587,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst()
@@ -2614,7 +2625,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REWORK,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(waiting.tasks()).as("the stopped child holds its parent's rework").isEmpty();
         final var chosen =
@@ -2624,7 +2635,7 @@ class WorkRunTest {
                         1,
                         ReadingCycle.Choice.REVIEW_ANYWAY,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         final WorkOrder.Task resumed = chosen.tasks().getFirst().task();
         assertThat(List.of(resumed.issues().getFirst(), resumed.model()))
@@ -2675,7 +2686,8 @@ class WorkRunTest {
                 f.run.order(
                                 "ST1",
                                 "Building",
-                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 2, null))
                         .tasks()
                         .getFirst();
         f.start(build);
@@ -2718,7 +2730,7 @@ class WorkRunTest {
                                     1,
                                     ReadingCycle.Choice.REWORK,
                                     "",
-                                    f.store.board().revision().value(),
+                                    Basis.of(f.store.board()),
                                     null)
                             .tasks()
                             .getFirst();
@@ -2782,7 +2794,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst();
@@ -2825,7 +2837,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst()
@@ -2863,7 +2875,7 @@ class WorkRunTest {
                                 1,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks()
                         .getFirst();
@@ -2995,7 +3007,8 @@ class WorkRunTest {
                 f.run.order(
                                 "ST1",
                                 "Building",
-                                new WorkOrder.Decision("AGENT", "board@1", null, "", 2, null))
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 2, null))
                         .tasks()
                         .getFirst();
         f.offered.add(build.task());
@@ -3246,7 +3259,7 @@ class WorkRunTest {
                         "box",
                         "workstation",
                         ended("Findings:\n1. blocking | - | - | Preserve data")));
-        final String revision = f.store.board().revision().value();
+        final Basis revision = Basis.of(f.store.board());
         final var chosen =
                 f.run.choose(
                         "ST1", "AA1", 1, ReadingCycle.Choice.ONE_MORE_ROUND, "", revision, null);
@@ -3374,7 +3387,7 @@ class WorkRunTest {
                     1,
                     choice,
                     "Preserve bytes, including ``` fences.",
-                    f.store.board().revision().value(),
+                    Basis.of(f.store.board()),
                     null);
             assertThat(f.store.board().issue("AA1").orElseThrow().state())
                     .as("the parent waits while its child is reading")
@@ -3674,7 +3687,7 @@ class WorkRunTest {
                         "Reading",
                         new WorkOrder.Decision(
                                 "AGENT",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 chosen,
                                 "",
                                 null,
@@ -3802,7 +3815,7 @@ class WorkRunTest {
                                         "Building",
                                         new WorkOrder.Decision(
                                                 "AGENT",
-                                                f.store.board().revision().value(),
+                                                Basis.of(f.store.board()),
                                                 null,
                                                 "",
                                                 1,
@@ -3827,7 +3840,7 @@ class WorkRunTest {
                                 2,
                                 ReadingCycle.Choice.REWORK,
                                 "",
-                                f.store.board().revision().value(),
+                                Basis.of(f.store.board()),
                                 null)
                         .tasks();
         assertThat(rework).as("the choice offered a rework").hasSize(1);
@@ -3839,7 +3852,7 @@ class WorkRunTest {
                                         "Building",
                                         new WorkOrder.Decision(
                                                 "AGENT",
-                                                f.store.board().revision().value(),
+                                                Basis.of(f.store.board()),
                                                 null,
                                                 "",
                                                 1,
@@ -3861,7 +3874,7 @@ class WorkRunTest {
                         2,
                         ReadingCycle.Choice.ONE_MORE_ROUND,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("one more reader is offered").hasSize(1);
         assertThat(again.tasks().getFirst().task().reads())
@@ -3883,7 +3896,7 @@ class WorkRunTest {
                         2,
                         ReadingCycle.Choice.REWORK,
                         "",
-                        f.store.board().revision().value(),
+                        Basis.of(f.store.board()),
                         null);
         assertThat(lost.tasks()).as("no rework can be made from Reading").isEmpty();
         assertThat(lost.work().issues().get("AA1").rounds().stopped())
@@ -3896,7 +3909,7 @@ class WorkRunTest {
                                         2,
                                         ReadingCycle.Choice.ONE_MORE_ROUND,
                                         "",
-                                        f.store.board().revision().value(),
+                                        Basis.of(f.store.board()),
                                         null)
                                 .tasks())
                 .as("another choice is taken")
@@ -4143,11 +4156,7 @@ class WorkRunTest {
         f.order();
         final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
         final WorkRun.PassOver other =
-                new WorkRun.PassOver(
-                        "AA1",
-                        "STOPPED",
-                        f.store.board().revision().value(),
-                        java.util.UUID.randomUUID().toString());
+                new WorkRun.PassOver("AA1", "STOPPED", java.util.UUID.randomUUID().toString());
 
         assertThatThrownBy(() -> f.order(new WorkRun.Start(null, other)))
                 .as("a pass-over of a run that no longer stands is a conflict")
@@ -4156,17 +4165,23 @@ class WorkRunTest {
     }
 
     @Test
-    void aStartPassingOverAnOlderRevisionIsAConflict() {
-        // The row the person answered no longer shows what stands.
+    void aStartPassingOverAnIssueChangedSinceItsRowIsRefusedAsChanged() {
+        // Harm: the row the person answered no longer shows what stands, and its issue is
+        // passed over on an older version of it.
         final Fixture f = new Fixture();
         f.order();
         final WorkRun.Run stopped = java.util.Objects.requireNonNull(f.run.stop("ST1"));
-        final WorkRun.PassOver older =
-                new WorkRun.PassOver("AA1", "STOPPED", "board@0", stopped.id());
+        final WorkRun.PassOver over = new WorkRun.PassOver("AA1", "STOPPED", stopped.id());
+        final Basis older = Basis.of(f.store.board()).with("AA1", Version.of("older"));
 
-        assertThatThrownBy(() -> f.order(new WorkRun.Start(null, older)))
-                .as("the revision the row showed is checked")
-                .satisfies(e -> assertThat(conflictOf(e)).as("named").isEqualTo("StaleRevision"));
+        assertThatThrownBy(() -> f.order(new WorkRun.Start(null, over), older))
+                .as("the version the row showed of the issue is checked")
+                .isInstanceOf(StoreException.Changed.class)
+                .satisfies(
+                        e ->
+                                assertThat(((StoreException.Changed) e).ids())
+                                        .as("the issue named")
+                                        .containsExactly("AA1"));
     }
 
     @Test
@@ -4459,7 +4474,7 @@ class WorkRunTest {
             assertThat(ended.tasks()).as("nothing starts by itself after %s", declared).isEmpty();
 
             final WorkRun.Run stopped = ended.work();
-            final String revision = f.store.board().revision().value();
+            final Basis revision = Basis.of(f.store.board());
             if (declared == WorkEnds.Declared.FAILED) {
                 assertThatThrownBy(() -> again(f, f.passOver(stopped, "AA1", "FAILED")))
                         .as("a Start over a reader's failure starts no builder")
@@ -4517,7 +4532,7 @@ class WorkRunTest {
                 "ST1",
                 "Building",
                 new WorkOrder.Decision(
-                        "AGENT", f.store.board().revision().value(), null, "", 1, null, issues),
+                        "AGENT", Basis.of(f.store.board()), null, "", 1, null, issues),
                 new WorkRun.Start(null, passOver));
     }
 
@@ -4658,7 +4673,7 @@ class WorkRunTest {
         // Harm: a move written to a repository it was never shown for, after a rebind.
         final Fixture f = new Fixture();
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
-        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final MovePreview preview = f.run.preview(moves);
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
 
         final Throwable refused =
@@ -4666,7 +4681,7 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        preview.revision(),
+                                        preview.basis(),
                                         preview.digest("https://example.org/old.git", null),
                                         false,
                                         "https://example.org/new.git",
@@ -4689,11 +4704,11 @@ class WorkRunTest {
         f.start(main);
         startChild(f, child);
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
-        final String revision = f.store.board().revision().value();
-        final MovePreview preview = f.run.preview(moves, revision);
+        final Basis revision = Basis.of(f.store.board());
+        final MovePreview preview = f.run.preview(moves);
         assertThat(preview.warnings().getFirst().tasks()).as("the tasks at work shown").hasSize(2);
         endMain(f, main);
-        assertThat(f.store.board().revision().value())
+        assertThat(Basis.of(f.store.board()))
                 .as("only the running work changed, not the board")
                 .isEqualTo(revision);
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
@@ -4703,7 +4718,7 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        revision,
+                                        preview.basis(),
                                         preview.digest("https://example.org/own.git", null),
                                         false,
                                         "https://example.org/own.git",
@@ -4727,10 +4742,10 @@ class WorkRunTest {
         f.start(main);
         startChild(f, child);
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
-        final String revision = f.store.board().revision().value();
-        final MovePreview preview = f.run.preview(moves, revision);
+        final Basis revision = Basis.of(f.store.board());
+        final MovePreview preview = f.run.preview(moves);
         endMain(f, main);
-        assertThat(f.store.board().revision().value()).as("the board as shown").isEqualTo(revision);
+        assertThat(Basis.of(f.store.board())).as("the board as shown").isEqualTo(revision);
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
 
         final Throwable refused =
@@ -4738,7 +4753,7 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        revision,
+                                        preview.basis(),
                                         preview.digest("https://example.org/own.git", null),
                                         true,
                                         "https://example.org/own.git",
@@ -4762,7 +4777,7 @@ class WorkRunTest {
         final WorkRun.Offered main = role(f.order().tasks(), "MAIN");
         f.start(main);
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
-        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final MovePreview preview = f.run.preview(moves);
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
 
         final Throwable unconfirmed =
@@ -4770,7 +4785,7 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        preview.revision(),
+                                        preview.basis(),
                                         preview.digest("https://example.org/own.git", null),
                                         false,
                                         "https://example.org/own.git",
@@ -4784,7 +4799,7 @@ class WorkRunTest {
         final WorkRun.MoveSaved<Boolean> answer =
                 f.run.moves(
                         moves,
-                        preview.revision(),
+                        preview.basis(),
                         preview.digest("https://example.org/own.git", null),
                         true,
                         "https://example.org/own.git",
@@ -4808,7 +4823,7 @@ class WorkRunTest {
         f.start(role(f.order().tasks(), "MAIN"));
         withSecondIssueAndOtherStory(f);
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA2", "Review"));
-        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final MovePreview preview = f.run.preview(moves);
         assertThat(preview.warnings())
                 .as("the story's running work is shown before the save")
                 .extracting(MovePreview.Warning::kind, MovePreview.Warning::item)
@@ -4820,7 +4835,7 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        preview.revision(),
+                                        preview.basis(),
                                         preview.digest("https://example.org/own.git", null),
                                         false,
                                         "https://example.org/own.git",
@@ -4981,12 +4996,12 @@ class WorkRunTest {
     }
 
     @Test
-    void aSaveOnABoardThatMovedSinceItsPreviewAnswersStaleRevision() {
-        // Harm: a board changed under a confirmation read as a changed preview, so the window
+    void aSaveOnAnItemThatChangedSinceItsPreviewAnswersItemChanged() {
+        // Harm: an item changed under a confirmation read as a changed preview, so the window
         // would not read the board again before asking anew.
         final Fixture f = new Fixture();
         final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
-        final MovePreview preview = f.run.preview(moves, f.store.board().revision().value());
+        final MovePreview preview = f.run.preview(moves);
         final var saved = new java.util.concurrent.atomic.AtomicBoolean();
 
         final Throwable refused =
@@ -4994,14 +5009,14 @@ class WorkRunTest {
                         () ->
                                 f.run.moves(
                                         moves,
-                                        "another",
+                                        Basis.none().with("AA1", Version.of("another")),
                                         preview.digest("https://example.org/own.git", null),
                                         false,
                                         "https://example.org/own.git",
                                         null,
                                         runs -> saved.getAndSet(true)));
 
-        assertThat(refused).isInstanceOf(StoreException.StaleRevision.class);
+        assertThat(refused).isInstanceOf(StoreException.Changed.class);
         assertThat(saved).as("nothing reaches the store").isFalse();
     }
 
@@ -5010,11 +5025,10 @@ class WorkRunTest {
             final WorkRun run,
             final List<Moves.Move> moves,
             final java.util.function.Supplier<T> save) {
-        final MovePreview preview =
-                run.preview(moves, run.lockedView((board, work) -> board.revision().value()));
+        final MovePreview preview = run.preview(moves);
         return run.moves(
                         moves,
-                        preview.revision(),
+                        preview.basis(),
                         preview.digest("https://example.org/own.git", null),
                         false,
                         "https://example.org/own.git",
@@ -5192,13 +5206,7 @@ class WorkRunTest {
                 "ST1",
                 "Building",
                 new WorkOrder.Decision(
-                        "AGENT",
-                        f.store.board().revision().value(),
-                        null,
-                        "",
-                        1,
-                        null,
-                        List.of("AA1")),
+                        "AGENT", Basis.of(f.store.board()), null, "", 1, null, List.of("AA1")),
                 new WorkRun.Start(null, f.passOver(run, "AA1", reason)));
     }
 
@@ -5303,11 +5311,14 @@ class WorkRunTest {
         }
 
         WorkRun.Order order(final WorkRun.Start start) {
+            return order(start, Basis.of(store.board()));
+        }
+
+        WorkRun.Order order(final WorkRun.Start start, final Basis seen) {
             return run.order(
                     "ST1",
                     "Building",
-                    new WorkOrder.Decision(
-                            "AGENT", store.board().revision().value(), null, "", 1, null),
+                    new WorkOrder.Decision("AGENT", seen, null, "", 1, null),
                     start);
         }
 
@@ -5338,7 +5349,7 @@ class WorkRunTest {
         }
 
         WorkRun.PassOver passOver(final WorkRun.Run of, final String issue, final String reason) {
-            return new WorkRun.PassOver(issue, reason, store.board().revision().value(), of.id());
+            return new WorkRun.PassOver(issue, reason, of.id());
         }
 
         WorkRun.Order handReading() {
@@ -5347,7 +5358,7 @@ class WorkRunTest {
                     "Reading",
                     new WorkOrder.Decision(
                             "AGENT",
-                            store.board().revision().value(),
+                            Basis.of(store.board()),
                             null,
                             "",
                             null,

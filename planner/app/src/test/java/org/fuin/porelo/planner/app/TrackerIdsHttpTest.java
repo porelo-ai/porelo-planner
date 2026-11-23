@@ -127,7 +127,7 @@ class TrackerIdsHttpTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -196,8 +196,7 @@ class TrackerIdsHttpTest {
     void anIssueIsMovedByItsReference() throws Exception {
         // Harm: an item made in the tracker could not be moved on the board.
         final String body =
-                "{\"revision\": \"r1\", \"moves\": [{\"issue\": \"porelo-store#9\","
-                        + " \"to\": \"Review\"}]}";
+                "{\"moves\": [{\"issue\": \"porelo-store#9\"," + " \"to\": \"Review\"}]}";
         final String preview =
                 mvc.perform(
                                 post("/projects/alpha/moves/preview")

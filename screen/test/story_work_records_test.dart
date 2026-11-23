@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
+import 'support/served_story_work.dart';
+
 void main() {
   // Harm: absent findings look like an explicit clean reading and enable approval.
   test('absent or malformed findings remain unreported', () {
@@ -65,9 +67,15 @@ void main() {
       story: 'S1',
       to: 'Building',
       mode: 'AGENT',
-      revision: 'r1',
+      seen: {'ST1': servedVersion},
       subAgents: [StoryWorkChoice(repository: 'repo', name: 'reader', choice: 'CHANGE', agent: 'agent', model: '')],
     );
-    expect(request.toMap(), {'project': 'demo', 'story': 'S1', 'to': 'Building', 'mode': 'AGENT', 'revision': 'r1'});
+    expect(request.toMap(), {
+      'project': 'demo',
+      'story': 'S1',
+      'to': 'Building',
+      'mode': 'AGENT',
+      'seen': {'ST1': servedVersion},
+    });
   });
 }

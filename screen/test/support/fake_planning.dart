@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:porelo_planning/planning_fake.dart' show applyPlanningWorker;
+import 'package:porelo_planning/planning_fake.dart'
+    show applyPlanningWorker, mockCheckSeen, mockItemVersion, mockItemVersions, mockVersionedStories;
 import 'package:porelo_planning/porelo_planning.dart';
 
 /// A small board: one waiting, one working and one closed state, and two stories with an issue each.
@@ -77,13 +78,17 @@ class FakePlanningSource implements PlanningSource {
   /// The board as the provider holds it now.
   Map<String, dynamic> board;
 
-  /// Every save asked of it: the project, the moves and the revision they were made against.
+  /// Every save asked of it: the project, the moves and the board's revision when it arrived; a save that passed its
+  /// check of the versions seen was made on that board.
   final List<(String, List<PlanningMove>, String)> saves = [];
+
+  /// The versions seen every save sent, in the order of [saves].
+  final List<Map<String, String>> seens = [];
 
   final _changes = StreamController<Map<String, dynamic>>.broadcast();
 
   PlanningSnapshot _stories() => PlanningSnapshot.from({
-    'stories': board['stories'],
+    'stories': mockVersionedStories(board),
     'revision': board['revision'],
     'repositories': ?board['repositories'],
     'open': ?board['open'],
@@ -125,7 +130,7 @@ class FakePlanningSource implements PlanningSource {
     return _stories();
   }
 
-  /// Every preview asked of it: the project, the moves and the revision.
+  /// Every preview asked of it: the project, the moves and the board's revision when it arrived.
   final List<(String, List<PlanningMove>, String)> previews = [];
 
   /// The warnings its next previews answer, as the planner words them; none by default.
@@ -138,13 +143,33 @@ class FakePlanningSource implements PlanningSource {
   static String digestAt(Object? revision) =>
       '$revision'.codeUnits.fold(0, (a, b) => a * 31 + b).toRadixString(16).padLeft(64, '0').substring(0, 64);
 
+  /// The items [moves] change on the board held now, each with the version it stands at: a moved issue, or a moved
+  /// story and every issue it holds.
+  Map<String, String> _targets(List<PlanningMove> moves) {
+    final versions = mockItemVersions(board);
+    final ids = <String>{
+      for (final move in moves)
+        if (move is PlanningIssueMove)
+          move.issue
+        else if (move is PlanningStoryMove) ...[
+          move.story,
+          for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
+            if (story['id'] == move.story)
+              for (final issue in (story['issues'] as List).cast<Map<String, dynamic>>()) issue['id'] as String,
+        ],
+    };
+    return {for (final id in ids) id: ?versions[id]};
+  }
+
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
-    previews.add((project, moves, revision));
-    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) async {
+    previews.add((project, moves, board['revision'] as String));
     return PlanningMovePreview.from({
-      'revision': revision,
-      'digest': digestAt(revision),
+      'revision': board['revision'],
+      'targets': [
+        for (final target in _targets(moves).entries) {'id': target.key, 'version': target.value},
+      ],
+      'digest': digestAt(board['revision']),
       'issues': <Object?>[],
       'stories': <Object?>[],
       'warnings': warnings,
@@ -155,14 +180,15 @@ class FakePlanningSource implements PlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
-    saves.add((project, moves, revision));
+    saves.add((project, moves, board['revision'] as String));
+    seens.add(seen);
     confirmations.add((digest, confirm));
-    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
-    if (digest != digestAt(revision)) throw const PlanningRefusal('PreviewChanged');
+    mockCheckSeen(board, seen, _targets(moves).keys);
+    if (digest != digestAt(board['revision'])) throw const PlanningRefusal('PreviewChanged');
     final moved = <String>[];
     final stories = [
       for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
@@ -196,19 +222,25 @@ class FakePlanningSource implements PlanningSource {
     return PlanningMoveResult.from({'revision': next, 'moved': moved});
   }
 
-  /// Every new issue asked of it: the project, repository, title, what must be true, size and revision.
+  /// Every new issue asked of it: the project, repository, title, what must be true, size and the board's revision
+  /// when it arrived.
   final List<(String, String, String, String, String?, String)> added = [];
 
   /// The worker of every new issue asked of it, in the order of [added].
   final List<IssueWorker> addedWorkers = [];
 
-  /// Every worker change asked of it: the project, issue, worker and revision.
+  /// Every worker change asked of it: the project, issue, worker and the board's revision when it arrived.
   final List<(String, String, IssueWorker, String)> workers = [];
 
   @override
-  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision) async {
-    workers.add((project, issue, worker, revision));
-    final next = applyPlanningWorker(board, issue, worker.wire, revision);
+  Future<PlanningWorkerSaved> setWorker(
+    String project,
+    String issue,
+    IssueWorker worker,
+    Map<String, String> seen,
+  ) async {
+    workers.add((project, issue, worker, board['revision'] as String));
+    final next = applyPlanningWorker(board, issue, worker.wire, seen);
     if (next['revision'] != board['revision']) replace(next);
     return PlanningWorkerSaved(revision: next['revision'] as String);
   }
@@ -223,20 +255,20 @@ class FakePlanningSource implements PlanningSource {
     String title,
     String mustBeTrue,
     String? size,
-    String revision, {
+    Map<String, String> seen, {
     IssueWorker worker = IssueWorker.agent,
     String? task,
   }) async {
-    added.add((project, repository, title, mustBeTrue, size, revision));
+    added.add((project, repository, title, mustBeTrue, size, board['revision'] as String));
     addedWorkers.add(worker);
     if (addFailure case final failure?) throw failure;
-    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    mockCheckSeen(board, seen, const []);
     final next = 'r${saves.length + added.length + 1}';
     replace({...board, 'revision': next});
     return PlanningIssueAdded(id: 'I${added.length + 2}', revision: next);
   }
 
-  /// Every priority asked of it: the project, story, priority and revision.
+  /// Every priority asked of it: the project, story, priority and the board's revision when it arrived.
   final List<(String, String, String, String)> priorities = [];
 
   /// A refusal of the next priority, set by a test.
@@ -246,11 +278,11 @@ class FakePlanningSource implements PlanningSource {
   Completer<void>? priorityHeld;
 
   @override
-  Future<String> setPriority(String project, String story, String priority, String revision) async {
-    priorities.add((project, story, priority, revision));
+  Future<String> setPriority(String project, String story, String priority, Map<String, String> seen) async {
+    priorities.add((project, story, priority, board['revision'] as String));
     if (priorityHeld case final held?) await held.future;
     if (priorityFailure case final failure?) throw failure;
-    if (revision != board['revision']) throw PlanningRefusal('StaleRevision', {'revision': board['revision']});
+    mockCheckSeen(board, seen, [story]);
     final next = 'r${saves.length + added.length + priorities.length + 1}';
     replace({
       ...board,
@@ -272,15 +304,21 @@ class FakePlanningSource implements PlanningSource {
   Future<PlanIssueList> listStoryIssues(String project, String story) async => _notServed('ListStoryIssues');
 
   @override
-  Future<PlanIssueList> listIssues(String project) async =>
-      PlanIssueList.from({'revision': board['revision'], 'issues': board['issues'] ?? <Object>[]});
+  Future<PlanIssueList> listIssues(String project) async => PlanIssueList.from({
+    'revision': board['revision'],
+    'issues': [
+      for (final issue in (board['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+        {...issue, 'version': mockItemVersion(issue)},
+    ],
+  });
 
   @override
-  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async =>
+  Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen) async =>
       _notServed('SetStoryIssues');
 
   @override
-  Future<String> addUnlistedIssue(String project, String issue, String revision) async => _notServed('ListIssue');
+  Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen) async =>
+      _notServed('ListIssue');
 
   @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');
@@ -331,7 +369,7 @@ class FakePlanningSource implements PlanningSource {
     String issue,
     int round,
     String choice,
-    String revision, {
+    Map<String, String> seen, {
     String? comment,
     PlanningRework? rework,
   }) async => _notServed('ResolveIssueReading');
@@ -390,3 +428,10 @@ class FakePlanningClient extends ChangeNotifier with PlanningTaskReports {
 /// One connected provider named [name] serving [source] for [project].
 PlanningProvider provider(String name, PlanningSource source, {String project = 'demo', bool connected = true}) =>
     PlanningProvider(name: name, connected: connected, projects: [project], source: source);
+
+/// The versions of every item [board] holds, as a window that saw all of it sends them back.
+Map<String, String> seenOn(Map<String, dynamic> board) => mockItemVersions(board);
+
+/// [board] as the planner shows it, each story and each of its issues with the version it stands at.
+PlanningSnapshot versioned(Map<String, dynamic> board) =>
+    PlanningSnapshot.from({...board, 'stories': mockVersionedStories(board)});

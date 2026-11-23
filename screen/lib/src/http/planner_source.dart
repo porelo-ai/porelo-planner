@@ -616,6 +616,8 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   static final _issueId = RegExp(
     r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
   );
+  // An issue's or a story's id, as the versions seen name them.
+  static final _itemId = RegExp('${_issueId.pattern}|${_storyId.pattern}');
   // A tracker's reference alone, as an issue made outside the project is named.
   static final _trackerId = RegExp(r'^(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
   static final _login = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$');
@@ -680,13 +682,13 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async {
+  Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen) async {
     final answer = await _write(
       project,
       ['stories', _checked('story', story, _storyId), 'issues'],
       {
         'issues': [for (final issue in issues) _checked('issue', issue, _issueId)],
-        'revision': revision,
+        'seen': _seen(seen),
       },
       method: 'PUT',
     );
@@ -694,11 +696,11 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<String> addUnlistedIssue(String project, String issue, String revision) async {
+  Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen) async {
     final answer = await _write(
       project,
       ['items'],
-      {'issue': _checked('issue', issue, _trackerId), 'revision': revision},
+      {'issue': _checked('issue', issue, _trackerId), 'seen': _seen(seen)},
     );
     return answer['revision'] as String;
   }
@@ -723,19 +725,19 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) async {
     final answer = await _write(
       project,
       ['moves', 'preview'],
       {
-        'revision': revision,
         'moves': [for (final move in moves) move.toMap()],
       },
     );
     final preview = PlanningMovePreview.from(answer);
     // A preview the window cannot read must never let a move go out unasked.
     if (!_digest.hasMatch(preview.digest) ||
-        preview.revision != revision ||
+        planningTargets(answer['targets']) == null ||
+        preview.targets.values.any((version) => !_version.hasMatch(version)) ||
         answer['issues'] is! List ||
         answer['warnings'] is! List ||
         (answer['warnings'] as List).any((warning) => warning is! Map<String, dynamic>)) {
@@ -745,6 +747,14 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   static final _digest = RegExp(r'^[0-9a-f]{64}$');
+
+  /// An item's version as the planner names it: a Git blob id or a SHA-256, in lower-case hexadecimal.
+  static final _version = RegExp(r'^([0-9a-f]{40}|[0-9a-f]{64})$');
+
+  /// The versions seen, each id checked as an issue's or a story's and each version as the planner names one.
+  static Map<String, String> _seen(Map<String, String> seen) => {
+    for (final entry in seen.entries) _checked('item', entry.key, _itemId): _checked('version', entry.value, _version),
+  };
 
   static bool _stoppedReadable(Object? stopped) {
     bool text(Object? value) => value is String && value.trim().isNotEmpty;
@@ -765,7 +775,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
@@ -773,7 +783,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       project,
       ['moves'],
       {
-        'revision': revision,
+        'seen': _seen(seen),
         'moves': [for (final move in moves) move.toMap()],
         'digest': digest,
         'confirm': confirm,
@@ -800,7 +810,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     String title,
     String mustBeTrue,
     String? size,
-    String revision, {
+    Map<String, String> seen, {
     IssueWorker worker = IssueWorker.agent,
     String? task,
   }) async {
@@ -813,7 +823,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
         'mustBeTrue': mustBeTrue,
         'size': ?size,
         'worker': worker.wire,
-        'revision': revision,
+        'seen': _seen(seen),
         'task': ?task,
       },
     );
@@ -825,25 +835,30 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   }
 
   @override
-  Future<String> setPriority(String project, String story, String priority, String revision) async {
+  Future<String> setPriority(String project, String story, String priority, Map<String, String> seen) async {
     if (!planningPriorities.contains(priority)) {
       throw PlanningRefusal('PriorityNotAllowed', {'story': story}, 'the priority is none of $planningPriorities');
     }
     final answer = await _write(
       project,
       ['stories', _checked('story', story, _storyId), 'priority'],
-      {'priority': priority, 'revision': revision},
+      {'priority': priority, 'seen': _seen(seen)},
       method: 'PUT',
     );
     return answer['revision'] as String;
   }
 
   @override
-  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision) async {
+  Future<PlanningWorkerSaved> setWorker(
+    String project,
+    String issue,
+    IssueWorker worker,
+    Map<String, String> seen,
+  ) async {
     final answer = await _write(
       project,
       ['issues', _checked('issue', issue, _issueId), 'worker'],
-      {'worker': worker.wire, 'revision': revision},
+      {'worker': worker.wire, 'seen': _seen(seen)},
       method: 'PUT',
     );
     return PlanningWorkerSaved(revision: answer['revision'] as String);
@@ -872,11 +887,12 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   @override
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request) async {
     // Capture the decision before yielding, since a dialog may keep mutable choice collections.
+    _seen(request.seen);
     final body = jsonDecode(jsonEncode(request.toMap())) as Map<String, dynamic>;
     final supplied = StoryWorkProposal.from(
       jsonDecode(
         jsonEncode({
-          'revision': request.revision,
+          'revision': '',
           'modes': [request.mode],
           'repositories': [for (final repo in request.proposedRepositories) repo.toMap()],
         }),
@@ -889,7 +905,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     if (saved != null && saved.$1 != given.source) {
       throw const PlanningRefusal('ProjectChanged', {}, 'The proposal belongs to a different project repository.');
     }
-    if (saved == null || saved.$2.revision != request.revision) {
+    if (saved == null) {
       if (supplied.repositories.isNotEmpty) {
         saved = (given.source, supplied);
       } else {
@@ -902,7 +918,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       story: request.story,
       to: request.to,
       mode: request.mode,
-      revision: request.revision,
+      seen: Map.unmodifiable(request.seen),
       subAgents: const [],
       proposedRepositories: body['repositories'] == null
           ? const []
@@ -1065,7 +1081,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     String issue,
     int round,
     String choice,
-    String revision, {
+    Map<String, String> seen, {
     String? comment,
     PlanningRework? rework,
   }) async {
@@ -1080,7 +1096,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
           'round': round,
           'choice': choice,
           'comment': comment ?? '',
-          'revision': revision,
+          'seen': _seen(seen),
           ...?rework?.wire,
         },
       );

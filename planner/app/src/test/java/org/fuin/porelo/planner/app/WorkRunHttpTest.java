@@ -51,7 +51,7 @@ class WorkRunHttpTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
     }
 
@@ -77,7 +77,9 @@ class WorkRunHttpTest {
         final JsonNode order =
                 call(
                         "/stories/ST1/work",
-                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + ",\"readingRounds\":1}",
                         200);
         final String offer = order.at("/tasks/0/offer").asString();
         assertThat(projects.work("project").active("ST1"))
@@ -112,9 +114,9 @@ class WorkRunHttpTest {
         final JsonNode choice =
                 call(
                         "/issues/AA1/reading",
-                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REVIEW_ANYWAY\",\"comment\":\"\",\"revision\":\""
-                                + store.board().revision().value()
-                                + "\"}",
+                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REVIEW_ANYWAY\",\"comment\":\"\",\"seen\":"
+                                + Seens.of(store.board())
+                                + "}",
                         200);
         assertThat(choice.propertyNames())
                 .as("choices keep the issue envelope and next tasks")
@@ -133,7 +135,9 @@ class WorkRunHttpTest {
         final JsonNode order =
                 call(
                         "/stories/ST1/work",
-                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + ",\"readingRounds\":1}",
                         200);
         final String offer = order.at("/tasks/0/offer").asString();
         call("/tasks/build/events", event(offer, "STARTED", ""), 200);
@@ -141,6 +145,7 @@ class WorkRunHttpTest {
         assertThat(preview.at("/warnings/0/kind").asString()).isEqualTo("RUNNING_WORK");
         final var save = (tools.jackson.databind.node.ObjectNode) JSON.readTree(MOVE_AA1);
         save.put("digest", preview.path("digest").asString());
+        save.set("seen", Previewed.seen(preview));
         save.put("confirm", true);
 
         final JsonNode saved = call("/moves", JSON.writeValueAsString(save), 200);
@@ -166,9 +171,9 @@ class WorkRunHttpTest {
         offerWork("ST1");
         final String revision = store.board().revision().value();
         final String move =
-                "{\"revision\":\""
-                        + revision
-                        + "\",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Building\"}],\"digest\":\""
+                "{\"seen\":"
+                        + Seens.of(store.board())
+                        + ",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Building\"}],\"digest\":\""
                         + Previewed.NO_DIGEST
                         + "\"}";
 
@@ -189,9 +194,9 @@ class WorkRunHttpTest {
                                 put("/projects/project/issues/AA1/worker")
                                         .contentType("application/json")
                                         .content(
-                                                "{\"worker\":\"MANUAL\",\"revision\":\""
-                                                        + revision
-                                                        + "\"}"))
+                                                "{\"worker\":\"MANUAL\",\"seen\":"
+                                                        + Seens.of(store.board())
+                                                        + "}"))
                         .andReturn()
                         .getResponse();
         assertThat(response.getStatus())
@@ -303,7 +308,9 @@ class WorkRunHttpTest {
         final String offer =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -326,9 +333,9 @@ class WorkRunHttpTest {
                                 put("/projects/project/issues/AA1/worker")
                                         .contentType("application/json")
                                         .content(
-                                                "{\"worker\":\"MANUAL\",\"revision\":\""
-                                                        + store.board().revision().value()
-                                                        + "\"}"))
+                                                "{\"worker\":\"MANUAL\",\"seen\":"
+                                                        + Seens.of(store.board())
+                                                        + "}"))
                         .andReturn()
                         .getResponse();
         assertThat(switched.getStatus())
@@ -364,7 +371,9 @@ class WorkRunHttpTest {
         final var order =
                 call(
                         "/stories/ST1/work",
-                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\"}",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + "}",
                         200);
         call(
                 "/tasks/build/events",
@@ -471,7 +480,7 @@ class WorkRunHttpTest {
         decision.put("story", story);
         decision.put("to", "Building");
         decision.put("mode", "AGENT");
-        decision.put("revision", store.board().revision().value());
+        decision.set("seen", JSON.readTree(Seens.of(store.board())));
         decision.set("repositories", repositories);
         final JsonNode order = call("/stories/" + story + "/work", decision.toString(), 200);
         final String offer = order.at("/tasks/0/offer").asString();
@@ -515,7 +524,9 @@ class WorkRunHttpTest {
         final String offer =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -576,7 +587,9 @@ class WorkRunHttpTest {
         final String offer =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -628,7 +641,9 @@ class WorkRunHttpTest {
         final String offer =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -669,7 +684,9 @@ class WorkRunHttpTest {
         final String offer =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -710,7 +727,9 @@ class WorkRunHttpTest {
         final JsonNode order =
                 call(
                         "/stories/ST1/work",
-                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"issues\":[\"AA1\"]}",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + ",\"issues\":[\"AA1\"]}",
                         200);
         assertThat(order.at("/tasks/0/issues/0").asString())
                 .as("the order offers work for the chosen issue")
@@ -729,7 +748,9 @@ class WorkRunHttpTest {
             assertThat(
                             call(
                                             "/stories/ST1/work",
-                                            "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"issues\":"
+                                            "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                                    + Seens.of(store.board())
+                                                    + ",\"issues\":"
                                                     + issues
                                                     + "}",
                                             400)
@@ -783,15 +804,7 @@ class WorkRunHttpTest {
                 .isEqualTo("STOPPED");
 
         final Map<String, Object> passOver =
-                Map.of(
-                        "issue",
-                        "AA1",
-                        "reason",
-                        "STOPPED",
-                        "revision",
-                        store.board().revision().value(),
-                        "run",
-                        run);
+                Map.of("issue", "AA1", "reason", "STOPPED", "run", run);
         final JsonNode again = call("/stories/ST1/work", startPassingOver(passOver), 200);
         assertThat(again.path("tasks").size()).as("the new run offers its tasks").isPositive();
         final String next =
@@ -855,7 +868,7 @@ class WorkRunHttpTest {
                                         "story", "ST1",
                                         "to", "Building",
                                         "mode", "AGENT",
-                                        "revision", store.board().revision().value(),
+                                        "seen", JSON.readTree(Seens.of(store.board())),
                                         "replaces", java.util.UUID.randomUUID().toString())),
                         409);
         assertThat(refused.path("type").asString())
@@ -870,7 +883,7 @@ class WorkRunHttpTest {
         body.put("story", "ST1");
         body.put("to", "Building");
         body.put("mode", "AGENT");
-        body.put("revision", store.board().revision().value());
+        body.put("seen", JSON.readTree(Seens.of(store.board())));
         body.put("passOver", passOver);
         return JSON.writeValueAsString(body);
     }
@@ -882,7 +895,9 @@ class WorkRunHttpTest {
         final String build =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":2}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":2}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -903,9 +918,9 @@ class WorkRunHttpTest {
         assertThat(stopped.path("tasks").size()).as("no rework starts by itself").isZero();
         final String revision = store.board().revision().value();
         final String choice =
-                "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"\",\"revision\":\""
-                        + revision
-                        + "\"";
+                "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"\",\"seen\":"
+                        + Seens.of(store.board())
+                        + "";
         for (final String settings :
                 List.of(
                         ",\"mode\":\"SHELL\",\"agent\":\"codex\",\"model\":\"model\"",
@@ -936,7 +951,9 @@ class WorkRunHttpTest {
         final String build =
                 call(
                                 "/stories/ST1/work",
-                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":2}",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":2}",
                                 200)
                         .at("/tasks/0/offer")
                         .asString();
@@ -960,9 +977,9 @@ class WorkRunHttpTest {
         final JsonNode refused =
                 call(
                         "/issues/AA1/reading",
-                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"Fix it.\",\"revision\":\""
-                                + store.board().revision().value()
-                                + "\"}",
+                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REWORK\",\"comment\":\"Fix it.\",\"seen\":"
+                                + Seens.of(store.board())
+                                + "}",
                         409);
         assertThat(refused.path("type").asString())
                 .as("the refusal has its own name")
@@ -978,7 +995,9 @@ class WorkRunHttpTest {
         final var order =
                 call(
                         "/stories/ST1/work",
-                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\",\"readingRounds\":1}",
+                        "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                + Seens.of(store.board())
+                                + ",\"readingRounds\":1}",
                         200);
         final String build = order.at("/tasks/0/offer").asString();
         call("/tasks/build/events", event(build, "STARTED", ""), 200);
@@ -1016,9 +1035,9 @@ class WorkRunHttpTest {
         final var refused =
                 call(
                         "/issues/AA1/reading",
-                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REVIEW_ANYWAY\",\"comment\":\"\",\"revision\":\""
-                                + board.revision().value()
-                                + "\"}",
+                        "{\"story\":\"ST1\",\"round\":1,\"choice\":\"REVIEW_ANYWAY\",\"comment\":\"\",\"seen\":"
+                                + Seens.of(store.board())
+                                + "}",
                         503);
         assertThat(refused.path("type").asString())
                 .as("capacity has its named refusal")
@@ -1034,7 +1053,9 @@ class WorkRunHttpTest {
         try (var subscription = changes.subscribe("project")) {
             call(
                     "/stories/ST1/work",
-                    "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"revision\":\"r1\"}",
+                    "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                            + Seens.of(store.board())
+                            + "}",
                     200);
             final var next = subscription.nextFrame(Duration.ZERO);
             assertThat(next).as("a record-only change is an event").isPresent();
@@ -1110,12 +1131,11 @@ class WorkRunHttpTest {
                                 "story", story,
                                 "to", "Building",
                                 "mode", "AGENT",
-                                "revision", store.board().revision().value())),
+                                "seen", JSON.readTree(Seens.of(store.board())))),
                 200);
     }
 
-    private static final String MOVE_AA1 =
-            "{\"revision\":\"r2\",\"moves\":[{\"issue\":\"AA1\",\"to\":\"Review\"}]}";
+    private static final String MOVE_AA1 = "{\"moves\":[{\"issue\":\"AA1\",\"to\":\"Review\"}]}";
 
     private JsonNode call(final String path, final String body, final int status) throws Exception {
         final var response =

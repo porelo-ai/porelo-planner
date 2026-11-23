@@ -131,7 +131,7 @@ class IssuesEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -173,7 +173,9 @@ class IssuesEndpointTest {
                         + "T".repeat(256)
                         + "\",\"mustBeTrue\":\""
                         + "é".repeat(65536)
-                        + "\",\"revision\":\"r1\"}";
+                        + "\",\"seen\": "
+                        + Seens.of(current)
+                        + "}";
         final String bounded =
                 body + " ".repeat(1048576 - body.getBytes(StandardCharsets.UTF_8).length);
         mvc.perform(
@@ -299,7 +301,9 @@ class IssuesEndpointTest {
 
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"revision\": \"r1\", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + ", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -351,7 +355,9 @@ class IssuesEndpointTest {
 
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"revision\": \"r1\", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + ", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
                 .andExpect(status().isCreated());
 
         assertThat(added).as("the issue added").hasSize(1);
@@ -382,7 +388,9 @@ class IssuesEndpointTest {
                         empty.repositories());
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"revision\": \"r1\"}")
+                                + " \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated());
 
         assertThat(added).as("both explicit and omitted first-state creates succeed").hasSize(2);
@@ -395,7 +403,9 @@ class IssuesEndpointTest {
         for (final String confirm : List.of("null", "1", "\"true\"", "{}", "[]")) {
             refused(
                     "{\"repository\": \"porelo-other\", \"title\": \"T\","
-                            + " \"mustBeTrue\": \"W\", \"revision\": \"r1\", \"confirm\": "
+                            + " \"mustBeTrue\": \"W\", \"seen\": "
+                            + Seens.of(current)
+                            + ", \"confirm\": "
                             + confirm
                             + "}",
                     "confirm");
@@ -406,7 +416,9 @@ class IssuesEndpointTest {
     private ResultActions issueInState(final String state) throws Exception {
         return issue(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\","
-                        + " \"mustBeTrue\": \"W\", \"revision\": \"r1\", \"state\": \""
+                        + " \"mustBeTrue\": \"W\", \"seen\": "
+                        + Seens.of(current)
+                        + ", \"state\": \""
                         + state
                         + "\"}");
     }
@@ -418,8 +430,8 @@ class IssuesEndpointTest {
 
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \" An idea \","
-                                + " \"mustBeTrue\": \"It holds.\", \"size\": \"S\", \"revision\":"
-                                + " \"r1\"}")
+                                + " \"mustBeTrue\": \"It holds.\", \"size\": \"S\", \"seen\":"
+                                + " {}}")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("CD03"))
                 .andExpect(jsonPath("$.revision").value("r2"));
@@ -437,15 +449,21 @@ class IssuesEndpointTest {
         // A new issue given to the wrong worker starts work a person did not ask for, or none.
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"revision\": \"r1\"}")
+                                + " \"W\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated());
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"worker\": \"MANUAL\", \"revision\": \"r2\"}")
+                                + " \"W\", \"worker\": \"MANUAL\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated());
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"worker\": \"AGENT\", \"revision\": \"r2\"}")
+                                + " \"W\", \"worker\": \"AGENT\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated());
 
         assertThat(added)
@@ -459,7 +477,9 @@ class IssuesEndpointTest {
         // A task's name lost on the way leaves the person without the task to ask.
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"task\": \"t-7.2\", \"revision\": \"r1\"}")
+                                + " \"W\", \"task\": \"t-7.2\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isCreated());
 
         assertThat(added)
@@ -469,14 +489,22 @@ class IssuesEndpointTest {
     }
 
     @Test
-    void anIdeaAgainstAnotherRevisionIsRefusedAsStaleAndAddsNothing() throws Exception {
-        // An idea numbered on a board the window no longer shows could take a number taken since.
+    void anIdeaUnderAStoryChangedSinceItWasSeenIsRefusedAndAddsNothing() throws Exception {
+        // Harm: an issue hung under a story the window no longer shows as it stands lands in a
+        // story the person did not choose it for.
+        current =
+                withStories(
+                        List.of(
+                                new org.fuin.porelo.planner.store.Story(
+                                        "ST1", "S", "Idea", "Medium", null, List.of(), "", null)));
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"revision\": \"r0\"}")
+                                + " \"W\", \"story\": \"ST1\", \"seen\": "
+                                + Seens.stale(current)
+                                + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
-                .andExpect(jsonPath("$.parameters.revision").value("r1"));
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("ST1"));
         assertThat(added).as("nothing added").isEmpty();
     }
 
@@ -485,35 +513,49 @@ class IssuesEndpointTest {
         // A refusal repeating the body would show whatever a caller put there, a secret too.
         refused(
                 "{\"repository\": \"token123secret\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"revision\": \"r1\"}",
+                        + " \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "repository");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \""
                         + "T".repeat(257)
-                        + "\", \"mustBeTrue\": \"W\", \"revision\": \"r1\"}",
+                        + "\", \"mustBeTrue\": \"W\", \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "title");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"size\": 3, \"revision\": \"r1\"}",
+                        + " \"size\": 3, \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "size");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\"}",
-                "revision");
+                "seen");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"revision\": \"r1\", \"token123secret\": 1}",
+                        + " \"seen\": "
+                        + Seens.of(current)
+                        + ", \"token123secret\": 1}",
                 "");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"worker\": \"manual\", \"revision\": \"r1\"}",
+                        + " \"worker\": \"manual\", \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "worker");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"worker\": \"token123secret\", \"revision\": \"r1\"}",
+                        + " \"worker\": \"token123secret\", \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "worker");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                        + " \"worker\": 1, \"revision\": \"r1\"}",
+                        + " \"worker\": 1, \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "worker");
         for (final String task :
                 List.of(
@@ -528,14 +570,18 @@ class IssuesEndpointTest {
                     "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
                             + " \"task\": "
                             + task
-                            + ", \"revision\": \"r1\"}",
+                            + ", \"seen\": "
+                            + Seens.of(current)
+                            + "}",
                     "task");
         }
         refused("{\"revision\": token123secret}", "");
         refused(
                 "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \""
                         + "W".repeat(1048576)
-                        + "\", \"revision\": \"r1\"}",
+                        + "\", \"seen\": "
+                        + Seens.of(current)
+                        + "}",
                 "");
         assertThat(added).as("nothing added").isEmpty();
     }
@@ -548,7 +594,9 @@ class IssuesEndpointTest {
                         "", "the project's own repository uses no issue prefix");
         issue(
                         "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"revision\": \"r1\"}")
+                                + " \"W\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:IssueNotAllowed"))
                 .andExpect(jsonPath("$.parameters.field").value(""))
@@ -566,7 +614,9 @@ class IssuesEndpointTest {
                         "", "what must be true is longer than GitHub takes", "mustBeTrue");
         issue(
                         "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"revision\": \"r1\"}")
+                                + " \"W\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:IssueNotAllowed"))
                 .andExpect(jsonPath("$.parameters.field").value("mustBeTrue"));
@@ -578,7 +628,9 @@ class IssuesEndpointTest {
         failure = new UnsupportedOperationException("This store does not add issues");
         issue(
                         "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
-                                + " \"W\", \"revision\": \"r1\"}")
+                                + " \"W\", \"seen\": "
+                                + Seens.of(current)
+                                + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
     }
@@ -589,9 +641,9 @@ class IssuesEndpointTest {
         final org.fuin.porelo.planner.store.Story story =
                 new org.fuin.porelo.planner.store.Story(
                         "ST1", "S", "Idea", "Medium", null, List.of(), "", null);
-        final String body =
+        final String head =
                 "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
-                        + " \"W\", \"story\": \"ST1\", \"revision\": \"r1\"}";
+                        + " \"W\", \"story\": \"ST1\", \"seen\": ";
         current =
                 withStories(
                         List.of(
@@ -599,7 +651,8 @@ class IssuesEndpointTest {
                                         List.of(
                                                 org.fuin.porelo.planner.store.Warning
                                                         .wrongParent()))));
-        issue(body)
+        final String seen = Seens.of(current);
+        issue(head + seen + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:IssueNotAllowed"))
                 .andExpect(jsonPath("$.parameters.field").value("story"))
@@ -613,14 +666,11 @@ class IssuesEndpointTest {
         final org.fuin.porelo.planner.store.Story copy =
                 story.withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
         current = withStories(List.of(copy, copy));
-        issue(body)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.parameters.field").value("story"))
-                .andExpect(
-                        jsonPath("$.parameters.reason")
-                                .value(
-                                        "ST1 names two stories; it can be neither worked nor moved"
-                                                + " until one id is changed."));
+        // The story seen is no longer one item: the window is told it changed, to read it again.
+        issue(head + seen + "}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("ST1"));
         assertThat(added).as("nothing created").isEmpty();
     }
 

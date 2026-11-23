@@ -72,8 +72,8 @@ class _Source extends MockPlanningSource {
 }
 
 void main() {
-  // Harm: choices are sent to the old machine or use its revision after changing providers.
-  test('changing machine re-proposes and sends its repository choice at its revision', () async {
+  // Harm: choices are sent to the old machine or use the versions it showed after changing providers.
+  test('changing machine re-proposes and sends its repository choice with the versions it shows', () async {
     final first = _Source()..boards['demo'] = _board('first');
     final second = _Source()..boards['demo'] = _board('second');
     first.work.proposals['story'] = _proposal('first-model');
@@ -97,7 +97,7 @@ void main() {
     expect(await work.start(), isTrue);
     expect(first.work.calls.where((call) => call.$1 == 'StartStoryWork'), isEmpty);
     final sent = second.work.calls.where((call) => call.$1 == 'StartStoryWork').single.$2;
-    expect(sent['revision'], 'second');
+    expect(sent['seen'], allOf(isNotEmpty, b.seenOfStory(b.stories.single.id)));
     expect(sent['repositories'], [
       {
         'repository': 'repo',

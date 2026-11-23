@@ -104,9 +104,11 @@ class MockStoryWork {
       return {'revision': board['revision'], 'work': work, 'tasks': <dynamic>[]};
     }
     if (story == null) refuse('NoSuchStory', {'story': parameters['story']});
-    void checkRevision() {
-      if (parameters['revision'] != board['revision']) refuse('StaleRevision', {'revision': board['revision']});
-    }
+    // The versions the decision saw of the items it changes, checked as the planner checks them.
+    void checkSeen(Iterable<String> targets) => mockCheckSeen(board, {
+      for (final MapEntry(:key, :value) in ((parameters['seen'] as Map?) ?? const {}).entries)
+        if (key is String && value is String) key: value,
+    }, targets);
 
     void publish() {
       settleStoryStates(board);
@@ -126,7 +128,7 @@ class MockStoryWork {
       'issues': <Map<String, dynamic>>[],
     };
     if (method == 'ResolveIssueReading') {
-      checkRevision();
+      checkSeen([parameters['issue'] as String]);
       if (issue == null ||
           !(story['issues'] as List).any((item) => (item as Map)['id'] == issue['id']) ||
           issue['readingStopped'] != true) {
@@ -296,7 +298,7 @@ class MockStoryWork {
       return {'work': work};
     }
     if (method != 'StartStoryWork') refuse('NotYetBuilt', {'method': method});
-    checkRevision();
+    checkSeen([story['id'] as String]);
     final standing = story['work'] is Map ? (story['work'] as Map)['run'] : null;
     if (parameters['replaces'] case final String replaces? when replaces != standing) {
       refuse('RunChanged', {'story': story['id'], 'reason': 'The run a Start replaces is not the one standing.'});

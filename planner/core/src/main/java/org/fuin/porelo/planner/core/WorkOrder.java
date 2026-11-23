@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
@@ -226,7 +227,7 @@ public record WorkOrder(
      */
     public record Decision(
             String mode,
-            String revision,
+            Basis seen,
             @Nullable List<WorkProposal.Repository> repositories,
             @Nullable String comment,
             @Nullable Number readingRounds,
@@ -244,7 +245,7 @@ public record WorkOrder(
          * Choices for the story's work as its proposal names it.
          *
          * @param mode the mode
-         * @param revision the board's revision the person saw
+         * @param seen the versions the person saw
          * @param repositories the chosen repositories, or null for the proposal's
          * @param comment the person's words, or null
          * @param readingRounds the readings granted, or null for the default
@@ -252,12 +253,12 @@ public record WorkOrder(
          */
         public Decision(
                 final String mode,
-                final String revision,
+                final Basis seen,
                 final @Nullable List<WorkProposal.Repository> repositories,
                 final @Nullable String comment,
                 final @Nullable Number readingRounds,
                 final @Nullable List<Limit> issueReadingRounds) {
-            this(mode, revision, repositories, comment, readingRounds, issueReadingRounds, null);
+            this(mode, seen, repositories, comment, readingRounds, issueReadingRounds, null);
         }
     }
 
@@ -278,15 +279,17 @@ public record WorkOrder(
         if (!board.workflow().states().contains(to)) {
             throw WorkRefusal.invalidSettings();
         }
-        if (!board.revision().value().equals(decision.revision())) {
-            throw WorkRefusal.staleRevision(board.revision().value());
-        }
+        Edits.unchanged(board, decision.seen(), Set.of(id));
         final List<String> active = List.copyOf(running.tasks(id));
         if (!active.isEmpty()) {
             throw WorkRefusal.workRunning(id, active);
         }
         final WorkProposal proposal =
                 WorkProposal.propose(board, id, to, running, decision.issues());
+        final Set<String> named = new java.util.LinkedHashSet<>();
+        proposal.repositories().forEach(repository -> named.addAll(repository.issues()));
+        Edits.unchanged(
+                board, decision.seen(), Targets.of(board, new Operation.OrderStoryWork(id, named)));
         final WorkRule rule = WorkProposal.rule(board, story, to, decision.issues());
         if (!rule.modes().contains(decision.mode())) {
             throw refused(story, to, "The project does not allow that mode.");

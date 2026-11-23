@@ -137,7 +137,7 @@ class CorrectionsEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -156,17 +156,15 @@ class CorrectionsEndpointTest {
                         .content(body));
     }
 
-    private static String asked(final String revision, final String state) {
-        return "{\"revision\": \""
-                + revision
-                + "\", \"story\": \"ST1\", \"warning\": \"StateOutsideWorkflow\", \"state\": \""
+    private static String asked(final String state) {
+        return "{\"story\": \"ST1\", \"warning\": \"StateOutsideWorkflow\", \"state\": \""
                 + state
                 + "\"";
     }
 
     private String digest(final String state) throws Exception {
         final String body =
-                post("corrections/preview", asked("r1", state) + "}")
+                post("corrections/preview", asked(state) + "}")
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -174,9 +172,11 @@ class CorrectionsEndpointTest {
         return JsonPath.read(body, "$.digest");
     }
 
-    private ResultActions confirm(final String revision, final String state, final String digest)
+    private ResultActions confirm(final String seen, final String state, final String digest)
             throws Exception {
-        return post("corrections", asked(revision, state) + ", \"digest\": \"" + digest + "\"}");
+        return post(
+                "corrections",
+                asked(state) + ", \"seen\": " + seen + ", \"digest\": \"" + digest + "\"}");
     }
 
     @Test
@@ -190,7 +190,7 @@ class CorrectionsEndpointTest {
                                 "$.stories[0].warnings[0]",
                                 org.hamcrest.Matchers.hasKey("correction")))
                 .andExpect(jsonPath("$.stories[0].warnings[0].correction").isEmpty());
-        post("corrections/preview", asked("r1", "Review") + "}")
+        post("corrections/preview", asked("Review") + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
         assertThat(saved).as("nothing written").isEmpty();
@@ -201,13 +201,13 @@ class CorrectionsEndpointTest {
         // Harm: a correction written over a warning gone, past another warning's hold, or into
         // a state it never offered.
         current = board("r1", "Parked", Warning.stateOutsideWorkflow(), Warning.wrongParent());
-        post("corrections/preview", asked("r1", "Review") + "}")
+        post("corrections/preview", asked("Review") + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
                 .andExpect(jsonPath("$.detail").value(Warning.wrongParent().text()));
 
         current = board("r1", "Review");
-        confirm("r1", "Review", "0".repeat(64))
+        confirm(Seens.of(current), "Review", "0".repeat(64))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
                 .andExpect(jsonPath("$.detail").value("The warning no longer stands on it."));
@@ -220,23 +220,21 @@ class CorrectionsEndpointTest {
         // Harm: a correction a store cannot carry out half happens.
         post(
                         "corrections/preview",
-                        "{\"revision\": \"r1\", \"story\": \"ST2\", \"warning\":"
+                        "{\"story\": \"ST2\", \"warning\":"
                                 + " \"IssueOutsideProject\", \"state\": \"Backlog\"}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
-        post(
-                        "corrections/preview",
-                        "{\"revision\": \"r1\", \"warning\": \"NoState\", \"state\": \"Backlog\"}")
+        post("corrections/preview", "{\"warning\": \"NoState\", \"state\": \"Backlog\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
-        post("corrections", asked("r1", "Review") + "}")
+        post("corrections", asked("Review") + ", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(
                         jsonPath("$.parameters.reason")
                                 .value("The body names no preview's digest."));
         post(
                         "corrections/preview",
-                        "{\"revision\": \"r1\", \"story\": \"ST1\", \"warning\":"
+                        "{\"story\": \"ST1\", \"warning\":"
                                 + " \"StateOutsideWorkflow\", \"state\": \"/home/x:pw\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.parameters.to").value(""));
@@ -281,7 +279,7 @@ class CorrectionsEndpointTest {
                         plain.repositories());
         post(
                         "corrections/preview",
-                        "{\"revision\": \"r1\", \"issue\": \"AB01\", \"warning\":" // not-a-citation
+                        "{\"issue\": \"AB01\", \"warning\":" // not-a-citation
                                 + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
@@ -293,7 +291,7 @@ class CorrectionsEndpointTest {
         current = plain;
         post(
                         "corrections/preview",
-                        "{\"revision\": \"r1\", \"story\": \"ST9\", \"warning\":"
+                        "{\"story\": \"ST9\", \"warning\":"
                                 + " \"StateOutsideWorkflow\", \"state\": \"Review\"}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchStory"));
@@ -313,7 +311,7 @@ class CorrectionsEndpointTest {
                         new Work(read.work().rules(), List.of("work.yml: Review is no rule")),
                         read.repositories());
 
-        post("corrections/preview", asked("r1", "Review") + "}")
+        post("corrections/preview", asked("Review") + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:CorrectionRefused"))
                 .andExpect(

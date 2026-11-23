@@ -1,6 +1,8 @@
 package org.fuin.porelo.planner.store.github;
 
 import java.util.List;
+import org.fuin.porelo.planner.store.Basis;
+import org.fuin.porelo.planner.store.Dependencies;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
@@ -198,6 +200,147 @@ public interface BoardWriter {
      */
     default boolean setText(
             final Snapshot current, final Revision revision, final String id, final TextEdit edit) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /*
+     * The writes below are checked against the versions the caller saw of their targets instead of
+     * the board's revision, as PlanningStore's forms taking a Basis say: each throws
+     * StoreException.BasisIncomplete or StoreException.Changed and writes nothing when a target
+     * lacks its version or changed, and StoreException.PartlySaved when a later call fails.
+     */
+
+    /**
+     * Saves states, workers and priorities against the versions the caller saw.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param writes what to write
+     */
+    default void save(final Snapshot current, final Basis basis, final Writes writes) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Adds an issue against the version the caller saw of the story it is hung into.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param issue what the person wrote
+     * @return its id
+     */
+    default String createIssue(final Snapshot current, final Basis basis, final NewIssue issue) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Adds an idea, which changes no existing item.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw, none for an idea
+     * @param idea the idea
+     * @return the ids it was saved under
+     */
+    default IdeaIds createIdea(final Snapshot current, final Basis basis, final NewIdea idea) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Adds an issue made outside the project against the version the caller saw of it.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the unlisted issue's version the caller saw
+     * @param issue the issue's tracker reference
+     */
+    default void addUnlistedIssue(final Snapshot current, final Basis basis, final String issue) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Makes a story over issues that stand on the board against the versions the caller saw.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param story the story and its issues
+     * @return the ids it was saved under, the issues in the story's order
+     */
+    default IdeaIds createStoryFromIssues(
+            final Snapshot current, final Basis basis, final StoryFromIssues story) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets an issue's fields against the version the caller saw of it.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param issue the issue's id
+     * @param fields the fields to set
+     * @return whether anything was written
+     */
+    default boolean setFields(
+            final Snapshot current, final Basis basis, final String issue, final Fields fields) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets a story's whole issue list against the versions the caller saw.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param story the story's id
+     * @param issues the issues' ids, in the story's order
+     * @return whether anything was written
+     */
+    default boolean setStoryIssues(
+            final Snapshot current,
+            final Basis basis,
+            final String story,
+            final List<String> issues) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets an issue's whole list of blockers against the version the caller saw of it.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param issue the issue's id
+     * @param blockedBy the blockers' ids
+     * @return whether anything was written
+     */
+    default boolean setBlockedBy(
+            final Snapshot current,
+            final Basis basis,
+            final String issue,
+            final List<String> blockedBy) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Sets a story's or an issue's title and named parts of its body against the version the caller
+     * saw of it.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param id the item's id
+     * @param edit the title and the parts to write or remove
+     * @return whether anything was written
+     */
+    default boolean setText(
+            final Snapshot current, final Basis basis, final String id, final TextEdit edit) {
+        throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
+    }
+
+    /**
+     * Reads now the links of an issue the board offers as made outside the project, for the rules
+     * that check its add.
+     *
+     * @param current the snapshot the store holds
+     * @param issue the issue's tracker reference
+     * @return its links, in the board's ids
+     */
+    default Dependencies.UnlistedLinks unlistedLinks(final Snapshot current, final String issue) {
         throw new UnsupportedOperationException(PlanningStore.NOT_OFFERED);
     }
 

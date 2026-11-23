@@ -208,7 +208,7 @@ void main() {
     expect(PlanningMoveResult.from({'revision': false}).revision, isEmpty);
   });
 
-  // Harm: a rejected batch partially changes the store or a stale revision overwrites newer work.
+  // Harm: a rejected batch partially changes the store or a write over an older version overwrites newer work.
   test('the move stand-in is atomic and uses the exact refusal contracts', () {
     final board = <String, dynamic>{
       'revision': 'r1',
@@ -229,17 +229,29 @@ void main() {
       ],
     };
     expect(
-      () => applyPlanningMove(board, {
-        'moves': [
-          {'issue': 'first', 'to': 'Done'},
-        ],
-        'revision': 'old',
-      }),
+      () => mockCheckSeen(board, {'first': 'old'}, ['first']),
       throwsA(
-        isA<PlanningRefusal>().having((error) => error.name, 'name', 'StaleRevision').having(
+        isA<PlanningRefusal>().having((error) => error.name, 'name', 'ItemChanged').having(
           (error) => error.parameters,
           'parameters',
-          {'revision': 'r1'},
+          {
+            'changed': ['first'],
+            'items': [
+              {'id': 'first', 'gone': false},
+            ],
+          },
+        ),
+      ),
+    );
+    expect(
+      () => mockCheckSeen(board, const {}, ['first']),
+      throwsA(
+        isA<PlanningRefusal>().having((error) => error.name, 'name', 'BasisIncomplete').having(
+          (error) => error.parameters,
+          'parameters',
+          {
+            'missing': ['first'],
+          },
         ),
       ),
     );

@@ -338,6 +338,11 @@ st_head() {
     awk '/^```json$/{on=1;next} /^```$/{if(on)exit} on' "$1"
 }
 
+# The versions a preview's answer names its targets at, as the body's `seen`: st_seen PREVIEW.
+st_seen() {
+    jq -c '[.targets[] | {(.id): .version}] | add // {}' <<<"$1"
+}
+
 # The heading a row stands under in a Markdown index: st_section FILE ANCHOR.
 st_section() {
     awk -v anchor="<a id=\"$2\"></a>" '/^## /{section=substr($0,4)} index($0,anchor){print section; exit}' "$1"

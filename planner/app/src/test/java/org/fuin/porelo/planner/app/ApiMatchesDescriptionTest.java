@@ -84,6 +84,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("StoppedRun", org.fuin.porelo.planner.app.answers.StoppedRun.class),
                     Map.entry("StoppedTask", org.fuin.porelo.planner.app.answers.StoppedTask.class),
                     Map.entry("MovePreview", org.fuin.porelo.planner.app.answers.MovePreview.class),
+                    Map.entry("Target", org.fuin.porelo.planner.app.answers.Target.class),
                     Map.entry("MovedIssue", org.fuin.porelo.planner.app.answers.MovedIssue.class),
                     Map.entry("MovedStory", org.fuin.porelo.planner.app.answers.MovedStory.class),
                     Map.entry("MoveWarning", org.fuin.porelo.planner.app.answers.MoveWarning.class),
@@ -340,7 +341,7 @@ class ApiMatchesDescriptionTest {
                 (schema, parts) -> {
                     final Set<String> members = new TreeSet<>(parts);
                     members.add("title");
-                    members.add("revision");
+                    members.add("seen");
                     final Set<String> described = new TreeSet<>();
                     schemas.get(schema)
                             .get("properties")
@@ -348,7 +349,7 @@ class ApiMatchesDescriptionTest {
                             .forEach(member -> described.add(member.getKey()));
                     assertThat(described)
                             .as("the members of %s against those the planner reads", schema)
-                            .contains("title", "revision")
+                            .contains("title", "seen")
                             .isEqualTo(members);
                 });
     }
@@ -677,10 +678,7 @@ class ApiMatchesDescriptionTest {
         operation.path("responses").fieldNames().forEachRemaining(statuses::add);
         assertThat(statuses)
                 .as("every answer of the hand-in")
-                .isEqualTo(
-                        Set.of(
-                                "201", "400", "401", "404", "409", "422", "501", "502", "503",
-                                "504"));
+                .isEqualTo(Set.of("201", "400", "401", "404", "422", "501", "502", "503", "504"));
         assertThat(operation.at("/responses/422/$ref").asText())
                 .as("a refused idea's answer")
                 .isEqualTo("#/components/responses/IdeaRefused");
@@ -781,6 +779,13 @@ class ApiMatchesDescriptionTest {
             return;
         }
         final Class<?> raw = (Class<?>) type;
+        if (raw == org.fuin.porelo.planner.store.Basis.class) {
+            // The versions seen travel as a map by id, which no record's members describe.
+            assertThat(field.path("$ref").asText())
+                    .as("%s refers to the versions seen", name)
+                    .isEqualTo("#/components/schemas/Seen");
+            return;
+        }
         if (raw.isRecord()) {
             assertThat(field.path("$ref").asText())
                     .as("%s refers to its complete nested schema", name)

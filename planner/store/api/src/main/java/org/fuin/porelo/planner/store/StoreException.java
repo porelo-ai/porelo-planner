@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.List;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
@@ -17,6 +18,8 @@ public abstract sealed class StoreException extends RuntimeException
                 StoreException.Unreachable,
                 StoreException.Unreadable,
                 StoreException.StaleRevision,
+                StoreException.Changed,
+                StoreException.BasisIncomplete,
                 StoreException.NotSavable,
                 StoreException.InStory,
                 StoreException.Busy,
@@ -194,6 +197,49 @@ public abstract sealed class StoreException extends RuntimeException
                     Ids.name(repository),
                     "Repository " + repository + " could not be read: " + fault);
         }
+    }
+
+    /** A target changed, disappeared or no longer names one item. */
+    public static final class Changed extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final List<String> ids;
+
+        /** Names every changed target; an empty refusal is invalid. */
+        public Changed(final List<String> ids) {
+            super(first(ids), "The planning items changed: " + String.join(", ", ids));
+            this.ids = List.copyOf(ids);
+        }
+
+        /** Answers the changed targets. */
+        public List<String> ids() {
+            return ids;
+        }
+    }
+
+    /** The caller supplied no version for one or more targets. */
+    public static final class BasisIncomplete extends StoreException {
+        private static final long serialVersionUID = 1L;
+
+        private final List<String> missing;
+
+        /** Names every target whose version is missing. */
+        public BasisIncomplete(final List<String> missing) {
+            super(first(missing), "The edit basis lacks: " + String.join(", ", missing));
+            this.missing = List.copyOf(missing);
+        }
+
+        /** Answers the targets whose versions were not supplied. */
+        public List<String> missing() {
+            return missing;
+        }
+    }
+
+    private static String first(final List<String> ids) {
+        if (ids.isEmpty()) {
+            throw new IllegalArgumentException("A refusal must name an item");
+        }
+        return ids.getFirst();
     }
 
     /** The store moved since the revision a save was checked against. */

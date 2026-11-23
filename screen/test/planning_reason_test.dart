@@ -172,7 +172,9 @@ void main() {
     await tester.runAsync(() => board.moveIssue('PL1', 'Finished'));
     await settle(tester);
     await tester.enterText(find.byKey(const Key('planning-move-reason')), 'Built.');
-    backend.moveFailure = mockRefusal('org.fuin.porelo.Tasks1.StaleRevision', {'revision': 'r1'});
+    backend.moveFailure = mockRefusal('org.fuin.porelo.Tasks1.ItemChanged', {
+      'changed': ['PL1'],
+    });
 
     await tester.tap(find.byKey(const Key('planning-move-confirm')));
     await settle(tester);

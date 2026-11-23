@@ -120,7 +120,7 @@ class WorkerEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -136,7 +136,7 @@ class WorkerEndpointTest {
         // A worker the windows are not told of leaves every other window offering an agent's work.
         final Changes.Subscription window = changes.subscribe("alpha");
 
-        worker("AB01", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("AB01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -153,36 +153,39 @@ class WorkerEndpointTest {
     @Test
     void theWorkerAnIssueHasAlreadySavesNothing() throws Exception {
         // A save of nothing would still commit and push an empty change to the store.
-        worker("AB02", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("AB02", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r1"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
-    void aWorkerAgainstAnotherRevisionIsRefusedAsStaleAndSavesNothing() throws Exception {
-        // A save over a board the window no longer shows would undo someone else's change.
-        worker("AB01", "{\"worker\": \"MANUAL\", \"revision\": \"r0\"}")
+    void aWorkerOverAnIssueChangedSinceItWasSeenIsRefusedAndSavesNothing() throws Exception {
+        // A save over an item the window no longer shows as it stands would undo someone else's
+        // change.
+        worker("AB01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.stale(current) + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:StaleRevision"))
-                .andExpect(jsonPath("$.parameters.revision").value("r1"));
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("AB01"));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
-    void anIssueTheBoardLacksIsNotFound() throws Exception {
-        // A worker saved for no issue would write a head the board does not hold.
-        worker("AB09", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchIssue"))
-                .andExpect(jsonPath("$.parameters.issue").value("AB09"));
+    void anIssueTheBoardNoLongerHoldsIsAnsweredAsGone() throws Exception {
+        // A worker saved for no issue would write a head the board does not hold; the window
+        // that saw it is told it is gone, so it reads the board again.
+        worker("AB09", "{\"worker\": \"MANUAL\", \"seen\": {\"AB09\": \"" + "a".repeat(64) + "\"}}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:ItemChanged"))
+                .andExpect(jsonPath("$.parameters.items[0].id").value("AB09"))
+                .andExpect(jsonPath("$.parameters.items[0].gone").value(true));
         assertThat(saved).as("nothing saved").isEmpty();
     }
 
     @Test
     void aSubIssueIsRefusedAsNotAllowedNamingIt() throws Exception {
         // A sub-issue is worked as its parent is; a worker of its own would split one issue's work.
-        worker("AB01.1", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("AB01.1", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
                 .andExpect(jsonPath("$.parameters.item").value("AB01.1"));
@@ -195,12 +198,14 @@ class WorkerEndpointTest {
         // would show whatever a caller put there, a secret too.
         for (final String body :
                 List.of(
-                        "{\"worker\": \"manual\", \"revision\": \"r1\"}",
-                        "{\"worker\": \"token123secret\", \"revision\": \"r1\"}",
-                        "{\"worker\": 1, \"revision\": \"r1\"}",
+                        "{\"worker\": \"manual\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"worker\": \"token123secret\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"worker\": 1, \"seen\": " + Seens.of(current) + "}",
                         "{\"worker\": \"MANUAL\"}",
-                        "{\"revision\": \"r1\"}",
-                        "{\"worker\": \"MANUAL\", \"revision\": \"r1\", \"token123secret\": 1}",
+                        "{\"seen\": " + Seens.of(current) + "}",
+                        "{\"worker\": \"MANUAL\", \"seen\": "
+                                + Seens.of(current)
+                                + ", \"token123secret\": 1}",
                         "{\"revision\": token123secret}",
                         "[]")) {
             final String answer =
@@ -216,7 +221,7 @@ class WorkerEndpointTest {
                     .as("the refusal of %s does not repeat it", body)
                     .doesNotContain("token123secret");
         }
-        worker("ab01", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("ab01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"));
         assertThat(saved).as("nothing saved").isEmpty();
@@ -273,7 +278,7 @@ class WorkerEndpointTest {
 
         for (final String issue : List.of("AB02", "AB01")) {
             final var response =
-                    worker(issue, "{\"worker\": \"AGENT\", \"revision\": \"r1\"}")
+                    worker(issue, "{\"worker\": \"AGENT\", \"seen\": " + Seens.of(current) + "}")
                             .andReturn()
                             .getResponse();
             assertThat(response.getStatus())
@@ -297,7 +302,7 @@ class WorkerEndpointTest {
     void anIssueTheStoreCannotSaveIsRefusedAsNotAllowedNamingIt() throws Exception {
         // The window must learn why the worker stayed unsaved, and which issue holds it.
         failure = new StoreException.NotSavable("AB01", "the issue's head cannot be read");
-        worker("AB01", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("AB01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"))
                 .andExpect(jsonPath("$.parameters.item").value("AB01"))
@@ -309,7 +314,7 @@ class WorkerEndpointTest {
     void aStoreThatSavesNoWorkerIsAnsweredAsNotOffered() throws Exception {
         // A bare server error would leave the window unable to tell a missing feature from a fault.
         failure = new UnsupportedOperationException("This store does not save");
-        worker("AB01", "{\"worker\": \"MANUAL\", \"revision\": \"r1\"}")
+        worker("AB01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NotOffered"));
     }

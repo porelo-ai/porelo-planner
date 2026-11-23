@@ -222,7 +222,11 @@ void main() {
     await settle(tester);
 
     expect(backend.listCalls, [
-      {'project': 'checkout', 'issue': 'own#4', 'revision': 'initial'},
+      {
+        'project': 'checkout',
+        'issue': 'own#4',
+        'seen': {'own#4': isA<String>()},
+      },
     ]);
     expect(find.byKey(const Key('planning-unlisted own#4')), findsNothing, reason: 'offered no longer');
     expect(find.byKey(const Key('planning-unlisted other#2')), findsOneWidget, reason: 'the other stays offered');

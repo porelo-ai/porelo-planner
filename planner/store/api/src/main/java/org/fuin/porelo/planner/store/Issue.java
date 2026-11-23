@@ -30,8 +30,8 @@ import org.jspecify.annotations.Nullable;
  *     holds the issue back
  * @param waitsOn the issues it waits on that the board does not hold, such as those of another
  *     repository; empty for a store that knows none
- * @param version its own stored edit basis, as its store keeps it; a value it takes from its story,
- *     such as an inherited worker or risk, is not part of it
+ * @param version its own stored edit basis, as its store keeps it; a value it takes from its parent
+ *     issue, such as an inherited worker or risk, is not part of it
  */
 public record Issue(
         String id,

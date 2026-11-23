@@ -30,18 +30,22 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Correction;
+import org.fuin.porelo.planner.store.Dependencies;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextFormat;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
@@ -282,46 +286,84 @@ public final class GitStore implements PlanningStore {
     /** Refreshes under a lock already held, which this releases. */
     private Board refreshed(final ProjectLock.Held lease) {
         try (ProjectLock.Held held = lease) {
-            requireActive();
-            final Snapshot old = current.get();
-            // A repository with saves not pushed yet is read at its last save, never fetched over.
-            final Map<String, String> commits =
-                    each(
-                            repository -> {
-                                final String name = repository.name();
-                                if (saves.pending(name)) {
-                                    return saves.tip(name).orElseThrow();
-                                }
-                                final String head =
-                                        remote.head(name, repository.url(), repository.branch());
-                                if (old != null && head.equals(old.commits().get(name))) {
-                                    return head;
-                                }
-                                return remote.fetch(name, repository.url(), repository.branch());
-                            });
-            final String own = repositories.get(0).name();
-            final Part ownPart =
-                    old != null && unchanged(old, commits, own)
-                            ? of(old.parts(), own)
-                            : ownPart(of(commits, own));
-            final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);
-            // A part read against another workflow is read again, since its checks may differ.
-            final boolean sameWorkflow =
-                    old != null && sameWorkflow(of(old.parts(), own).workflow(), project);
-            final Map<String, Part> parts =
-                    each(
-                            repository -> {
-                                final String name = repository.name();
-                                if (own(repository)) {
-                                    return ownPart;
-                                }
-                                if (old != null && sameWorkflow && unchanged(old, commits, name)) {
-                                    return of(old.parts(), name);
-                                }
-                                return reader.read(repository, of(commits, name), project);
-                            });
-            return swap(commits, parts, clock.instant()).board();
+            return atTips().board();
         }
+    }
+
+    /**
+     * Reads every repository at its tip now and swaps the board in: a repository with saves not
+     * pushed yet at its last save, every other at its remote's branch. The caller holds the
+     * project's lock.
+     */
+    private Snapshot atTips() {
+        requireActive();
+        final Snapshot old = current.get();
+        // A repository with saves not pushed yet is read at its last save, never fetched over.
+        final Map<String, String> commits =
+                each(
+                        repository -> {
+                            final String name = repository.name();
+                            if (saves.pending(name)) {
+                                return saves.tip(name).orElseThrow();
+                            }
+                            final String head =
+                                    remote.head(name, repository.url(), repository.branch());
+                            if (old != null && head.equals(old.commits().get(name))) {
+                                return head;
+                            }
+                            return remote.fetch(name, repository.url(), repository.branch());
+                        });
+        return readAt(old, commits, clock.instant());
+    }
+
+    /**
+     * Reads the board at every repository's tip the store holds, asking no remote: its last save
+     * not pushed yet, or the commit last fetched, as a save on the revision reads it. A repository
+     * whose tip moved since the board was read, as a round of pushes moves it, is read anew. The
+     * caller holds the project's lock.
+     */
+    private Snapshot atClones() {
+        requireActive();
+        final Snapshot old = current.get();
+        if (old == null) {
+            // No board was read yet, so there is no tip the store holds.
+            return atTips();
+        }
+        final Map<String, String> commits = new LinkedHashMap<>();
+        for (final Repository repository : repositories) {
+            final String name = repository.name();
+            commits.put(name, saves.tip(name).orElseGet(() -> of(old.commits(), name)));
+        }
+        return commits.equals(old.commits()) ? old : readAt(old, commits, old.checked());
+    }
+
+    /** Reads the board at the commits, each repository whose commit did not move kept as read. */
+    private Snapshot readAt(
+            final @Nullable Snapshot old,
+            final Map<String, String> commits,
+            final Instant checked) {
+        final String own = repositories.get(0).name();
+        final Part ownPart =
+                old != null && unchanged(old, commits, own)
+                        ? of(old.parts(), own)
+                        : ownPart(of(commits, own));
+        final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);
+        // A part read against another workflow is read again, since its checks may differ.
+        final boolean sameWorkflow =
+                old != null && sameWorkflow(of(old.parts(), own).workflow(), project);
+        final Map<String, Part> parts =
+                each(
+                        repository -> {
+                            final String name = repository.name();
+                            if (own(repository)) {
+                                return ownPart;
+                            }
+                            if (old != null && sameWorkflow && unchanged(old, commits, name)) {
+                                return of(old.parts(), name);
+                            }
+                            return reader.read(repository, of(commits, name), project);
+                        });
+        return swap(commits, parts, checked);
     }
 
     /**
@@ -331,15 +373,110 @@ public final class GitStore implements PlanningStore {
      */
     @Override
     public Board save(final Revision revision, final Writes writes) {
+        refuseReasons(writes);
+        return saved(revision, writes, List.of(), null, null).board();
+    }
+
+    /** An issue file has no place for the person's sentence, so it is never dropped unsaid. */
+    private static void refuseReasons(final Writes writes) {
         if (writes.reasons()) {
-            // An issue file has no place for the person's sentence, so it is never dropped unsaid.
             final String item =
                     writes.issueReasons().keySet().stream()
                             .findFirst()
                             .orElseGet(() -> writes.storyReasons().keySet().iterator().next());
             throw new StoreException.NotSavable(item, "the Git store keeps no reason");
         }
-        return saved(revision, writes, List.of(), null, null).board();
+    }
+
+    /**
+     * Saves the writes when none of the items they change changed since the caller saw them. Under
+     * the project's lock the board is read at the tips the store holds, asking no remote, as a save
+     * on the revision is; each target's version there is compared with the one seen, and the whole
+     * save is built on those tips: its heads, stage records, indexes and the stories' files the
+     * index writes come from that base, so a change to other files a check fetched since the
+     * caller's read stands beneath the save. When a repository moved again before the save's
+     * commits could stand, the save is read and built anew, a few times at most.
+     *
+     * @param basis the versions the caller saw, by id; it names every item the writes change
+     * @param writes the writes
+     * @return the board after the save
+     * @throws StoreException.BasisIncomplete when the basis lacks an item the writes change
+     * @throws StoreException.Changed when an item the writes change changed since it was seen
+     * @throws StoreException.Busy when the repositories kept moving under every attempt
+     */
+    public Board save(final Basis basis, final Writes writes) {
+        return save(basis, writes, Recheck.none());
+    }
+
+    /**
+     * Saves the writes as {@link #save(Basis, Writes)} does, running the recheck's rule on each
+     * board read at the tips, after the targets' versions are checked and before anything is built;
+     * the Git store holds every item of the project, so the rule reads that board.
+     */
+    @Override
+    public Board save(final Basis basis, final Writes writes, final Recheck recheck) {
+        refuseReasons(writes);
+        final String own = repositories.get(0).name();
+        final Saved saved;
+        try (ProjectLock.Held held =
+                lock.acquire(LOCK_WAIT).orElseThrow(() -> new StoreException.Busy(own))) {
+            saved = onTip(basis, writes, recheck);
+        }
+        saves.push();
+        return saved.board();
+    }
+
+    /** How often a save on the tips is read and built anew when a repository moved under it. */
+    static final int TIP_ATTEMPTS = 3;
+
+    /** Builds and commits the save on the tips now, under the project's lock the caller holds. */
+    private Saved onTip(final Basis basis, final Writes writes, final Recheck recheck) {
+        for (int attempt = 1; attempt <= TIP_ATTEMPTS; attempt++) {
+            final Snapshot snapshot = atClones();
+            basis.unchanged(snapshot.board(), targets(snapshot.board(), writes));
+            recheck.rule().accept(Dependencies.of(snapshot.board()));
+            final Saved saved = built(snapshot, writes, List.of(), null, null);
+            if (saved != null) {
+                return saved;
+            }
+        }
+        // Each attempt's commits stood nowhere; nothing of the save is kept.
+        throw new StoreException.Busy(repositories.get(0).name());
+    }
+
+    /**
+     * The items whose own stored state the writes change on the board: each item {@link
+     * Writes#targets()} names, but an issue or story only given a worker or priority equal to the
+     * board's, since the save leaves an unchanged one unwritten. One the board does not hold is
+     * named, so the check refuses it.
+     *
+     * @param board the board the save is built on
+     * @param writes the writes
+     * @return the targets' ids, sorted
+     */
+    static Set<String> targets(final Board board, final Writes writes) {
+        final Set<String> targets = new java.util.TreeSet<>(writes.targets());
+        writes.workers()
+                .forEach(
+                        (id, worker) -> {
+                            if (board.issue(id).map(issue -> issue.worker() == worker).orElse(false)
+                                    && !writes.issues().containsKey(id)
+                                    && !writes.issueReasons().containsKey(id)) {
+                                targets.remove(id);
+                            }
+                        });
+        writes.priorities()
+                .forEach(
+                        (id, priority) -> {
+                            if (board.story(id)
+                                            .map(story -> story.priority().equals(priority))
+                                            .orElse(false)
+                                    && !writes.stories().containsKey(id)
+                                    && !writes.storyReasons().containsKey(id)) {
+                                targets.remove(id);
+                            }
+                        });
+        return targets;
     }
 
     /**
@@ -461,44 +598,56 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.StaleRevision(
                         snapshot == null ? "" : snapshot.board().revision().value());
             }
-            final Map<String, Map<String, StageResult.ForIssue>> results =
-                    result == null ? Map.of() : results(snapshot, result);
-            final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
-            final Map<String, String> stories = storyHeads(snapshot, writes);
-            final Map<String, Map<String, Worker>> workers = workerHeads(snapshot, writes);
-            final Map<String, String> priorities = priorityHeads(snapshot, writes);
-            if (issues.isEmpty()
-                    && stories.isEmpty()
-                    && workers.isEmpty()
-                    && priorities.isEmpty()
-                    && ideas.isEmpty()
-                    && story == null) {
-                return new Saved(snapshot.board(), Map.of(), null);
+            final Saved saved = built(snapshot, writes, ideas, story, result);
+            if (saved == null) {
+                throw new StoreException.StaleRevision(revision(tips()));
             }
-            final Path scratch;
-            try {
-                scratch = remote.scratch();
-            } catch (final UncheckedIOException e) {
-                throw new StoreException.Unreadable(own, "no directory for the save");
-            }
-            try {
-                return commitLocally(
-                        snapshot,
-                        new Edits(
-                                writes,
-                                ideas,
-                                story,
-                                issues,
-                                stories,
-                                workers,
-                                priorities,
-                                results),
-                        scratch);
-            } catch (final GitFailure | UncheckedIOException e) {
-                throw new StoreException.Unreadable(own, local(e, scratch));
-            } finally {
-                deleteScratch(scratch, own);
-            }
+            return saved;
+        }
+    }
+
+    /**
+     * Builds the save on the snapshot and commits it, under the project's lock the caller holds.
+     *
+     * @return what it saved, or {@code null} when a repository no longer stands at the snapshot's
+     *     commit and nothing was kept
+     */
+    private @Nullable Saved built(
+            final Snapshot snapshot,
+            final Writes writes,
+            final List<NewIssue> ideas,
+            final @Nullable NewIdea story,
+            final @Nullable StageResult result) {
+        final String own = repositories.get(0).name();
+        final Map<String, Map<String, StageResult.ForIssue>> results =
+                result == null ? Map.of() : results(snapshot, result);
+        final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
+        final Map<String, String> stories = storyHeads(snapshot, writes);
+        final Map<String, Map<String, Worker>> workers = workerHeads(snapshot, writes);
+        final Map<String, String> priorities = priorityHeads(snapshot, writes);
+        if (issues.isEmpty()
+                && stories.isEmpty()
+                && workers.isEmpty()
+                && priorities.isEmpty()
+                && ideas.isEmpty()
+                && story == null) {
+            return new Saved(snapshot.board(), Map.of(), null);
+        }
+        final Path scratch;
+        try {
+            scratch = remote.scratch();
+        } catch (final UncheckedIOException e) {
+            throw new StoreException.Unreadable(own, "no directory for the save");
+        }
+        try {
+            return commitLocally(
+                    snapshot,
+                    new Edits(writes, ideas, story, issues, stories, workers, priorities, results),
+                    scratch);
+        } catch (final GitFailure | UncheckedIOException e) {
+            throw new StoreException.Unreadable(own, local(e, scratch));
+        } finally {
+            deleteScratch(scratch, own);
         }
     }
 
@@ -760,7 +909,14 @@ public final class GitStore implements PlanningStore {
         return files;
     }
 
-    private Saved commitLocally(final Snapshot snapshot, final Edits edits, final Path scratch) {
+    /**
+     * Commits the edits in the planner's own clones.
+     *
+     * @return what it saved, or {@code null} when a repository no longer stands at the snapshot's
+     *     commit, so no commit was kept
+     */
+    private @Nullable Saved commitLocally(
+            final Snapshot snapshot, final Edits edits, final Path scratch) {
         final Writes writes = edits.writes();
         final Map<String, Map<String, String>> issues = edits.issues();
         final Map<String, String> stories = edits.stories();
@@ -978,7 +1134,7 @@ public final class GitStore implements PlanningStore {
         made.keySet().forEach(name -> parents.put(name, of(snapshot.commits(), name)));
         // The answer stands once the commits do; the pushes follow in the background.
         if (!saves.record(parents, made)) {
-            throw new StoreException.StaleRevision(revision(tips()));
+            return null;
         }
         final Map<String, String> ids = new LinkedHashMap<>();
         added.forEach((name, issue) -> ids.put(name, issue.id()));
@@ -1685,8 +1841,18 @@ public final class GitStore implements PlanningStore {
         final List<String> faults = new ArrayList<>();
         final List<Issue> found = new ArrayList<>();
         for (final Repository repository : repositories) {
-            faults.addAll(of(parts, repository.name()).faults());
-            found.addAll(of(parts, repository.name()).issues());
+            final String name = repository.name();
+            final Part part = of(parts, name);
+            faults.addAll(part.faults());
+            part.issues()
+                    .forEach(
+                            issue ->
+                                    found.add(
+                                            versioned(
+                                                    issue,
+                                                    name,
+                                                    of(commits, name),
+                                                    part.paths().get(issue.id()))));
         }
         faults.addAll(pushFaults(parts));
         if (read.storyRule().isEmpty()) {
@@ -1741,13 +1907,15 @@ public final class GitStore implements PlanningStore {
                                             java.util.stream.Collectors.counting()));
             final List<Story> stories = new ArrayList<>();
             for (final org.fuin.porelo.planner.store.git.stories.Story story : ownPart.stories()) {
-                stories.add(
+                final Story shown =
                         story(
                                 story,
                                 byReference,
                                 read,
                                 storyIds.getOrDefault(story.id(), 0L) > 1,
-                                places(ownPart, own, Part.story(story.id()))));
+                                places(ownPart, own, Part.story(story.id())));
+                final Version version = ownPart.versions().get(Part.story(story.id()));
+                stories.add(version == null ? shown : shown.withVersion(version));
             }
             return new Board(
                     revision,
@@ -1760,6 +1928,22 @@ public final class GitStore implements PlanningStore {
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(own, String.valueOf(e.getMessage()));
         }
+    }
+
+    /**
+     * An issue with its file's blob id as its version; one only its index row holds, or whose id
+     * two files carry, keeps the version over what it reads.
+     */
+    private Issue versioned(
+            final Issue issue,
+            final String repository,
+            final String commit,
+            final @Nullable String path) {
+        return path == null
+                ? issue
+                : remote.object(repository, commit, path)
+                        .map(object -> issue.withVersion(new Version(object)))
+                        .orElse(issue);
     }
 
     private static Workflow workflow(

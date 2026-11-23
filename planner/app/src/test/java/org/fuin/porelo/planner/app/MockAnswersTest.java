@@ -176,7 +176,7 @@ class MockAnswersTest {
     }
 
     private static final String MOVE_B542 =
-            "{\"revision\": \"mock@1\", \"moves\": [{\"issue\": \"B542\", \"to\": \"Review\"}]}";
+            "{\"moves\": [{\"issue\": \"B542\", \"to\": \"Review\"}]}";
 
     private static HttpResponse<String> call(
             final String method, final String path, final String body)

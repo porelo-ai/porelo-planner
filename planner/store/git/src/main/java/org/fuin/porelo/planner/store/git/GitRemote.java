@@ -212,6 +212,17 @@ public final class GitRemote implements Remote {
     }
 
     @Override
+    public Optional<String> object(
+            final String repository, final String commit, final String path) {
+        final String checked = RepoPath.checked(path);
+        if (!CommitFiles.file(checked)) {
+            return Optional.empty();
+        }
+        final CommitFiles.Entry entry = files(repository, commit(commit)).entry(checked);
+        return entry == null || !entry.plain() ? Optional.empty() : Optional.of(entry.object());
+    }
+
+    @Override
     public List<String> list(final String repository, final String commit, final String directory) {
         return entries(repository, commit, directory, "blob");
     }

@@ -15,7 +15,7 @@ class _Source extends FakePlanningSource {
 
   final watches = <String, StreamController<PlanningSnapshot>>{};
 
-  void send(String project) => watches[project]!.add(PlanningSnapshot.from(board));
+  void send(String project) => watches[project]!.add(versioned(board));
 
   @override
   Stream<PlanningSnapshot> watchStories(String project) {
@@ -103,7 +103,10 @@ void main() {
 
   // Harm: a refused priority left pending shows a priority the store refused as if it were coming.
   testWidgets('a refused priority is dropped and its refusal shown', (tester) async {
-    final source = _Source(_oneColumn())..priorityFailure = const PlanningRefusal('StaleRevision', {'revision': 'r9'});
+    final source = _Source(_oneColumn())
+      ..priorityFailure = const PlanningRefusal('ItemChanged', {
+        'changed': ['S2'],
+      });
     final boards = await _show(tester, source);
     final board = boards.selected!;
 

@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.app.answers.ChangedItem;
 import org.fuin.porelo.planner.app.answers.CorrectionPreview;
 import org.fuin.porelo.planner.app.answers.CorrectionSaved;
 import org.fuin.porelo.planner.app.answers.IdeaAdded;
@@ -40,27 +41,34 @@ import org.fuin.porelo.planner.app.answers.StoryReply;
 import org.fuin.porelo.planner.app.answers.StoryWorkOrder;
 import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.StoryWorkReply;
+import org.fuin.porelo.planner.app.answers.Target;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.answers.WorkerSaved;
 import org.fuin.porelo.planner.core.Corrections;
+import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.OpenWork;
+import org.fuin.porelo.planner.core.Operation;
 import org.fuin.porelo.planner.core.Priorities;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.Rules;
 import org.fuin.porelo.planner.core.StoryRules;
+import org.fuin.porelo.planner.core.Targets;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -127,13 +135,13 @@ public class BoardController {
     /**
      * A batch of moves as the window sends it.
      *
-     * @param revision the revision the window shows
+     * @param seen the versions the person saw, by item id: the preview's targets
      * @param moves the moves, in order
      * @param digest the digest of the batch's preview
      * @param confirm whether a story may stand where its issues do not fit
      */
     public record MovesBody(
-            @Nullable String revision,
+            @Nullable Map<String, String> seen,
             @Nullable List<@Nullable MoveBody> moves,
             @Nullable String digest,
             @Nullable Boolean confirm) {}
@@ -141,11 +149,9 @@ public class BoardController {
     /**
      * A batch of moves to preview, as the window sends it.
      *
-     * @param revision the revision the window shows
      * @param moves the moves, in order
      */
-    public record PreviewBody(
-            @Nullable String revision, @Nullable List<@Nullable MoveBody> moves) {}
+    public record PreviewBody(@Nullable List<@Nullable MoveBody> moves) {}
 
     /**
      * One move as the window sends it, naming a story or an issue.
@@ -188,26 +194,45 @@ public class BoardController {
             @PathVariable("project") final String project, @RequestBody final PreviewBody body) {
         final String name = name(project);
         final List<Moves.Move> moves = moves(name, body.moves());
-        final String revision = body.revision();
-        if (revision == null) {
-            throw notAllowed("", "", "The body names no revision.");
-        }
         final Projects.Given given = projects.given(name);
         refuseReasons(given.store(), moves);
         final MovePreview preview;
         try {
-            preview = given.work().preview(moves, revision);
+            preview = given.work().preview(moves);
         } catch (final UnsupportedOperationException e) {
             throw movesNotOffered(name);
         }
         return new org.fuin.porelo.planner.app.answers.MovePreview(
                 preview.revision(),
                 preview.digest(given.repository(), given.branch()),
+                targets(preview.targets()),
                 preview.issues().stream().map(BoardController::movedIssue).toList(),
                 preview.stories().stream()
                         .map(story -> new MovedStory(story.id(), story.from(), story.to()))
                         .toList(),
                 preview.warnings().stream().map(BoardController::warning).toList());
+    }
+
+    /** The targets a preview found, each with its version, in their order. */
+    private static List<Target> targets(final Map<String, String> targets) {
+        return targets.entrySet().stream()
+                .map(target -> new Target(target.getKey(), target.getValue()))
+                .toList();
+    }
+
+    /**
+     * The versions a write's body names, refused as a move's body is when they are none.
+     *
+     * @param item the item a refusal names, or empty
+     * @param seen the body's member
+     * @return the versions
+     */
+    private static Basis seen(final String item, final @Nullable Map<String, String> seen) {
+        final Basis basis = WorkRequests.seen(seen);
+        if (basis == null) {
+            throw notAllowed(item, "", "The body names no versions seen.");
+        }
+        return basis;
     }
 
     private static MovedIssue movedIssue(final MovePreview.MovedIssue issue) {
@@ -239,10 +264,7 @@ public class BoardController {
             @PathVariable("project") final String project, @RequestBody final MovesBody body) {
         final String name = name(project);
         final List<Moves.Move> moves = moves(name, body.moves());
-        final String revision = body.revision();
-        if (revision == null) {
-            throw notAllowed("", "", "The body names no revision.");
-        }
+        final Basis basis = seen("", body.seen());
         final Projects.Given given = projects.given(name);
         refuseReasons(given.store(), moves);
         final String named = body.digest();
@@ -251,10 +273,7 @@ public class BoardController {
             // A caller that confirms every warning needs no preview of its own; the planner's
             // preview of the same moves stands for it.
             try {
-                digest =
-                        given.work()
-                                .preview(moves, revision)
-                                .digest(given.repository(), given.branch());
+                digest = given.work().preview(moves).digest(given.repository(), given.branch());
             } catch (final UnsupportedOperationException e) {
                 throw movesNotOffered(name);
             }
@@ -268,12 +287,14 @@ public class BoardController {
                     given.work()
                             .moves(
                                     moves,
-                                    revision,
+                                    basis,
                                     digest,
                                     Boolean.TRUE.equals(body.confirm()),
                                     given.repository(),
                                     given.branch(),
-                                    runs -> saveMoves(name, given.store(), body, moves, runs));
+                                    runs ->
+                                            saveMoves(
+                                                    name, given.store(), body, basis, moves, runs));
             final Moved moved = saved.saved();
             return new Moved(moved.revision(), moved.moved(), stopped(saved.stopped()));
         } catch (final UnsupportedOperationException e) {
@@ -315,14 +336,12 @@ public class BoardController {
     /**
      * The correction of one warning, as the window sends it to preview.
      *
-     * @param revision the revision the window shows
      * @param story the story's id, or null
      * @param issue the issue's id, or null
      * @param warning the kind of the warning it sets right
      * @param state the state the person picked
      */
     public record CorrectionRequest(
-            @Nullable String revision,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
             @Nullable String warning,
@@ -331,7 +350,7 @@ public class BoardController {
     /**
      * A correction the person confirmed, as the window sends it to save.
      *
-     * @param revision the revision its preview was answered for
+     * @param seen the versions the person saw, by item id: the preview's targets
      * @param story the story's id, or null
      * @param issue the issue's id, or null
      * @param warning the kind of the warning it sets right
@@ -340,7 +359,7 @@ public class BoardController {
      * @param confirm whether the person confirmed the preview's warnings
      */
     public record CorrectionConfirm(
-            @Nullable String revision,
+            @Nullable Map<String, String> seen,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String issue,
             @Nullable String warning,
@@ -362,20 +381,17 @@ public class BoardController {
         final String name = name(project);
         final Corrections.Asked asked =
                 asked(name, body.story(), body.issue(), body.warning(), body.state());
-        final String revision = body.revision();
-        if (revision == null) {
-            throw notAllowed(asked.id(), "", "The body names no revision.");
-        }
         final Projects.Given given = projects.given(name);
         final Corrections.Preview preview;
         try {
-            preview = given.work().correctionPreview(asked, revision);
+            preview = given.work().correctionPreview(asked);
         } catch (final UnsupportedOperationException e) {
             throw correctionNotOffered(name);
         }
         return new CorrectionPreview(
                 preview.revision(),
                 preview.digest(given.repository(), given.branch()),
+                targets(preview.targets()),
                 asked.story() ? asked.id() : null,
                 asked.story() ? null : asked.id(),
                 asked.warning(),
@@ -400,10 +416,7 @@ public class BoardController {
         final String name = name(project);
         final Corrections.Asked asked =
                 asked(name, body.story(), body.issue(), body.warning(), body.state());
-        final String revision = body.revision();
-        if (revision == null) {
-            throw notAllowed(asked.id(), "", "The body names no revision.");
-        }
+        final Basis basis = seen(asked.id(), body.seen());
         final String digest = body.digest();
         if (digest == null || !DIGEST.matcher(digest).matches()) {
             throw notAllowed(asked.id(), "", "The body names no preview's digest.");
@@ -414,7 +427,7 @@ public class BoardController {
                     given.work()
                             .correction(
                                     asked,
-                                    revision,
+                                    basis,
                                     digest,
                                     Boolean.TRUE.equals(body.confirm()),
                                     given.repository(),
@@ -478,13 +491,10 @@ public class BoardController {
             final String name,
             final PlanningStore store,
             final MovesBody body,
+            final Basis basis,
             final List<Moves.Move> moves,
             final Moves.Runs runs) {
-        final String revision = String.valueOf(body.revision());
         final Board board = store.board();
-        if (!board.revision().value().equals(revision)) {
-            throw new StoreException.StaleRevision(board.revision().value());
-        }
         final Moves.Planned planned;
         final Board saved;
         try {
@@ -493,7 +503,19 @@ public class BoardController {
                 // Nothing changes, so no repository is locked or asked.
                 return new Moved(board.revision().value(), planned.moved(), List.of());
             }
-            saved = store.save(board.revision(), planned.writes());
+            // The store checks the targets again where it saves, and the moves' rules on the
+            // parents and stories' issues it reads there, so a change between this check and the
+            // save refuses it.
+            final Set<String> from = new java.util.TreeSet<>(Moves.touched(board, moves));
+            from.addAll(Moves.stories(board, moves));
+            saved =
+                    store.save(
+                            basis,
+                            planned.writes(),
+                            new Recheck(
+                                    Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
+                                    from,
+                                    dependencies -> Rules.moves(dependencies, moves, runs)));
         } catch (final StoreException.PartlySaved e) {
             // The repositories pushed first hold the save, and every window shows what they hold.
             throw e;
@@ -534,13 +556,13 @@ public class BoardController {
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = name(project);
         final WorkRequests.IssueRequest body = WorkRequests.issue(request);
-        final String revision = body.revision();
-        if (revision == null) {
-            throw NewIssues.refused("revision", "The body names no revision.");
+        final Basis seen = body.seen();
+        if (seen == null) {
+            throw NewIssues.refused("seen", "The body names no versions seen.");
         }
         final NewIssue.Added added;
         try {
-            added = projects.work(name).withRuns(runs -> createIssue(name, revision, body, runs));
+            added = projects.work(name).withRuns(runs -> createIssue(name, seen, body, runs));
         } catch (final StoreException.NotSavable e) {
             throw NewIssues.refused(e.field(), String.valueOf(e.getMessage()));
         } catch (final UnsupportedOperationException e) {
@@ -558,14 +580,11 @@ public class BoardController {
 
     private NewIssue.Added createIssue(
             final String name,
-            final String revision,
+            final Basis seen,
             final WorkRequests.IssueRequest body,
             final Moves.Runs runs) {
         final PlanningStore store = projects.store(name);
         final Board board = store.board();
-        if (!board.revision().value().equals(revision)) {
-            throw new StoreException.StaleRevision(board.revision().value());
-        }
         final NewIssue issue =
                 NewIssues.check(
                         board,
@@ -580,6 +599,7 @@ public class BoardController {
             throw NewIssues.refused("priority", "The priority must be Highest to Lowest.");
         }
         final String story = body.story();
+        Edits.unchanged(board, seen, Targets.of(board, new Operation.CreateIssue(story)));
         if (story != null && board.holdsWork(story).isPresent()) {
             // Its words name both stories for an id named twice, else the warnings holding it.
             throw NewIssues.refused("story", board.holdsWork(story).get());
@@ -598,7 +618,7 @@ public class BoardController {
         }
         final NewIssue.Added added =
                 store.createIssue(
-                        board.revision(),
+                        seen,
                         new NewIssue(
                                 issue.repository(),
                                 issue.title(),
@@ -608,7 +628,8 @@ public class BoardController {
                                 issue.task(),
                                 priority,
                                 story,
-                                createsInState ? state : null));
+                                createsInState ? state : null),
+                        Recheck.none());
         LOG.info(
                 "Added issue {} to project {} as revision {}",
                 LogText.of(added.id()),
@@ -754,7 +775,7 @@ public class BoardController {
      *
      * @param project the project's name
      * @param issue the issue's id
-     * @param request the request, whose body is the new worker and the revision
+     * @param request the request, whose body is the new worker and the versions seen
      * @return the revision after the save, unchanged when the issue had that worker already
      */
     @PutMapping("/projects/{project}/issues/{issue}/worker")
@@ -776,16 +797,25 @@ public class BoardController {
             final String name, final String issue, final WorkRequests.WorkerRequest body) {
         final PlanningStore store = projects.store(name);
         final Board board = store.board();
-        if (!board.revision().value().equals(body.revision())) {
-            throw new StoreException.StaleRevision(board.revision().value());
-        }
+        Edits.unchanged(board, body.seen(), Targets.of(board, new Operation.SetWorker(issue)));
         final Writes writes = Workers.check(board, issue, body.worker());
         if (writes.none()) {
             // Nothing changes, so no repository is locked or asked.
             return new WorkerSaved(board.revision().value());
         }
         try {
-            final String saved = store.save(board.revision(), writes).revision().value();
+            final String saved =
+                    store.save(
+                                    body.seen(),
+                                    writes,
+                                    new Recheck(
+                                            Set.of(),
+                                            Set.of(issue),
+                                            dependencies ->
+                                                    Rules.worker(
+                                                            dependencies, issue, body.worker())))
+                            .revision()
+                            .value();
             LOG.info(
                     "Saved the worker of issue {} of project {} as revision {}",
                     LogText.of(issue),
@@ -807,7 +837,7 @@ public class BoardController {
      *
      * @param project the project's name
      * @param story the story's id
-     * @param request the request, whose body is the new priority and the revision
+     * @param request the request, whose body is the new priority and the versions seen
      * @return the revision after the save, unchanged when the story had that priority already
      */
     @PutMapping("/projects/{project}/stories/{story}/priority")
@@ -830,16 +860,15 @@ public class BoardController {
             final String name, final String story, final WorkRequests.PriorityRequest body) {
         final PlanningStore store = projects.store(name);
         final Board board = store.board();
-        if (!board.revision().value().equals(body.revision())) {
-            throw new StoreException.StaleRevision(board.revision().value());
-        }
+        Edits.unchanged(
+                board, body.seen(), Targets.of(board, new Operation.SetStoryPriority(story)));
         final Writes writes = Priorities.check(board, story, body.priority());
         if (writes.none()) {
             // Nothing changes, so no repository is locked or asked.
             return new PrioritySaved(board.revision().value());
         }
         try {
-            final String saved = store.save(board.revision(), writes).revision().value();
+            final String saved = store.save(body.seen(), writes, Recheck.none()).revision().value();
             LOG.info(
                     "Saved the priority of story {} of project {} as revision {}",
                     LogText.of(story),
@@ -1009,6 +1038,59 @@ public class BoardController {
                                                         breach.rule().spelled()),
                                                 breach.words()))
                         .toList());
+    }
+
+    /**
+     * Answers each target an ItemChanged refusal names as the board holds it now: the one issue,
+     * story or unlisted issue of its id, or gone when the board holds no one item by it.
+     *
+     * @param work the project's work, whose board and runs the items are read with
+     * @param ids the targets named
+     * @return each target, in the order named
+     */
+    static List<ChangedItem> changed(final WorkRun work, final List<String> ids) {
+        return work.lockedView(
+                (board, snapshot) -> {
+                    final OpenWork.Counter counter = new OpenWork.Counter(board);
+                    final List<ChangedItem> items = new ArrayList<>();
+                    for (final String id : ids) {
+                        final List<Issue> issues =
+                                board.issues().stream().filter(i -> i.id().equals(id)).toList();
+                        final List<Story> stories =
+                                board.stories().stream().filter(s -> s.id().equals(id)).toList();
+                        final List<UnlistedIssue> unlisted =
+                                board.unlisted().stream().filter(u -> u.id().equals(id)).toList();
+                        final int held = issues.size() + stories.size() + unlisted.size();
+                        if (held != 1) {
+                            items.add(new ChangedItem(id, true, null, null, null));
+                        } else if (!issues.isEmpty()) {
+                            items.add(
+                                    new ChangedItem(
+                                            id,
+                                            false,
+                                            issue(board, issues.getFirst(), snapshot),
+                                            null,
+                                            null));
+                        } else if (!stories.isEmpty()) {
+                            items.add(
+                                    new ChangedItem(
+                                            id,
+                                            false,
+                                            null,
+                                            story(board, stories.getFirst(), snapshot, counter),
+                                            null));
+                        } else {
+                            items.add(
+                                    new ChangedItem(
+                                            id,
+                                            false,
+                                            null,
+                                            null,
+                                            unlistedIssue(unlisted.getFirst())));
+                        }
+                    }
+                    return items;
+                });
     }
 
     /** Maps an open issue that is no item of the project, which the window only shows. */
@@ -1479,7 +1561,7 @@ public class BoardController {
                                     body.round(),
                                     ReadingCycle.Choice.valueOf(body.choice()),
                                     body.comment(),
-                                    body.revision(),
+                                    body.seen(),
                                     body.settings());
             final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
             return new ReadingReply(

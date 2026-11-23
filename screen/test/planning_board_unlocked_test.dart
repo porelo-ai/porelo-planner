@@ -31,26 +31,34 @@ class _Source extends FakePlanningSource {
   /// The moves whose preview the planner refuses as not allowed, by id.
   final Set<String> notAllowed = {};
 
-  /// The moves whose preview finds the board moved on unseen to r9 first, as another person's change would, by id.
+  /// The moves whose preview finds the board moved on unseen to r9 first, their item changed as another person's change
+  /// would, by id.
   final Set<String> movesOnAtPreviewOf = {};
 
   /// The refusal each move's save answers with, by id; the preview takes it.
   final Map<String, String> refusedAtSave = {};
 
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) {
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) {
     if (moves.any((move) => notAllowed.contains(move.id))) {
       return Future.error(PlanningRefusal('MoveNotAllowed', {}, '${moves.first.id} may not go there.'));
     }
-    if (moves.any((move) => movesOnAtPreviewOf.remove(move.id))) board = {...board, 'revision': 'r9'};
-    return super.previewMoves(project, moves, revision);
+    for (final move in moves) {
+      if (movesOnAtPreviewOf.remove(move.id)) board = _changedElsewhere(board, move.id);
+    }
+    return super.previewMoves(project, moves);
   }
 
   @override
-  Future<PlanIssueList> listIssues(String project) async =>
-      PlanIssueList.from({'revision': listedAt ?? board['revision'], 'issues': board['issues'] ?? <Object>[]});
+  Future<PlanIssueList> listIssues(String project) async => PlanIssueList.from({
+    'revision': listedAt ?? board['revision'],
+    'issues': [
+      for (final issue in (board['issues'] as List? ?? const []).cast<Map<String, dynamic>>())
+        {...issue, 'version': mockItemVersion(issue)},
+    ],
+  });
 
-  PlanningSnapshot get shown => PlanningSnapshot.from(board);
+  PlanningSnapshot get shown => versioned(board);
 
   /// Sends the board as the planner holds it now on the newest watch.
   void send() => watches.last.add(shown);
@@ -67,20 +75,20 @@ class _Source extends FakePlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
     if (saveHeld case final held?) await held.future;
     if (saveFailure case final failure?) {
-      saves.add((project, moves, revision));
+      saves.add((project, moves, board['revision'] as String));
       throw failure;
     }
     if (refusedAtSave.remove(moves.single.id) case final name?) {
-      saves.add((project, moves, revision));
+      saves.add((project, moves, board['revision'] as String));
       throw PlanningRefusal(name, {}, '${moves.single.id} was refused at its save.');
     }
-    return super.saveMoves(project, moves, revision, digest: digest, confirm: confirm);
+    return super.saveMoves(project, moves, seen, digest: digest, confirm: confirm);
   }
 
   @override
@@ -109,9 +117,9 @@ class _Source extends FakePlanningSource {
   });
 
   @override
-  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision) async {
-    lists.add((story, List.of(issues), revision));
-    board = applyPlanningStoryIssues(board, story, issues, revision);
+  Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen) async {
+    lists.add((story, List.of(issues), board['revision'] as String));
+    board = applyPlanningStoryIssues(board, story, issues, seen);
     return board['revision'] as String;
   }
 
@@ -122,6 +130,26 @@ class _Source extends FakePlanningSource {
   @override
   Future<PlanIssueList> listStoryIssues(String project, String story) async =>
       PlanIssueList.from({'issues': mockPlanningStory(board, story)!['issues'], 'revision': board['revision']});
+}
+
+/// [board] moved on to r9 with the story or issue [id] changed, as another person's change would leave it.
+Map<String, dynamic> _changedElsewhere(Map<String, dynamic> board, String id) {
+  Map<String, dynamic> changed(Map<String, dynamic> item) =>
+      item['id'] == id ? {...item, 'title': 'Changed elsewhere'} : item;
+  return {
+    ...board,
+    'revision': 'r9',
+    'stories': [
+      for (final story in (board['stories'] as List).cast<Map<String, dynamic>>())
+        changed({
+          ...story,
+          if (story['issues'] case final List<dynamic> issues)
+            'issues': [for (final issue in issues.cast<Map<String, dynamic>>()) changed(issue)],
+        }),
+    ],
+    if (board['issues'] case final List<dynamic> issues)
+      'issues': [for (final issue in issues.cast<Map<String, dynamic>>()) changed(issue)],
+  };
 }
 
 /// The small board with its open-work figures, so the counts are known.
@@ -365,7 +393,7 @@ void main() {
   test('a move during a Reload against a revision the planner moved past is refused as stale', () async {
     final (source, board) = await _downBoard();
     await _reloadHeld(source, board);
-    source.board = {...source.board, 'revision': 'r9'};
+    source.board = _changedElsewhere(source.board, 'S1');
     await board.move('S1', 'Finished');
     expect(source.saves, isEmpty, reason: 'nothing was saved');
     expect(board.moveProblem, contains('Planning changed'), reason: 'the stale move is said');
@@ -576,7 +604,7 @@ void main() {
       unawaited(board.reloadPlanning());
       await _turns();
       expect(board.fetching, isTrue);
-      source.board = {...source.board, 'revision': 'r9'};
+      source.board = _changedElsewhere(source.board, 'S1');
       await board.move('S1', 'Finished');
       expect(source.saves, isEmpty, reason: 'nothing was saved');
       expect(board.moveProblem, contains('Planning changed'));
@@ -592,7 +620,7 @@ void main() {
       await _turns();
       expect(source.heldReads, hasLength(1), reason: 'the Reload\'s read of r1 waits');
       source.holdReads = false;
-      source.board = {...source.board, 'revision': 'r9'};
+      source.board = _changedElsewhere(source.board, 'S1');
       await board.move('S1', 'Finished');
       expect(board.moveProblem, contains('Planning changed'));
       expect(board.snapshot?.revision, 'r9', reason: 'the board was read again');
@@ -936,7 +964,7 @@ void main() {
       expect(board.queuedMoves, isEmpty);
     });
 
-    for (final name in ['StaleRevision', 'PreviewChanged']) {
+    for (final name in ['ItemChanged', 'PreviewChanged']) {
       // Harm: a queued move meeting a changed board at its save is saved unseen, or stops the queue behind it.
       test('a queued move refused at its save with $name is asked anew, and the queue goes on after', () async {
         final (source, board) = await _liveBoard(data: _wide());

@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.git.stories.Story;
 import org.fuin.porelo.planner.store.git.stories.Workflow;
@@ -22,6 +23,8 @@ import org.jspecify.annotations.Nullable;
  * @param faults each file left out because it could not be read, naming it and why
  * @param copies the files of each id two or more files carry, by the keys of {@code paths}, which
  *     holds none of them
+ * @param versions each story's version over what its file holds of its own, by {@link
+ *     #story(String)}, none for a story whose file is not known or whose id two files carry
  */
 public record Part(
         @Nullable Workflow workflow,
@@ -30,7 +33,8 @@ public record Part(
         @Nullable Work work,
         Map<String, String> paths,
         List<String> faults,
-        Map<String, List<String>> copies) {
+        Map<String, List<String>> copies,
+        Map<String, Version> versions) {
 
     /** Copies the lists and the maps. */
     public Part {
@@ -41,6 +45,29 @@ public record Part(
         final Map<String, List<String>> copied = new LinkedHashMap<>();
         copies.forEach((key, files) -> copied.put(key, List.copyOf(files)));
         copies = Collections.unmodifiableMap(copied);
+        versions = Collections.unmodifiableMap(new LinkedHashMap<>(versions));
+    }
+
+    /**
+     * Makes a part whose stories' versions are not known.
+     *
+     * @param workflow the board's workflow
+     * @param stories the stories
+     * @param issues the issues
+     * @param work the work rules
+     * @param paths the files by id
+     * @param faults each file left out
+     * @param copies the files of each id two or more files carry
+     */
+    public Part(
+            final @Nullable Workflow workflow,
+            final List<Story> stories,
+            final List<Issue> issues,
+            final @Nullable Work work,
+            final Map<String, String> paths,
+            final List<String> faults,
+            final Map<String, List<String>> copies) {
+        this(workflow, stories, issues, work, paths, faults, copies, Map.of());
     }
 
     /**

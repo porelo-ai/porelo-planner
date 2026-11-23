@@ -33,12 +33,6 @@ public final class WorkRefusal extends RuntimeException {
                 "NoSuchStory", "The board has no such story.", Map.of("story", story));
     }
 
-    /** Refuses an outdated decision, naming the current revision. */
-    public static WorkRefusal staleRevision(final String revision) {
-        return new WorkRefusal(
-                "StaleRevision", "The board has changed.", Map.of("revision", revision));
-    }
-
     /** Refuses duplicate work only from explicit active task records. */
     public static WorkRefusal workRunning(final String story, final List<String> tasks) {
         return new WorkRefusal(

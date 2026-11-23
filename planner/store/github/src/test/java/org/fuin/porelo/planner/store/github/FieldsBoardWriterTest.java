@@ -33,6 +33,7 @@ import org.fuin.porelo.forge.github.model.IssueField;
 import org.fuin.porelo.forge.github.model.IssueFieldValue;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
@@ -4422,5 +4423,136 @@ class FieldsBoardWriterTest {
                         StoreException.NotSavable.class,
                         e -> assertThat(e.subject()).as("the issue").isEqualTo("A1"));
         assertThat(github.calls).as("no call made").isEmpty();
+    }
+
+    /** The basis of a caller that saw the items given, each by its id. */
+    private static Basis seen(final ItemView... items) {
+        Basis basis = Basis.none();
+        for (final ItemView item : items) {
+            basis = basis.with(idOf(item), ItemVersions.of(item));
+        }
+        return basis;
+    }
+
+    @Test
+    void aWriteToOneIssueGoesThroughWhileAnotherIssueWasCreated() {
+        // Harm: a move of one issue is refused because another client created an issue elsewhere
+        // on the project after the caller read the board.
+        final ItemView moved = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView created = item("LB9", "example-lib", 9, true, "", state("Idea"));
+        final GitHub github = new GitHub().holding(moved, created);
+
+        github.writer()
+                .save(
+                        snapshot(moved, created),
+                        seen(moved),
+                        new Writes(Map.of("PL1", "Backlog"), Map.of()));
+
+        assertThat(github.mutations)
+                .as("the move written")
+                .containsExactly(List.of(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog")));
+    }
+
+    @Test
+    void aTargetChangedAfterTheCallersReadIsRefusedAndNothingIsWritten() {
+        // Harm: a move is written over an issue a person changed after the caller read it.
+        final ItemView before = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView edited =
+                item("PL1", "example-project", 1, true, "Edited on GitHub.", state("Idea"));
+        final GitHub github = new GitHub().holding(edited);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(before),
+                                                seen(before),
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
+                .as("the move over a changed issue")
+                .isInstanceOfSatisfying(
+                        StoreException.Changed.class,
+                        e -> assertThat(e.ids()).as("the changed").containsExactly("PL1"));
+        assertThat(github.calls).as("the calls made").containsExactly("issueBoard");
+        assertThat(github.mutations).as("the field values written").isEmpty();
+    }
+
+    @Test
+    void aTargetWithoutAVersionIsRefusedBeforeGitHubIsAsked() {
+        // Harm: a version the caller did not send is taken as "do not check", and the write goes
+        // out over whatever GitHub holds.
+        final ItemView moved = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView other = item("LB2", "example-lib", 2, true, "", state("Idea"));
+        final GitHub github = new GitHub().holding(moved, other);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(moved, other),
+                                                seen(other),
+                                                new Writes(Map.of("PL1", "Backlog"), Map.of())))
+                .as("the move without its target's version")
+                .isInstanceOfSatisfying(
+                        StoreException.BasisIncomplete.class,
+                        e -> assertThat(e.missing()).as("the missing").containsExactly("PL1"));
+        assertThat(github.calls).as("the calls made").isEmpty();
+    }
+
+    @Test
+    void aChangeToAnItemTheBasisNamesButTheWriteDoesNotChangeRefusesNothing() {
+        // Harm: the screen sends the versions of everything it saw, and a move of one issue is
+        // refused because another client changed an unrelated issue among them.
+        final ItemView moved = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView before = item("LB2", "example-lib", 2, true, "", state("Idea"));
+        final ItemView edited =
+                item("LB2", "example-lib", 2, true, "Edited on GitHub.", state("Idea"));
+        final GitHub github = new GitHub().holding(moved, edited);
+
+        github.writer()
+                .save(
+                        snapshot(moved, before),
+                        seen(moved, before),
+                        new Writes(Map.of("PL1", "Backlog"), Map.of()));
+
+        assertThat(github.mutations)
+                .as("the move written")
+                .containsExactly(List.of(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog")));
+    }
+
+    @Test
+    void aWriteCheckedByVersionsThatGitHubRefusesInPartIsPartlySaved() {
+        // Harm: after the versions were checked, GitHub takes one part of the write and refuses
+        // another, and the window is told nothing was saved.
+        final ItemView one = item("PL1", "example-project", 1, true, "", state("Idea"));
+        final ItemView two = item("LB2", "example-lib", 2, true, "", state("Idea"));
+        final GitHub github =
+                new GitHub()
+                        .holding(one, two)
+                        .answering(
+                                values ->
+                                        new Batch<>(
+                                                List.of(
+                                                        Batch.Outcome.of(values.get(0).itemId()),
+                                                        Batch.Outcome.<String>refused(
+                                                                "refused for " + TOKEN)),
+                                                null,
+                                                GitHubExceptions.WITHOUT_A_WORD));
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .save(
+                                                snapshot(one, two),
+                                                seen(one, two),
+                                                new Writes(
+                                                        ordered("PL1", "Backlog", "LB2", "Backlog"),
+                                                        Map.of())))
+                .as("a write whose second part GitHub refused")
+                .isInstanceOfSatisfying(
+                        StoreException.PartlySaved.class,
+                        partly ->
+                                assertThat(partly.pushed())
+                                        .as("the repository saved")
+                                        .containsExactly("example-project"));
     }
 }

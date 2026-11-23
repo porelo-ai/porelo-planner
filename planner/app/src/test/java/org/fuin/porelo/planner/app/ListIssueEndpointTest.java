@@ -122,7 +122,7 @@ class ListIssueEndpointTest {
         mvc =
                 MockMvcBuilders.standaloneSetup(
                                 new EditsController(new BoardEdits(projects, changes)))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
     }
 
@@ -142,7 +142,7 @@ class ListIssueEndpointTest {
     void anOfferedIssueIsAddedAndAnsweredWithTheNewRevision() throws Exception {
         // Harm: an add the store saved answered as refused or without its revision leaves the
         // window offering the issue again.
-        add("{\"issue\": \"porelo-lib#7\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"porelo-lib#7\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revision").value("r2"));
 
@@ -154,7 +154,7 @@ class ListIssueEndpointTest {
         // Harm: the add took any issue the window named, one on the board or one never offered,
         // and the window could not tell an unknown project from an offer to read again.
         for (final String id : List.of("porelo-lib#3", "porelo-lib#8")) {
-            add("{\"issue\": \"" + id + "\", \"revision\": \"r1\"}")
+            add("{\"issue\": \"" + id + "\", \"seen\": " + Seens.of(current) + "}")
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.title").value("NotUnlisted"))
                     .andExpect(jsonPath("$.parameters.issue").value(id));
@@ -169,7 +169,7 @@ class ListIssueEndpointTest {
         lists = false;
         current = board("r1", false);
 
-        add("{\"issue\": \"porelo-lib#8\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"porelo-lib#8\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotImplemented())
                 .andExpect(jsonPath("$.title").value("NotOffered"));
         assertThat(written).as("nothing written").isEmpty();
@@ -181,26 +181,29 @@ class ListIssueEndpointTest {
         // an issue to add, and a refusal repeated what was sent.
         for (final String body :
                 List.of(
-                        "{\"issue\": \"PL4\", \"revision\": \"r1\"}",
-                        "{\"issue\": 7, \"revision\": \"r1\"}",
+                        "{\"issue\": \"PL4\", \"seen\": " + Seens.of(current) + "}",
+                        "{\"issue\": 7, \"seen\": " + Seens.of(current) + "}",
                         "{\"issue\": \"porelo-lib#7\"}",
-                        "{\"issue\": \"porelo-lib#7\", \"revision\": \"r1\", \"story\": \"x\"}",
+                        "{\"issue\": \"porelo-lib#7\", \"seen\": "
+                                + Seens.of(current)
+                                + ", \"story\": \"x\"}",
                         "[]")) {
             add(body)
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.title").value("EditNotAllowed"));
         }
-        add("{\"issue\": \"PL4\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"PL4\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(jsonPath("$.parameters.field").value("issue"));
         assertThat(written).as("nothing written").isEmpty();
     }
 
     @Test
-    void anAddAgainstAnOldBoardIsAConflict() throws Exception {
-        // Harm: an add planned on an old board went ahead on a board a person changed since.
-        add("{\"issue\": \"porelo-lib#7\", \"revision\": \"r0\"}")
+    void anAddOfAnIssueChangedSinceItWasSeenIsAConflict() throws Exception {
+        // Harm: an add planned on an old board went ahead on an issue a person changed since.
+        add("{\"issue\": \"porelo-lib#7\", \"seen\": " + Seens.stale(current) + "}")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.title").value("StaleRevision"));
+                .andExpect(jsonPath("$.title").value("ItemChanged"))
+                .andExpect(jsonPath("$.parameters.changed[0]").value("porelo-lib#7"));
         assertThat(written).as("nothing written").isEmpty();
     }
 
@@ -209,7 +212,7 @@ class ListIssueEndpointTest {
         // Harm: an issue gone from the tracker read as a fault of the planner, one the board could
         // not hold as a refused move, or half a save as none.
         failure = new StoreException.NoSuchIssue(MADE);
-        add("{\"issue\": \"porelo-lib#7\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"porelo-lib#7\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("NotUnlisted"));
 
@@ -217,7 +220,7 @@ class ListIssueEndpointTest {
                 new StoreException.NotSavable(
                         MADE,
                         "Add its parent porelo-lib#9 to the project first; it is no item of it.");
-        add("{\"issue\": \"porelo-lib#7\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"porelo-lib#7\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.title").value("EditNotAllowed"))
                 .andExpect(jsonPath("$.parameters.field").value("issue"))
@@ -230,7 +233,7 @@ class ListIssueEndpointTest {
         failure =
                 new StoreException.PartlySaved(
                         "porelo-lib", List.of("porelo-lib"), "GitHub refused a field value");
-        add("{\"issue\": \"porelo-lib#7\", \"revision\": \"r1\"}")
+        add("{\"issue\": \"porelo-lib#7\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.title").value("PartlySaved"));
     }

@@ -12,7 +12,7 @@ class _Source extends FakePlanningSource {
 
   final watches = <String, StreamController<PlanningSnapshot>>{};
 
-  void send(String project) => watches[project]!.add(PlanningSnapshot.from(board));
+  void send(String project) => watches[project]!.add(versioned(board));
 
   @override
   Stream<PlanningSnapshot> watchStories(String project) {
@@ -41,12 +41,12 @@ class _HeldSource extends _Source {
     String title,
     String mustBeTrue,
     String? size,
-    String revision, {
+    Map<String, String> seen, {
     IssueWorker worker = IssueWorker.agent,
     String? task,
   }) async {
     await answer.future;
-    return super.createIssue(project, repository, title, mustBeTrue, size, revision, worker: worker, task: task);
+    return super.createIssue(project, repository, title, mustBeTrue, size, seen, worker: worker, task: task);
   }
 }
 

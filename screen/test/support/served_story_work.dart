@@ -63,7 +63,7 @@ StoryWorkRequest servedRequest({List<StoryWorkChoice> choices = const [], bool d
   story: 'ST1',
   to: 'Building',
   mode: 'AGENT',
-  revision: 'r1',
+  seen: const {'ST1': servedVersion},
   subAgents: choices,
   proposedRepositories: defaults ? const [] : StoryWorkProposal.from(servedProposal()).repositories,
 );
@@ -142,3 +142,6 @@ Map<String, dynamic> servedRunTask({String task = 'main-task', bool active = tru
   'atWork': active,
   'ended': ended,
 };
+
+/// A version as the planner names one, standing for the story the served decisions saw.
+const servedVersion = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';

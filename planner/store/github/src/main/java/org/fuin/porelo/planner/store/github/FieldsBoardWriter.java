@@ -10,12 +10,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.Delivery;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.model.IssueField;
 import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
+import org.fuin.porelo.planner.store.Basis;
+import org.fuin.porelo.planner.store.Dependencies;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
@@ -29,6 +32,8 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TokenSource;
+import org.fuin.porelo.planner.store.UnlistedIssue;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -41,7 +46,9 @@ import org.jspecify.annotations.Nullable;
  * fields, the issues' titles and bodies and their comments, and adds new issues and ideas, with the
  * person's own token. Right before it writes, it reads the items it writes and refuses the save
  * when a person changed one of them since the board was read; GitHub takes no condition on a write,
- * so a change in the moment between that read and the write is not caught.
+ * so a change in the moment between that read and the write is not caught. A write given the
+ * board's revision is refused when anything on the board moved and compares each item it reads; a
+ * write given a {@link Basis} compares only its targets' versions with the ones the caller saw.
  */
 public final class FieldsBoardWriter implements BoardWriter {
 
@@ -145,11 +152,20 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     @Override
     public void save(final Snapshot current, final Revision revision, final Writes writes) {
-        fresh(current, revision);
+        save(current, Against.of(revision), writes);
+    }
+
+    @Override
+    public void save(final Snapshot current, final Basis basis, final Writes writes) {
+        save(current, Against.of(basis), writes);
+    }
+
+    private void save(final Snapshot current, final Against against, final Writes writes) {
+        fresh(current, against);
         if (writes.none()) {
             return;
         }
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, against);
         writes.issues()
                 .forEach(
                         (id, state) -> {
@@ -189,7 +205,17 @@ public final class FieldsBoardWriter implements BoardWriter {
     @Override
     public String createIssue(
             final Snapshot current, final Revision revision, final NewIssue issue) {
-        fresh(current, revision);
+        return createIssue(current, Against.of(revision), issue);
+    }
+
+    @Override
+    public String createIssue(final Snapshot current, final Basis basis, final NewIssue issue) {
+        return createIssue(current, Against.of(basis), issue);
+    }
+
+    private String createIssue(
+            final Snapshot current, final Against against, final NewIssue issue) {
+        fresh(current, against);
         final String storyId = issue.story();
         final @Nullable ItemView story = storyId == null ? null : storyItem(current, storyId);
         final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
@@ -197,6 +223,14 @@ public final class FieldsBoardWriter implements BoardWriter {
         final NewItems.Planned planned =
                 adding.issue(issue, Objects.requireNonNullElse(issue.priority(), "Medium"));
         final String token = tokens.token(current.config().forge());
+        if (against.basis() != null) {
+            // The story it is hung into is its one target, checked before anything is made.
+            final Plan check = new Plan(current, against);
+            if (story != null) {
+                check.read(Objects.requireNonNull(storyId), story);
+            }
+            check.readUnchanged(token);
+        }
         if (story == null) {
             adding.write(token, null, List.of(planned));
         } else {
@@ -215,7 +249,16 @@ public final class FieldsBoardWriter implements BoardWriter {
      */
     @Override
     public IdeaIds createIdea(final Snapshot current, final Revision revision, final NewIdea idea) {
-        fresh(current, revision);
+        return createIdea(current, Against.of(revision), idea);
+    }
+
+    @Override
+    public IdeaIds createIdea(final Snapshot current, final Basis basis, final NewIdea idea) {
+        return createIdea(current, Against.of(basis), idea);
+    }
+
+    private IdeaIds createIdea(final Snapshot current, final Against against, final NewIdea idea) {
+        fresh(current, against);
         final Set<String> named = new HashSet<>();
         for (final NewIssue issue : idea.issues()) {
             if (!named.add(issue.repository())) {
@@ -227,6 +270,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         final NewItems.Planned story = adding.story(idea);
         final List<NewItems.Planned> issues = new ArrayList<>();
         idea.issues().forEach(issue -> issues.add(adding.issue(issue, idea.priority())));
+        // An idea changes no existing item, so it has no target to check.
         adding.write(tokens.token(current.config().forge()), story, issues);
         return new IdeaIds(
                 story.reference(), issues.stream().map(NewItems.Planned::reference).toList());
@@ -245,16 +289,42 @@ public final class FieldsBoardWriter implements BoardWriter {
     @Override
     public void addUnlistedIssue(
             final Snapshot current, final Revision revision, final String issue) {
-        fresh(current, revision);
+        addUnlistedIssue(current, Against.of(revision), issue);
+    }
+
+    /**
+     * Adds the issue as its revision form does, checked against the version the caller saw of it
+     * instead of the board's revision: the offer the board holds must carry that version, and
+     * GitHub must still give the issue open, outside the project, with the title and the kind the
+     * offer shows.
+     */
+    @Override
+    public void addUnlistedIssue(final Snapshot current, final Basis basis, final String issue) {
+        addUnlistedIssue(current, Against.of(basis), issue);
+    }
+
+    private void addUnlistedIssue(
+            final Snapshot current, final Against against, final String issue) {
+        fresh(current, against);
+        final Basis basis = against.basis();
+        final @Nullable Version seen = basis == null ? null : basis.of(issue);
+        if (basis != null && seen == null) {
+            throw new StoreException.BasisIncomplete(List.of(issue));
+        }
         final String repository = Ids.repositoryOf(issue);
         final int number = Integer.parseInt(issue.substring(issue.lastIndexOf('#') + 1));
         // Checked again under the save's lock: a look since the caller's check moves the offer.
-        final Snapshot.Unlisted offered =
-                current.board().unlisted().stream().anyMatch(u -> u.id().equals(issue))
-                        ? unlisted(current, repository, number)
-                        : null;
-        if (offered == null) {
-            throw new StoreException.StaleRevision(current.board().revision().value(), issue);
+        final UnlistedIssue held =
+                current.board().unlisted().stream()
+                        .filter(u -> u.id().equals(issue))
+                        .findFirst()
+                        .orElse(null);
+        if (held == null) {
+            throw changed(current, against, issue);
+        }
+        final Snapshot.Unlisted offered = unlisted(current, repository, number);
+        if (offered == null || (seen != null && !seen.equals(held.version()))) {
+            throw changed(current, against, issue);
         }
         final String token = tokens.token(current.config().forge());
         final GitHubGraphQl.@Nullable IssueOnBoard now;
@@ -273,15 +343,18 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (read == null) {
             throw new StoreException.NoSuchIssue(issue);
         }
+        final boolean story = IssueMapping.STORY_TYPE.equals(read.issueType());
         if (now.itemId() != null
                 || !"OPEN".equals(read.state())
                 || read.number() != number
                 || !(current.config().project().owner() + "/" + repository)
-                        .equalsIgnoreCase(read.repository())) {
-            // A person added, closed or moved it since the board was read.
-            throw new StoreException.StaleRevision(current.board().revision().value(), issue);
+                        .equalsIgnoreCase(read.repository())
+                || (seen != null
+                        && (!held.title().equals(read.title())
+                                || story != (held.kind() == UnlistedIssue.Kind.STORY)))) {
+            // A person added, closed, moved, retitled or retyped it since the board was read.
+            throw changed(current, against, issue);
         }
-        final boolean story = IssueMapping.STORY_TYPE.equals(read.issueType());
         if (story && !repository.equals(current.config().own())) {
             throw new StoreException.NotSavable(
                     issue,
@@ -303,6 +376,86 @@ public final class FieldsBoardWriter implements BoardWriter {
                         read.databaseId(),
                         story,
                         IssuePriority.held(read)));
+    }
+
+    /** The refusal of a write whose item changed: by its revision or by the item's version. */
+    private static StoreException changed(
+            final Snapshot current, final Against against, final String id) {
+        return against.basis() == null
+                ? new StoreException.StaleRevision(current.board().revision().value(), id)
+                : new StoreException.Changed(List.of(id));
+    }
+
+    /**
+     * Reads an issue the board offers as made outside the project, by its node id, and names its
+     * links in the board's ids, for the rules that check its add.
+     *
+     * @param current the snapshot the store holds
+     * @param issue the issue's tracker reference
+     * @return its parent, its blockers, whether they were read whole, the project's items and the
+     *     items it blocks
+     * @throws StoreException.Changed if the board no longer offers it or GitHub no longer gives it
+     */
+    @Override
+    public Dependencies.UnlistedLinks unlistedLinks(final Snapshot current, final String issue) {
+        final String repository = Ids.repositoryOf(issue);
+        final int number = Integer.parseInt(issue.substring(issue.lastIndexOf('#') + 1));
+        final Snapshot.Unlisted offered = unlisted(current, repository, number);
+        if (offered == null) {
+            throw new StoreException.Changed(List.of(issue));
+        }
+        final String token = tokens.token(current.config().forge());
+        final GitHubGraphQl.@Nullable IssueOnBoard now;
+        try {
+            final GitHubGraphQl.IssueBoard board =
+                    github.issueBoard(
+                            token, List.of(offered.nodeId()), current.config().projectId());
+            now = board.issues().isEmpty() ? null : board.issues().get(0);
+        } catch (final RuntimeException e) {
+            throw refusals.refusal(repository, e, token);
+        }
+        if (now == null || now.issue() == null) {
+            throw new StoreException.Changed(List.of(issue));
+        }
+        final GitHubGraphQl.BoardIssue read = now.issue();
+        final String parentId = read.parentId();
+        final List<String> blockers = new ArrayList<>();
+        for (final GitHubGraphQl.IssueRef blocker : read.blockedBy().nodes()) {
+            blockers.add(named(current, blocker.id()));
+        }
+        final Set<String> blocked = new LinkedHashSet<>();
+        current.items()
+                .forEach(
+                        (id, item) -> {
+                            if (item.blockedByIds().contains(offered.nodeId())) {
+                                blocked.add(id);
+                            }
+                        });
+        return new Dependencies.UnlistedLinks(
+                parentId == null ? null : named(current, parentId),
+                blockers,
+                !Boolean.TRUE.equals(read.blockedBy().pageInfo().hasNextPage())
+                        && ItemsBoardReader.unseen(read.blockedBy()) == 0,
+                current.items().keySet(),
+                blocked);
+    }
+
+    /**
+     * An issue's board id by its node id, its tracker reference when the board offers it as made
+     * outside the project, or else its node id, which names no item of the board.
+     */
+    private static String named(final Snapshot current, final String nodeId) {
+        for (final Map.Entry<String, ItemView> entry : current.items().entrySet()) {
+            if (entry.getValue().issueId().equals(nodeId)) {
+                return entry.getKey();
+            }
+        }
+        for (final Snapshot.Unlisted listed : current.unlisted()) {
+            if (listed.nodeId().equals(nodeId)) {
+                return listed.repository() + "#" + listed.number();
+            }
+        }
+        return nodeId;
     }
 
     /** The issue a repository's list gave that is no item of the project, or null. */
@@ -469,8 +622,19 @@ public final class FieldsBoardWriter implements BoardWriter {
     @Override
     public IdeaIds createStoryFromIssues(
             final Snapshot current, final Revision revision, final StoryFromIssues story) {
-        fresh(current, revision);
-        final Plan plan = new Plan(current);
+        return createStoryFromIssues(current, Against.of(revision), story);
+    }
+
+    @Override
+    public IdeaIds createStoryFromIssues(
+            final Snapshot current, final Basis basis, final StoryFromIssues story) {
+        return createStoryFromIssues(current, Against.of(basis), story);
+    }
+
+    private IdeaIds createStoryFromIssues(
+            final Snapshot current, final Against against, final StoryFromIssues story) {
+        fresh(current, against);
+        final Plan plan = new Plan(current, against);
         final List<NewItems.Over> existing = new ArrayList<>();
         final Workflow workflow = current.config().workflow();
         for (final String id : story.existing()) {
@@ -522,7 +686,7 @@ public final class FieldsBoardWriter implements BoardWriter {
     public void saveResult(
             final Snapshot current, final StageResult result, final @Nullable StageEntry stage) {
         final Workflow workflow = current.config().workflow();
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, Against.NONE);
         for (final StageResult.ForIssue given : result.issues()) {
             final String id = given.id();
             final ItemView item = issueItem(current, id);
@@ -571,9 +735,23 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Revision revision,
             final String issue,
             final Fields fields) {
-        fresh(current, revision);
+        return setFields(current, Against.of(revision), issue, fields);
+    }
+
+    @Override
+    public boolean setFields(
+            final Snapshot current, final Basis basis, final String issue, final Fields fields) {
+        return setFields(current, Against.of(basis), issue, fields);
+    }
+
+    private boolean setFields(
+            final Snapshot current,
+            final Against against,
+            final String issue,
+            final Fields fields) {
+        fresh(current, against);
         final ItemView item = issueItem(current, issue);
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, against);
         for (final Fields.Field field : fields.named()) {
             switch (field) {
                 case SIZE -> plan.optionOrClear(issue, item, FieldNames.SIZE, fields.size());
@@ -603,7 +781,24 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Revision revision,
             final String story,
             final List<String> issues) {
-        fresh(current, revision);
+        return setStoryIssues(current, Against.of(revision), story, issues);
+    }
+
+    @Override
+    public boolean setStoryIssues(
+            final Snapshot current,
+            final Basis basis,
+            final String story,
+            final List<String> issues) {
+        return setStoryIssues(current, Against.of(basis), story, issues);
+    }
+
+    private boolean setStoryIssues(
+            final Snapshot current,
+            final Against against,
+            final String story,
+            final List<String> issues) {
+        fresh(current, against);
         final ItemView parent = storyItem(current, story);
         final Story found =
                 current.board()
@@ -618,7 +813,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 subs.add(id);
             }
         }
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, against);
         final List<String> order = new ArrayList<>();
         for (final String id : subs) {
             if (issues.contains(id)) {
@@ -686,13 +881,34 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Revision revision,
             final String issue,
             final List<String> blockedBy) {
-        fresh(current, revision);
+        return setBlockedBy(current, Against.of(revision), issue, blockedBy);
+    }
+
+    /**
+     * Sets the blockers as the revision form does; the blockers are only read, for their ids, and
+     * are no targets, so a change to one of them does not refuse the write.
+     */
+    @Override
+    public boolean setBlockedBy(
+            final Snapshot current,
+            final Basis basis,
+            final String issue,
+            final List<String> blockedBy) {
+        return setBlockedBy(current, Against.of(basis), issue, blockedBy);
+    }
+
+    private boolean setBlockedBy(
+            final Snapshot current,
+            final Against against,
+            final String issue,
+            final List<String> blockedBy) {
+        fresh(current, against);
         final ItemView item = issueItem(current, issue);
         final Issue found =
                 current.board()
                         .issue(issue)
                         .orElseThrow(() -> new StoreException.NoSuchIssue(issue));
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, against);
         for (final String id : found.blockedBy()) {
             if (!blockedBy.contains(id)) {
                 plan.link(Link.Kind.REMOVE_BLOCKER, issue, item, issueItem(current, id));
@@ -718,7 +934,18 @@ public final class FieldsBoardWriter implements BoardWriter {
     @Override
     public boolean setText(
             final Snapshot current, final Revision revision, final String id, final TextEdit edit) {
-        fresh(current, revision);
+        return setText(current, Against.of(revision), id, edit);
+    }
+
+    @Override
+    public boolean setText(
+            final Snapshot current, final Basis basis, final String id, final TextEdit edit) {
+        return setText(current, Against.of(basis), id, edit);
+    }
+
+    private boolean setText(
+            final Snapshot current, final Against against, final String id, final TextEdit edit) {
+        fresh(current, against);
         final ItemView item =
                 edit.kind() == TextEdit.Kind.STORY
                         ? storyItem(current, id)
@@ -730,7 +957,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (!retitled && !rewritten) {
             return false;
         }
-        final Plan plan = new Plan(current);
+        final Plan plan = new Plan(current, against);
         plan.text(id, item, retitled ? title : null, rewritten ? body : null);
         plan.write(tokens.token(current.config().forge()));
         return true;
@@ -748,14 +975,41 @@ public final class FieldsBoardWriter implements BoardWriter {
                     item.number(),
                     text);
         } catch (final RuntimeException e) {
-            throw new Plan(current).refusedCall(e, issue, item.repository(), Set.of(), token);
+            throw new Plan(current, Against.NONE)
+                    .refusedCall(e, issue, item.repository(), Set.of(), token);
         }
     }
 
-    /** Refuses a write planned on another board than the store holds, before any call. */
-    private static void fresh(final Snapshot current, final Revision revision) {
-        if (!current.board().revision().equals(revision)) {
+    /**
+     * Refuses a write planned on another board than the store holds, before any call; a write
+     * checked by its targets' versions is not refused for a board that moved elsewhere.
+     */
+    private static void fresh(final Snapshot current, final Against against) {
+        final Revision revision = against.revision();
+        if (revision != null && !current.board().revision().equals(revision)) {
             throw new StoreException.StaleRevision(current.board().revision().value());
+        }
+    }
+
+    /**
+     * What a write is checked against: the board's revision the caller read, or the versions the
+     * caller saw of its targets; neither for a write that takes the items as they stand, such as a
+     * stage's result.
+     *
+     * @param revision the revision, or null
+     * @param basis the versions, or null
+     */
+    private record Against(@Nullable Revision revision, @Nullable Basis basis) {
+
+        /** A write checked against neither: each item it reads is compared with the board. */
+        static final Against NONE = new Against(null, null);
+
+        static Against of(final Revision revision) {
+            return new Against(revision, null);
+        }
+
+        static Against of(final Basis basis) {
+            return new Against(null, basis);
         }
     }
 
@@ -782,8 +1036,16 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         private final Snapshot current;
 
-        /** The items written, by their Porelo id, in the order first named. */
+        private final Against against;
+
+        /** The items written or read, by their Porelo id, in the order first named. */
         private final Map<String, ItemView> items = new LinkedHashMap<>();
+
+        /**
+         * The items whose own stored state the write changes, its targets; an item only read for
+         * its ids, such as a blocker linked or a sibling a sub-issue is ordered by, is none.
+         */
+        private final Set<String> targets = new LinkedHashSet<>();
 
         /** The field values, one per item and field, the last named winning. */
         private final Map<String, Value> values = new LinkedHashMap<>();
@@ -820,8 +1082,9 @@ public final class FieldsBoardWriter implements BoardWriter {
         private WritePace pace =
                 new WritePace(InstantSource.system(), Thread::sleep, "", LimitFactors.DEFAULT);
 
-        Plan(final Snapshot current) {
+        Plan(final Snapshot current, final Against against) {
             this.current = current;
+            this.against = against;
         }
 
         /**
@@ -940,9 +1203,10 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
         }
 
-        /** Adds an item that is only read before a write and checked unchanged. */
+        /** Adds an item that is read before a write and checked unchanged, as a target. */
         void read(final String id, final ItemView item) {
             items.putIfAbsent(id, item);
+            targets.add(id);
         }
 
         /**
@@ -969,7 +1233,13 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** Adds a link to change; both items are read before the write and checked unchanged. */
         void link(final Link.Kind kind, final String id, final ItemView from, final ItemView to) {
             items.putIfAbsent(id, from);
-            items.putIfAbsent(idOf(to), to);
+            targets.add(id);
+            final String toId = idOf(to);
+            items.putIfAbsent(toId, to);
+            if (kind == Link.Kind.ADD_SUB || kind == Link.Kind.REMOVE_SUB) {
+                // A sub-issue's parent changes with the link; a blocker's own state does not.
+                targets.add(toId);
+            }
             links.add(new Link(kind, id, from, to, null, null));
         }
 
@@ -981,6 +1251,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final @Nullable ItemView after,
                 final @Nullable ItemView before) {
             items.putIfAbsent(id, parent);
+            targets.add(id);
             for (final ItemView each : java.util.Arrays.asList(child, after, before)) {
                 if (each != null) {
                     items.putIfAbsent(idOf(each), each);
@@ -1009,6 +1280,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 throw new StoreException.NotSavable(id, "its reason " + e.getMessage());
             }
             items.putIfAbsent(id, item);
+            targets.add(id);
             closings.put(id, reason);
         }
 
@@ -1023,6 +1295,7 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         void body(final String id, final ItemView item, final String body) {
             items.putIfAbsent(id, item);
+            targets.add(id);
             bodies.put(id, body);
         }
 
@@ -1033,6 +1306,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final @Nullable String title,
                 final @Nullable String body) {
             items.putIfAbsent(id, item);
+            targets.add(id);
             if (title != null) {
                 titles.put(id, title);
             }
@@ -1075,6 +1349,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                         id, "its stage cannot be written as a comment: " + e.getMessage());
             }
             items.putIfAbsent(id, item);
+            targets.add(id);
             added(id, item, bases, FieldNames.MINUTES, entry.minutes());
             added(id, item, bases, FieldNames.VM_MINUTES, entry.vmMinutes());
             added(id, item, bases, FieldNames.TOKENS, StageComment.newTokens(entry));
@@ -1136,6 +1411,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                 final String field,
                 final GitHubGraphQl.FieldValue value) {
             items.putIfAbsent(id, item);
+            targets.add(id);
             values.put(item.itemId() + "\n" + field, new Value(id, item, value));
         }
 
@@ -1456,9 +1732,15 @@ public final class FieldsBoardWriter implements BoardWriter {
 
         /**
          * Reads the items to be written and refuses the save, naming the first, when one of them
-         * differs from the board the save was planned on.
+         * differs from the board the save was planned on; a write given a basis is checked by its
+         * targets' versions instead.
          */
         private void unchanged(final String token) {
+            final Basis basis = against.basis();
+            if (basis != null) {
+                unchanged(token, basis);
+                return;
+            }
             final Map<String, String> fieldNames = new LinkedHashMap<>();
             current.config().fieldIds().forEach((name, fieldId) -> fieldNames.put(fieldId, name));
             final List<Map.Entry<String, ItemView>> all = new ArrayList<>(items.entrySet());
@@ -1482,6 +1764,62 @@ public final class FieldsBoardWriter implements BoardWriter {
                     }
                     reads.put(item.issueId(), now.issue());
                 }
+            }
+        }
+
+        /**
+         * Reads the items to be written, one query per up to a hundred, and refuses the write when
+         * a target's version differs from the one the caller saw. The targets are the items the
+         * write changes, each of which the basis must name; an item only read for its ids, and a
+         * version the basis holds of any other item, is compared with nothing. Nothing is written
+         * on a refusal.
+         *
+         * @throws StoreException.BasisIncomplete naming each item the write changes that the basis
+         *     names no version for, before anything is read
+         * @throws StoreException.Changed naming each target changed or gone from the project
+         */
+        private void unchanged(final String token, final Basis basis) {
+            final List<String> missing =
+                    targets.stream().filter(id -> basis.of(id) == null).sorted().toList();
+            if (!missing.isEmpty()) {
+                throw new StoreException.BasisIncomplete(missing);
+            }
+            final Set<String> changed = new TreeSet<>();
+            final Map<String, String> fieldNames = new LinkedHashMap<>();
+            current.config().fieldIds().forEach((name, fieldId) -> fieldNames.put(fieldId, name));
+            final List<Map.Entry<String, ItemView>> all = new ArrayList<>(items.entrySet());
+            for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
+                final List<Map.Entry<String, ItemView>> chunk =
+                        all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
+                final GitHubGraphQl.IssueBoard now =
+                        github.issueBoard(
+                                token,
+                                chunk.stream().map(e -> e.getValue().issueId()).toList(),
+                                current.config().projectId());
+                for (int at = 0; at < chunk.size(); at++) {
+                    final String id = chunk.get(at).getKey();
+                    final ItemView item = chunk.get(at).getValue();
+                    final GitHubGraphQl.@Nullable IssueOnBoard live =
+                            at < now.issues().size() ? now.issues().get(at) : null;
+                    final @Nullable Version seen = targets.contains(id) ? basis.of(id) : null;
+                    if (live == null
+                            || live.issue() == null
+                            || !item.itemId().equals(live.itemId())) {
+                        if (seen == null) {
+                            throw new StoreException.NotSavable(
+                                    id, "it is no longer an item of the project");
+                        }
+                        changed.add(id);
+                        continue;
+                    }
+                    if (seen != null && !seen.equals(ItemVersions.of(live, fieldNames, item))) {
+                        changed.add(id);
+                    }
+                    reads.put(item.issueId(), live.issue());
+                }
+            }
+            if (!changed.isEmpty()) {
+                throw new StoreException.Changed(List.copyOf(changed));
             }
         }
 

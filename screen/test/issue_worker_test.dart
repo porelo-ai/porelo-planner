@@ -242,8 +242,13 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await settle(tester);
     expect(source.workerCalls, [
-      {'project': 'demo', 'issue': 'PL1', 'worker': 'MANUAL', 'revision': 'r1'},
-    ], reason: 'one call, against the board shown');
+      {
+        'project': 'demo',
+        'issue': 'PL1',
+        'worker': 'MANUAL',
+        'seen': {'PL1': isA<String>()},
+      },
+    ], reason: 'one call, against the version of PL1 shown');
     expect(mockPlanningIssue(source.boards['demo']!, 'PL1')!['worker'], 'MANUAL', reason: 'the planner saved it');
     expect(find.byKey(const Key('planning-worker-problem')), findsNothing, reason: 'nothing was refused');
 
@@ -308,7 +313,7 @@ void main() {
     ((data['stories'] as List).first['issues'] as List).add(_issue('PL1.1', 'AGENT', parent: 'PL1'));
     String refused(String issue, String worker) {
       try {
-        applyPlanningWorker(data, issue, worker, 'r1');
+        applyPlanningWorker(data, issue, worker, mockItemVersions(data));
       } on PlanningRefusal catch (refusal) {
         return refusal.name;
       }
@@ -317,7 +322,7 @@ void main() {
 
     expect(refused('PL1.1', 'MANUAL'), 'MoveNotAllowed', reason: 'a sub-issue takes its parent\'s worker');
     expect(refused('PL2', 'AGENT'), 'MoveNotAllowed', reason: 'no task entered its working state');
-    final saved = applyPlanningWorker(data, 'PL1', 'MANUAL', 'r1');
+    final saved = applyPlanningWorker(data, 'PL1', 'MANUAL', mockItemVersions(data));
     expect(
       [mockPlanningIssue(saved, 'PL1')!['worker'], mockPlanningIssue(saved, 'PL1.1')!['worker']],
       ['MANUAL', 'MANUAL'],

@@ -15,7 +15,7 @@ class _Source extends FakePlanningSource {
   final watches = <StreamController<PlanningSnapshot>>[];
   Completer<void>? refreshHeld;
 
-  void send() => watches.last.add(PlanningSnapshot.from(board));
+  void send() => watches.last.add(versioned(board));
 
   @override
   Stream<PlanningSnapshot> watchStories(String project) {

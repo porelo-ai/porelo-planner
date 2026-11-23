@@ -1,0 +1,2 @@
+title: Every write through the planner's API carries the versions the window saw of the items it changes in `seen` instead of the board's revision, a preview answers its write's targets with their versions, and a write is refused as ItemChanged or BasisIncomplete only over those items, so a change elsewhere on the board no longer refuses it.
+type: changed

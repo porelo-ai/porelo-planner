@@ -1,6 +1,6 @@
 import '../client.dart';
 
-/// A refusal as the daemon words one: its full [name], such as `org.fuin.porelo.Tasks1.StaleRevision`, and what it
+/// A refusal as the daemon words one: its full [name], such as `org.fuin.porelo.Tasks1.ItemChanged`, and what it
 /// sent, so the screen reads the same words it reads from a daemon.
 PlanningRefusal mockRefusal(String name, [Map<String, dynamic> parameters = const {}]) => PlanningRefusal(
   name.substring(name.lastIndexOf('.') + 1),

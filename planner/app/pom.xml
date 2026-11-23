@@ -169,6 +169,10 @@
                             <importMappings>
                                 <importMapping>DateTimeFormat=java.time.OffsetDateTime</importMapping>
                             </importMappings>
+                            <!-- A target's id is an issue's or a story's id, either of them a string. -->
+                            <schemaMappings>
+                                <schemaMapping>Target_id=java.lang.String</schemaMapping>
+                            </schemaMappings>
                             <!-- A reported time and an offer stay the strings the core holds, never re-spelled or
                                  refused while an answer is built. -->
                             <typeMappings>

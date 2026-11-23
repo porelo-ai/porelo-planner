@@ -11,6 +11,9 @@ import 'support/signed_planner.dart';
 const _token = 'tOkEn-0123456789_abcdefghijklmnopqrstuvwxyz';
 const _digest = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
+/// The versions a write saw, as the window sends them back.
+const _seen = {'ST1': servedVersion};
+
 Map<String, dynamic> _workflow(String revision) => {
   'revision': revision,
   'states': [
@@ -387,7 +390,7 @@ void main() {
         story: 'ST1',
         to: 'Building',
         mode: 'AGENT',
-        revision: 'r1',
+        seen: const {'ST1': servedVersion},
         subAgents: const [],
         issues: const ['PR1'],
       ),
@@ -400,7 +403,7 @@ void main() {
         story: 'ST1',
         to: 'Building',
         mode: 'AGENT',
-        revision: 'r1',
+        seen: const {'ST1': servedVersion},
         subAgents: const [],
       ),
     );
@@ -600,8 +603,8 @@ void main() {
     final before = planner.calls.length;
     repository = const PlannerProject('https://example.org/second.git');
     for (final call in <Future<Object?> Function()>[
-      () => source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1'),
-      () => source.saveMoves('demo', const [], 'r1', digest: _digest),
+      () => source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Finished')]),
+      () => source.saveMoves('demo', const [], _seen, digest: _digest),
       () => source.proposeStoryWork('demo', 'ST1', 'Building'),
       () => source.startStoryWork(servedRequest()),
     ]) {
@@ -610,7 +613,7 @@ void main() {
     expect(planner.calls, hasLength(before));
     await source.getStory('demo', 'ST1');
     final afterDetail = planner.calls.length;
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'ProjectChanged');
+    expect((await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest))).name, 'ProjectChanged');
     expect(planner.calls, hasLength(afterDetail), reason: 'a detail read does not replace the board binding');
   });
 
@@ -621,7 +624,7 @@ void main() {
     planner.routes['POST /projects/demo/moves'] = () => ++attempts == 1
         ? _Reply.problem('NoSuchProject', {'project': 'demo'}, 'No project.', 404)
         : _Reply(200, {'revision': 'r2', 'moved': <String>[], 'stopped': <Object>[]});
-    await source.saveMoves('demo', const [], 'r1', digest: _digest);
+    await source.saveMoves('demo', const [], _seen, digest: _digest);
     expect(planner.targets, [
       'PUT /projects/demo',
       'POST /projects/demo/moves',
@@ -630,7 +633,7 @@ void main() {
     ]);
     planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NoSuchProject', {}, 'Still unknown.', 404);
     final count = planner.calls.length;
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'NoSuchProject');
+    expect((await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest))).name, 'NoSuchProject');
     expect(planner.calls, hasLength(count + 3));
   });
 
@@ -639,7 +642,7 @@ void main() {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/moves'] = () =>
         _Reply.raw(200, [123], headers: {'content-type': 'application/json', 'content-length': 100});
-    expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'PlannerUnreachable');
+    expect((await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest))).name, 'PlannerUnreachable');
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
   });
   // Harm: a reviewed mixed batch is saved with different destinations or a different revision.
@@ -661,13 +664,13 @@ void main() {
     final saved = await source.saveMoves(
       'demo',
       const [PlanningStoryMove('ST1', 'Finished'), PlanningIssueMove('PR2', 'Backlog')],
-      'r1',
+      _seen,
       digest: _digest,
       confirm: true,
     );
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves']);
     expect(jsonDecode(planner.calls.last.body), {
-      'revision': 'r1',
+      'seen': _seen,
       'moves': [
         {'story': 'ST1', 'to': 'Finished'},
         {'issue': 'PR2', 'to': 'Backlog'},
@@ -694,6 +697,9 @@ void main() {
     planner.routes['POST /projects/demo/moves/preview'] = () => _Reply(200, {
       'revision': 'r1',
       'digest': _digest,
+      'targets': [
+        {'id': 'ST1', 'version': servedVersion},
+      ],
       'issues': [
         {'id': 'F1', 'repository': 'porelo-frontend', 'from': 'Implementing', 'to': 'Review'},
       ],
@@ -728,11 +734,10 @@ void main() {
       ],
     });
 
-    final preview = await source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')], 'r1');
+    final preview = await source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')]);
 
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves/preview']);
     expect(jsonDecode(planner.calls.last.body), {
-      'revision': 'r1',
       'moves': [
         {'story': 'ST1', 'to': 'Review'},
       ],
@@ -753,11 +758,14 @@ void main() {
   });
 
   // Harm: a preview the window cannot read lets a move go out unasked, or saves under something that is no digest.
-  test('a preview without a digest, its revision or its lists is refused as a bad answer', () async {
+  test('a preview without a digest, its targets with their versions or its lists is refused as a bad answer', () async {
     final (planner, source) = await _started();
     final good = {
       'revision': 'r1',
       'digest': _digest,
+      'targets': [
+        {'id': 'ST1', 'version': servedVersion},
+      ],
       'issues': <Object>[],
       'stories': <Object>[],
       'warnings': <Object>[],
@@ -765,7 +773,20 @@ void main() {
     for (final answer in [
       {...good, 'digest': 'abc'},
       {...good, 'digest': _digest.toUpperCase()},
-      {...good, 'revision': 'r2'},
+      {...good}..remove('targets'),
+      {
+        ...good,
+        'targets': [
+          {'id': 'ST1', 'version': 'r1'},
+        ],
+      },
+      {
+        ...good,
+        'targets': [
+          {'id': 'ST1', 'version': servedVersion},
+          {'id': 'ST1', 'version': servedVersion},
+        ],
+      },
       {...good}..remove('issues'),
       {...good}..remove('warnings'),
       {
@@ -775,7 +796,7 @@ void main() {
     ]) {
       planner.routes['POST /projects/demo/moves/preview'] = () => _Reply(200, answer);
       expect(
-        (await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')], 'r1'))).name,
+        (await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST1', 'Review')]))).name,
         'BadAnswer',
         reason: '$answer',
       );
@@ -789,7 +810,7 @@ void main() {
     planner.routes['POST /projects/demo/moves/preview'] = () =>
         _Reply.problem('NoSuchItem', {'item': 'ST9'}, 'No story ST9.', 404);
 
-    final refusal = await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST9', 'Review')], 'r1'));
+    final refusal = await _refusal(source.previewMoves('demo', const [PlanningStoryMove('ST9', 'Review')]));
 
     expect(refusal.name, 'NoSuchItem');
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/moves/preview']);
@@ -800,21 +821,21 @@ void main() {
   test('a new issue posts exactly its members and refuses an answer without its id', () async {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/issues'] = () => _Reply(201, {'id': 'PR3', 'revision': 'r2'});
-    final added = await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, 'r1');
+    final added = await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, _seen);
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/issues']);
     expect(jsonDecode(planner.calls.last.body), {
       'repository': 'porelo-other',
       'title': 'An idea',
       'mustBeTrue': 'It holds.',
       'worker': 'AGENT',
-      'revision': 'r1',
+      'seen': _seen,
     }, reason: 'no size member when none is known, and an agent works it unless a person was chosen');
     expect((added.id, added.revision), ('PR3', 'r2'));
-    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', 'r1', worker: IssueWorker.manual);
+    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', 'S', _seen, worker: IssueWorker.manual);
     expect(jsonDecode(planner.calls.last.body)['size'], 'S', reason: 'a known size is sent');
     expect(jsonDecode(planner.calls.last.body)['worker'], 'MANUAL', reason: 'a person chosen is sent');
     // Harm: the proposing task's name lost on the way, or an empty member the planner refuses.
-    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, 'r1', task: 't-7.2');
+    await source.createIssue('demo', 'porelo-other', 'An idea', 'It holds.', null, _seen, task: 't-7.2');
     expect(jsonDecode(planner.calls.last.body)['task'], 't-7.2', reason: 'the task that proposed it is named');
     for (final answer in [
       {'revision': 'r2'},
@@ -822,7 +843,7 @@ void main() {
       {'id': 'PR3', 'revision': ''},
     ]) {
       planner.routes['POST /projects/demo/issues'] = () => _Reply(201, answer);
-      expect((await _refusal(source.createIssue('demo', 'porelo-other', 'T', 'W', null, 'r1'))).name, 'BadAnswer');
+      expect((await _refusal(source.createIssue('demo', 'porelo-other', 'T', 'W', null, _seen))).name, 'BadAnswer');
     }
   });
 
@@ -831,18 +852,18 @@ void main() {
   test('a priority puts exactly its members on the story and reads the revision it answers', () async {
     final (planner, source) = await _started();
     planner.routes['PUT /projects/demo/stories/ST1/priority'] = () => _Reply(200, {'revision': 'r2'});
-    expect(await source.setPriority('demo', 'ST1', 'Lowest', 'r1'), 'r2', reason: 'the revision after the save');
+    expect(await source.setPriority('demo', 'ST1', 'Lowest', _seen), 'r2', reason: 'the revision after the save');
     expect(planner.targets, ['PUT /projects/demo', 'PUT /projects/demo/stories/ST1/priority']);
-    expect(jsonDecode(planner.calls.last.body), {'priority': 'Lowest', 'revision': 'r1'}, reason: 'only its members');
+    expect(jsonDecode(planner.calls.last.body), {'priority': 'Lowest', 'seen': _seen}, reason: 'only its members');
     planner.routes['PUT /projects/demo/stories/ST1/priority'] = () => _Reply(200, {'revision': ''});
     expect(
-      (await _refusal(source.setPriority('demo', 'ST1', 'Lowest', 'r1'))).name,
+      (await _refusal(source.setPriority('demo', 'ST1', 'Lowest', _seen))).name,
       'BadAnswer',
       reason: 'an answer without a revision is no save',
     );
     final calls = planner.calls.length;
     expect(
-      (await _refusal(source.setPriority('demo', 'ST1', 'Urgent', 'r1'))).name,
+      (await _refusal(source.setPriority('demo', 'ST1', 'Urgent', _seen))).name,
       'PriorityNotAllowed',
       reason: 'a sixth priority is never sent',
     );
@@ -854,26 +875,26 @@ void main() {
   test('a worker change puts exactly its members on the issue and keeps a refusal\'s words', () async {
     final (planner, source) = await _started();
     planner.routes['PUT /projects/demo/issues/PR1/worker'] = () => _Reply(200, {'revision': 'r2'});
-    final saved = await source.setWorker('demo', 'PR1', IssueWorker.manual, 'r1');
+    final saved = await source.setWorker('demo', 'PR1', IssueWorker.manual, _seen);
     expect(planner.targets, ['PUT /projects/demo', 'PUT /projects/demo/issues/PR1/worker']);
-    expect(jsonDecode(planner.calls.last.body), {'worker': 'MANUAL', 'revision': 'r1'}, reason: 'only its members');
+    expect(jsonDecode(planner.calls.last.body), {'worker': 'MANUAL', 'seen': _seen}, reason: 'only its members');
     expect(saved.revision, 'r2', reason: 'the revision after the save is read');
     planner.routes['PUT /projects/demo/issues/PR1/worker'] = () => _Reply(200, {'revision': ''});
     expect(
-      (await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, 'r2'))).name,
+      (await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, _seen))).name,
       'BadAnswer',
       reason: 'an answer without a revision is no save',
     );
     planner.routes['PUT /projects/demo/issues/PR1/worker'] = () =>
         _Reply.problem('MoveNotAllowed', {'item': 'PR1'}, 'PR1 stands in Building, which only its work enters.', 422);
-    final refused = await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, 'r2'));
+    final refused = await _refusal(source.setWorker('demo', 'PR1', IssueWorker.agent, _seen));
     expect(
       (refused.name, refused.description),
       ('MoveNotAllowed', 'PR1 stands in Building, which only its work enters.'),
       reason: 'the refusal keeps its name and words',
     );
     expect(
-      (await _refusal(source.setWorker('demo', '../PR1', IssueWorker.agent, 'r2'))).name,
+      (await _refusal(source.setWorker('demo', '../PR1', IssueWorker.agent, _seen))).name,
       'InvalidName',
       reason: 'checked before it is sent',
     );
@@ -890,7 +911,7 @@ void main() {
           : _Reply.problem(name, {'pushed': 'repo', 'failed': 'other'}, 'Save refused.', 409);
       final before = planner.calls.where((call) => call.method == 'POST').length;
       expect(
-        (await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest)))
+        (await _refusal(source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], _seen, digest: _digest)))
             .name,
         name,
       );
@@ -911,7 +932,7 @@ void main() {
     };
 
     final refusal = await _refusal(
-      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest),
+      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], _seen, digest: _digest),
     );
 
     expect(refusal.name, 'PartlySaved', reason: 'the planner\'s answer, not a wait that ran out');
@@ -964,7 +985,7 @@ void main() {
       },
     ]) {
       planner.routes['POST /projects/demo/moves'] = () => _Reply(200, answer);
-      expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'BadAnswer');
+      expect((await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest))).name, 'BadAnswer');
     }
   });
 
@@ -988,7 +1009,7 @@ void main() {
       'Some saves failed.',
       502,
     );
-    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest));
+    final refusal = await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest));
     expect(refusal.parameters['tasks'], ['one', 'two']);
     expect(refusal.parameters['round'], 0);
     expect(refusal.parameters['rounds'], 2147483647);
@@ -1000,7 +1021,7 @@ void main() {
     expect(refusal.description, 'Some saves failed.');
     for (final name in ['A', 'A' * 65, 'Bad9']) {
       planner.routes['POST /projects/demo/moves'] = () => _Reply.problem(name, {}, 'No.', 409);
-      expect((await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest))).name, 'Http409');
+      expect((await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest))).name, 'Http409');
     }
   });
 
@@ -1008,7 +1029,7 @@ void main() {
   test('a served NotOffered answer remains a named action refusal', () async {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/moves'] = () => _Reply.problem('NotOffered', {}, 'Moves are unavailable.', 400);
-    final refusal = await _refusal(source.saveMoves('demo', const [], 'r1', digest: _digest));
+    final refusal = await _refusal(source.saveMoves('demo', const [], _seen, digest: _digest));
     expect(refusal.name, 'NotOffered');
     expect(refusal.notOffered, isTrue);
     expect((await source.stories('demo')).revision, 'r1');
@@ -1973,12 +1994,12 @@ void main() {
   test('setting a story issue list sends the whole list and board revision to the encoded story path', () async {
     final (planner, source) = await _started();
     planner.routes['PUT /projects/demo/stories/repo%237/issues'] = () => _Reply(200, {'revision': 'r2'});
-    expect(await source.setStoryIssues('demo', 'repo#7', ['PR1', 'B900'], 'r1'), 'r2');
+    expect(await source.setStoryIssues('demo', 'repo#7', ['PR1', 'B900'], _seen), 'r2');
     final call = planner.calls.last;
     expect(call.method, 'PUT');
     expect(call.target, '/projects/demo/stories/repo%237/issues');
     expect(jsonDecode(call.body), {
-      'revision': 'r1',
+      'seen': _seen,
       'issues': ['PR1', 'B900'],
     });
   });
@@ -1988,14 +2009,14 @@ void main() {
   test('an add of an issue made outside the project sends its reference and the revision, and no alias', () async {
     final (planner, source) = await _started();
     planner.routes['POST /projects/demo/items'] = () => _Reply(200, {'revision': 'r2'});
-    expect(await source.addUnlistedIssue('demo', 'porelo-lib#7', 'r1'), 'r2');
+    expect(await source.addUnlistedIssue('demo', 'porelo-lib#7', _seen), 'r2');
     final call = planner.calls.last;
     expect(call.method, 'POST');
     expect(call.target, '/projects/demo/items');
-    expect(jsonDecode(call.body), {'issue': 'porelo-lib#7', 'revision': 'r1'});
+    expect(jsonDecode(call.body), {'issue': 'porelo-lib#7', 'seen': _seen});
 
     final calls = planner.calls.length;
-    await expectLater(source.addUnlistedIssue('demo', 'PL4', 'r1'), throwsA(isA<PlanningRefusal>()));
+    await expectLater(source.addUnlistedIssue('demo', 'PL4', _seen), throwsA(isA<PlanningRefusal>()));
     expect(planner.calls, hasLength(calls), reason: 'an alias is refused before it is sent');
   });
 
@@ -2068,7 +2089,7 @@ void main() {
         'an issue': () async => (await source.getIssue('demo', 'PR1')).issue!.worker,
         'an issue read for its work': () async => (await source.getPlanningIssue('demo', 'PR1')).issue.worker,
         'a reading choice': () async =>
-            (await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', 'r1')).issue!.worker,
+            (await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', _seen)).issue!.worker,
       };
       for (final MapEntry(key: call, value: answer) in calls.entries) {
         if (absent) {
@@ -2173,7 +2194,7 @@ void main() {
     addTearDown(source.close);
 
     final refusal = await _refusal(
-      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], 'r1', digest: _digest),
+      source.saveMoves('demo', const [PlanningStoryMove('ST1', 'Finished')], _seen, digest: _digest),
     );
 
     expect(refusal.name, 'PlannerUnreachable', reason: 'nothing was sent, so nothing can still be saving');
@@ -2246,10 +2267,10 @@ void main() {
         story: 'ST1',
         to: 'Building',
         mode: 'AGENT',
-        revision: 'r1',
+        seen: const {'ST1': servedVersion},
         subAgents: const [],
         replaces: run,
-        passOver: const PlanningPassOver(issue: 'PR1', reason: 'STOPPED', revision: 'r1', run: run),
+        passOver: const PlanningPassOver(issue: 'PR1', reason: 'STOPPED', run: run),
       ),
     );
     final order = jsonDecode(planner.calls.last.body) as Map;
@@ -2257,7 +2278,6 @@ void main() {
     expect(order['passOver'], {
       'issue': 'PR1',
       'reason': 'STOPPED',
-      'revision': 'r1',
       'run': run,
     }, reason: 'the order names the reason it passes over as the row showed it');
     await source.stopStoryWork('demo', 'ST1', run: run);
@@ -2377,7 +2397,7 @@ void main() {
         'PR1',
         2,
         choice,
-        'r1',
+        _seen,
         comment: choice == 'REWORK' ? '  Keep the key inside.\n' : null,
       );
       expect(jsonDecode(planner.calls.last.body), {
@@ -2385,7 +2405,7 @@ void main() {
         'round': 2,
         'choice': choice,
         'comment': choice == 'REWORK' ? '  Keep the key inside.\n' : '',
-        'revision': 'r1',
+        'seen': _seen,
       });
       expect(planner.calls.last.target, '/projects/demo/issues/PR1/reading');
       expect(answer.tasks.length, choice == 'REVIEW_ANYWAY' ? 0 : 1);
@@ -2419,7 +2439,7 @@ void main() {
       change(answer);
       planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, answer);
       expect(
-        (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'))).name,
+        (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', _seen))).name,
         'BadAnswer',
         reason: 'mutation $index',
       );
@@ -2431,7 +2451,7 @@ void main() {
       'tasks': [servedFollowUp(10)],
     });
     expect(
-      (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', 'r1'))).name,
+      (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'REVIEW_ANYWAY', _seen))).name,
       'BadAnswer',
     );
   });
@@ -2453,8 +2473,9 @@ void main() {
         'tasks': [task],
       });
       expect(
-        (await _refusal(source.resolveIssueReading('demo', 'ST1', 'PR1', 2, choice, 'r1', comment: 'Fix the finding.')))
-            .name,
+        (await _refusal(
+          source.resolveIssueReading('demo', 'ST1', 'PR1', 2, choice, _seen, comment: 'Fix the finding.'),
+        )).name,
         'BadAnswer',
         reason: '$choice $task',
       );
@@ -2606,7 +2627,7 @@ void main() {
       machine: 'Machine 🚀',
       ended: PlanningTaskEnded(at: '', finished: true, why: '', answer: rawAnswer, unpushed: 0),
     );
-    final decision = await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1');
+    final decision = await source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', _seen);
     for (final result in [report.work, decision.work!]) {
       expect(result.tasks.single.ended!.answer, read.work!.tasks.single.ended!.answer);
     }
@@ -2623,7 +2644,7 @@ void main() {
       ('GET /projects/demo/issues/PR1', () => source.getPlanningIssue('demo', 'PR1')),
       (
         'POST /projects/demo/issues/PR1/reading',
-        () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'),
+        () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', _seen),
       ),
       (
         'POST /projects/demo/tasks/main-task/events',
@@ -2669,7 +2690,7 @@ void main() {
       () => source.getStoryWork('demo', 'ST1'),
       () => source.getPlanningIssue('demo', 'PR1'),
       () => source.stopStoryWork('demo', 'ST1'),
-      () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', 'r1'),
+      () => source.resolveIssueReading('demo', 'ST1', 'PR1', 2, 'ONE_MORE_ROUND', _seen),
       () => source.taskEvent(
         'demo',
         'main-task',

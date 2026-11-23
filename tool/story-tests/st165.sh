@@ -105,14 +105,13 @@ EOF
     st_push "$OWN" "Add the project and its stories"
 }
 
-# The board's stories answer, its revision kept in REVISION.
+# The board's stories answer, kept in ST_BODY.
 board() {
     st_api GET "/projects/$PROJECT/stories"
     [[ $ST_STATUS == 200 ]] || {
         st_no "GET /projects/$PROJECT/stories answers 200" "$ST_STATUS $ST_BODY"
         return 1
     }
-    REVISION=$(jq -r '.revision' <<<"$ST_BODY")
 }
 
 # The item of an id anywhere in the last board answer, a story or an issue: item ID.
@@ -146,13 +145,15 @@ step_1() {
     st_is "POST /refresh" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
 }
 
-# Previews a batch and saves it with the preview's digest, confirmed: save MOVES.
+# Previews a batch and saves it with the preview's digest and the versions of its targets, confirmed: save MOVES.
 save() {
-    local digest
+    local digest seen
     st_api POST "/projects/$PROJECT/moves/preview" "$1"
     st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     digest=$(jq -r '.digest' <<<"$ST_BODY")
-    st_api POST "/projects/$PROJECT/moves" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$1")"
+    seen=$(st_seen "$ST_BODY")
+    st_api POST "/projects/$PROJECT/moves" \
+        "$(jq -c --arg d "$digest" --argjson s "$seen" '. + {digest: $d, seen: $s, confirm: true}' <<<"$1")"
     st_is "the confirmed move" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
 }
 
@@ -172,14 +173,14 @@ step_2() {
 
 step_3() {
     board || return 1
-    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST1", to: "Rejected"}]}')" || return 1
+    save '{"moves": [{"story": "ST1", "to": "Rejected"}]}' || return 1
     board || return 1
     st_is "ST1 on the board, closed" "Rejected 0" "$(item ST1 | jq -r '"\(.state) \(.warnings | length)"')"
 }
 
 step_4() {
     board || return 1
-    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{issue: "AB03", to: "Estimated"}]}')" || return 1
+    save '{"moves": [{"issue": "AB03", "to": "Estimated"}]}' || return 1
     board || return 1
     st_is "AB03 on the board, its warning lifted" "Estimated 0" \
         "$(item AB03 | jq -r '"\(.state) \(.warnings | length)"')"

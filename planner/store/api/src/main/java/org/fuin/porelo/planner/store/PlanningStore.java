@@ -1,5 +1,7 @@
 package org.fuin.porelo.planner.store;
 
+import java.util.Set;
+
 /**
  * A project's planning store, read through one interface; nothing behind it is visible to a caller.
  *
@@ -304,6 +306,218 @@ public interface PlanningStore {
      */
     default Board setText(final Revision revision, final String id, final TextEdit edit) {
         throw new UnsupportedOperationException(NOT_OFFERED);
+    }
+
+    /*
+     * The writes below are checked against the versions the caller saw instead of a revision: the
+     * targets are the items the write changes, the basis must name each of them, and each target's
+     * version is compared with the one the store reads right before the write; a version the basis
+     * holds of any other item is ignored. Inside
+     * the write serialization, before that check, the recheck's rules run on the dependencies the
+     * store reads afresh. Each throws, besides what its revision form throws,
+     * StoreException.BasisIncomplete for an item the write changes that the basis names no version
+     * for and StoreException.Changed for a target changed or gone since the caller read it, and
+     * then writes nothing. A change between that check and the write still ends in
+     * StoreException.PartlySaved.
+     */
+
+    /**
+     * Saves a batch of writes against the versions the caller saw.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param writes what to write
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save
+     */
+    default Board save(final Basis basis, final Writes writes, final Recheck recheck) {
+        return held(basis, board -> writes.targets(), recheck, revision -> save(revision, writes));
+    }
+
+    /**
+     * Adds a new issue against the versions the caller saw: of the story it is hung into, if any.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param issue what the person wrote
+     * @param recheck the rules checked again on dependencies read now
+     * @return its id and the board after the save
+     */
+    default NewIssue.Added createIssue(
+            final Basis basis, final NewIssue issue, final Recheck recheck) {
+        final String story = issue.story();
+        return held(
+                basis,
+                board -> story == null ? Set.of() : Set.of(story),
+                recheck,
+                revision -> createIssue(revision, issue));
+    }
+
+    /**
+     * Adds an idea, which changes no existing item, after its rules are checked again.
+     *
+     * @param basis the targets' versions the caller saw, none for an idea
+     * @param idea the idea
+     * @param recheck the rules checked again on dependencies read now
+     * @return the story's id, the issues' ids and the board after the save
+     */
+    default NewIdea.Added createIdea(final Basis basis, final NewIdea idea, final Recheck recheck) {
+        return held(basis, board -> Set.of(), recheck, revision -> createIdea(revision, idea));
+    }
+
+    /**
+     * Adds an issue made outside the project against the version the caller saw of it.
+     *
+     * @param basis the unlisted issue's version the caller saw
+     * @param issue the issue's tracker reference
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save
+     */
+    default Board addUnlistedIssue(final Basis basis, final String issue, final Recheck recheck) {
+        return held(
+                basis,
+                board -> Set.of(issue),
+                recheck,
+                revision -> addUnlistedIssue(revision, issue));
+    }
+
+    /**
+     * Makes a story over issues that stand on the board against the versions the caller saw.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param story the story and its issues
+     * @param recheck the rules checked again on dependencies read now
+     * @return the story's id, the issues' ids in the story's order and the board after the save
+     */
+    default NewIdea.Added createStoryFromIssues(
+            final Basis basis, final StoryFromIssues story, final Recheck recheck) {
+        return held(
+                basis,
+                board -> Set.copyOf(story.existing()),
+                recheck,
+                revision -> createStoryFromIssues(revision, story));
+    }
+
+    /**
+     * Sets an issue's fields against the version the caller saw of it.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param issue the issue's id
+     * @param fields the fields to write
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save, the one read when nothing changed
+     */
+    default Board setFields(
+            final Basis basis, final String issue, final Fields fields, final Recheck recheck) {
+        return held(
+                basis,
+                board -> Set.of(issue),
+                recheck,
+                revision -> setFields(revision, issue, fields));
+    }
+
+    /**
+     * Sets a story's whole issue list against the versions the caller saw.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param story the story's id
+     * @param issues the issues' ids, in the story's order
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save, the one read when nothing changed
+     */
+    default Board setStoryIssues(
+            final Basis basis,
+            final String story,
+            final java.util.List<String> issues,
+            final Recheck recheck) {
+        return held(
+                basis,
+                board -> membership(board, story, issues),
+                recheck,
+                revision -> setStoryIssues(revision, story, issues));
+    }
+
+    /**
+     * Sets an issue's whole list of blockers against the version the caller saw of it; the blockers
+     * are dependencies, read by the recheck, not targets.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param issue the issue's id
+     * @param blockedBy the blockers' ids
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save, the one read when nothing changed
+     */
+    default Board setBlockedBy(
+            final Basis basis,
+            final String issue,
+            final java.util.List<String> blockedBy,
+            final Recheck recheck) {
+        return held(
+                basis,
+                board -> Set.of(issue),
+                recheck,
+                revision -> setBlockedBy(revision, issue, blockedBy));
+    }
+
+    /**
+     * Sets a story's or an issue's title and named parts of its text against the version the caller
+     * saw of it.
+     *
+     * @param basis the targets' versions the caller saw
+     * @param id the story's or the issue's id
+     * @param edit the title and the parts to write or remove
+     * @param recheck the rules checked again on dependencies read now
+     * @return the board after the save, the one read when nothing changed
+     */
+    default Board setText(
+            final Basis basis, final String id, final TextEdit edit, final Recheck recheck) {
+        return held(basis, board -> Set.of(id), recheck, revision -> setText(revision, id, edit));
+    }
+
+    /** How often a write on the held board is tried again when the board moved under it. */
+    int HELD_ATTEMPTS = 3;
+
+    /**
+     * Runs a write on the board the store holds, for a store that checks its writes by revision:
+     * the targets' versions are checked on that board and the recheck's rule runs on it, then the
+     * write goes against its revision. A board that moved between that read and the write is read
+     * and checked again, a few times at most, so only a change to a target refuses the write.
+     *
+     * @param basis the versions the caller saw
+     * @param targets the write's targets on a board
+     * @param recheck the rules checked again on the board read
+     * @param write the write against the revision of the board checked
+     * @return what the write answers
+     * @throws StoreException.Busy when the board moved under every attempt
+     */
+    private <T> T held(
+            final Basis basis,
+            final java.util.function.Function<Board, Set<String>> targets,
+            final Recheck recheck,
+            final java.util.function.Function<Revision, T> write) {
+        for (int attempt = 1; ; attempt++) {
+            final Board board = board();
+            basis.unchanged(board, targets.apply(board));
+            recheck.rule().accept(Dependencies.of(board));
+            try {
+                return write.apply(board.revision());
+            } catch (final StoreException.StaleRevision moved) {
+                if (attempt >= HELD_ATTEMPTS) {
+                    throw new StoreException.Busy(
+                            board.repositories().isEmpty() ? "" : board.repositories().getFirst());
+                }
+            }
+        }
+    }
+
+    /** The story and every issue a whole new list of its issues gains or loses. */
+    private static Set<String> membership(
+            final Board board, final String story, final java.util.List<String> issues) {
+        final Set<String> ids = new java.util.TreeSet<>();
+        ids.add(story);
+        final java.util.List<String> before =
+                board.story(story).map(Story::issues).orElse(java.util.List.of());
+        before.stream().filter(id -> !issues.contains(id)).forEach(ids::add);
+        issues.stream().filter(id -> !before.contains(id)).forEach(ids::add);
+        return ids;
     }
 
     /**

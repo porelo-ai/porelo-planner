@@ -16,14 +16,31 @@ Future<(FakePlanningSource, PlanningBoard)> _open() async {
 }
 
 void main() {
-  // Harm: the person's priority change is lost when an unrelated save moves the board.
-  test('a stale priority retries once against the new revision', () async {
+  // Harm: the person's priority change is refused because another item of the board changed.
+  test('a priority is saved at once while only another item changed', () async {
     final (source, board) = await _open();
-    source.board = smallBoard(revision: 'r2');
+    final next = smallBoard(revision: 'r2');
+    (next['stories'] as List).last['title'] = 'Renamed elsewhere';
+    source.board = next;
 
     expect(await board.setPriority('S1', 'Low'), isTrue);
 
-    expect(source.priorities, [('demo', 'S1', 'Low', 'r1'), ('demo', 'S1', 'Low', 'r2')]);
+    expect(source.priorities, [('demo', 'S1', 'Low', 'r2')], reason: 'saved once, with the version of S1 shown');
+    await Future<void>.delayed(Duration.zero);
+    expect(board.stories.first.priority, 'Low');
+    expect(board.actionProblem, isNull);
+  });
+
+  // Harm: the person's priority change is lost when another change to the same story left its priority as it was.
+  test('a priority over a story changed elsewhere retries once against its new version', () async {
+    final (source, board) = await _open();
+    final next = smallBoard(revision: 'r2');
+    (next['stories'] as List).first['title'] = 'Renamed';
+    source.board = next;
+
+    expect(await board.setPriority('S1', 'Low'), isTrue);
+
+    expect(source.priorities, hasLength(2), reason: 'refused as changed once, then saved over the version read');
     await Future<void>.delayed(Duration.zero);
     expect(board.stories.first.priority, 'Low');
     expect(board.actionProblem, isNull);
@@ -38,7 +55,7 @@ void main() {
 
     expect(await board.setPriority('S1', 'Low'), isFalse);
 
-    expect(source.priorities, [('demo', 'S1', 'Low', 'r1')]);
+    expect(source.priorities, [('demo', 'S1', 'Low', 'r2')]);
     expect(board.actionProblem, allOf(contains('S1'), contains('Highest')));
     expect(board.pendingPriorities, isEmpty);
   });
@@ -76,29 +93,33 @@ void main() {
     expect(board.actionProblem, isNotNull);
   });
 
-  // Harm: the person's worker change is lost when an unrelated save moves the board.
-  test('a stale worker retries once against the new revision', () async {
+  // Harm: the person's worker change is lost when another change to the same issue left its worker as it was.
+  test('a worker over an issue changed elsewhere retries once against its new version', () async {
     final (source, board) = await _open();
     final issue = board.stories.first.issues.single;
-    source.board = smallBoard(revision: 'r2');
+    final next = smallBoard(revision: 'r2');
+    (((next['stories'] as List).first as Map)['issues'] as List).first['title'] = 'Renamed';
+    source.board = next;
 
     expect(await board.setWorker(issue, IssueWorker.manual), isNull);
 
-    expect(source.workers, [('demo', 'I1', IssueWorker.manual, 'r1'), ('demo', 'I1', IssueWorker.manual, 'r2')]);
+    expect(source.workers, [('demo', 'I1', IssueWorker.manual, 'r2'), ('demo', 'I1', IssueWorker.manual, 'r2')]);
     await Future<void>.delayed(Duration.zero);
     expect(board.stories.first.issues.single.worker, IssueWorker.manual);
     expect(board.actionProblem, isNull);
   });
 
-  // Harm: repeated stale saves keep writing after the person has lost control of the action.
-  test('a second stale priority refusal stops after two calls', () async {
+  // Harm: repeated refusals of a changed item keep writing after the person has lost control of the action.
+  test('a second refusal of a changed story stops after two calls', () async {
     final (source, board) = await _open();
     source.board = smallBoard(revision: 'r2');
-    source.priorityFailure = const PlanningRefusal('StaleRevision');
+    source.priorityFailure = const PlanningRefusal('ItemChanged', {
+      'changed': ['S1'],
+    });
 
     expect(await board.setPriority('S1', 'Low'), isFalse);
 
-    expect(source.priorities, [('demo', 'S1', 'Low', 'r1'), ('demo', 'S1', 'Low', 'r2')]);
+    expect(source.priorities, [('demo', 'S1', 'Low', 'r2'), ('demo', 'S1', 'Low', 'r2')]);
     expect(board.actionProblem, isNotNull);
     expect(board.pendingPriorities, isEmpty);
   });
@@ -113,12 +134,12 @@ void main() {
 
     expect(await board.setWorker(issue, IssueWorker.manual), isNotNull);
 
-    expect(source.workers, [('demo', 'I1', IssueWorker.manual, 'r1')]);
+    expect(source.workers, [('demo', 'I1', IssueWorker.manual, 'r2')]);
     expect(board.actionProblem, allOf(contains(issue.id), contains(IssueWorker.manual.wire)));
   });
 
-  // Harm: the person's first priority on a story with none is lost when an unrelated save moves the board.
-  test('a stale priority on a story without one retries once', () async {
+  // Harm: the person's first priority on a story with none is lost when another change to the story left it without.
+  test('a priority over a changed story without one retries once', () async {
     final first = smallBoard();
     (first['stories'] as List).first.remove('priority');
     final source = FakePlanningSource(first);
@@ -129,12 +150,14 @@ void main() {
     });
     await Future<void>.delayed(Duration.zero);
     final next = smallBoard(revision: 'r2');
-    (next['stories'] as List).first.remove('priority');
+    (next['stories'] as List).first
+      ..remove('priority')
+      ..['title'] = 'Renamed';
     source.board = next;
 
     expect(await board.setPriority('S1', 'Low'), isTrue);
 
-    expect(source.priorities, [('demo', 'S1', 'Low', 'r1'), ('demo', 'S1', 'Low', 'r2')]);
+    expect(source.priorities, [('demo', 'S1', 'Low', 'r2'), ('demo', 'S1', 'Low', 'r2')]);
   });
 
   // Harm: a click refused before it reaches the planner hides a refusal the person has not read yet.
@@ -152,14 +175,16 @@ void main() {
   });
 
   // Harm: a board read that failed during the retry is kept as the action's refusal and outlives the mended read.
-  test('a failed read during the retry leaves the stale refusal as the action answer', () async {
+  test('a failed read during the retry leaves the changed item\'s refusal as the action answer', () async {
     final (source, board) = await _open();
-    source.board = smallBoard(revision: 'r2');
+    final next = smallBoard(revision: 'r2');
+    (next['stories'] as List).first['title'] = 'Renamed';
+    source.board = next;
     source.storiesFailure = const PlanningRefusal('NoForgeAccess', {'address': 'https://github.com'});
 
     expect(await board.setPriority('S1', 'Low'), isFalse);
 
-    expect(board.refusal?.name, 'StaleRevision');
+    expect(board.refusal?.name, 'ItemChanged');
     expect(source.priorities, hasLength(1), reason: 'nothing sent on a board not read');
   });
 }

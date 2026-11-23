@@ -20,8 +20,10 @@ import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Story;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
 import org.jspecify.annotations.Nullable;
@@ -58,7 +60,7 @@ public final class WorkRequests {
             String story,
             String to,
             String mode,
-            String revision,
+            Basis seen,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<Repository> repositories,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String comment,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Number readingRounds,
@@ -77,7 +79,7 @@ public final class WorkRequests {
 
     /**
      * A repository's work as the window sends it back, read by hand so an unknown role or choice is
-     * refused by the core after the revision check.
+     * refused by the core after the check of the versions seen.
      *
      * @param repository the repository
      * @param issues the proposal's issues in order
@@ -200,7 +202,7 @@ public final class WorkRequests {
      * @param round the round the person saw
      * @param choice the choice
      * @param comment the person's words
-     * @param revision the board's revision the person saw
+     * @param seen the versions the person saw
      * @param mode a rework's mode, given with agent and model or not at all
      * @param agent a rework's agent
      * @param model a rework's model
@@ -210,7 +212,7 @@ public final class WorkRequests {
             int round,
             String choice,
             String comment,
-            String revision,
+            Basis seen,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String mode,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String agent,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String model) {
@@ -235,7 +237,7 @@ public final class WorkRequests {
      * @param mustBeTrue what must be true
      * @param size the size
      * @param worker who works it
-     * @param revision the board's revision the person saw
+     * @param seen the versions the person saw, or null when the body names none
      * @param task the Porelo task that proposed it, or null
      */
     public record IssueRequest(
@@ -244,7 +246,7 @@ public final class WorkRequests {
             @Nullable String mustBeTrue,
             @Nullable String size,
             @Nullable String worker,
-            @Nullable String revision,
+            @Nullable Basis seen,
             @Nullable String task,
             @Nullable String priority,
             @Nullable String story,
@@ -258,7 +260,7 @@ public final class WorkRequests {
                     "mustBeTrue",
                     "size",
                     "worker",
-                    "revision",
+                    "seen",
                     "task",
                     "priority",
                     "story",
@@ -541,21 +543,94 @@ public final class WorkRequests {
      * An issue's new worker as the window sends it.
      *
      * @param worker who is to work it
-     * @param revision the board's revision the person saw
+     * @param seen the versions the person saw
      */
-    public record WorkerRequest(Worker worker, String revision) {}
+    public record WorkerRequest(Worker worker, Basis seen) {}
 
-    private static final Set<String> WORKER_MEMBERS = Set.of("worker", "revision");
+    private static final Set<String> WORKER_MEMBERS = Set.of("worker", "seen");
 
     /**
      * A story's new priority as the window sends it.
      *
      * @param priority the priority it is to have, one of the five
-     * @param revision the board's revision the person saw
+     * @param seen the versions the person saw
      */
-    public record PriorityRequest(String priority, String revision) {}
+    public record PriorityRequest(String priority, Basis seen) {}
 
-    private static final Set<String> PRIORITY_MEMBERS = Set.of("priority", "revision");
+    private static final Set<String> PRIORITY_MEMBERS = Set.of("priority", "seen");
+
+    /** An item's version as the description gives it. */
+    private static final java.util.regex.Pattern VERSION =
+            java.util.regex.Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
+
+    /**
+     * Reads the versions a person saw: one JSON object whose every member is named by an issue's or
+     * a story's id and holds a version; an empty object is a write without targets.
+     *
+     * @param node the member, or null when it is missing
+     * @return the versions, or null for a member that is none
+     */
+    static @Nullable Basis seen(final @Nullable JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        final Map<String, Version> items = new java.util.LinkedHashMap<>();
+        for (final Map.Entry<String, JsonNode> entry : node.properties()) {
+            final JsonNode version = entry.getValue();
+            if (!itemId(entry.getKey())
+                    || !version.isString()
+                    || !VERSION.matcher(version.asString()).matches()) {
+                return null;
+            }
+            items.put(entry.getKey(), new Version(version.asString()));
+        }
+        return new Basis(items);
+    }
+
+    /**
+     * Reads the versions a person saw from a body bound as a map.
+     *
+     * @param seen the member, or null when it is missing
+     * @return the versions, or null for a member that is none
+     */
+    static @Nullable Basis seen(final @Nullable Map<String, String> seen) {
+        if (seen == null) {
+            return null;
+        }
+        final Map<String, Version> items = new java.util.LinkedHashMap<>();
+        for (final Map.Entry<String, String> entry : seen.entrySet()) {
+            final String version = entry.getValue();
+            if (!itemId(entry.getKey()) || version == null || !VERSION.matcher(version).matches()) {
+                return null;
+            }
+            items.put(entry.getKey(), new Version(version));
+        }
+        return new Basis(items);
+    }
+
+    /** Whether a text is an issue's or a story's id of either store's form. */
+    private static boolean itemId(final String id) {
+        try {
+            Ids.issue(id);
+            return true;
+        } catch (final IllegalArgumentException notAnIssue) {
+            try {
+                Ids.story(id);
+                return true;
+            } catch (final IllegalArgumentException notAStory) {
+                return false;
+            }
+        }
+    }
+
+    /** Reads the versions a work body names, refused as an invalid setting when they are none. */
+    private static Basis seenOrRefused(final JsonNode body) {
+        final Basis seen = seen(body.get("seen"));
+        if (seen == null) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return seen;
+    }
 
     /**
      * Reads a new issue's body strictly: at most 1048576 bytes, one JSON object, no other member,
@@ -584,7 +659,7 @@ public final class WorkRequests {
                 member(body, "mustBeTrue"),
                 member(body, "size"),
                 member(body, "worker"),
-                member(body, "revision"),
+                body.has("seen") ? seenOrIssueRefused(body) : null,
                 member(body, "task"),
                 member(body, "priority"),
                 member(body, "story"),
@@ -592,13 +667,21 @@ public final class WorkRequests {
                 body.has("confirm") && body.get("confirm").asBoolean());
     }
 
+    private static Basis seenOrIssueRefused(final JsonNode body) {
+        final Basis seen = seen(body.get("seen"));
+        if (seen == null) {
+            throw NewIssues.refused("seen", "The member seen holds no versions by item id.");
+        }
+        return seen;
+    }
+
     /**
      * Reads an issue's new worker strictly: at most 65536 bytes, one JSON object with exactly a
-     * worker the contract names and a revision; a refusal never repeats what was sent.
+     * worker the contract names and the versions seen; a refusal never repeats what was sent.
      *
      * @param request the request
      * @param issue the issue's checked id, which a refusal names
-     * @return the worker and the revision
+     * @return the worker and the versions seen
      * @throws Moves.Refused {@code MoveNotAllowed} for a body that is no worker change
      */
     static WorkerRequest worker(final HttpServletRequest request, final String issue) {
@@ -608,14 +691,14 @@ public final class WorkRequests {
         } catch (final WorkRefusal invalid) {
             throw Workers.refused(issue, "The body is no worker change.");
         }
-        if (!WORKER_MEMBERS.equals(Set.copyOf(body.propertyNames()))
-                || !body.get("revision").isString()) {
+        final Basis seen = seen(body.get("seen"));
+        if (!WORKER_MEMBERS.equals(Set.copyOf(body.propertyNames())) || seen == null) {
             throw Workers.refused(issue, "The body is no worker change.");
         }
         final JsonNode worker = body.get("worker");
         for (final Worker known : Worker.values()) {
             if (worker.isString() && known.name().equals(worker.asString())) {
-                return new WorkerRequest(known, body.get("revision").asString());
+                return new WorkerRequest(known, seen);
             }
         }
         throw Workers.refused(issue, "The worker must be AGENT or MANUAL.");
@@ -623,11 +706,11 @@ public final class WorkRequests {
 
     /**
      * Reads a story's new priority strictly: at most 65536 bytes, one JSON object with exactly one
-     * of the five priorities and a revision; a refusal never repeats what was sent.
+     * of the five priorities and the versions seen; a refusal never repeats what was sent.
      *
      * @param request the request
      * @param story the story's checked id, which a refusal names
-     * @return the priority and the revision
+     * @return the priority and the versions seen
      * @throws Refusal {@code PriorityNotAllowed} for a body that is no priority change
      */
     static PriorityRequest priority(final HttpServletRequest request, final String story) {
@@ -637,8 +720,8 @@ public final class WorkRequests {
         } catch (final WorkRefusal invalid) {
             throw priorityRefused(story, "The body is no priority change.");
         }
-        if (!PRIORITY_MEMBERS.equals(Set.copyOf(body.propertyNames()))
-                || !body.get("revision").isString()) {
+        final Basis seen = seen(body.get("seen"));
+        if (!PRIORITY_MEMBERS.equals(Set.copyOf(body.propertyNames())) || seen == null) {
             throw priorityRefused(story, "The body is no priority change.");
         }
         final JsonNode priority = body.get("priority");
@@ -646,7 +729,7 @@ public final class WorkRequests {
             throw priorityRefused(
                     story, "The priority must be Highest, High, Medium, Low or Lowest.");
         }
-        return new PriorityRequest(priority.asString(), body.get("revision").asString());
+        return new PriorityRequest(priority.asString(), seen);
     }
 
     private static Refusal priorityRefused(final String story, final String reason) {
@@ -774,15 +857,7 @@ public final class WorkRequests {
     static ReadingRequest reading(final JsonNode body) {
         fields(
                 body,
-                Set.of(
-                        "story",
-                        "round",
-                        "choice",
-                        "comment",
-                        "revision",
-                        "mode",
-                        "agent",
-                        "model"));
+                Set.of("story", "round", "choice", "comment", "seen", "mode", "agent", "model"));
         final String choice = text(body, "choice");
         try {
             ReadingCycle.Choice.valueOf(choice);
@@ -796,7 +871,7 @@ public final class WorkRequests {
                 integer(body, "round"),
                 choice,
                 text(body, "comment"),
-                text(body, "revision"),
+                seenOrRefused(body),
                 settings ? text(body, "mode") : null,
                 settings ? text(body, "agent") : null,
                 settings ? text(body, "model") : null);
@@ -842,7 +917,7 @@ public final class WorkRequests {
                         "story",
                         "to",
                         "mode",
-                        "revision",
+                        "seen",
                         "repositories",
                         "comment",
                         "readingRounds",
@@ -876,7 +951,7 @@ public final class WorkRequests {
                 text(body, "story"),
                 to,
                 text(body, "mode"),
-                text(body, "revision"),
+                seenOrRefused(body),
                 repositories,
                 body.has("comment") ? text(body, "comment") : null,
                 body.has("readingRounds") ? rounds(body.path("readingRounds"), from, to) : null,
@@ -898,8 +973,7 @@ public final class WorkRequests {
     /** Reads the reason a Start passes over, each field checked before it is used. */
     private static WorkRun.PassOver passOver(final JsonNode node) {
         if (!node.isObject()
-                || !Set.of("issue", "reason", "revision", "run")
-                        .equals(Set.copyOf(node.propertyNames()))) {
+                || !Set.of("issue", "reason", "run").equals(Set.copyOf(node.propertyNames()))) {
             throw WorkRefusal.invalidSettings();
         }
         final String issue = text(node, "issue");
@@ -912,7 +986,7 @@ public final class WorkRequests {
         if (!WorkRun.PASSABLE.contains(reason)) {
             throw WorkRefusal.invalidSettings();
         }
-        return new WorkRun.PassOver(issue, reason, text(node, "revision"), run(node, "run"));
+        return new WorkRun.PassOver(issue, reason, run(node, "run"));
     }
 
     /**
@@ -995,7 +1069,7 @@ public final class WorkRequests {
         final List<IssueLimit> overrides = request.issueReadingRounds();
         return new WorkOrder.Decision(
                 request.mode(),
-                request.revision(),
+                request.seen(),
                 repositories == null
                         ? null
                         : repositories.stream().map(WorkRequests::coreRepository).toList(),
@@ -1151,7 +1225,7 @@ public final class WorkRequests {
     }
 
     private static Number rounds(final JsonNode node, final String from, final String to) {
-        // Any number is judged by the core after the revision, so a stale call is told as stale.
+        // Any number is judged by the core after the versions seen, so a changed item is told so.
         if (!node.isNumber()) {
             throw WorkRefusal.invalidSettings();
         }

@@ -12,11 +12,11 @@ class _ReplyOnlySource extends FakePlanningSource {
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   }) async {
-    saves.add((project, moves, revision));
+    saves.add((project, moves, board['revision'] as String));
     storiesFailure = const PlanningRefusal('Unavailable');
     return PlanningMoveResult.from({'revision': 'r2', 'moved': <String>[]});
   }

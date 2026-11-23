@@ -46,8 +46,8 @@ public class EditsController {
      * Makes a story with new issues, or over issues that stand on the board.
      *
      * @param project the project's name
-     * @param request the request, whose body is the idea and the revision, or the story, the
-     *     existing issues and the revision
+     * @param request the request, whose body is the idea and the versions seen, or the story, the
+     *     existing issues and the versions seen
      * @return the story's and its issues' ids and the revision after the save, as created
      */
     @PostMapping("/projects/{project}/stories")
@@ -73,7 +73,7 @@ public class EditsController {
                                         () ->
                                                 edits.createStory(
                                                         name,
-                                                        body.request().revision(),
+                                                        body.request().seen(),
                                                         body.request().idea(),
                                                         body.shape()));
                         case EditRequests.FromIssues body -> fromIssues(name, body);
@@ -95,7 +95,7 @@ public class EditsController {
      *
      * @param project the project's name
      * @param issue the issue's id
-     * @param request the request, whose body is the fields and the revision
+     * @param request the request, whose body is the fields and the versions seen
      * @return the revision after the save
      */
     @PutMapping("/projects/{project}/issues/{issue}/fields")
@@ -110,14 +110,14 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not set an issue's fields.",
-                        () -> edits.setFields(name, id, body.revision(), body.fields())));
+                        () -> edits.setFields(name, id, body.seen(), body.fields())));
     }
 
     /**
      * Adds an issue made outside the project from the board's offer.
      *
      * @param project the project's name
-     * @param request the request, whose body is the issue and the revision
+     * @param request the request, whose body is the issue and the versions seen
      * @return the revision after the save
      */
     @PostMapping("/projects/{project}/items")
@@ -129,7 +129,7 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not add an issue made outside the project.",
-                        () -> edits.addUnlistedIssue(name, body.issue(), body.revision())));
+                        () -> edits.addUnlistedIssue(name, body.issue(), body.seen())));
     }
 
     /**
@@ -137,7 +137,7 @@ public class EditsController {
      *
      * @param project the project's name
      * @param story the story's id
-     * @param request the request, whose body is the list and the revision
+     * @param request the request, whose body is the list and the versions seen
      * @return the revision after the save
      */
     @PutMapping("/projects/{project}/stories/{story}/issues")
@@ -152,7 +152,7 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not set a story's issues.",
-                        () -> edits.setStoryIssues(name, id, body.revision(), body.issues())));
+                        () -> edits.setStoryIssues(name, id, body.seen(), body.issues())));
     }
 
     /**
@@ -160,7 +160,7 @@ public class EditsController {
      *
      * @param project the project's name
      * @param issue the issue's id
-     * @param request the request, whose body is the list and the revision
+     * @param request the request, whose body is the list and the versions seen
      * @return the revision after the save
      */
     @PutMapping("/projects/{project}/issues/{issue}/blockedBy")
@@ -175,7 +175,7 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not set an issue's blockers.",
-                        () -> edits.setBlockedBy(name, id, body.revision(), body.blockedBy())));
+                        () -> edits.setBlockedBy(name, id, body.seen(), body.blockedBy())));
     }
 
     /**
@@ -183,7 +183,7 @@ public class EditsController {
      *
      * @param project the project's name
      * @param issue the issue's id
-     * @param request the request, whose body is the title, the parts and the revision
+     * @param request the request, whose body is the title, the parts and the versions seen
      * @return the revision after the save
      */
     @PutMapping("/projects/{project}/issues/{issue}/text")
@@ -201,7 +201,7 @@ public class EditsController {
      *
      * @param project the project's name
      * @param story the story's id
-     * @param request the request, whose body is the title, the parts and the revision
+     * @param request the request, whose body is the title, the parts and the versions seen
      * @return the revision after the save
      */
     @PutMapping("/projects/{project}/stories/{story}/text")
@@ -220,7 +220,7 @@ public class EditsController {
                 offered(
                         name,
                         "This planner does not set an item's title and text.",
-                        () -> edits.setText(name, id, body.revision(), body.edit())));
+                        () -> edits.setText(name, id, body.seen(), body.edit())));
     }
 
     /**
@@ -263,7 +263,7 @@ public class EditsController {
                     () ->
                             edits.createStoryFromIssues(
                                     name,
-                                    body.request().revision(),
+                                    body.request().seen(),
                                     body.request().story(),
                                     existing,
                                     body.shape()));

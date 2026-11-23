@@ -9,6 +9,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Story;
@@ -24,13 +25,16 @@ import org.jspecify.annotations.Nullable;
  * @param issues every issue the batch moves, each once
  * @param stories every story the batch moves
  * @param warnings what the batch can do harm by; empty when it is saved without asking
+ * @param targets every item the batch changes with the version it stands at, by id, sorted; the
+ *     save checks exactly these
  */
 public record MovePreview(
         String revision,
         List<Moves.Move> moves,
         List<MovedIssue> issues,
         List<MovedStory> stories,
-        List<Warning> warnings) {
+        List<Warning> warnings,
+        Map<String, String> targets) {
 
     /** A story's run has tasks at work over what moves; its stop ends or voids them. */
     public static final String RUNNING_WORK = "RUNNING_WORK";
@@ -44,12 +48,67 @@ public record MovePreview(
     /** A move forward past waiting states into an open one. */
     public static final String SKIPS_STATES = "SKIPS_STATES";
 
-    /** Copies the lists. */
+    /** Copies the lists and the targets, keeping the targets sorted. */
     public MovePreview {
         moves = List.copyOf(moves);
         issues = List.copyOf(issues);
         stories = List.copyOf(stories);
         warnings = List.copyOf(warnings);
+        targets = java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(targets));
+    }
+
+    /**
+     * The preview's targets as the versions a caller who saw it sends back with the save.
+     *
+     * @return each target with the version it stood at
+     */
+    public Basis basis() {
+        return basis(targets);
+    }
+
+    /**
+     * Targets with their versions as a basis.
+     *
+     * @param targets each target's id with its version
+     * @return the same as a basis
+     */
+    static Basis basis(final Map<String, String> targets) {
+        Basis basis = Basis.none();
+        for (final Map.Entry<String, String> target : targets.entrySet()) {
+            basis =
+                    basis.with(
+                            target.getKey(),
+                            new org.fuin.porelo.planner.store.Version(target.getValue()));
+        }
+        return basis;
+    }
+
+    /**
+     * Answers each target with the version the board holds of it; a target the board does not hold
+     * as one item gets none, so a save sent back with these versions is refused for it.
+     *
+     * @param board the board the targets were found on
+     * @param targets the targets' ids
+     * @return each target the board holds once, with its version, by id
+     */
+    public static Map<String, String> versions(final Board board, final Set<String> targets) {
+        final Map<String, String> versions = new java.util.TreeMap<>();
+        for (final String id : targets) {
+            final List<String> held = new ArrayList<>();
+            board.issues().stream()
+                    .filter(item -> item.id().equals(id))
+                    .forEach(item -> held.add(item.version().value()));
+            board.stories().stream()
+                    .filter(item -> item.id().equals(id))
+                    .forEach(item -> held.add(item.version().value()));
+            board.unlisted().stream()
+                    .filter(item -> item.id().equals(id))
+                    .forEach(item -> held.add(item.version().value()));
+            if (held.size() == 1) {
+                versions.put(id, held.getFirst());
+            }
+        }
+        return versions;
     }
 
     /**
@@ -225,13 +284,20 @@ public record MovePreview(
                                 skipped));
             }
         }
-        return new MovePreview(board.revision().value(), moves, issues, stories, warnings);
+        return new MovePreview(
+                board.revision().value(),
+                moves,
+                issues,
+                stories,
+                warnings,
+                versions(board, Targets.of(board, Operation.MoveBatch.of(moves, plan.planned()))));
     }
 
     /**
-     * Answers the digest over what this preview showed and where its save goes: the revision, the
-     * project's repository and branch, the batch, the issues and stories it moves and the warnings
-     * with the runs, tasks and offers they name.
+     * Answers the digest over what this preview showed and where its save goes: the project's
+     * repository and branch, the batch, every target with its version, the issues and stories it
+     * moves with their states and the warnings with the runs, tasks and offers they name; never the
+     * board's revision, so a change elsewhere on the board leaves it as it was.
      *
      * @param repository the project's own repository, as the planner was given it
      * @param branch its branch, or null for the remote's default
@@ -239,8 +305,7 @@ public record MovePreview(
      */
     public String digest(final String repository, final @Nullable String branch) {
         final Digest digest = new Digest();
-        digest.add("porelo-planner move preview 1");
-        digest.add(revision);
+        digest.add("porelo-planner move preview 2");
         digest.add(repository);
         digest.add(branch == null ? "\u0000" : branch);
         digest.count(moves.size());
@@ -249,6 +314,12 @@ public record MovePreview(
             digest.add(move.id());
             digest.add(move.to());
         }
+        digest.count(targets.size());
+        targets.forEach(
+                (id, version) -> {
+                    digest.add(id);
+                    digest.add(version);
+                });
         digest.count(issues.size());
         issues.forEach(digest::issue);
         digest.count(stories.size());

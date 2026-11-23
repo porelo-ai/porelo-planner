@@ -239,7 +239,7 @@ public final class NewIdeas {
      * made: its body carries that request's marker, it has the same title and every issue it holds
      * is named. A story a person made, or one of another request, carries no such marker.
      */
-    private static boolean madeBefore(
+    static boolean madeBefore(
             final org.fuin.porelo.planner.store.Story other,
             final String title,
             final String marker,

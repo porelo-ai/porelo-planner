@@ -117,7 +117,6 @@ board_story() {
         st_no "GET /projects/$PROJECT/stories answers 200" "$ST_STATUS $ST_BODY"
         return 1
     }
-    REVISION=$(jq -r '.revision' <<<"$ST_BODY")
     jq -c --arg id "$1" '.stories[] | select(.id == $id)' <<<"$ST_BODY"
 }
 
@@ -134,13 +133,15 @@ step_1() {
     st_is "the index leaves the clone unchanged" "" "$(git -C "$clones/$OWN" status --porcelain)"
 }
 
-# Previews a batch and saves it with the preview's digest, confirmed: save MOVES.
+# Previews a batch and saves it with the preview's digest and the versions of its targets, confirmed: save MOVES.
 save() {
-    local digest
+    local digest seen
     st_api POST "/projects/$PROJECT/moves/preview" "$1"
     st_is "the move's preview" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY" || return 1
     digest=$(jq -r '.digest' <<<"$ST_BODY")
-    st_api POST "/projects/$PROJECT/moves" "$(jq -c --arg d "$digest" '. + {digest: $d, confirm: true}' <<<"$1")"
+    seen=$(st_seen "$ST_BODY")
+    st_api POST "/projects/$PROJECT/moves" \
+        "$(jq -c --arg d "$digest" --argjson s "$seen" '. + {digest: $d, seen: $s, confirm: true}' <<<"$1")"
     st_is "the confirmed move" 200 "$ST_STATUS" || st_no "$ST_ASKED" "$ST_STATUS $ST_BODY"
 }
 
@@ -157,7 +158,7 @@ step_2() {
 step_3() {
     local moves
     board_story ST2 >/dev/null || return 1
-    moves=$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Review"}]}')
+    moves='{"moves": [{"story": "ST2", "to": "Review"}]}'
     st_api POST "/projects/$PROJECT/moves/preview" "$moves"
     st_is "the move's status" 422 "$ST_STATUS" || return 1
     st_is "the refusal" urn:porelo-planner:MoveNotAllowed "$(jq -r '.type' <<<"$ST_BODY")" || return 1
@@ -168,7 +169,7 @@ step_3() {
 step_4() {
     local story
     board_story ST2 >/dev/null || return 1
-    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Rejected"}]}')" || return 1
+    save '{"moves": [{"story": "ST2", "to": "Rejected"}]}' || return 1
     story=$(board_story ST2) || return 1
     st_is "ST2 on the board" Rejected "$(jq -r '.state' <<<"$story")" || return 1
     st_is "ST2's day of a passed test, none for a rejected story" null "$(jq -r '.closedAt' <<<"$story")"
@@ -188,7 +189,7 @@ step_5() {
 step_6() {
     local story clones
     board_story ST2 >/dev/null || return 1
-    save "$(jq -nc --arg r "$REVISION" '{revision: $r, moves: [{story: "ST2", to: "Backlog"}]}')" || return 1
+    save '{"moves": [{"story": "ST2", "to": "Backlog"}]}' || return 1
     story=$(board_story ST2) || return 1
     # Reopened with every issue rejected, it has none to follow: it stands in the state its reopen names, kept in its
     # head as a story without issues keeps one.

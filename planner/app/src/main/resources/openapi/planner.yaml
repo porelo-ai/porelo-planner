@@ -321,8 +321,9 @@ paths:
       description: >-
         Makes a story in the project's own repository in one of two ways, told apart by the body's members. A
         StoryRequest saves an idea a person, or an agent acting for them, wrote without a discussion: one story in
-        the workflow's first state and an issue in that state in each repository the idea names, in one save against the board at the
-        given revision, as a discussion's hand-in is saved. The idea is checked against the idea format before
+        the workflow's first state and an issue in that state in each repository the idea names, in one save, as a
+        discussion's hand-in is saved; it changes no item that stands, so its `seen` may be empty and is not checked.
+        The idea is checked against the idea format before
         anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
         stands answers PartlySaved, naming the repositories that hold their part; a run whose story is gone is dropped
         first, so the new story never takes it over. A StoryFromIssuesRequest makes a story over issues that stand on
@@ -330,12 +331,14 @@ paths:
         each refused id named in the IdeaRefused answer; an issue another story holds is a conflict (IssueInStory,
         naming the first such issue, the story holding it and the field that named it), told once the body has no
         other fault. The issues become the story's issues in the order named and keep their own fields, and the
-        story's state follows theirs. Every issue is checked against the board, and read again from the tracker where
-        the store keeps one, before anything is written; an issue changed there since the board was read refuses the
-        call as stale, and one hung under another parent there is IssueInStory, with nothing made. The story's body
+        story's state follows theirs. Every issue named is a target: it is checked against the version `seen` holds
+        for it, read again from the tracker where the store keeps one, before anything is written; an issue changed
+        since is ItemChanged, one without a version BasisIncomplete, and one hung under another parent there is
+        IssueInStory, with nothing made. The story's body
         ends in a hidden HTML comment marking the request, a digest of its title, gain, test and the issues named. A
         save that stops after the story was made answers PartlySaved; after reading the board again, the same story
-        and issues sent against the new revision finish it: the story carrying that request's mark, made by the same
+        and issues sent with the versions the new board shows, the story the earlier attempt made among them, finish
+        it: the story carrying that request's mark, made by the same
         person within a day and holding no issue but those named, is taken, never made twice, an issue it already
         holds is not linked again, and it keeps the priority it holds. A story a person made, or one another request
         made, is never taken. A store that makes no story from issues that stand, such as the Git store, answers
@@ -443,7 +446,8 @@ paths:
       operationId: setStoryIssues
       summary: Set a story's issues
       description: >-
-        Writes the story's whole issue list, in its order, against the board at the given revision: an issue taken out
+        Writes the story's whole issue list, in its order, checked against the versions `seen` holds for the story and
+        for every issue hung in or taken out, whose parent changes: an issue taken out
         is no longer the story's, an issue hung in becomes the story's, and the order is the one sent. Each issue is
         named once and is one of the board's; an issue that is a sub-issue of another issue, or that another story
         holds, is refused (EditNotAllowed), since an issue belongs to one story; so is a list for a story the board
@@ -499,9 +503,9 @@ paths:
         Also needs (the story's issues, set through its issues), a person's own headings and the fields are not
         written by this call; a member naming them is
         refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
-        answers the current revision. The edit is checked against the board at the given revision, and on GitHub the
-        item is read again right before the write and the edit refused (StaleRevision, naming the item) when a person
-        changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
+        answers the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
+        the item is read again right before the write and the edit refused (ItemChanged, naming the item) when a
+        person changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
         between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
         text holds a line Markdown reads as a heading of the first or second level, a lead of another leading part, a
         blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
@@ -589,7 +593,7 @@ paths:
       description: >-
         Saves the idea a discussion's task wrote, which the window hands in with the discussion's offer when the task
         ends: one story in the workflow's first state in the project's own repository and an issue in that state in each repository the
-        idea names, in one save against the board the planner reads; the request carries no revision. The idea is
+        idea names, in one save against the board the planner reads; the request carries no versions. The idea is
         checked before anything is saved, and a malformed idea makes nothing. One offer makes one story: a second
         hand-in of a saved offer answers the same story and writes nothing, even for another idea; a hand-in of an
         offer whose save is still pending or was only partly pushed is refused (IdeaRefused, naming the repositories
@@ -615,8 +619,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NoSuchProject'
-        '409':
-          $ref: '#/components/responses/IssueConflict'
         '422':
           $ref: '#/components/responses/IdeaRefused'
         '501':
@@ -703,8 +705,8 @@ paths:
       operationId: orderStoryWork
       summary: Prepare the tasks the window starts
       description: >-
-        Recomputes the proposal and validates the window's choices against it. Checks revision before recorded active
-        work. Omitted repositories and limits take the proposal's defaults; an omitted comment is empty. Every
+        Recomputes the proposal and validates the window's choices against it. Checks the story against the version
+        `seen` holds for it before recorded active work. Omitted repositories and limits take the proposal's defaults; an omitted comment is empty. Every
         repository and assignment must occur exactly once. Immutable proposal fields must match, KEEP retains the
         proposed agent and model, CHANGE selects an agent the rule offers for the issues' risk with any model that is
         a plain name (the rule's model is only the proposal), and DROP leaves the brief to the main task. The main
@@ -716,9 +718,9 @@ paths:
         without `replaces` it is refused with the conflict RunChanged, so a replayed Start never gets a second set of
         offers to launch. `replaces` naming any other run than the one standing, or a run where none stands, is
         refused the same way. A `passOver` answers one issue's reason with a new run in place of the old one: it
-        names the run, the issue, its reason (NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED or FAILED) and the revision
-        the person saw, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or
-        when another issue of the run needs attention for another reason; the revision is checked as `revision` is.
+        names the run, the issue and its reason (NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED or FAILED) as the
+        person saw them, and is refused with RunChanged when the run, or that issue's reason, changed meanwhile, or
+        when another issue of the run needs attention for another reason.
         BLOCKED is never passed over, since a blocked task said it cannot go on unless something changes. A
         `passOver` of any reason is refused with WorkNotAllowed while the last ended task of an issue the run raised
         reports commits unpushed, which only that task can push, and one of FAILED while the failure stopped a
@@ -796,7 +798,8 @@ paths:
       operationId: setWorker
       summary: Set who works an issue
       description: >-
-        Writes the issue's worker into its head against the board at the given revision, saved as a move is saved: one
+        Writes the issue's worker into its head, checked against the version `seen` holds for the issue, saved as a
+        move is saved: one
         commit in the planner's own clone, pushed after the answer under the person's own Git login, or nothing at
         all. A worker equal to the issue's is saved as
         nothing. A sub-issue takes its parent's worker and is refused one of its own; an issue a task of a running work
@@ -843,7 +846,8 @@ paths:
       operationId: setIssueFields
       summary: Set an issue's size, estimate, priority and rank
       description: >-
-        Writes the members the body names against the board at the given revision: a member left out stays as it is,
+        Writes the members the body names, checked against the version `seen` holds for the issue: a member left out
+        stays as it is,
         and null clears a size, an estimate or a rank; a priority is never cleared, and a body naming no field is
         refused. Values equal to the issue's save nothing and answer the current revision. The JSON body is at most 65536 bytes. The changes stream announces
         the new board as it does after any save.
@@ -888,7 +892,8 @@ paths:
       operationId: setBlockedBy
       summary: Set the issues an issue waits on
       description: >-
-        Writes the issue's whole list of blockers against the board at the given revision: a blocker taken out no
+        Writes the issue's whole list of blockers, checked against the version `seen` holds for the issue; whether
+        the list leads back to the issue is judged on the blockers as they stand at the write: a blocker taken out no
         longer blocks it, one added does. Each blocker is named once, is one of the board's issues and is not the
         issue itself; a list that would make an issue wait on itself through its blockers, or that adds or takes out
         a blocker a warning holds back, is refused (EditNotAllowed) before anything is written. A list equal to the issue's saves nothing and answers the
@@ -942,9 +947,9 @@ paths:
         needs, a person's own headings, the fields and the stage comments are not written by this call; a member
         naming them is
         refused (EditNotAllowed), and a body naming nothing is refused. A text equal to the item's saves nothing and
-        answers the current revision. The edit is checked against the board at the given revision, and on GitHub the
-        item is read again right before the write and the edit refused (StaleRevision, naming the item) when a person
-        changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
+        answers the current revision. The edit is checked against the version `seen` holds for the item, and on GitHub
+        the item is read again right before the write and the edit refused (ItemChanged, naming the item) when a
+        person changed it since; GitHub takes no condition on an issue's update, so a change made in the one round trip
         between that read and the write is overwritten, and stays in GitHub's own history of the item. A part whose
         text holds a line Markdown reads as a heading of the first or second level, a lead of another leading part, a
         blank line in a leading part, a code block, an HTML comment, a pre or a details block left open, or a text
@@ -993,7 +998,7 @@ paths:
       summary: Write a comment on an issue
       description: >-
         Writes one comment of the person's text on the issue, with the person's own access. The board shows no
-        comment, so the call carries no revision, the board is not read again and the changes stream announces
+        comment, so the call carries no versions, the board is not read again and the changes stream announces
         nothing. A comment opening with the planner's own marker `<!-- porelo:` is refused, since the planner reads
         its own records from such comments. The JSON body is at most 267264 bytes. A comment the tracker took without
         answering is answered PartlySaved, so it is not written twice.
@@ -1032,7 +1037,8 @@ paths:
       operationId: setPriority
       summary: Set a story's priority
       description: >-
-        Writes the story's priority into its head against the board at the given revision, saved as a move is saved:
+        Writes the story's priority into its head, checked against the version `seen` holds for the story, saved as a
+        move is saved:
         the head and the stories index in one commit that starts no build, in the planner's own clone, pushed after the
         answer under the person's own Git login, or nothing at all. A priority equal to the story's is saved as nothing and answers the current revision. The
         priority touches no issue, so it may change while the story's work runs.
@@ -1076,7 +1082,8 @@ paths:
       operationId: saveMoves
       summary: Save moves, all or none
       description: >-
-        Checks a batch of moves against the board at the given revision and saves it all or not at all: each
+        Checks a batch of moves against the versions `seen` holds for its targets, the preview's `targets`, and the
+        rules against the board as it stands, and saves it all or not at all: each
         repository it changes gets one commit in the planner's own clone of it. The answer means every commit stands
         in those clones; the pushes, under the person's own Git login, follow in the background, the other
         repositories before the project's own, and a push that fails becomes a fault on the board. A story moves its least
@@ -1136,13 +1143,16 @@ paths:
       operationId: previewMoves
       summary: Answer what a batch of moves would do, writing nothing
       description: >-
-        Checks a batch of moves as saving it would, against the board at the given revision, and answers what it
+        Checks a batch of moves as saving it would, against the board as the planner reads it, and answers what it
         would write and the warnings a person confirms before it is saved: every issue it moves with its repository,
-        old and new state, every story it moves, and its warnings. Nothing is stopped, written or pushed. The digest
-        answered covers the revision, the project's repository and branch, the batch, the warnings and the runs and
-        offers they name; the save sends it back. A refusal the save would answer for the batch itself, such as a
-        working state, an unknown item or an open story moved to another open state, is answered here too. A planner
-        that does not know this operation answers 404, and the window then moves nothing.
+        old and new state, every story it moves, its warnings, and its targets - every issue and story the batch
+        changes, those a story's move carries along among them - each with its version. Nothing is stopped, written
+        or pushed. The request carries no revision and no versions. The digest answered covers the project's
+        repository and branch, the batch, every target with its version, each from and to state, the warnings and the
+        runs and offers they name, never the board's revision; the save sends it back, and the targets in its `seen`.
+        A refusal the save would answer for the batch itself, such as a working state, an unknown item or an open
+        story moved to another open state, is answered here too. A planner that does not know this operation answers
+        404, and the window then moves nothing.
       tags: [board]
       requestBody:
         required: true
@@ -1183,12 +1193,13 @@ paths:
       operationId: previewCorrection
       summary: Answer what the correction of one warning would write, writing nothing
       description: >-
-        Checks the correction a warning's `correction` offers, other than a Move, against the board at the given
-        revision and the work at hand, with the state the person picked among its `states`, and answers what it
-        would write, what it can do harm by and the digest the save sends back. No store offers a kind other than
-        Move, so one asked for is answered NotOffered. Nothing is written or pushed. The digest covers the revision,
-        the project's repository and
-        branch, the item, the warning's kind, its state now, the state picked and every warning. While the work
+        Checks the correction a warning's `correction` offers, other than a Move, against the board as the planner
+        reads it and the work at hand, with the state the person picked among its `states`, and answers what it
+        would write, what it can do harm by, its targets with their versions and the digest the save sends back; the
+        request carries no revision and no versions. No store offers a kind other than Move, so one asked for is
+        answered NotOffered. Nothing is written or pushed. The digest covers the project's repository and branch, the
+        item, every target with its version, the warning's kind, its state now, the state picked and every warning,
+        never the board's revision. While the work
         rules have faults no correction is offered and one asked for is refused (CorrectionRefused). A Move is
         previewed and saved through /moves/preview and /moves, as any move of the issue.
       tags: [board]
@@ -1229,8 +1240,9 @@ paths:
       description: >-
         Saves the correction its preview showed, as a move is saved: one commit in the planner's own clone, pushed
         after the answer under the person's own Git login, or nothing at all. Under the writer lock, before anything
-        is written, the correction is checked again on the board as it stands: the board must stand at the given
-        revision (StaleRevision), the warning must still stand on the item, no other warning may hold the item
+        is written, the correction is checked again on the board as it stands: each of the preview's targets must
+        stand at the version `seen` holds for it (ItemChanged; BasisIncomplete for one `seen` lacks), the warning must
+        still stand on the item, no other warning may hold the item
         back and the work rules may have no faults (CorrectionRefused), and the preview, computed again with the
         work at hand, must answer the digest sent (PreviewChanged). A stale, changed or repeated confirm so writes
         nothing. While a run has tasks at work on the story, a save not confirmed is refused (WorkRunning) and a
@@ -1313,7 +1325,9 @@ paths:
       operationId: createIssue
       summary: Add an idea as a new issue
       description: >-
-        Writes a new issue into the named repository of the project, saved as a move is saved. The Git store writes
+        Writes a new issue into the named repository of the project, saved as a move is saved; the story it is hung
+        into, when one is named, is its one target, checked against the version `seen` holds for it, and `seen` is
+        otherwise not checked. The Git store writes
         its file in the first state with the next free number of the repository's first issue prefix, rewrites the
         repository's issue index and commits in the planner's own clone, pushed after the answer under the person's
         own Git login. A number an index row still holds is never given again. On every store, a state the workflow
@@ -1367,15 +1381,15 @@ paths:
       operationId: addUnlistedIssue
       summary: Add an issue made outside the project
       description: >-
-        Adds one open issue the board offers among its unlisted issues to the project, against the board at the given
-        revision, in one save: an issue enters the workflow's first state with Worker Manual, Priority Medium and the
+        Adds one open issue the board offers among its unlisted issues to the project, checked against the unlisted
+        issue's own version `seen` holds for it, in one save: an issue enters the workflow's first state with Worker Manual, Priority Medium and the
         rank after the last issue of that priority; a story, an issue of the tracker's issue type Story in the project's
         own repository, gets Priority Medium and its rank and no state, so its state follows its issues. A store that
         adds no issue made outside the project answers NotOffered for any issue, before the issue is looked for; the Git
         store and the mock mode answer so. An issue the board does not offer, one on the board or outside its workflow
         among them, or one the tracker no longer holds, answers NotUnlisted, and the window reads the board again. On
         GitHub the issue is read again right before the write: one a person added to the project, closed or moved since
-        the board was read is refused (StaleRevision, naming the issue), and one the board would show only as a warned
+        the board was read is refused (ItemChanged, naming the issue), and one the board would show only as a warned
         issue no work starts on once added - a story outside the project's own repository, an issue under an issue that
         is no item of the project, that the board does not place, that is a sub-issue itself or that is of another
         repository, an issue blocked by a story or by an item the board does not place, a story that blocks an item of
@@ -1581,7 +1595,9 @@ paths:
       operationId: chooseReading
       summary: Choose how a stopped reading continues
       description: >-
-        Checks story membership, stopped status, exact completed round and revision. The choice clears the stop
+        Checks story membership, stopped status, exact completed round and the versions `seen` holds for its targets:
+        the issue and every deferred issue of the story it reconciles, so a window sends the versions of the story's
+        issues. The choice clears the stop
         before an offer leaves. REVIEW_ANYWAY retains findings and saves the rule's done state. ONE_MORE_ROUND
         offers a reader in the Reading rule's first mode and model, granting one more reading only at the limit;
         REWORK offers rework with the saved blocking findings and the operator's words, which it requires only
@@ -1666,9 +1682,9 @@ components:
   responses:
     RunConflict:
       description: >-
-        StaleRevision(revision), WorkRunning(story,tasks[]), ReadingNotStopped(issue),
-        ReadingRoundChanged(issue,rounds), ReworkNeedsFindings(issue), TaskEventConflict(task,event,reason) or
-        RunChanged(story,reason). Subjects are checked before echoing.
+        ItemChanged(changed[],items[]), BasisIncomplete(missing[]), WorkRunning(story,tasks[]),
+        ReadingNotStopped(issue), ReadingRoundChanged(issue,rounds), ReworkNeedsFindings(issue),
+        TaskEventConflict(task,event,reason) or RunChanged(story,reason). Subjects are checked before echoing.
       content:
         application/problem+json:
           schema:
@@ -1697,11 +1713,12 @@ components:
             $ref: '#/components/schemas/Problem'
     WorkConflict:
       description: >-
-        StaleRevision names the current revision. WorkRunning names the checked story and an array of recorded active
-        task names. RunChanged(story,reason) says in fixed words that the run a Start names in `replaces` or
-        `passOver`, or the reason it passes over, is not the one standing, or that the run holds a reason a Start
-        must pass over. Revision is checked first; a story's state
-        alone never means work is running.
+        ItemChanged names the story when it changed since the version `seen` holds for it, with the story as it
+        stands; BasisIncomplete names it when `seen` holds no version for it. WorkRunning names the checked story and
+        an array of recorded active task names. RunChanged(story,reason) says in fixed words that the run a Start
+        names in `replaces` or `passOver`, or the reason it passes over, is not the one standing, or that the run
+        holds a reason a Start must pass over. The story's version is checked first; a story's state alone never
+        means work is running.
       content:
         application/problem+json:
           schema:
@@ -1937,23 +1954,34 @@ components:
     MoveConflict:
       description: >-
         WorkRunning(story,tasks[]) when a move touches an item currently owned by active work or moves an issue of a
-        story whose run has a task at work. The board moved since
-        the given revision (StaleRevision, naming the current one), the batch's preview, computed again, answers
-        another digest than the one sent (PreviewChanged, naming nothing the window could send back). A preview answers
-        only StaleRevision.
+        story whose run has a task at work. A target changed since the version `seen` holds for it (ItemChanged), a
+        target has no version in `seen` (BasisIncomplete), or the batch's preview, computed again, answers another
+        digest than the one sent (PreviewChanged, naming nothing the window could send back). A preview, which carries
+        no versions, answers none of these.
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
           examples:
-            StaleRevision:
+            ItemChanged:
               value:
-                type: urn:porelo-planner:StaleRevision
-                title: StaleRevision
+                type: urn:porelo-planner:ItemChanged
+                title: ItemChanged
                 status: 409
-                detail: The board moved since that revision.
+                detail: An item the write changes changed since it was read.
                 parameters:
-                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+                  changed: [PL3]
+                  items:
+                    - id: PL3
+                      gone: true
+            BasisIncomplete:
+              value:
+                type: urn:porelo-planner:BasisIncomplete
+                title: BasisIncomplete
+                status: 409
+                detail: The write names no version for an item it changes.
+                parameters:
+                  missing: [PL4]
             PreviewChanged:
               value:
                 type: urn:porelo-planner:PreviewChanged
@@ -1963,22 +1991,34 @@ components:
                 parameters: {}
     CorrectionConflict:
       description: >-
-        The board moved since the given revision (StaleRevision, naming the current one), the correction's preview,
-        computed again, answers another digest than the one sent (PreviewChanged), or a run has tasks at work on the
-        story and the save was not confirmed (WorkRunning(story,tasks[])). A preview answers only StaleRevision.
+        A target changed since the version `seen` holds for it (ItemChanged), a target has no version in `seen`
+        (BasisIncomplete), the correction's preview, computed again, answers another digest than the one sent
+        (PreviewChanged), or a run has tasks at work on the story and the save was not confirmed
+        (WorkRunning(story,tasks[])). A preview, which carries no versions, answers none of these.
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
           examples:
-            StaleRevision:
+            ItemChanged:
               value:
-                type: urn:porelo-planner:StaleRevision
-                title: StaleRevision
+                type: urn:porelo-planner:ItemChanged
+                title: ItemChanged
                 status: 409
-                detail: The board moved since that revision.
+                detail: An item the write changes changed since it was read.
                 parameters:
-                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+                  changed: [PL3]
+                  items:
+                    - id: PL3
+                      gone: true
+            BasisIncomplete:
+              value:
+                type: urn:porelo-planner:BasisIncomplete
+                title: BasisIncomplete
+                status: 409
+                detail: The write names no version for an item it changes.
+                parameters:
+                  missing: [PL4]
             PreviewChanged:
               value:
                 type: urn:porelo-planner:PreviewChanged
@@ -2100,22 +2140,38 @@ components:
                 parameters:
                   address: https://github.com
     IssueConflict:
-      description: The board moved since the given revision (StaleRevision, naming the current one).
+      description: >-
+        A target of the write changed since the version `seen` holds for it (ItemChanged, naming each such target and
+        answering it as it stands, or gone), or `seen` holds no version for a target (BasisIncomplete, naming each).
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
-          example:
-            type: urn:porelo-planner:StaleRevision
-            title: StaleRevision
-            status: 409
-            detail: The board moved since that revision.
-            parameters:
-              revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+          examples:
+            ItemChanged:
+              value:
+                type: urn:porelo-planner:ItemChanged
+                title: ItemChanged
+                status: 409
+                detail: An item the write changes changed since it was read.
+                parameters:
+                  changed: [PL3]
+                  items:
+                    - id: PL3
+                      gone: true
+            BasisIncomplete:
+              value:
+                type: urn:porelo-planner:BasisIncomplete
+                title: BasisIncomplete
+                status: 409
+                detail: The write names no version for an item it changes.
+                parameters:
+                  missing: [PL4]
     EditConflict:
       description: >-
-        The board moved since the given revision (StaleRevision, naming the current one, and the item when a person
-        changed it on the tracker since the board was read), or a started task of a run
+        A target of the write changed since the version `seen` holds for it, on the tracker too where the store keeps
+        one (ItemChanged, naming each such target and answering it as it stands, or gone), `seen` holds no version for
+        a target (BasisIncomplete, naming each), or a started task of a run
         works an issue the change takes out of its story or an issue a new story would take, or a run whose story is
         gone still has a task at work (WorkRunning, naming the story and its tasks, and for a new story over issues
         that stand the issue named that the run works, itself or through a sub-issue), or an issue a new story would
@@ -2127,14 +2183,25 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           examples:
-            StaleRevision:
+            ItemChanged:
               value:
-                type: urn:porelo-planner:StaleRevision
-                title: StaleRevision
+                type: urn:porelo-planner:ItemChanged
+                title: ItemChanged
                 status: 409
-                detail: The board moved since that revision.
+                detail: An item the write changes changed since it was read.
                 parameters:
-                  revision: 9f2b6c1e0d4a8b3f7e5c2a9d1b6f4e8c3a7d0b5e9f1c2a6d8b4e7f3a0c5d9b2e
+                  changed: [PL3]
+                  items:
+                    - id: PL3
+                      gone: true
+            BasisIncomplete:
+              value:
+                type: urn:porelo-planner:BasisIncomplete
+                title: BasisIncomplete
+                status: 409
+                detail: The write names no version for an item it changes.
+                parameters:
+                  missing: [PL4]
             WorkRunning:
               value:
                 type: urn:porelo-planner:WorkRunning
@@ -2157,7 +2224,7 @@ components:
     IssueRefused:
       description: >-
         A new issue is refused (IssueNotAllowed): the body is no new issue or is larger than 1048576 bytes (field
-        empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, revision, task,
+        empty), or a field is out of bounds (field repository, title, mustBeTrue, size, worker, seen, task,
         priority, story or confirm), or the store cannot write it in its repository, such as a repository whose
         issues give no prefix (field empty) or a body longer than GitHub takes (field mustBeTrue, final: the same
         text is refused again). A GitHub create's initial placement is refused before creation with
@@ -2181,7 +2248,7 @@ components:
       description: >-
         An idea is refused (IdeaRefused), with fixed words; what was sent is never repeated. The body is no hand-in or
         no new story - larger than 1048576 bytes (65536 for a story from existing issues), not JSON, not an object, a member missing or unknown, offer no
-        lowercase UUID, or revision no revision - with one fault; or the idea breaks the idea format, at most 100
+        lowercase UUID, or seen no object of versions by item id - with one fault; or the idea breaks the idea format, at most 100
         faults, each starting with the field it names (story, story.title, issues, issues[0].repository, existing,
         existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault, starting with the field that named the issue when it refuses one; or the offer's save is still pending or was only
         partly pushed, with pushed naming the repositories already pushed (comma-joined, empty when none).
@@ -2278,8 +2345,8 @@ components:
     PriorityRefused:
       description: >-
         A project name or story id was refused (InvalidName), or the body is no priority change (PriorityNotAllowed,
-        naming the story): not one JSON object of at most 65536 bytes with exactly a revision and one of the five
-        priorities. What was sent is never repeated.
+        naming the story): not one JSON object of at most 65536 bytes with exactly the members seen and priority,
+        one of the five priorities. What was sent is never repeated.
       content:
         application/problem+json:
           schema:
@@ -2380,9 +2447,57 @@ components:
         An item's own stored edit basis, opaque to the window, which compares it only for equality: two equal versions
         of one item mean its own stored state is unchanged. A value it takes from another item, such as a sub-issue's
         inherited worker or a story's state its issues give, is not part of it; neither is a comment or another
-        item's change. A SHA-256 as 64 lower-case hexadecimal characters.
+        item's change. 40 or 64 lower-case hexadecimal characters: the Git store gives the id of an item's file in
+        Git where it has one, and otherwise, as every other store, a SHA-256 of the item's own stored state.
       type: string
-      pattern: '^[0-9a-f]{64}$'
+      pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'
+
+    Seen:
+      description: >-
+        The versions the person saw, by item id: the edit basis a write is checked against. The planner determines
+        the write's targets, the items whose own stored state it changes, each request schema naming them; a target
+        whose version here differs from the one it stands at is refused (ItemChanged), and a target without an entry
+        is refused (BasisIncomplete), never taken as one not to check. An entry for an item that is no target is not
+        checked, so a window may send the version of every item it showed. Always present; `{}` for a write without
+        targets.
+      type: object
+      propertyNames:
+        anyOf:
+          - $ref: '#/components/schemas/IssueId'
+          - $ref: '#/components/schemas/StoryId'
+      additionalProperties:
+        $ref: '#/components/schemas/Version'
+
+    Target:
+      description: An item a write changes, with the version it stands at.
+      type: object
+      required: [id, version]
+      properties:
+        id:
+          description: An issue's or a story's id.
+          anyOf:
+            - $ref: '#/components/schemas/IssueId'
+            - $ref: '#/components/schemas/StoryId'
+        version:
+          $ref: '#/components/schemas/Version'
+
+    ChangedItem:
+      description: >-
+        A target an ItemChanged refusal names, as the store holds it now: exactly one of issue, story and unlisted,
+        with gone false; or gone true and none of them when the store holds no one readable item by that id any more.
+      type: object
+      required: [id, gone]
+      properties:
+        id:
+          type: string
+        gone:
+          type: boolean
+        issue:
+          $ref: '#/components/schemas/Issue'
+        story:
+          $ref: '#/components/schemas/Story'
+        unlisted:
+          $ref: '#/components/schemas/UnlistedIssue'
 
     Level:
       type: object
@@ -2681,13 +2796,13 @@ components:
 
     Moves:
       description: >-
-        A batch of moves against the board at a revision, with the digest of its preview; a batch that confirms its
-        warnings may leave the digest out, and the planner's preview of the same moves stands for it.
+        A batch of moves with the versions seen, its preview's targets, and the digest of its preview; a batch that
+        confirms its warnings may leave the digest out, and the planner's preview of the same moves stands for it.
       type: object
-      required: [revision, moves]
+      required: [seen, moves]
       properties:
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
         moves:
           type: array
           maxItems: 200
@@ -2702,12 +2817,10 @@ components:
             Whether the person confirmed the preview's warnings: each run its RUNNING_WORK warning named is stopped
             with the save.
     MovesPreviewRequest:
-      description: A batch of moves to preview against the board at a revision.
+      description: A batch of moves to preview against the board as the planner reads it; it carries no versions.
       type: object
-      required: [revision, moves]
+      required: [moves]
       properties:
-        revision:
-          $ref: '#/components/schemas/Revision'
         moves:
           type: array
           maxItems: 200
@@ -2722,12 +2835,19 @@ components:
     MovePreview:
       description: What a batch of moves would write, and what a person confirms before it is saved.
       type: object
-      required: [revision, digest, issues, stories, warnings]
+      required: [revision, digest, issues, stories, warnings, targets]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
         digest:
           $ref: '#/components/schemas/PreviewDigest'
+        targets:
+          type: array
+          description: >-
+            Every issue and story the batch changes, each once with the version it stands at: those it moves and the
+            issues a story's move carries along. The save sends them back in `seen`.
+          items:
+            $ref: '#/components/schemas/Target'
         issues:
           type: array
           description: Every issue the batch moves, each once, in the order the save names them.
@@ -2895,15 +3015,15 @@ components:
       type: string
       enum: [AGENT, MANUAL]
     WorkerRequest:
-      description: An issue's new worker, against the board at a revision; no other member is taken.
+      description: An issue's new worker, with the versions seen; its target is the issue. No other member is taken.
       type: object
       additionalProperties: false
-      required: [worker, revision]
+      required: [worker, seen]
       properties:
         worker:
           $ref: '#/components/schemas/Worker'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     WorkerSaved:
       description: The board's revision after the save.
       type: object
@@ -2916,15 +3036,15 @@ components:
       type: string
       enum: [Highest, High, Medium, Low, Lowest]
     PriorityRequest:
-      description: A story's new priority, against the board at a revision; no other member is taken.
+      description: A story's new priority, with the versions seen; its target is the story. No other member is taken.
       type: object
       additionalProperties: false
-      required: [priority, revision]
+      required: [priority, seen]
       properties:
         priority:
           $ref: '#/components/schemas/Priority'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     PrioritySaved:
       description: The board's revision after the save.
       type: object
@@ -2933,10 +3053,10 @@ components:
         revision:
           $ref: '#/components/schemas/Revision'
     NewIssueRequest:
-      description: An idea a person wrote, against the board at a revision; no other member is taken.
+      description: An idea a person wrote, with the versions seen; its target is the story named, if one is. No other member is taken.
       type: object
       additionalProperties: false
-      required: [repository, title, mustBeTrue, revision]
+      required: [repository, title, mustBeTrue, seen]
       properties:
         repository:
           $ref: '#/components/schemas/Name'
@@ -2959,8 +3079,8 @@ components:
           description: Who works the new issue; AGENT when it is left out.
           allOf:
             - $ref: '#/components/schemas/Worker'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
         task:
           description: >-
             The Porelo task that proposed the idea, named in the new issue's file under what must be true; left out
@@ -3080,22 +3200,22 @@ components:
           description: Who works the issue, as the person chose it.
           enum: [Agent, Manual]
     StoryRequest:
-      description: A new story with its issues, in the idea format, against the board at a revision; no other member is taken.
+      description: A new story with its issues, in the idea format, with the versions seen; it has no target. No other member is taken.
       type: object
       additionalProperties: false
-      required: [idea, revision]
+      required: [idea, seen]
       properties:
         idea:
           $ref: '#/components/schemas/Idea'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     StoryFromIssuesRequest:
       description: >-
-        A new story over issues that stand on the board, against the board at a revision; no other member is taken,
-        and no new issue is made.
+        A new story over issues that stand on the board, with the versions seen; its targets are the issues named,
+        and on a retry the story the earlier attempt made. No other member is taken, and no new issue is made.
       type: object
       additionalProperties: false
-      required: [story, existing, revision]
+      required: [story, existing, seen]
       properties:
         story:
           $ref: '#/components/schemas/IdeaStory'
@@ -3107,8 +3227,8 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/IssueId'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     StoryAdded:
       description: >-
         The new story's id, its issues' ids - the new ones in the idea's order, or the existing ones in the order
@@ -3126,11 +3246,11 @@ components:
           $ref: '#/components/schemas/Revision'
     IssueFieldsRequest:
       description: >-
-        An issue's fields to set, against the board at a revision; a member left out stays as it is, null clears it
-        where the issue may be without it, and no other member is taken.
+        An issue's fields to set, with the versions seen; its target is the issue. A member left out stays as it is,
+        null clears it where the issue may be without it, and no other member is taken.
       type: object
       additionalProperties: false
-      required: [revision]
+      required: [seen]
       properties:
         size:
           type: [string, 'null']
@@ -3148,47 +3268,49 @@ components:
           description: The issue's order within its priority, the lowest first; null clears it.
           minimum: 1
           maximum: 99999
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     StoryIssuesRequest:
-      description: A story's whole issue list, in its order, against the board at a revision; no other member is taken.
+      description: >-
+        A story's whole issue list, in its order, with the versions seen; its targets are the story and every issue
+        hung in or taken out. No other member is taken.
       type: object
       additionalProperties: false
-      required: [issues, revision]
+      required: [issues, seen]
       properties:
         issues:
           type: array
           maxItems: 100
           items:
             $ref: '#/components/schemas/IssueId'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     ListIssueRequest:
       description: >-
-        An issue the board offers among its unlisted issues, by its tracker reference, against the board at a
-        revision; no other member is taken. A fixed alias or an id of the Git store's form names no such issue and is
+        An issue the board offers among its unlisted issues, by its tracker reference, with the versions seen; its
+        target is the unlisted issue, by its own version. No other member is taken. A fixed alias or an id of the Git store's form names no such issue and is
         refused (EditNotAllowed, field issue) before the board is read.
       type: object
       additionalProperties: false
-      required: [issue, revision]
+      required: [issue, seen]
       properties:
         issue:
           $ref: '#/components/schemas/IssueId'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     BlockedByRequest:
-      description: An issue's whole list of blockers, against the board at a revision; no other member is taken.
+      description: An issue's whole list of blockers, with the versions seen; its target is the issue. No other member is taken.
       type: object
       additionalProperties: false
-      required: [blockedBy, revision]
+      required: [blockedBy, seen]
       properties:
         blockedBy:
           type: array
           maxItems: 50
           items:
             $ref: '#/components/schemas/IssueId'
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     CommentRequest:
       description: A comment's text; no other member is taken.
       type: object
@@ -3202,11 +3324,11 @@ components:
           maxLength: 65536
     IssueTextRequest:
       description: >-
-        An issue's title and named parts to write, against the board at a revision; a member left out stays as it is,
-        null removes a part where the issue may be without it, and no other member is taken.
+        An issue's title and named parts to write, with the versions seen; its target is the issue. A member left out
+        stays as it is, null removes a part where the issue may be without it, and no other member is taken.
       type: object
       additionalProperties: false
-      required: [revision]
+      required: [seen]
       properties:
         title:
           type: string
@@ -3257,15 +3379,15 @@ components:
           description: The section Findings; null removes it.
           minLength: 1
           maxLength: 65536
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     StoryTextRequest:
       description: >-
-        A story's title and parts to write, against the board at a revision; a member left out stays as it is, null
-        removes a part, and no other member is taken.
+        A story's title and parts to write, with the versions seen; its target is the story. A member left out stays
+        as it is, null removes a part, and no other member is taken.
       type: object
       additionalProperties: false
-      required: [revision]
+      required: [seen]
       properties:
         title:
           type: string
@@ -3284,8 +3406,8 @@ components:
           description: The paragraph after the lead The test; one paragraph; null removes it.
           minLength: 1
           maxLength: 65536
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
     EditSaved:
       description: The board's revision after the save.
       type: object
@@ -3683,13 +3805,11 @@ components:
             type: string
     CorrectionRequest:
       description: >-
-        The correction of one warning on one story or issue, with the state the person picked; it names exactly one
-        story or one issue.
+        The correction of one warning on one story or issue, with the state the person picked, previewed against the
+        board as the planner reads it; it names exactly one story or one issue and carries no versions.
       type: object
-      required: [revision, warning, state]
+      required: [warning, state]
       properties:
-        revision:
-          $ref: '#/components/schemas/Revision'
         story:
           $ref: '#/components/schemas/StoryId'
         issue:
@@ -3704,12 +3824,13 @@ components:
           description: The state picked among the correction's `states`.
     CorrectionConfirm:
       description: >-
-        A correction the person confirmed, with the digest of its preview; it names exactly one story or one issue.
+        A correction the person confirmed, with the digest of its preview and the versions seen, its preview's
+        targets; it names exactly one story or one issue.
       type: object
-      required: [revision, warning, state, digest]
+      required: [seen, warning, state, digest]
       properties:
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
         story:
           $ref: '#/components/schemas/StoryId'
         issue:
@@ -3731,12 +3852,19 @@ components:
     CorrectionPreview:
       description: What a correction would write, and the digest its save sends back.
       type: object
-      required: [revision, digest, story, issue, warning, from, to, warnings]
+      required: [revision, digest, story, issue, warning, from, to, warnings, targets]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
         digest:
           $ref: '#/components/schemas/PreviewDigest'
+        targets:
+          type: array
+          description: >-
+            Every item the correction changes, each once with the version it stands at. The save sends them back in
+            `seen`.
+          items:
+            $ref: '#/components/schemas/Target'
         story:
           description: The story it writes, or null.
           oneOf:
@@ -4031,7 +4159,7 @@ components:
     StoryWorkRequest:
       type: object
       additionalProperties: false
-      required: [project, story, to, mode, revision]
+      required: [project, story, to, mode, seen]
       properties:
         project:
           $ref: '#/components/schemas/Name'
@@ -4041,8 +4169,8 @@ components:
           type: string
         mode:
           type: string
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
         repositories:
           type: array
           items:
@@ -4065,19 +4193,16 @@ components:
           $ref: '#/components/schemas/PassOver'
     PassOver:
       description: >-
-        The reason of one issue a Start answers with a new run in place of the run named, as the person saw it at the
-        revision named.
+        The reason of one issue a Start answers with a new run in place of the run named, as the person saw it.
       type: object
       additionalProperties: false
-      required: [issue, reason, revision, run]
+      required: [issue, reason, run]
       properties:
         issue:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
           enum: [NEXT_STEP_UNAVAILABLE, SAVE_REFUSED, STOPPED, FAILED]
-        revision:
-          $ref: '#/components/schemas/Revision'
         run:
           $ref: '#/components/schemas/RunId'
     StopRequest:
@@ -4323,7 +4448,7 @@ components:
     ReadingRequest:
       type: object
       additionalProperties: false
-      required: [story, round, choice, comment, revision]
+      required: [story, round, choice, comment, seen]
       properties:
         story:
           $ref: '#/components/schemas/StoryId'
@@ -4337,8 +4462,8 @@ components:
         comment:
           type: string
           maxLength: 4000
-        revision:
-          $ref: '#/components/schemas/Revision'
+        seen:
+          $ref: '#/components/schemas/Seen'
         mode:
           type: string
           maxLength: 128
@@ -4666,10 +4791,23 @@ components:
             right:
               type: string
               description: The right a forge names as missing, for NoForgeAccess, when it names one.
-            revision:
-              type: string
             item:
               type: string
+            changed:
+              type: array
+              description: The targets an ItemChanged refusal names, each once.
+              items:
+                type: string
+            items:
+              type: array
+              description: Each target an ItemChanged refusal names, as the store holds it now or gone.
+              items:
+                $ref: '#/components/schemas/ChangedItem'
+            missing:
+              type: array
+              description: The targets a BasisIncomplete refusal names, for which `seen` holds no version.
+              items:
+                type: string
             field:
               type: string
               description: The member of a new issue's or an edit's body a refusal is about, or empty.

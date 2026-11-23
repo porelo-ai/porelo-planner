@@ -7,13 +7,13 @@ import 'story_work_order.dart';
 
 /// The planning service refused a call, with its own name for the refusal and what it sent with it.
 ///
-/// A refusal is an answer, not a fault: `StaleRevision`, `NotYetBuilt` or a refused move each reach the screen
+/// A refusal is an answer, not a fault: `ItemChanged`, `NotYetBuilt` or a refused move each reach the screen
 /// with their name intact, so the screen can say what the service said.
 class PlanningRefusal implements Exception {
-  /// Takes the refusal's short name, such as `StaleRevision`, and its parameters as sent.
+  /// Takes the refusal's short name, such as `ItemChanged`, and its parameters as sent.
   const PlanningRefusal(this.name, [this.parameters = const {}, this.description = '', this.notOffered = false]);
 
-  /// The refusal's short name, such as `StaleRevision` or `NotYetBuilt`.
+  /// The refusal's short name, such as `ItemChanged` or `NotYetBuilt`.
   final String name;
 
   /// Whatever the service sent with it.
@@ -258,20 +258,21 @@ abstract interface class PlanningSource {
   /// or null for a tracked project that holds no board yet, whose read goes on and whose board comes on the watch.
   Future<String?> refreshProject(String project);
 
-  /// Answers what [moves] would do against the board at [revision] and what they can do harm by, writing nothing.
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision);
+  /// Answers what [moves] would do against the board as the planner holds it, the items they change with their
+  /// versions and what they can do harm by, writing nothing.
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves);
 
-  /// Saves [moves] in one atomic call, only as the preview answered by [digest] showed them; [confirm] lets a story
-  /// stand where its issues do not fit, as that preview warned.
+  /// Saves [moves] in one atomic call, only as the preview answered by [digest] showed them, sending its targets back
+  /// as [seen]; [confirm] lets a story stand where its issues do not fit, as that preview warned.
   Future<PlanningMoveResult> saveMoves(
     String project,
     List<PlanningMove> moves,
-    String revision, {
+    Map<String, String> seen, {
     required String digest,
     bool confirm = false,
   });
 
-  /// Adds an idea as a new issue in state New of [repository], against the board at [revision]; [size] is one of
+  /// Adds an idea as a new issue in state New of [repository], against the versions [seen]; [size] is one of
   /// `XS` to `XL`, or null when it is not known yet; [task] names the Porelo task that proposed it, null when a person
   /// did.
   Future<PlanningIssueAdded> createIssue(
@@ -280,17 +281,17 @@ abstract interface class PlanningSource {
     String title,
     String mustBeTrue,
     String? size,
-    String revision, {
+    Map<String, String> seen, {
     IssueWorker worker = IssueWorker.agent,
     String? task,
   });
 
-  /// Sets who works [issue], against the board at [revision]; a sub-issue is refused, as it takes its parent's.
-  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, String revision);
+  /// Sets who works [issue], against the versions [seen]; a sub-issue is refused, as it takes its parent's.
+  Future<PlanningWorkerSaved> setWorker(String project, String issue, IssueWorker worker, Map<String, String> seen);
 
-  /// Sets [story]'s priority, one of [planningPriorities], against the board at [revision]; saved as a move is,
-  /// it answers the board's revision after the save, the same one when the story had that priority already.
-  Future<String> setPriority(String project, String story, String priority, String revision);
+  /// Sets [story]'s priority, one of [planningPriorities], against the versions [seen]; saved as a move is, it
+  /// answers the board's revision after the save, the same one when the story had that priority already.
+  Future<String> setPriority(String project, String story, String priority, Map<String, String> seen);
 
   /// Reads one story and its source text.
   Future<PlanStoryDetail> getStory(String project, String story);
@@ -301,12 +302,12 @@ abstract interface class PlanningSource {
   /// Reads the board's issues in no story at one revision.
   Future<PlanIssueList> listIssues(String project);
 
-  /// Replaces a story's whole issue list, preserving its supplied order, against the board at [revision].
-  Future<String> setStoryIssues(String project, String story, List<String> issues, String revision);
+  /// Replaces a story's whole issue list, preserving its supplied order, against the versions [seen].
+  Future<String> setStoryIssues(String project, String story, List<String> issues, Map<String, String> seen);
 
-  /// Adds an issue the board offers as made outside the project to the project, against the board at [revision];
+  /// Adds an issue the board offers as made outside the project to the project, against the versions [seen];
   /// answers the board's revision after the save.
-  Future<String> addUnlistedIssue(String project, String issue, String revision);
+  Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen);
 
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);
@@ -350,15 +351,15 @@ abstract interface class PlanningSource {
   /// Reads the issue's last findings.
   Future<PlanningIssueDetail> getPlanningIssue(String project, String issue);
 
-  /// Sends a revision-bound decision for one stopped reading round; only a rework takes [rework], and without it
-  /// the planner takes the Reworking rule's first mode and model.
+  /// Sends a decision for one stopped reading round, bound to the versions [seen]; only a rework takes [rework], and
+  /// without it the planner takes the Reworking rule's first mode and model.
   Future<ReadingResolution> resolveIssueReading(
     String project,
     String story,
     String issue,
     int round,
     String choice,
-    String revision, {
+    Map<String, String> seen, {
     String? comment,
     PlanningRework? rework,
   });

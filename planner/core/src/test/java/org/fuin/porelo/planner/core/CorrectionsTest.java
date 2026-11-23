@@ -122,7 +122,7 @@ class CorrectionsTest {
 
     private static Corrections.Preview preview(
             final CountingStore store, final Corrections.Asked asked) {
-        return run(store).correctionPreview(asked, "board@1");
+        return run(store).correctionPreview(asked);
     }
 
     @Test

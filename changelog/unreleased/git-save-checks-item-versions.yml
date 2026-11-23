@@ -1,0 +1,2 @@
+title: A save to a Git project given the versions its caller saw is refused only when an item it changes changed, and is otherwise built on the repositories' current commits, keeping another's change to other files.
+type: changed

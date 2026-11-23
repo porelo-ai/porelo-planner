@@ -38,11 +38,11 @@ class StoryWorkHttpTest {
     private static final String BASE = "/projects/project/stories/ST1";
     private static final String MINIMAL =
             """
-            {"project":"project","story":"ST1","to":"Building","mode":"AGENT","revision":"board@1"}
+            {"project":"project","story":"ST1","to":"Building","mode":"AGENT","seen":"SEEN"}
             """;
     private static final String SELECTED =
             """
-            {"project":"project","story":"ST1","to":"Building","mode":"AGENT","revision":"board@1",
+            {"project":"project","story":"ST1","to":"Building","mode":"AGENT","seen":"SEEN",
              "repositories":[{"repository":"alpha","issues":["AA1","AA1.1"],
               "main":{"name":"main","role":"MAIN","agent":"codex","model":"model-a",
                       "brief":"Build {story}: {issues}; {tasks}"},
@@ -129,7 +129,7 @@ class StoryWorkHttpTest {
                                                 java.time.Duration.ofHours(1),
                                                 java.util.concurrent.Executors
                                                         .newSingleThreadScheduledExecutor())))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .addFilters(new AccessFilter(token))
                         .build();
     }
@@ -535,10 +535,10 @@ class StoryWorkHttpTest {
                     .as("workflow context and safe reason")
                     .containsExactlyInAnyOrder("from", "to", "reason");
         }
-        final JsonNode stale = json(call(BASE + "/work", MINIMAL.replace("board@1", "old")), 409);
-        assertThat(stale.at("/parameters/revision").asString())
-                .as("the latest revision is returned")
-                .isEqualTo("board@1");
+        final JsonNode stale = json(call(BASE + "/work", MINIMAL.replace("SEEN", "STALE")), 409);
+        assertThat(stale.at("/parameters/changed/0").asString())
+                .as("the story changed since it was seen")
+                .isEqualTo("ST1");
         // A stale decision must be told as stale, whatever else it holds, so the window reloads.
         for (final String rounds :
                 List.of(
@@ -548,12 +548,12 @@ class StoryWorkHttpTest {
                     json(
                             call(
                                     BASE + "/work",
-                                    MINIMAL.replace("board@1", "old")
+                                    MINIMAL.replace("SEEN", "STALE")
                                             .replace("}", "," + rounds + "}")),
                             409);
             assertThat(staleAnyway.get("title").asString())
                     .as("stale before a round count is judged: " + rounds)
-                    .isEqualTo("StaleRevision");
+                    .isEqualTo("ItemChanged");
         }
         failure = WorkRefusal.workRunning("ST1", List.of("main", "builder"));
         final JsonNode running = json(call(BASE + "/work", MINIMAL), 409);
@@ -711,14 +711,17 @@ class StoryWorkHttpTest {
             assertThat(proposal.statusCode())
                     .as("mock proposal over real HTTP: %s", proposal.body())
                     .isEqualTo(200);
+            final String seen =
+                    Seens.ofAnswer(http(address, "GET", "/projects/any/stories", null).body());
             final HttpResponse<String> order =
                     http(
                             address,
                             "POST",
                             path + "/work",
-                            """
-                            {"project":"any","story":"ST14","to":"Implementing","mode":"AGENT","revision":"mock@1"}
-                            """);
+                            "{\"project\":\"any\",\"story\":\"ST14\",\"to\":\"Implementing\","
+                                    + "\"mode\":\"AGENT\",\"seen\":"
+                                    + seen
+                                    + "}");
             assertThat(order.statusCode()).as("mock work order over real HTTP").isEqualTo(200);
             assertThat(JSON.readTree(order.body()).get("revision").asString())
                     .as("the mock revision stays unchanged")
@@ -728,11 +731,21 @@ class StoryWorkHttpTest {
         }
     }
 
+    /**
+     * Posts a body, its {@code "seen":"SEEN"} standing for the versions of the board as it stands
+     * and {@code "seen":"STALE"} for versions none of its items stands at.
+     */
     private MockHttpServletResponse call(final String path, final String body) throws Exception {
         return mvc.perform(
                         post(path)
                                 .contentType("application/json")
-                                .content(body)
+                                .content(
+                                        body.replace(
+                                                        "\"seen\":\"SEEN\"",
+                                                        "\"seen\":" + Seens.of(board))
+                                                .replace(
+                                                        "\"seen\":\"STALE\"",
+                                                        "\"seen\":" + Seens.stale(board)))
                                 .with(Signing.mvc(token.text())))
                 .andReturn()
                 .getResponse();

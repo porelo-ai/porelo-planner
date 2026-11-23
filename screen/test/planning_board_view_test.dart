@@ -135,11 +135,8 @@ void _withIssueOf(MockPlanningSource backend, String repository) {
 /// them, two issues each, under the digest the save checks.
 class _ThreeWarnings extends MockPlanningSource {
   @override
-  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves, String revision) async {
-    final preview = previewPlanningMove(board(project), {
-      'moves': moves.map((move) => move.toMap()).toList(),
-      'revision': revision,
-    });
+  Future<PlanningMovePreview> previewMoves(String project, List<PlanningMove> moves) async {
+    final preview = previewPlanningMove(board(project), {'moves': moves.map((move) => move.toMap()).toList()});
     Map<String, dynamic> issue(String id) => {'id': id, 'repository': 'other', 'from': 'Ready', 'to': 'Review'};
     Map<String, dynamic> warning(String kind, {List<String> tasks = const []}) => {
       'kind': kind,
@@ -603,7 +600,6 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await settle(tester);
 
-    expect(backend.previewCalls.single['revision'], 'initial', reason: 'previewed against the board the drag began on');
     expect(backend.moveCalls, isEmpty, reason: 'nothing was moved');
     expect(boards.selected!.moveProblem, contains('nothing was moved'));
   });

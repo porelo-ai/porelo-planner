@@ -128,7 +128,7 @@ class GitHubFailedReadStreamTest {
                     MockMvcBuilders.standaloneSetup(
                                     new BoardController(projects, changes),
                                     new EventsController(changes, Duration.ofSeconds(15)))
-                            .setControllerAdvice(new Problems())
+                            .setControllerAdvice(new Problems(projects))
                             .build();
             mvc.perform(
                             put("/projects/alpha")

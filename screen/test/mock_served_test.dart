@@ -18,13 +18,15 @@ String _file(String name) => File('${_served.path}/$name').readAsStringSync();
 final _sent = <String, Object>{
   'PUT /projects/demo': {'repository': 'https://example.org/porelo/porelo.git', 'branch': 'main'},
   'POST /projects/demo/moves/preview': {
-    'revision': 'mock@1',
     'moves': [
       {'issue': 'B542', 'to': 'Review'},
     ],
   },
   'POST /projects/demo/moves': {
-    'revision': 'mock@1',
+    'seen': {
+      for (final target in (jsonDecode(_file('preview-B542.json')) as Map<String, dynamic>)['targets'] as List<dynamic>)
+        (target as Map<String, dynamic>)['id']: target['version'],
+    },
     'moves': [
       {'issue': 'B542', 'to': 'Review'},
     ],
@@ -175,8 +177,8 @@ void main() {
 
     final detail = await source.getIssue('demo', 'B541');
     const moves = [PlanningIssueMove('B542', 'Review')];
-    final preview = await source.previewMoves('demo', moves, 'mock@1');
-    final moved = await source.saveMoves('demo', moves, 'mock@1', digest: preview.digest);
+    final preview = await source.previewMoves('demo', moves);
+    final moved = await source.saveMoves('demo', moves, preview.targets, digest: preview.digest);
 
     expect(
       '${(detail.issue?.id, detail.issue?.state, detail.whatMustBeTrue)}',

@@ -280,6 +280,11 @@ void main() {
     final detail = PlanningDetail(board, 'ST291', null);
     await _flush();
     backend.boards['demo']!['revision'] = 'elsewhere';
+    final held = [
+      for (final story in (backend.boards['demo']!['stories'] as List).cast<Map<String, dynamic>>())
+        ...(story['issues'] as List? ?? const []).cast<Map<String, dynamic>>(),
+    ].firstWhere((issue) => issue['id'] == 'B541');
+    held['title'] = 'Changed elsewhere';
     detail.queueMove('B541', 'Review');
     await _flush();
     expect(backend.moveCalls, isEmpty, reason: 'nothing was saved over the change');

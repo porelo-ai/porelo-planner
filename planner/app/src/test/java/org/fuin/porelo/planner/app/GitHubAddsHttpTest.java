@@ -325,7 +325,7 @@ class GitHubAddsHttpTest {
                 MockMvcBuilders.standaloneSetup(
                                 new BoardController(projects, changes),
                                 new EditsController(new BoardEdits(projects, changes)))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -345,7 +345,7 @@ class GitHubAddsHttpTest {
                                 .content(
                                         "{\"repository\": \"porelo-other\", \"title\": \"An"
                                                 + " idea\", \"mustBeTrue\": \"It holds.\","
-                                                + " \"revision\": \"r1\"}"))
+                                                + " \"seen\": {}}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("porelo-other#1"))
                 .andExpect(jsonPath("$.revision").value("r2"));
@@ -375,7 +375,7 @@ class GitHubAddsHttpTest {
         mvc.perform(
                         post("/projects/alpha/stories")
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content("{\"idea\": " + IDEA + ", \"revision\": \"r1\"}"))
+                                .content("{\"idea\": " + IDEA + ", \"seen\": {}}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("porelo-store#1"))
                 .andExpect(jsonPath("$.issues[0]").value("porelo-other#2"))

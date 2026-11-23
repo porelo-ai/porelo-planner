@@ -3,7 +3,6 @@ package org.fuin.porelo.planner.app;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
@@ -32,6 +31,18 @@ public class Problems {
 
     /** The prefix of every problem type; the window reads the name after it. */
     static final String TYPE = "urn:porelo-planner:";
+
+    private final Projects projects;
+
+    /**
+     * Makes the answers.
+     *
+     * @param projects the projects the window has given, whose boards an ItemChanged refusal
+     *     answers its items from
+     */
+    public Problems(final Projects projects) {
+        this.projects = projects;
+    }
 
     /**
      * Answers a refusal of the planner's own.
@@ -140,10 +151,12 @@ public class Problems {
      * Answers a refusal of the store.
      *
      * @param refusal the store's refusal, whose words are already free of secrets and local paths
+     * @param request the request, whose path names the project an ItemChanged refusal reads
      * @return the problem
      */
     @ExceptionHandler(StoreException.class)
-    public ResponseEntity<ProblemDetail> refused(final StoreException refusal) {
+    public ResponseEntity<ProblemDetail> refused(
+            final StoreException refusal, final WebRequest request) {
         final String detail = String.valueOf(refusal.getMessage());
         final String subject = refusal.subject();
         warnOfTheStore(refusal, subject, detail);
@@ -182,18 +195,26 @@ public class Problems {
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
-            case StoreException.StaleRevision stale ->
+            case StoreException.StaleRevision any ->
+                    // No call is checked against a revision; one that still reaches a caller is a
+                    // save that kept losing to another, which a retry answers.
                     problem(
-                            "StaleRevision",
+                            "Busy",
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                            "The project is busy with another save; try again.",
+                            Map.of("repository", ""));
+            case StoreException.Changed changed ->
+                    problem(
+                            "ItemChanged",
                             HttpStatus.CONFLICT,
-                            "The board moved since that revision.",
-                            stale.changed() == null
-                                    ? Map.of("revision", stale.current())
-                                    : Map.of(
-                                            "revision",
-                                            stale.current(),
-                                            "item",
-                                            Objects.requireNonNull(stale.changed())));
+                            "An item the write changes changed since it was read.",
+                            Map.of("changed", changed.ids(), "items", items(changed, request)));
+            case StoreException.BasisIncomplete incomplete ->
+                    problem(
+                            "BasisIncomplete",
+                            HttpStatus.CONFLICT,
+                            "The write names no version for an item it changes.",
+                            Map.of("missing", incomplete.missing()));
             case StoreException.NotSavable any ->
                     problem(
                             "MoveNotAllowed",
@@ -219,6 +240,35 @@ public class Problems {
                             detail,
                             Map.of("pushed", String.join(",", partly.pushed()), "failed", subject));
         };
+    }
+
+    /**
+     * The changed targets as the project's board holds them now; a call whose project cannot be
+     * named answers each as gone.
+     */
+    private List<org.fuin.porelo.planner.app.answers.ChangedItem> items(
+            final StoreException.Changed changed, final WebRequest request) {
+        final Object variables =
+                request.getAttribute(
+                        HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE,
+                        RequestAttributes.SCOPE_REQUEST);
+        final Object project = variables instanceof Map<?, ?> map ? map.get("project") : null;
+        if (project instanceof String name) {
+            try {
+                return BoardController.changed(
+                        projects.work(BoardController.name(name)), changed.ids());
+            } catch (final RuntimeException unreadable) {
+                // The refusal stands; only the items it would show cannot be read now.
+                LOG.info(
+                        "The changed items could not be read: {}", unreadable.getClass().getName());
+            }
+        }
+        return changed.ids().stream()
+                .map(
+                        id ->
+                                new org.fuin.porelo.planner.app.answers.ChangedItem(
+                                        id, true, null, null, null))
+                .toList();
     }
 
     /** A store that could not be read or saved to is worth a warning, with its own words. */

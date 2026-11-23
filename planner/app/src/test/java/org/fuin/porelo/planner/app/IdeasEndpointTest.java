@@ -110,7 +110,7 @@ class IdeasEndpointTest {
                         Executors.newSingleThreadScheduledExecutor());
         mvc =
                 MockMvcBuilders.standaloneSetup(new BoardController(projects, changes))
-                        .setControllerAdvice(new Problems())
+                        .setControllerAdvice(new Problems(projects))
                         .build();
         mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
                 .andExpect(status().isNoContent());
@@ -309,7 +309,11 @@ class IdeasEndpointTest {
                 HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/projects/{project}/ideas");
 
         final ResponseEntity<ProblemDetail> answer =
-                new Problems()
+                new Problems(
+                                new Projects(
+                                        (project, repository, branch) -> {
+                                            throw new AssertionError("no store is read");
+                                        }))
                         .unreadable(
                                 new HttpMessageNotReadableException(
                                         "secret", new MockHttpInputMessage(new byte[0])),
