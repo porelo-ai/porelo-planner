@@ -16,6 +16,8 @@ import org.fuin.porelo.planner.app.WorkFixture.Answer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -44,46 +46,72 @@ class CommitCommandTest {
 
     // Prevents a repository that moves to the planner's check from passing what the build tools
     // refused, or refusing what they passed.
-    @ParameterizedTest
-    @ValueSource(
-            strings = {
-                "Describe the work | HEAD",
-                "Describe the work and keep on describing it until the subject runs over its length"
-                        + " | HEAD",
-                "Describe EX12 | HEAD",
-                "Describe " + SHAPED + " | HEAD",
-                "Describe the work\n\nPorelo-Issue: " + TRACKED + " | HEAD",
-                "Describe the work\n\nPorelo-Issue: " + BARE + " | HEAD",
-                "Describe the work, fixes " + BARE + " | HEAD",
-                "Describe the entity &" + BARE + "; | HEAD",
-                "Describe the path a/" + BARE + " | HEAD",
-                "Describe the word foo" + BARE + " | HEAD",
-                "Describe the cost $" + BARE + " | HEAD",
-                "Describe the work beside " + OTHER_OWNER + " | HEAD",
-                "Describe the work beside porelo-ai/x" + BARE + " | HEAD",
-                "Describe S256 beside " + TRACKED + " | HEAD",
-                "Describe the work\n\nAssisted-by: x, closes " + TRACKED + " | HEAD",
-                "Describe the work\n\nSigned-off-by: The Operator <operator@example.org> | HEAD",
-                "Describe the work\n\nA prose body below the subject. | HEAD",
-                "Describe the work | HEAD --outside",
-                "Describe the work | HEAD^..HEAD",
-                "Describe the work |",
-                "Describe the work | HEAD HEAD",
-                "Describe the work | HEAD --all",
-                "Describe the work | --all",
-                "Describe the work | -n1",
-                "Describe the work | nothing-of-that-name",
-                "Describe the work | --event HEAD",
-                "Describe the work | --event --outside",
-                "Describe the work | --event --all"
-            })
-    void thePlannerAnswersAsTheBuildToolsDo(final String scenario) throws Exception {
+    @ParameterizedTest(name = "{0}, tracked={1}")
+    @MethodSource("commitScenarios")
+    void thePlannerAnswersAsTheBuildToolsDo(final String scenario, final boolean tracked)
+            throws Exception {
         final String[] parts = scenario.split(" \\|", 2);
-        repository(parts[0]);
+        repository(parts[0], tracked);
         final List<String> args = new ArrayList<>(List.of("check-commits"));
         for (final String arg : parts[1].strip().split(" ")) if (!arg.isEmpty()) args.add(arg);
 
-        same(run(BUILD_TOOLS, args, List.of(), Map.of()), run(PLANNER, args, List.of(), Map.of()));
+        final Answer expected = run(BUILD_TOOLS, args, List.of(), Map.of());
+        same(expected, run(PLANNER, args, List.of(), Map.of()));
+        if (parts[1].strip().equals("HEAD")) {
+            final Map<String, Integer> outcomes =
+                    Map.of(
+                            "Describe the work\n\nPorelo-Issue: " + TRACKED,
+                            0,
+                            "Describe the work, fixes " + BARE,
+                            1,
+                            "Describe " + BARE,
+                            1,
+                            "Describe the work\n\nSigned-off-by: The Operator <operator@example.org>",
+                            0);
+            if (outcomes.containsKey(parts[0])) {
+                assertThat(expected.code())
+                        .as("the scenario's intended outcome: %s", expected)
+                        .isEqualTo(outcomes.get(parts[0]));
+            }
+        }
+    }
+
+    private static Stream<Arguments> commitScenarios() {
+        return Stream.of(
+                        "Describe the work | HEAD",
+                        "Describe the work and keep on describing it until the subject runs over its length"
+                                + " | HEAD",
+                        "Describe EX12 | HEAD",
+                        "Describe " + BARE + " | HEAD",
+                        "Describe " + SHAPED + " | HEAD",
+                        "Describe the work\n\nPorelo-Issue: " + TRACKED + " | HEAD",
+                        "Describe the work\n\nPorelo-Issue: " + BARE + " | HEAD",
+                        "Describe the work, fixes " + BARE + " | HEAD",
+                        "Describe the entity &" + BARE + "; | HEAD",
+                        "Describe the path a/" + BARE + " | HEAD",
+                        "Describe the word foo" + BARE + " | HEAD",
+                        "Describe the cost $" + BARE + " | HEAD",
+                        "Describe the work beside " + OTHER_OWNER + " | HEAD",
+                        "Describe the work beside porelo-ai/x" + BARE + " | HEAD",
+                        "Describe S256 beside " + TRACKED + " | HEAD",
+                        "Describe the work\n\nAssisted-by: x, closes " + TRACKED + " | HEAD",
+                        "Describe the work\n\nSigned-off-by: The Operator <operator@example.org> | HEAD",
+                        "Describe the work\n\nA prose body below the subject. | HEAD",
+                        "Describe the work | HEAD --outside",
+                        "Describe the work | HEAD^..HEAD",
+                        "Describe the work |",
+                        "Describe the work | HEAD HEAD",
+                        "Describe the work | HEAD --all",
+                        "Describe the work | --all",
+                        "Describe the work | -n1",
+                        "Describe the work | nothing-of-that-name",
+                        "Describe the work | --event HEAD",
+                        "Describe the work | --event --outside",
+                        "Describe the work | --event --all")
+                .flatMap(
+                        scenario ->
+                                Stream.of(false, true)
+                                        .map(tracked -> Arguments.of(scenario, tracked)));
     }
 
     // Prevents a repository that moves to the planner's check from taking commits from outside as
@@ -233,14 +261,39 @@ class CommitCommandTest {
 
     /** A repository of one issue, EX12, and one commit with the message given. */
     private void repository(final String message) throws Exception {
+        repository(message, false);
+    }
+
+    /** A tracker keeps its issues outside the checkout; only the project configuration names it. */
+    private void repository(final String message, final boolean tracked) throws Exception {
         final Path root = Files.createDirectories(dir.resolve("repository"));
-        Files.createDirectories(root.resolve("issues"));
-        Files.writeString(root.resolve("issues/EX12-Sample.md"), "**Status:** Idea.\n");
+        final String changed;
+        if (tracked) {
+            Files.writeString(
+                    root.resolve("project.yml"),
+                    """
+                    project:
+                        name: sample
+                        central: https://github.com/example/sample.git
+                    repositories:
+                        sample:
+                            central: https://github.com/example/sample.git
+                    tracker:
+                        kind: github
+                        project: example/1
+                    """);
+            changed = "sample.txt";
+        } else {
+            Files.createDirectories(root.resolve("issues"));
+            changed = "issues/EX12-Sample.md";
+        }
+        Files.writeString(root.resolve(changed), "**Status:** Idea.\n");
         git(root, "init", "-q", "-b", "main");
-        git(root, "add", "issues");
+        if (tracked) git(root, "add", "project.yml");
+        git(root, "add", changed);
         git(root, "commit", "-q", "-m", "Start the sample");
-        Files.writeString(root.resolve("issues/EX12-Sample.md"), "**Status:** Accepted.\n");
-        git(root, "add", "issues");
+        Files.writeString(root.resolve(changed), "**Status:** Accepted.\n");
+        git(root, "add", changed);
         git(root, "commit", "-q", "-m", message);
     }
 
