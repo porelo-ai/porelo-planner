@@ -495,6 +495,51 @@ class WorkRecordTest {
     }
 
     @Test
+    void aKeptRefusalReadsWithItsSavesGroupAndAGroupOfAnotherFormDoesNot() throws Exception {
+        // Harm: the owner account's resave of a task's refused event lost at a restart, as the
+        // group it names is not kept, or a forged group read back as one the planner made.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final String group = java.util.UUID.randomUUID().toString();
+        final ObjectNode refusal = offer.putObject("refusal");
+        refusal.put("name", "NotSavable").put("subject", "AA1").put("group", group);
+        refusal.putArray("pushed");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.SaveFailure kept =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .refusal());
+            assertThat(kept).as("the kept refusal").isNotNull();
+            assertThat(kept.group()).as("the save's group").isEqualTo(group);
+
+            refusal.put("group", group.toUpperCase(java.util.Locale.ROOT));
+            Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a group of another form")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
     void aRefusalKeptBeforeRightsWereToldStillReads() throws Exception {
         // Harm: an upgrade makes a work record with a kept save refusal unreadable, so the story's
         // work stops until the record is removed by hand.

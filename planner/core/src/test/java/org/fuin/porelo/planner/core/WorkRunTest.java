@@ -3291,6 +3291,200 @@ class WorkRunTest {
         }
     }
 
+    /** A task's end the store refused before writing, kept under Needs you; its group's id. */
+    private static String keptEnd(final Fixture f, final WorkRun.Offered offer) {
+        f.start(offer);
+        f.store.failure = new StoreException.NotSavable("AA1", "failed");
+        assertThatThrownBy(() -> endReport(f, offer))
+                .as("the end's save is refused before writing")
+                .isInstanceOf(StoreException.NotSavable.class);
+        f.store.failure = null;
+        return java.util.Objects.requireNonNull(endOf(f, offer).refusal()).group();
+    }
+
+    private static WorkRun.Answer endReport(final Fixture f, final WorkRun.Offered offer) {
+        return f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+    }
+
+    private static WorkRun.Offer endOf(final Fixture f, final WorkRun.Offered offer) {
+        return f.run.work("ST1").offers().stream()
+                .filter(o -> o.id().equals(offer.offer()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void aKeptEndIsSavedAgainOnceByTheOwnerAccountAndLeavesNeedsYou() {
+        // Harm: a task's end the store refused before writing stays under Needs you for good,
+        // since only the task could send it again, or a second resave writes the end twice.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        assertThat(group).as("the refusal names its save's group").isNotNull();
+        assertThat(f.run.resavable("ST1", group)).as("resavable").isTrue();
+        final int saves = f.store.saves;
+
+        final Board board = f.run.resave("ST1", group);
+
+        assertThat(board).as("the board after the save").isNotNull();
+        assertThat(f.store.saves).as("saved once").isEqualTo(saves + 1);
+        assertThat(endOf(f, offer).status()).as("the end stands").isEqualTo("ENDED");
+        assertThat(endOf(f, offer).refusal()).as("the refusal cleared").isNull();
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("the issue out of Needs you")
+                .isNotEqualTo("SAVE_REFUSED");
+        assertThat(f.run.resavable("ST1", group)).as("resavable after the save").isFalse();
+        assertThatThrownBy(() -> f.run.resave("ST1", group))
+                .as("a second resave of the group")
+                .isInstanceOf(WorkRefusal.class)
+                .extracting(e -> ((WorkRefusal) e).name())
+                .isEqualTo("RunChanged");
+        assertThat(f.store.saves).as("the second resave writes nothing").isEqualTo(saves + 1);
+    }
+
+    @Test
+    void aResaveAfterTheTasksRepeatedReportSavedTheEndWritesNothing() {
+        // Harm: the owner account's resave writes an end the task's own repeated report already
+        // saved, so its next step is taken twice.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        endReport(f, offer);
+        final int saves = f.store.saves;
+
+        assertThat(f.run.resavable("ST1", group)).as("resavable after the report").isFalse();
+        assertThatThrownBy(() -> f.run.resave("ST1", group))
+                .as("the resave of a saved end")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(f.store.saves).as("nothing written").isEqualTo(saves);
+    }
+
+    @Test
+    void aHaltedRunsKeptEndIsNotResavable() {
+        // Harm: an end saved again into a run halted for a save that may stand in part, writing
+        // over what the owner account has to look at first.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        final WorkRun.Run kept = f.run.work("ST1");
+        // A save that died midway leaves its mark; the repair at open halts the run.
+        f.record.value =
+                withRun(
+                        f.record.value,
+                        new WorkRun.Run(
+                                kept.id(),
+                                kept.story(),
+                                kept.to(),
+                                kept.mode(),
+                                kept.comment(),
+                                kept.coordinator(),
+                                kept.readingRounds(),
+                                kept.issueReadingRounds(),
+                                kept.repositories(),
+                                kept.since(),
+                                kept.offers(),
+                                kept.issues(),
+                                kept.stopped(),
+                                kept.halted(),
+                                pendingMark()));
+        f.run.repair();
+        assertThat(f.run.work("ST1").halted()).as("halted").isTrue();
+        final int saves = f.store.saves;
+
+        assertThat(f.run.resavable("ST1", group)).as("resavable").isFalse();
+        assertThatThrownBy(() -> f.run.resave("ST1", group))
+                .as("the resave")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(f.store.saves).as("nothing written").isEqualTo(saves);
+    }
+
+    @Test
+    void aResaveRacingTheTasksRepeatedReportWritesTheEndOnce() throws Exception {
+        // Harm: the end written twice when the owner account and the task send it again at once.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        final int groups = f.queue.groups.size();
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Board> resaving =
+                CompletableFuture.supplyAsync(() -> f.run.resave("ST1", group));
+        final CompletableFuture<WorkRun.Answer> reported;
+        try {
+            assertThat(held[0].await(5, TimeUnit.SECONDS)).as("the resave at the store").isTrue();
+            reported = CompletableFuture.supplyAsync(() -> endReport(f, offer));
+            assertThat(f.record.awaiting.await(5, TimeUnit.SECONDS))
+                    .as("the report waits for the resave")
+                    .isTrue();
+        } finally {
+            held[1].countDown();
+        }
+        resaving.get(5, TimeUnit.SECONDS);
+        reported.get(5, TimeUnit.SECONDS);
+
+        assertThat(f.queue.groups).as("one save of the end").hasSize(groups + 1);
+        assertThat(endOf(f, offer).refusal()).as("the refusal cleared").isNull();
+    }
+
+    @Test
+    void aResaveMeetingTheTasksRepeatedReportInFlightWaitsAndWritesNothing() throws Exception {
+        // Harm: the end written twice when the task's repeated report is at the store as the
+        // owner account sends it again.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        final int groups = f.queue.groups.size();
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<WorkRun.Answer> reported =
+                CompletableFuture.supplyAsync(() -> endReport(f, offer));
+        final CompletableFuture<Board> resaving;
+        try {
+            assertThat(held[0].await(5, TimeUnit.SECONDS)).as("the report at the store").isTrue();
+            resaving = CompletableFuture.supplyAsync(() -> f.run.resave("ST1", group));
+            assertThat(f.record.awaiting.await(5, TimeUnit.SECONDS))
+                    .as("the resave waits for the report's save")
+                    .isTrue();
+        } finally {
+            held[1].countDown();
+        }
+        reported.get(5, TimeUnit.SECONDS);
+
+        assertThatThrownBy(() -> resaving.get(5, TimeUnit.SECONDS))
+                .as("the resave of an end saved meanwhile")
+                .hasCauseInstanceOf(WorkRefusal.class);
+        assertThat(f.queue.groups).as("one save of the end").hasSize(groups + 1);
+    }
+
+    @Test
+    void aResaveRefusedBeforeWritingKeepsTheEndUnderNeedsYouUnderItsNewGroup() {
+        // Harm: a resave the store refuses before writing halts the run or loses the end, where
+        // the owner account only needs to send it again.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        final StoreException.Busy busy = new StoreException.Busy("alpha");
+        f.store.failure = busy;
+
+        assertThatThrownBy(() -> f.run.resave("ST1", group))
+                .as("the store's refusal as it gave it")
+                .isSameAs(busy);
+        f.store.failure = null;
+
+        final WorkRun.Run run = f.run.work("ST1");
+        final WorkRun.SaveFailure refusal = endOf(f, offer).refusal();
+        assertThat(run.halted()).as("not halted").isFalse();
+        assertThat(endOf(f, offer).status()).as("the end kept").isEqualTo("ENDED");
+        assertThat(refusal).as("the refusal kept").isNotNull();
+        assertThat(refusal.group()).as("under the resave's group").isNotEqualTo(group);
+        assertThat(run.issues().get("AA1").reason())
+                .as("the issue under Needs you")
+                .isEqualTo("SAVE_REFUSED");
+        assertThat(f.run.resavable("ST1", group)).as("the old group").isFalse();
+        assertThat(f.run.resavable("ST1", refusal.group())).as("the new group").isTrue();
+    }
+
     @Test
     void anOwnerAccountsSaveRefusedBeforeWritingLeavesTheRunAsItStood() {
         // Harm: a run halted, or left pending, by an owner account's choice the store refused

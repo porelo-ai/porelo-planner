@@ -41,7 +41,7 @@ import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 
 /** Runs story work under one project record lock; only the window starts and stops tasks. */
-public final class WorkRun {
+public final class WorkRun implements RefusedEventResave {
 
     private static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
     private static final Pattern AT =
@@ -353,12 +353,44 @@ public final class WorkRun {
      * @param subject what it is about: a repository, an id, or a forge's origin
      * @param pushed the repositories already pushed
      * @param right the right a forge named as missing, null for every other refusal
+     * @param group the id of the refused save's command group, kept for a task's event refused
+     *     before writing so the owner account can save it again; null otherwise
      */
     public record SaveFailure(
-            String name, String subject, List<String> pushed, @Nullable String right) {
+            String name,
+            String subject,
+            List<String> pushed,
+            @Nullable String right,
+            @Nullable String group) {
         /** Keeps evidence of repositories already pushed. */
         public SaveFailure {
             pushed = List.copyOf(pushed);
+        }
+
+        /**
+         * A refusal that names no save's group.
+         *
+         * @param name the refusal's name
+         * @param subject what it is about
+         * @param pushed the repositories already pushed
+         * @param right the right a forge named as missing, or null
+         */
+        public SaveFailure(
+                final String name,
+                final String subject,
+                final List<String> pushed,
+                final @Nullable String right) {
+            this(name, subject, pushed, right, null);
+        }
+
+        /**
+         * The same refusal, naming the save's group.
+         *
+         * @param id the group's id
+         * @return the refusal
+         */
+        SaveFailure naming(final String id) {
+            return new SaveFailure(name, subject, pushed, right, id);
         }
 
         /**
@@ -369,7 +401,7 @@ public final class WorkRun {
          * @param pushed the repositories already pushed
          */
         public SaveFailure(final String name, final String subject, final List<String> pushed) {
-            this(name, subject, pushed, null);
+            this(name, subject, pushed, null, null);
         }
 
         /**
@@ -1032,6 +1064,104 @@ public final class WorkRun {
     private static boolean unsaved(final Run run, final Offer known) {
         final SaveFailure refusal = known.refusal();
         return !run.halted() && refusal != null && BEFORE_WRITING.contains(refusal.name());
+    }
+
+    @Override
+    public boolean resavable(final String story, final String group) {
+        Ids.story(story);
+        final Run run = record.latest().runs().get(story);
+        return run != null && run.pending() == null && kept(run, group) != null;
+    }
+
+    @Override
+    public Board resave(final String story, final String group) {
+        Ids.story(story);
+        @Nullable String waited = null;
+        while (true) {
+            // The kept event is found by its group anew at each step, so one a repeated report or
+            // an earlier resave saved meanwhile is refused, never saved a second time.
+            final Step step =
+                    record.locked(
+                            session -> {
+                                final Run run = read(session).runs().get(story);
+                                if (run == null) {
+                                    throw WorkRefusal.noSuchStory(story);
+                                }
+                                final PendingSave inFlight = run.pending();
+                                if (inFlight != null) {
+                                    return new Waiting(story, inFlight.id());
+                                }
+                                final KeptEvent kept = kept(run, group);
+                                if (kept == null) {
+                                    throw WorkRefusal.runChanged(
+                                            story,
+                                            "The run keeps no event refused before writing under"
+                                                    + " this save.");
+                                }
+                                return reportStep(session, kept.task(), kept.report());
+                            });
+            switch (step) {
+                case Answered answered -> {
+                    return store.board();
+                }
+                case Waiting wait -> {
+                    waitFor(wait.story(), wait.id(), waited);
+                    waited = wait.id();
+                }
+                case Flying flying -> {
+                    land(flying.flight());
+                    return store.board();
+                }
+            }
+        }
+    }
+
+    /**
+     * A task's event kept with a refusal the store gave before writing, as its identical report.
+     *
+     * @param task the task bound to the offer
+     * @param report the report the event was judged on
+     */
+    private record KeptEvent(String task, Report report) {}
+
+    /**
+     * The event a run keeps refused before writing under the group named: found on the offer whose
+     * kept refusal names the group, which the refused save's mark was named by too; null for a
+     * halted run, a group no refusal names, or a refusal that may have written.
+     */
+    private static @Nullable KeptEvent kept(final Run run, final String group) {
+        for (final Offer offer : run.offers()) {
+            final SaveFailure refusal = offer.refusal();
+            final String task = offer.task();
+            final String container = offer.containerId();
+            // As for the task's repeated report, a halted run keeps no event to save again.
+            if (refusal == null
+                    || !group.equals(refusal.group())
+                    || !unsaved(run, offer)
+                    || task == null
+                    || container == null) {
+                continue;
+            }
+            final @Nullable Event event =
+                    switch (offer.status()) {
+                        case "STARTED" -> Event.STARTED;
+                        case "ENDED" -> Event.ENDED;
+                        case "STOPPED" -> Event.STOPPED;
+                        default -> null;
+                    };
+            if (event == null) {
+                return null;
+            }
+            return new KeptEvent(
+                    task,
+                    new Report(
+                            offer.id(),
+                            event,
+                            container,
+                            Objects.requireNonNullElse(offer.machine(), "unknown"),
+                            offer.ended()));
+        }
+        return null;
     }
 
     /**
@@ -3195,7 +3325,8 @@ public final class WorkRun {
         final HandedResults.@Nullable Handed result = flight.before().results().get(offer);
         settle(
                 flight,
-                refusedEvent(flight.snapshot(), flight.draft(), offer, unwritten),
+                refusedEvent(
+                        flight.snapshot(), flight.draft(), offer, unwritten, flight.group().id()),
                 results -> {
                     if (result == null) {
                         results.remove(offer);
@@ -3331,7 +3462,8 @@ public final class WorkRun {
             final Snapshot snapshot,
             final Draft draft,
             final String eventOffer,
-            final StoreException refused) {
+            final StoreException refused,
+            final String group) {
         final Run before = Objects.requireNonNull(snapshot.runs().get(draft.story));
         final Offer accepted =
                 draft.offers.stream()
@@ -3354,7 +3486,7 @@ public final class WorkRun {
                         accepted.fingerprint(),
                         List.of(),
                         List.of(),
-                        SaveFailure.of(refused),
+                        SaveFailure.of(refused).naming(group),
                         accepted.reviewAnyway(),
                         accepted.reworkComment(),
                         accepted.rework()));

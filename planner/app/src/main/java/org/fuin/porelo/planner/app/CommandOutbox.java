@@ -646,6 +646,25 @@ final class CommandOutbox implements AutoCloseable {
     }
 
     /**
+     * Tells whether this source holds a run's group the store refused before it wrote anything:
+     * none of its commands done, its first refused and the rest held unbegun behind it.
+     *
+     * @param group the group's id
+     * @param story the story whose run saved it
+     * @return true for such a group of that story
+     */
+    synchronized boolean refusedUnwritten(final String group, final String story) {
+        final List<Entry> of = entries.stream().filter(e -> e.group().equals(group)).toList();
+        if (of.isEmpty() || !of.getFirst().story().equals(story)) {
+            return false;
+        }
+        if (of.getFirst().state() != State.REFUSED || of.getFirst().resumed()) {
+            return false;
+        }
+        return of.stream().skip(1).allMatch(e -> e.state() == State.HELD && !e.resumed());
+    }
+
+    /**
      * Drops a group the owner account gives up: only one with a command refused or held, and none
      * waiting or begun.
      *

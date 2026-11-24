@@ -852,4 +852,70 @@ class CommandOutboxTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("ST1");
     }
+
+    /** Runs whose kept event is saved again at the first resave, or refused as given. */
+    private static final class Resaves implements org.fuin.porelo.planner.core.RefusedEventResave {
+        boolean kept = true;
+        @org.jspecify.annotations.Nullable RuntimeException refusal;
+
+        @Override
+        public boolean resavable(final String story, final String group) {
+            return kept;
+        }
+
+        @Override
+        public Board resave(final String story, final String group) {
+            final RuntimeException refused = refusal;
+            if (refused != null) {
+                throw refused;
+            }
+            kept = false;
+            return BEFORE;
+        }
+    }
+
+    @Test
+    void aRunsGroupRefusedBeforeWritingLeavesTheOutboxOnceItsEndIsSavedAgain() {
+        // Harm: a run's refused group kept in the outbox after its event was saved again, shown
+        // to the owner account as a save still waiting, or kept while the run still needs it.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building")),
+                        "ST1"));
+        outbox.begin("c1");
+        outbox.refused("c1", new StoreException.NotSavable("AA1", "failed"), false, null);
+        final Resaves runs = new Resaves();
+        final OutboxResave resaves = new OutboxResave(runs, outbox);
+        runs.refusal = new StoreException.Busy("porelo-lib");
+
+        assertThatThrownBy(() -> resaves.resave("ST1", "g1")).isSameAs(runs.refusal);
+        assertThat(outbox.refusedUnwritten("g1", "ST1"))
+                .as("kept while the run keeps the event under it")
+                .isTrue();
+
+        runs.refusal = null;
+        assertThat(resaves.resave("ST1", "g1")).as("the board").isSameAs(BEFORE);
+        assertThat(outbox.pending()).as("the group left the outbox").isEmpty();
+    }
+
+    @Test
+    void aRunsGroupThatMayStandInPartStaysInTheOutbox() {
+        // Harm: a group that may have written in part dropped unseen, so the owner account never
+        // learns what of it stands.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building")), "ST1"));
+        outbox.begin("c1");
+        outbox.refused("c1", new StoreException.Unreachable("porelo-lib", "timed out"), true, null);
+        final Resaves runs = new Resaves();
+        runs.kept = false;
+        runs.refusal = WorkRefusal.runChanged("ST1", "No event is kept.");
+
+        assertThatThrownBy(() -> new OutboxResave(runs, outbox).resave("ST1", "g1"))
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(outbox.pending()).extracting(CommandOutbox.Group::id).containsExactly("g1");
+    }
 }

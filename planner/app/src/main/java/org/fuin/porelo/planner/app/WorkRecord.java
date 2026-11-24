@@ -955,6 +955,12 @@ public final class WorkRecord implements AutoCloseable {
                             && !refusal.has("right")) {
                         refusal.putNull("right");
                     }
+                    // One kept before a refused save's group was kept names none: it is not saved
+                    // again by the owner account, only by the task's repeated report.
+                    if (offer.path("refusal") instanceof ObjectNode refusal
+                            && !refusal.has("group")) {
+                        refusal.putNull("group");
+                    }
                     if (offer.path("arguments") instanceof ObjectNode arguments) {
                         if (!arguments.has("result")) {
                             arguments.putNull("result");
@@ -1403,6 +1409,11 @@ public final class WorkRecord implements AutoCloseable {
      * for the forge and right a missing access names, so neither may be other than the store's.
      */
     private static void checkedRefusal(final WorkRun.SaveFailure refusal) {
+        final String group = refusal.group();
+        if (group != null && !java.util.UUID.fromString(group).toString().equals(group)) {
+            // A group is named as the planner made it: a lowercase UUID.
+            throw new IllegalArgumentException("a refusal fails its check");
+        }
         if (refusal.name().equals("NoForgeAccess")) {
             if (!new StoreException.NoForgeAccess(refusal.subject(), refusal.right())
                     .subject()
