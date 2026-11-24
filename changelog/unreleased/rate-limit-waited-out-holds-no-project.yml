@@ -1,0 +1,2 @@
+title: A GitHub rate limit that one project's read waits out and then goes on from no longer marks every other project's board as the one read before, and any answered read ends the hold.
+type: fixed

@@ -202,6 +202,28 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     /**
+     * Takes the wait of a rate limit a read failed on, so every look of the person's token holds
+     * until it ends; a rate limit a read waits out and goes on from is no failure, and holds
+     * nothing.
+     */
+    @FunctionalInterface
+    public interface RateHolds {
+
+        /** Holds nothing. */
+        RateHolds NONE = wait -> {};
+
+        /**
+         * Holds every look until the wait ends.
+         *
+         * @param wait the wait GitHub named, or null when it named none
+         */
+        void spent(@Nullable Duration wait);
+    }
+
+    /** Takes the wait of a rate limit a read failed on. */
+    private final RateHolds holds;
+
+    /**
      * Makes the reader.
      *
      * @param queries the project's two reads
@@ -262,6 +284,7 @@ public final class ItemsBoardReader implements BoardReader {
      * @param states derives a story's state from its issues' when its {@code Status} is empty
      * @param silence how long GitHub may leave the project's read without an answer
      * @param limits the factors the lists' deadline, the reads again and their pauses follow
+     * @param holds takes the wait of a rate limit a read failed on
      */
     public ItemsBoardReader(
             final ProjectQueries queries,
@@ -271,7 +294,8 @@ public final class ItemsBoardReader implements BoardReader {
             final AccessRefusals refusals,
             final StoryStates states,
             final Duration silence,
-            final LimitFactors limits) {
+            final LimitFactors limits,
+            final RateHolds holds) {
         this(
                 queries,
                 tokens,
@@ -282,7 +306,8 @@ public final class ItemsBoardReader implements BoardReader {
                 Thread::sleep,
                 issuePages,
                 limits,
-                issueFields);
+                issueFields,
+                holds);
     }
 
     /**
@@ -385,7 +410,44 @@ public final class ItemsBoardReader implements BoardReader {
             final Pause pause,
             final RepositoryIssues.@Nullable Pages issuePages,
             final LimitFactors limits) {
-        this(queries, tokens, refusals, states, clock, deadline, pause, issuePages, limits, null);
+        this(
+                queries,
+                tokens,
+                refusals,
+                states,
+                clock,
+                deadline,
+                pause,
+                issuePages,
+                limits,
+                null,
+                RateHolds.NONE);
+    }
+
+    /** Makes the reader as the next one does, holding no other look at a rate limit it fails on. */
+    ItemsBoardReader(
+            final ProjectQueries queries,
+            final TokenSource tokens,
+            final AccessRefusals refusals,
+            final StoryStates states,
+            final InstantSource clock,
+            final Duration deadline,
+            final Pause pause,
+            final RepositoryIssues.@Nullable Pages issuePages,
+            final LimitFactors limits,
+            final @Nullable IssueFields issueFields) {
+        this(
+                queries,
+                tokens,
+                refusals,
+                states,
+                clock,
+                deadline,
+                pause,
+                issuePages,
+                limits,
+                issueFields,
+                RateHolds.NONE);
     }
 
     /**
@@ -404,6 +466,7 @@ public final class ItemsBoardReader implements BoardReader {
      * @param limits the factors the lists' deadline, the reads again and their pauses follow
      * @param issueFields the organization's issue fields, or null when they are not read, so no
      *     story's priority is offered to set
+     * @param holds takes the wait of a rate limit a read failed on
      */
     ItemsBoardReader(
             final ProjectQueries queries,
@@ -415,7 +478,9 @@ public final class ItemsBoardReader implements BoardReader {
             final Pause pause,
             final RepositoryIssues.@Nullable Pages issuePages,
             final LimitFactors limits,
-            final @Nullable IssueFields issueFields) {
+            final @Nullable IssueFields issueFields,
+            final RateHolds holds) {
+        this.holds = holds;
         this.issueFields = issueFields;
         this.issuePages = issuePages;
         this.unlisted = new RepositoryIssues(limits.services(RepositoryIssues.DEADLINE));
@@ -1645,6 +1710,8 @@ public final class ItemsBoardReader implements BoardReader {
                         e.delivery(),
                         e.rateLimited());
                 if (e.rateLimited()) {
+                    // Only a rate limit the read fails on holds the person's other looks.
+                    holds.spent(e.delay());
                     throw new StoreException.Unreachable(
                             config.own(), "GitHub's rate limit is spent; " + rereadIn(e.delay()));
                 }

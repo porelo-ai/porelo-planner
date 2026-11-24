@@ -7,13 +7,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import org.fuin.porelo.forge.github.Conditional;
-import org.fuin.porelo.forge.github.CursorPage;
 import org.fuin.porelo.forge.github.GitHubException;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
-import org.fuin.porelo.forge.github.Page;
-import org.fuin.porelo.forge.github.ProjectItemSummary;
 import org.fuin.porelo.forge.github.RateLimit;
-import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
@@ -163,12 +159,29 @@ public final class GitHubPace implements Pace {
     }
 
     /**
-     * Wraps a project's reads so a spent rate limit they meet holds every look.
+     * Wraps a project's reads that never wait for GitHub's rate limit, such as the look for
+     * changes, so a spent rate limit they meet holds every look, and an answer ends the hold.
      *
      * @param queries the reads
      * @return the same reads, noting a spent rate limit
      */
     public ProjectQueries watching(final ProjectQueries queries) {
+        return paced(queries, true);
+    }
+
+    /**
+     * Wraps a board reader's reads so an answer ends the hold; a rate limit they meet holds no look
+     * here, since the reader may wait it out and go on, and holds through {@link #spent} only when
+     * its read fails on it.
+     *
+     * @param queries the reads
+     * @return the same reads, ending the hold at an answer
+     */
+    public ProjectQueries answering(final ProjectQueries queries) {
+        return paced(queries, false);
+    }
+
+    private ProjectQueries paced(final ProjectQueries queries, final boolean notes) {
         return new ProjectQueries() {
             @Override
             public GitHubGraphQl.ProjectFields projectFields(
@@ -176,11 +189,7 @@ public final class GitHubPace implements Pace {
                     final String owner,
                     final int number,
                     final @Nullable String after) {
-                try {
-                    return queries.projectFields(token, owner, number, after);
-                } catch (final GitHubException e) {
-                    throw noted(e);
-                }
+                return read(() -> queries.projectFields(token, owner, number, after), notes);
             }
 
             @Override
@@ -189,11 +198,7 @@ public final class GitHubPace implements Pace {
                     final String owner,
                     final int number,
                     final @Nullable String after) {
-                try {
-                    return queries.projectItems(token, owner, number, after);
-                } catch (final GitHubException e) {
-                    throw noted(e);
-                }
+                return read(() -> queries.projectItems(token, owner, number, after), notes);
             }
 
             @Override
@@ -203,11 +208,7 @@ public final class GitHubPace implements Pace {
                     final int number,
                     final @Nullable String after,
                     final int first) {
-                try {
-                    return queries.projectItems(token, owner, number, after, first);
-                } catch (final GitHubException e) {
-                    throw noted(e);
-                }
+                return read(() -> queries.projectItems(token, owner, number, after, first), notes);
             }
 
             @Override
@@ -218,99 +219,88 @@ public final class GitHubPace implements Pace {
                     final @Nullable String after,
                     final int first,
                     final GitHubGraphQl.ItemLimits limits) {
-                try {
-                    return queries.projectItems(token, owner, number, after, first, limits);
-                } catch (final GitHubException e) {
-                    throw noted(e);
-                }
+                return read(
+                        () -> queries.projectItems(token, owner, number, after, first, limits),
+                        notes);
             }
 
             @Override
             public GitHubGraphQl.IssueBoard issueBoard(
                     final String token, final List<String> issueIds, final String projectId) {
-                try {
-                    return queries.issueBoard(token, issueIds, projectId);
-                } catch (final GitHubException e) {
-                    throw noted(e);
-                }
+                return read(() -> queries.issueBoard(token, issueIds, projectId), notes);
             }
         };
     }
 
     /**
-     * Wraps a project's REST item list so a spent rate limit it meets holds every look, and the
-     * limit each answer names paces the looks, as the other reads do.
+     * Wraps a project's REST item list for the look for changes, which never waits for GitHub's
+     * rate limit, so a spent rate limit it meets holds every look, the limit each answer names
+     * paces the looks, and an answer ends the hold.
      *
      * @param pages the item list
      * @return the same list, noting the rate limit
      */
     public GitHubChanges.ItemPages watching(final GitHubChanges.ItemPages pages) {
-        return (token, owner, number, after, perPage, fieldIds, etag) -> {
-            final Conditional<CursorPage<ProjectItemSummary>> answer;
-            try {
-                answer = pages.page(token, owner, number, after, perPage, fieldIds, etag);
-            } catch (final GitHubException e) {
-                throw noted(e);
-            }
-            final RateLimit limit = answer.rateLimit();
-            if (limit != null) {
-                seen(limit.remaining(), limit.limit());
-            }
-            return answer;
-        };
+        return (token, owner, number, after, perPage, fieldIds, etag) ->
+                limited(
+                        read(
+                                () ->
+                                        pages.page(
+                                                token, owner, number, after, perPage, fieldIds,
+                                                etag),
+                                true));
     }
 
     /**
-     * Wraps the read of the organization's issue fields so a spent rate limit it meets holds every
-     * look, as the other reads do.
+     * Wraps a board reader's read of the organization's issue fields so an answer ends the hold;
+     * the reader holds a rate limit it fails on.
      *
      * @param fields the read
-     * @return the same read, noting a spent rate limit
+     * @return the same read, ending the hold at an answer
      */
-    public ItemsBoardReader.IssueFields watching(final ItemsBoardReader.IssueFields fields) {
-        return (token, owner) -> {
-            try {
-                return fields.read(token, owner);
-            } catch (final GitHubException e) {
-                throw noted(e);
-            }
-        };
+    public ItemsBoardReader.IssueFields answering(final ItemsBoardReader.IssueFields fields) {
+        return (token, owner) -> read(() -> fields.read(token, owner), false);
     }
 
     /**
-     * Wraps the pages of a repository's open issues so a spent rate limit they meet holds every
-     * look, and the limit each answer names paces the looks, as the other reads do.
+     * Wraps a board reader's pages of a repository's open issues so the limit each answer names
+     * paces the looks and an answer ends the hold; the reader holds a rate limit it fails on.
      *
      * @param pages the pages
-     * @return the same pages, noting the rate limit
+     * @return the same pages, noting the rate limit each answer names
      */
-    public RepositoryIssues.Pages watching(final RepositoryIssues.Pages pages) {
-        return (token, owner, repository, page, etag) -> {
-            final Conditional<Page<Issue>> answer;
-            try {
-                answer = pages.page(token, owner, repository, page, etag);
-            } catch (final GitHubException e) {
-                throw noted(e);
-            }
-            final RateLimit limit = answer.rateLimit();
-            if (limit != null) {
-                seen(limit.remaining(), limit.limit());
-            }
-            return answer;
-        };
+    public RepositoryIssues.Pages answering(final RepositoryIssues.Pages pages) {
+        return (token, owner, repository, page, etag) ->
+                limited(read(() -> pages.page(token, owner, repository, page, etag), false));
+    }
+
+    /** Notes the rate limit an answer names, as the looks are paced by it. */
+    private <T> Conditional<T> limited(final Conditional<T> answer) {
+        final RateLimit limit = answer.rateLimit();
+        if (limit != null) {
+            seen(limit.remaining(), limit.limit());
+        }
+        return answer;
     }
 
     /**
-     * Notes a spent rate limit a failure names and hands the failure back.
-     *
-     * @param failure what GitHub answered
-     * @return the same failure
+     * Makes a read: an answer ends the hold, since GitHub answers again; a spent rate limit it
+     * meets holds every look when the read notes it.
      */
-    GitHubException noted(final GitHubException failure) {
-        if (failure.rateLimited()) {
-            spent(failure.delay());
+    private <T> T read(final java.util.function.Supplier<T> read, final boolean notes) {
+        final T answer;
+        try {
+            answer = read.get();
+        } catch (final GitHubException e) {
+            if (notes && e.rateLimited()) {
+                spent(e.delay());
+            }
+            throw e;
         }
-        return failure;
+        synchronized (this) {
+            heldUntil = null;
+        }
+        return answer;
     }
 
     /** The time left of the hold, or null when none holds. */

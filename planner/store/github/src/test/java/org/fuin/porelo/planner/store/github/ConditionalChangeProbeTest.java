@@ -695,6 +695,32 @@ class ConditionalChangeProbeTest {
     }
 
     @Test
+    void aRateLimitOneProjectsReadWaitsOutHoldsNoOtherProjectOfTheOpener() {
+        // Harm: the opener's reader wired to note every rate limit it meets, so a short wait one
+        // project's read takes and goes on from tells every other project's board that it is the
+        // one read before, and holds its looks, as before the reader held the pace itself.
+        final GitHubStoreOpener opener = opener();
+        final List<org.fuin.porelo.planner.store.ProjectRepository> repositories =
+                org.fuin.porelo.planner.store.ProjectRepository.named(REPOSITORIES);
+        final TrackedProject first = tracked("7", repositories, new Work(Map.of(), List.of()));
+        final TrackedProject second = tracked("8", repositories, new Work(Map.of(), List.of()));
+        final GitHubStore one = (GitHubStore) opener.open(first, () -> first);
+        final GitHubStore other = (GitHubStore) opener.open(second, () -> second);
+        other.refresh();
+        final List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        graphQlOnce.set(
+                GitHubExceptions.rateLimited(403, "secondary rate limit", Duration.ofSeconds(1)));
+        onFields = () -> seen.addAll(other.board().faults());
+
+        one.refresh();
+
+        assertThat(graphQlOnce.get()).as("the short rate limit met").isNull();
+        assertThat(seen)
+                .as("the other project's board while the read goes on after its wait")
+                .noneSatisfy(fault -> assertThat(fault).contains("rate limit is spent"));
+    }
+
+    @Test
     void aSpentRateLimitOfTheItemLookHoldsThePolls() {
         // Harm: GitHub's REST refusal of a spent limit fails every poll and is asked again at
         // each, as the look did not hold the token's pace.
@@ -866,6 +892,13 @@ class ConditionalChangeProbeTest {
 
     private volatile @Nullable RuntimeException graphQlFailure;
 
+    /** The next GraphQL read's refusal, once. */
+    private final java.util.concurrent.atomic.AtomicReference<@Nullable RuntimeException>
+            graphQlOnce = new java.util.concurrent.atomic.AtomicReference<>();
+
+    /** Runs at each GraphQL read of a project's fields that is answered. */
+    private volatile Runnable onFields = () -> {};
+
     private ProjectQueries queries() {
         return new ProjectQueries() {
             @Override
@@ -879,6 +912,11 @@ class ConditionalChangeProbeTest {
                 if (refused != null) {
                     throw refused;
                 }
+                final RuntimeException once = graphQlOnce.getAndSet(null);
+                if (once != null) {
+                    throw once;
+                }
+                onFields.run();
                 return new GitHubGraphQl.ProjectFields(
                         "PVT_1",
                         "Plan",
@@ -935,50 +973,59 @@ class ConditionalChangeProbeTest {
             final GitHubChanges.@Nullable ItemPages pages,
             final List<org.fuin.porelo.planner.store.ProjectRepository> repositories,
             final Work work) {
-        final TrackedProject project =
-                new TrackedProject(
-                        URI.create("https://github.com"),
-                        "example-org",
-                        "github",
-                        "7",
-                        repositories,
-                        WORKFLOW,
-                        work,
-                        "c0ffee0",
-                        states -> null);
-        final GitHubStoreOpener opener =
-                new GitHubStoreOpener(
-                        origin -> TOKEN,
-                        queries(),
-                        (ProjectWrites)
-                                java.lang.reflect.Proxy.newProxyInstance(
-                                        ProjectWrites.class.getClassLoader(),
-                                        new Class<?>[] {ProjectWrites.class},
-                                        (proxy, method, args) -> {
-                                            // The organization's issue fields are a read.
-                                            if (method.getName().equals("issueFields")) {
-                                                return List.of();
-                                            }
-                                            throw new AssertionError(
-                                                    "A read called " + method.getName());
-                                        }),
-                        github,
-                        // Every repository holds no open issue outside the project.
-                        (token, owner, repository, page, etag) ->
-                                new org.fuin.porelo.forge.github.Conditional<>(
-                                        new org.fuin.porelo.forge.github.Page<
-                                                org.fuin.porelo.forge.github.model.Issue>(
-                                                List.of(), false),
-                                        null,
-                                        true,
-                                        null,
-                                        Instant.EPOCH),
-                        Runnable::run,
-                        clock,
-                        Duration.ofMillis(500));
+        final TrackedProject project = tracked("7", repositories, work);
+        final GitHubStoreOpener opener = opener();
         return (GitHubStore)
                 (pages == null ? opener : opener.lookingForChanges(pages, queries()))
                         .open(project, () -> project);
+    }
+
+    /** A project of the fake GitHub, by its number. */
+    private static TrackedProject tracked(
+            final String number,
+            final List<org.fuin.porelo.planner.store.ProjectRepository> repositories,
+            final Work work) {
+        return new TrackedProject(
+                URI.create("https://github.com"),
+                "example-org",
+                "github",
+                number,
+                repositories,
+                WORKFLOW,
+                work,
+                "c0ffee0",
+                states -> null);
+    }
+
+    /** The opener as the planner makes one, its projects sharing one pace of the token. */
+    private GitHubStoreOpener opener() {
+        return new GitHubStoreOpener(
+                origin -> TOKEN,
+                queries(),
+                (ProjectWrites)
+                        java.lang.reflect.Proxy.newProxyInstance(
+                                ProjectWrites.class.getClassLoader(),
+                                new Class<?>[] {ProjectWrites.class},
+                                (proxy, method, args) -> {
+                                    // The organization's issue fields are a read.
+                                    if (method.getName().equals("issueFields")) {
+                                        return List.of();
+                                    }
+                                    throw new AssertionError("A read called " + method.getName());
+                                }),
+                github,
+                // Every repository holds no open issue outside the project.
+                (token, owner, repository, page, etag) ->
+                        new org.fuin.porelo.forge.github.Conditional<>(
+                                new org.fuin.porelo.forge.github.Page<
+                                        org.fuin.porelo.forge.github.model.Issue>(List.of(), false),
+                                null,
+                                true,
+                                null,
+                                Instant.EPOCH),
+                Runnable::run,
+                clock,
+                Duration.ofMillis(500));
     }
 
     private static Snapshot snapshot(final String revision) {

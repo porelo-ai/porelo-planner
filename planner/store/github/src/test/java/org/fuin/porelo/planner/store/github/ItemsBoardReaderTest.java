@@ -2306,6 +2306,128 @@ class ItemsBoardReaderTest {
         assertThat(snapshot.board().stories()).as("the board read after the wait").hasSize(1);
     }
 
+    /** Another project's look on the same token's pace, which reads nothing of its own. */
+    private static ConditionalChangeProbe otherProject(final GitHubPace pace) {
+        final ConditionalReads none =
+                (ConditionalReads)
+                        Proxy.newProxyInstance(
+                                ConditionalReads.class.getClassLoader(),
+                                new Class<?>[] {ConditionalReads.class},
+                                (proxy, method, args) -> {
+                                    throw new AssertionError("the other project reads nothing");
+                                });
+        return new ConditionalChangeProbe(none, origin -> TOKEN, pace, Runnable::run);
+    }
+
+    /**
+     * A reader on the token's shared pace, as the opener wires it, whose pause moves its clock on
+     * by the wait after it lets the test look.
+     */
+    private static ItemsBoardReader paced(
+            final GitHub github,
+            final GitHubPace pace,
+            final java.util.concurrent.atomic.AtomicReference<Instant> now,
+            final java.util.function.Consumer<Duration> during) {
+        return new ItemsBoardReader(
+                pace.answering(github.queries()),
+                origin -> TOKEN,
+                AccessRefusals.DEFAULT,
+                FIRST_OPEN,
+                now::get,
+                Duration.ofSeconds(30),
+                length -> {
+                    during.accept(length);
+                    now.set(now.get().plus(length));
+                },
+                null,
+                LimitFactors.DEFAULT,
+                null,
+                pace::spent);
+    }
+
+    @Test
+    void aRateLimitAReadWaitsOutHoldsNoOtherProjectOnTheSharedPace() {
+        // Harm: another project's board stamped as the one read before, and its looks held for
+        // GitHub's wait, while this project's read waits a few seconds and goes on answered.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                GitHubExceptions.rateLimited(
+                                        403, "secondary rate limit", Duration.ofSeconds(50)))
+                        .itemsPage(null, story("High"));
+        final java.util.concurrent.atomic.AtomicReference<Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
+        final GitHubPace pace = new GitHubPace(now::get);
+        final ConditionalChangeProbe other = otherProject(pace);
+        final List<@Nullable String> holdsDuringTheWait = new ArrayList<>();
+        final List<String> faultsDuringTheWait = new ArrayList<>();
+        final ItemsBoardReader reader =
+                paced(
+                        github,
+                        pace,
+                        now,
+                        length -> {
+                            holdsDuringTheWait.add(other.hold());
+                            faultsDuringTheWait.addAll(other.faults());
+                        });
+
+        final Snapshot snapshot = reader.read(CONFIG, true);
+
+        assertThat(snapshot.board().stories()).as("the board read after the wait").hasSize(1);
+        assertThat(holdsDuringTheWait)
+                .as("the other project's looks during the wait")
+                .containsExactly((String) null);
+        assertThat(faultsDuringTheWait).as("the other project's board during the wait").isEmpty();
+        assertThat(other.hold()).as("the other project's looks after the read").isNull();
+        assertThat(other.faults()).as("the other project's board after the read").isEmpty();
+    }
+
+    @Test
+    void aRateLimitAReadFailsOnHoldsTheOtherProjectsOnTheSharedPace() {
+        // Harm: another project's look sent to GitHub while the person's rate limit is spent, so
+        // it spends what is left of GitHub's patience, and its board not told it is the one read
+        // before.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                GitHubExceptions.rateLimited(
+                                        403, "API rate limit exceeded", Duration.ofSeconds(90)));
+        final java.util.concurrent.atomic.AtomicReference<Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
+        final GitHubPace pace = new GitHubPace(now::get);
+        final ConditionalChangeProbe other = otherProject(pace);
+
+        assertThatThrownBy(() -> paced(github, pace, now, length -> {}).read(CONFIG, true))
+                .as("the read GitHub asks to wait 90 s")
+                .isInstanceOf(StoreException.Unreachable.class);
+
+        assertThat(other.hold())
+                .as("the other project's looks")
+                .isEqualTo("GitHub's rate limit is spent; it reads again in 90 s");
+        assertThat(other.faults())
+                .as("the other project's board")
+                .anySatisfy(fault -> assertThat(fault).contains("the one read before"));
+    }
+
+    @Test
+    void anAnswerToABoardsReadEndsTheHoldOnTheSharedPace() {
+        // Harm: every project's board told it is the one read before, and no look sent, until
+        // GitHub's named wait ends, though GitHub already answers the person's reads again.
+        final GitHub github = new GitHub().fieldsPage(FIELDS, null).itemsPage(null, story("High"));
+        final java.util.concurrent.atomic.AtomicReference<Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
+        final GitHubPace pace = new GitHubPace(now::get);
+        final ConditionalChangeProbe other = otherProject(pace);
+        pace.spent(Duration.ofMinutes(30));
+
+        paced(github, pace, now, length -> {}).read(CONFIG, true);
+
+        assertThat(other.hold()).as("the other project's looks").isNull();
+        assertThat(other.faults()).as("the other project's board").isEmpty();
+    }
+
     @Test
     void aRateLimitLongerThanAReadWaitsFailsTheReadNamingTheWait() {
         // Harm: a read that sleeps for many minutes behind a spent rate limit, while the person

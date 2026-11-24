@@ -90,7 +90,9 @@ public final class GitHubStoreOpener implements TrackedStores {
                                 Thread::sleep,
                                 null,
                                 LimitFactors.DEFAULT,
-                                writes::issueFields),
+                                writes::issueFields,
+                                // No pace of the token: a rate limit holds only this read.
+                                ItemsBoardReader.RateHolds.NONE),
                 touched ->
                         new FieldsBoardWriter(
                                 touched.recording(writes), tokens, new ForgeAccessRefusals(GITHUB)),
@@ -193,14 +195,15 @@ public final class GitHubStoreOpener implements TrackedStores {
                 tokens,
                 states ->
                         new ItemsBoardReader(
-                                pace.watching(queries),
-                                pace.watching(issuePages),
-                                pace.watching(writes::issueFields),
+                                pace.answering(queries),
+                                pace.answering(issuePages),
+                                pace.answering(writes::issueFields),
                                 tokens,
                                 new ForgeAccessRefusals(GITHUB),
                                 states,
                                 readSilence,
-                                limits),
+                                limits,
+                                pace::spent),
                 touched ->
                         new FieldsBoardWriter(
                                 touched.recording(writes),
