@@ -188,6 +188,7 @@ public final class WorkRecord implements AutoCloseable {
             // The file guard is taken here and held until the record closes, so a second
             // planner on the same state directory is refused before it answers anything.
             entry.acquire();
+            entry.load();
         }
         entries.put(project, entry);
         return entry;
@@ -268,6 +269,12 @@ public final class WorkRecord implements AutoCloseable {
         private @Nullable FileChannel lockChannel;
         private @Nullable FileLock fileLock;
         private @Nullable Path directory;
+
+        /**
+         * The generation last written, a save's pending mark included: read from the disk once, at
+         * open, and replaced only once a write is in place and synced, so it never runs ahead of
+         * the disk.
+         */
         private volatile WorkRun.Snapshot stored = new WorkRun.Snapshot(0, Map.of());
 
         /**
@@ -359,17 +366,30 @@ public final class WorkRecord implements AutoCloseable {
                 return stored;
             }
             final WorkRun.Snapshot held = settled;
-            if (held != null) {
-                return held;
-            }
-            final Path dir;
+            return held != null ? held : stored;
+        }
+
+        /**
+         * Reads the record from the disk, once, when it opens; a record of another repository or
+         * branch is held as empty and replaced on the disk by the first write. A record that cannot
+         * be read lets the file guard go again, so the project can be opened once it is mended.
+         */
+        private void load() {
             try {
-                dir = WorkRecord.this.directory(project);
-            } catch (final IOException | IllegalArgumentException failed) {
-                throw unavailable(project, "The work record's directory is refused", failed);
+                final Document doc = readDocument(opened());
+                stored =
+                        doc == null || !matches(doc)
+                                ? new WorkRun.Snapshot(0, Map.of())
+                                : snapshot(doc);
+                settle(stored);
+            } catch (final RuntimeException | Error failed) {
+                try {
+                    close();
+                } catch (final RuntimeException released) {
+                    failed.addSuppressed(released);
+                }
+                throw failed;
             }
-            final Document doc = readDocument(dir);
-            return doc == null || !matches(doc) ? new WorkRun.Snapshot(0, Map.of()) : snapshot(doc);
         }
 
         /** Takes the record's file guard once, at open; refused while another planner holds it. */
@@ -419,22 +439,10 @@ public final class WorkRecord implements AutoCloseable {
                     project, "Another planner holds the work record of " + project + ".");
         }
 
-        /** Reads only after checking type, ownership and size, and refuses unreadable history. */
+        /** Answers the generation held in memory, read from the disk once, at open. */
         @Override
         public WorkRun.Snapshot read() {
-            if (memory) {
-                return stored;
-            }
-            final Document doc = readDocument(opened());
-            if (doc == null) {
-                return settle(new WorkRun.Snapshot(0, Map.of()));
-            }
-            if (!matches(doc)) {
-                final WorkRun.Snapshot reset = new WorkRun.Snapshot(0, Map.of());
-                write(reset);
-                return reset;
-            }
-            return settle(snapshot(doc));
+            return stored;
         }
 
         /** Keeps a generation for readers unless a save's pending mark stands in it. */
@@ -755,7 +763,6 @@ public final class WorkRecord implements AutoCloseable {
                 step = "The work record cannot be put in place";
                 SharedFiles.whileShared(() -> replace.move(written, target), limits);
                 temporary = null;
-                settle(snapshot);
                 // Windows opens no directory as a file; its move is durable once it returns.
                 if (!files.windows()) {
                     step = "The work record's directory cannot be synced";
@@ -765,6 +772,10 @@ public final class WorkRecord implements AutoCloseable {
                         channel.force(true);
                     }
                 }
+                // Only a generation in place and synced is held, so a failed write leaves memory
+                // at the last one on the disk.
+                stored = snapshot;
+                settle(snapshot);
             } catch (final IOException | UnsupportedOperationException failed) {
                 throw unavailable(project, step, failed);
             } finally {

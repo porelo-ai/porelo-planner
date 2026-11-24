@@ -1,0 +1,2 @@
+title: The planner reads a project's work record from the disk once, when the project opens, and answers boards, previews and change events from memory.
+type: changed

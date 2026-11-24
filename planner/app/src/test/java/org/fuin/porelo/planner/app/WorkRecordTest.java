@@ -370,6 +370,8 @@ class WorkRecordTest {
                     .isTrue();
             offer.remove("containerId");
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThatThrownBy(
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
@@ -410,6 +412,8 @@ class WorkRecordTest {
                     .isEmpty();
             arguments.put("effort", "max\nrm -rf /");
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThatThrownBy(
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
@@ -462,6 +466,8 @@ class WorkRecordTest {
                 changed.put(forged.getKey(), forged.getValue());
                 offer.set("refusal", changed);
                 Files.writeString(file, json.writeValueAsString(document));
+                // The record is read once, at open, so it is opened anew to read the change.
+                records.forget("project");
                 assertThatThrownBy(
                                 () ->
                                         records.open(
@@ -476,6 +482,8 @@ class WorkRecordTest {
             other.put("name", "Unreachable");
             offer.set("refusal", other);
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThatThrownBy(
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
@@ -563,6 +571,8 @@ class WorkRecordTest {
             given(sound, "analysis.json", issue + ".md");
             offer.set("arguments", sound);
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThat(
                             records.open("project", "https://example.org/store.git", null)
                                     .locked(
@@ -583,6 +593,8 @@ class WorkRecordTest {
             given(compacted, "analysis.json");
             offer.set("arguments", compacted);
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThat(
                             records.open("project", "https://example.org/store.git", null)
                                     .locked(
@@ -618,6 +630,8 @@ class WorkRecordTest {
                 forgery.getValue().accept(forged);
                 offer.set("arguments", forged);
                 Files.writeString(file, json.writeValueAsString(document));
+                // The record is read once, at open, so it is opened anew to read the change.
+                records.forget("project");
                 assertThatThrownBy(
                                 () ->
                                         records.open(
@@ -666,6 +680,8 @@ class WorkRecordTest {
                     .containsExactly("porelo-x-3.md");
             given(arguments, "analysis.json", "porelo-x#3.md");
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThatThrownBy(
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
@@ -699,6 +715,8 @@ class WorkRecordTest {
                     .put("issue", "example-org/porelo-x#3")
                     .put("phase", "build");
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThat(work(records))
                     .as("the tracker's work read back as recorded")
                     .isEqualTo(new WorkOrder.Tracked("example-org/porelo-x#3", "build"));
@@ -707,6 +725,8 @@ class WorkRecordTest {
                     .put("issue", "example-org/porelo-x#4")
                     .put("phase", "build");
             Files.writeString(file, json.writeValueAsString(document));
+            // The record is read once, at open, so it is opened anew to read the change.
+            records.forget("project");
             assertThatThrownBy(
                             () ->
                                     records.open("project", "https://example.org/store.git", null)
@@ -1129,6 +1149,8 @@ class WorkRecordTest {
                             saved.replace("\"stopped\":true", "\"stopped\":\"false\""),
                             saved.replace("\"rounds\":13", "\"rounds\":1.5"))) {
                 Files.writeString(file, invalid);
+                // The record is read once, at open, so it is opened anew to read the change.
+                records.forget("project");
                 assertThatThrownBy(
                                 () ->
                                         records.open(
@@ -1329,8 +1351,12 @@ class WorkRecordTest {
             Files.writeString(
                     directory.resolve("porelo-planner/project/work.json"),
                     "{\"version\":1,\"version\":1}");
+        }
+        try (WorkRecord records = new WorkRecord(environment, false)) {
             final WorkRefusal refused =
-                    catchThrowableOfType(WorkRefusal.class, () -> record.locked(s -> s.read()));
+                    catchThrowableOfType(
+                            WorkRefusal.class,
+                            () -> records.open("project", "https://example.org/store.git", null));
             assertThat(refused)
                     .as("duplicate or unreadable JSON cannot reset the record")
                     .isNotNull();
@@ -1338,6 +1364,17 @@ class WorkRecordTest {
                     .as("the reason says the record is not valid JSON, quoting none of it")
                     .contains("JSON")
                     .doesNotContain("version");
+            assertThat(
+                            catchThrowableOfType(
+                                    WorkRefusal.class,
+                                    () ->
+                                            records.open(
+                                                    "project",
+                                                    "https://example.org/store.git",
+                                                    null)))
+                    .as("a refused open lets its file guard go, so the same refusal comes again")
+                    .isNotNull()
+                    .satisfies(again -> assertThat(reason(again)).contains("JSON"));
         }
     }
 
@@ -1393,59 +1430,109 @@ class WorkRecordTest {
         }
     }
 
+    private static long heldGeneration(final WorkRun.Record record) {
+        return record.locked(session -> session.read().generation());
+    }
+
     private static String reason(final WorkRefusal refused) {
         return String.valueOf(refused.parameters().get("reason"));
+    }
+
+    @Test
+    void readersAndWritersAnswerFromMemoryAndReadNoFileAfterOpen() {
+        // Prevents every board answer, preview and change event paying a disk read and a strict
+        // parse of a record of up to 16 MiB.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord earlier = new WorkRecord(environment, false)) {
+            earlier.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(3, Map.of()));
+                                return null;
+                            });
+        }
+        final CountedFiles counted = new CountedFiles(PrivateFiles.of(environment));
+        try (WorkRecord records = new WorkRecord(environment, false, counted)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            assertThat(counted.recordChecks.get())
+                    .as("the record on the disk is read once, at open")
+                    .isEqualTo(1);
+            counted.recordChecks.set(0);
+            for (int i = 0; i < 20; i++) {
+                assertThat(record.latest().generation()).isEqualTo(3);
+                assertThat(heldGeneration(record)).isEqualTo(3);
+            }
+            assertThat(counted.recordChecks.get())
+                    .as("no reader and no writer's read reaches the file after open")
+                    .isZero();
+            for (long generation = 4; generation < 9; generation++) {
+                final long next = generation;
+                record.locked(
+                        session -> {
+                            session.write(
+                                    new WorkRun.Snapshot(
+                                            session.read().generation() + 1, Map.of()));
+                            return null;
+                        });
+                assertThat(record.latest().generation()).isEqualTo(next);
+            }
+            assertThat(counted.recordChecks.get())
+                    .as("each write checks the file it replaces once, and nothing reads it")
+                    .isEqualTo(5);
+        }
+    }
+
+    @Test
+    void aWriteThatFailsLeavesMemoryAtTheGenerationOnTheDisk() {
+        // Prevents a held generation running ahead of the disk, so a failed save is answered as
+        // made and lost at the next start.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final AtomicInteger moves = new AtomicInteger();
+        final WorkRecord.Replace failsSecond =
+                (written, target) -> {
+                    if (moves.incrementAndGet() == 2) {
+                        throw new java.io.IOException("the disk is full");
+                    }
+                    Files.move(
+                            written,
+                            target,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                };
+        try (WorkRecord records =
+                new WorkRecord(environment, false, PrivateFiles.of(environment), failsSecond)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            record.locked(
+                    session -> {
+                        session.write(new WorkRun.Snapshot(5, Map.of()));
+                        return null;
+                    });
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                session.write(new WorkRun.Snapshot(6, Map.of()));
+                                                return null;
+                                            }));
+            assertThat(refused).as("the failed write is refused").isNotNull();
+            assertThat(heldGeneration(record))
+                    .as("a writer reads the generation on the disk, not the one that failed")
+                    .isEqualTo(5);
+            assertThat(record.latest().generation())
+                    .as("a reader is answered the generation on the disk")
+                    .isEqualTo(5);
+        }
     }
 
     @Test
     void aHeldRecordIsNotCheckedAgainOnEveryOperation() {
         // On Windows each check of the directories starts PowerShell, which takes up to seconds.
         final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
-        final AtomicInteger checks = new AtomicInteger();
-        final PrivateFiles real = PrivateFiles.of(environment);
-        final PrivateFiles counted =
-                new PrivateFiles() {
-                    @Override
-                    public boolean windows() {
-                        return real.windows();
-                    }
-
-                    @Override
-                    public Path base(final Kind kind, final Map<String, String> variables) {
-                        return real.base(kind, variables);
-                    }
-
-                    @Override
-                    public List<String> steps(final Kind kind) {
-                        return real.steps(kind);
-                    }
-
-                    @Override
-                    public Path directories(
-                            final Path base,
-                            final boolean create,
-                            final Kind kind,
-                            final List<String> steps) {
-                        checks.incrementAndGet();
-                        return real.directories(base, create, kind, steps);
-                    }
-
-                    @Override
-                    public FileAttribute<?>[] ownerOnlyFile() {
-                        return real.ownerOnlyFile();
-                    }
-
-                    @Override
-                    public void requireOwnFile(final Path file, final boolean alone) {
-                        real.requireOwnFile(file, alone);
-                    }
-
-                    @Override
-                    public byte[] readItemFile(final Path file, final int most)
-                            throws java.io.IOException {
-                        return real.readItemFile(file, most);
-                    }
-                };
+        final CountedFiles counted = new CountedFiles(PrivateFiles.of(environment));
         try (WorkRecord records = new WorkRecord(environment, false, counted)) {
             final WorkRun.Record store =
                     records.open("project", "https://example.org/store.git", null);
@@ -1456,7 +1543,7 @@ class WorkRecordTest {
                 store.latest();
             }
 
-            assertThat(checks.get())
+            assertThat(counted.directories.get())
                     .as(
                             "the directories are checked when the lock is taken, not again while it is held"
                                     + " nor by a reader")
@@ -1508,6 +1595,57 @@ class WorkRecordTest {
         final var given = arguments.putArray("given");
         for (final String name : names) {
             given.addObject().put("name", name).put("text", "x");
+        }
+    }
+
+    /** Counts the directory checks and the record file checks each read and write makes. */
+    private static final class CountedFiles implements PrivateFiles {
+        private final PrivateFiles real;
+        private final AtomicInteger directories = new AtomicInteger();
+        private final AtomicInteger recordChecks = new AtomicInteger();
+
+        private CountedFiles(final PrivateFiles real) {
+            this.real = real;
+        }
+
+        @Override
+        public boolean windows() {
+            return real.windows();
+        }
+
+        @Override
+        public Path base(final Kind kind, final Map<String, String> variables) {
+            return real.base(kind, variables);
+        }
+
+        @Override
+        public List<String> steps(final Kind kind) {
+            return real.steps(kind);
+        }
+
+        @Override
+        public Path directories(
+                final Path base, final boolean create, final Kind kind, final List<String> steps) {
+            directories.incrementAndGet();
+            return real.directories(base, create, kind, steps);
+        }
+
+        @Override
+        public FileAttribute<?>[] ownerOnlyFile() {
+            return real.ownerOnlyFile();
+        }
+
+        @Override
+        public void requireOwnFile(final Path file, final boolean alone) {
+            if (file.getFileName().toString().equals("work.json")) {
+                recordChecks.incrementAndGet();
+            }
+            real.requireOwnFile(file, alone);
+        }
+
+        @Override
+        public byte[] readItemFile(final Path file, final int most) throws java.io.IOException {
+            return real.readItemFile(file, most);
         }
     }
 }
