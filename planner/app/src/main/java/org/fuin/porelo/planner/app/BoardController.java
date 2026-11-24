@@ -66,6 +66,7 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -808,21 +809,25 @@ public class BoardController {
         if (createsInState) {
             checkInitialState(board, issue, story, state, body.confirm(), store, runs);
         }
+        final NewIssue asked =
+                new NewIssue(
+                        issue.repository(),
+                        issue.title(),
+                        issue.mustBeTrue(),
+                        issue.size(),
+                        issue.worker(),
+                        issue.task(),
+                        priority,
+                        story,
+                        createsInState ? state : null,
+                        body.labels());
+        final CommandGroups.Written written =
+                CommandGroups.one(
+                        queues.queue(name, store),
+                        store,
+                        id -> new Command.CreateIssue(id, asked, seen, Recheck.none()));
         final NewIssue.Added added =
-                store.createIssue(
-                        seen,
-                        new NewIssue(
-                                issue.repository(),
-                                issue.title(),
-                                issue.mustBeTrue(),
-                                issue.size(),
-                                issue.worker(),
-                                issue.task(),
-                                priority,
-                                story,
-                                createsInState ? state : null,
-                                body.labels()),
-                        Recheck.none());
+                new NewIssue.Added(written.made().item(), written.afterCreate());
         LOG.info(
                 "Added issue {} to project {} as revision {}",
                 LogText.of(added.id()),

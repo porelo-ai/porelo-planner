@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.Operation;
@@ -9,6 +10,8 @@ import org.fuin.porelo.planner.core.Rules;
 import org.fuin.porelo.planner.core.Targets;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Command;
+import org.fuin.porelo.planner.store.CommandOutcome;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -21,6 +24,7 @@ import org.fuin.porelo.planner.store.git.LogText;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,15 +42,47 @@ public class BoardEdits {
 
     private final ChangesRegistry changes;
 
+    private final CommandQueues queues;
+
     /**
-     * Makes the service.
+     * Makes the service, its edits written by calling each project's store directly.
      *
      * @param projects the projects the window has given
      * @param changes tells a followed project's windows of a save
      */
     public BoardEdits(final Projects projects, final ChangesRegistry changes) {
+        this(projects, changes, CommandQueues.DIRECT);
+    }
+
+    /**
+     * Makes the service.
+     *
+     * @param projects the projects the window has given
+     * @param changes tells a followed project's windows of a save
+     * @param queues gives each project's edits the queue that writes their commands
+     */
+    @Autowired
+    public BoardEdits(
+            final Projects projects, final ChangesRegistry changes, final CommandQueues queues) {
         this.projects = projects;
         this.changes = changes;
+        this.queues = queues;
+    }
+
+    /**
+     * Hands one edit to the project's queue as a command of its own, under the lock its path holds,
+     * and answers what it wrote.
+     */
+    private CommandGroups.Written written(
+            final String project, final Function<String, Command> command) {
+        final PlanningStore store = projects.store(project);
+        return CommandGroups.one(queues.queue(project, store), store, command);
+    }
+
+    /** The answer to a create: what it made and the board after it. */
+    private static NewIdea.Added added(final CommandGroups.Written written) {
+        final CommandOutcome.Created made = written.made();
+        return new NewIdea.Added(made.item(), made.issues(), written.afterCreate());
     }
 
     /**
@@ -79,8 +115,15 @@ public class BoardEdits {
                                         return NewIdeas.check(board, idea, shape);
                                     },
                                     (board, checked) ->
-                                            projects.store(project)
-                                                    .createIdea(seen, checked, Recheck.none()));
+                                            added(
+                                                    written(
+                                                            project,
+                                                            id ->
+                                                                    new Command.CreateIdea(
+                                                                            id,
+                                                                            checked,
+                                                                            seen,
+                                                                            Recheck.none()))));
             LOG.info(
                     "Made story {} in project {} as revision {}",
                     LogText.of(added.story()),
@@ -143,9 +186,15 @@ public class BoardEdits {
                                         return checked;
                                     },
                                     (board, checked) ->
-                                            projects.store(project)
-                                                    .createStoryFromIssues(
-                                                            seen, checked, Recheck.none()));
+                                            added(
+                                                    written(
+                                                            project,
+                                                            id ->
+                                                                    new Command.CreateStory(
+                                                                            id,
+                                                                            checked,
+                                                                            seen,
+                                                                            Recheck.none()))));
             LOG.info(
                     "Made story {} of {} issues in project {} as revision {}",
                     LogText.of(added.story()),
@@ -181,7 +230,16 @@ public class BoardEdits {
                                         Targets.of(board, new Operation.SetFields(issue)));
                                 Edits.fields(board, issue, fields);
                                 final String saved =
-                                        store.setFields(seen, issue, fields, Recheck.none())
+                                        written(
+                                                        project,
+                                                        id ->
+                                                                new Command.SetFields(
+                                                                        id,
+                                                                        issue,
+                                                                        fields,
+                                                                        seen,
+                                                                        Recheck.none()))
+                                                .judged(projects.store(project))
                                                 .revision()
                                                 .value();
                                 saved("the fields of issue", issue, project, saved);
@@ -226,8 +284,16 @@ public class BoardEdits {
                                     return board.revision().value();
                                 }
                                 final String saved =
-                                        projects.store(project)
-                                                .setStoryIssues(seen, story, issues, Recheck.none())
+                                        written(
+                                                        project,
+                                                        id ->
+                                                                new Command.SetStoryIssues(
+                                                                        id,
+                                                                        story,
+                                                                        issues,
+                                                                        seen,
+                                                                        Recheck.none()))
+                                                .judged(projects.store(project))
                                                 .revision()
                                                 .value();
                                 saved("the issues of story", story, project, saved);
@@ -267,19 +333,21 @@ public class BoardEdits {
                                 if (!Edits.blockedBy(board, issue, blockedBy)) {
                                     return board.revision().value();
                                 }
+                                final Recheck blockers =
+                                        new Recheck(
+                                                Set.of(Recheck.Need.BLOCKERS),
+                                                Set.of(issue),
+                                                dependencies ->
+                                                        Rules.blockedBy(
+                                                                dependencies, issue, blockedBy));
                                 final String saved =
-                                        store.setBlockedBy(
-                                                        seen,
-                                                        issue,
-                                                        blockedBy,
-                                                        new Recheck(
-                                                                Set.of(Recheck.Need.BLOCKERS),
-                                                                Set.of(issue),
-                                                                dependencies ->
-                                                                        Rules.blockedBy(
-                                                                                dependencies,
-                                                                                issue,
-                                                                                blockedBy)))
+                                        written(
+                                                        project,
+                                                        id ->
+                                                                new Command.SetBlockers(
+                                                                        id, issue, blockedBy, seen,
+                                                                        blockers))
+                                                .judged(projects.store(project))
                                                 .revision()
                                                 .value();
                                 saved("the blockers of issue", issue, project, saved);
@@ -322,7 +390,16 @@ public class BoardEdits {
                                 final String saved;
                                 try {
                                     saved =
-                                            store.setText(seen, id, checked, Recheck.none())
+                                            written(
+                                                            project,
+                                                            command ->
+                                                                    new Command.SetText(
+                                                                            command,
+                                                                            id,
+                                                                            checked,
+                                                                            seen,
+                                                                            Recheck.none()))
+                                                    .judged(projects.store(project))
                                                     .revision()
                                                     .value();
                                 } catch (final TextEdit.Refused refused) {
@@ -379,7 +456,15 @@ public class BoardEdits {
                                 final String saved;
                                 try {
                                     saved =
-                                            store.addUnlistedIssue(seen, issue, Recheck.none())
+                                            written(
+                                                            project,
+                                                            id ->
+                                                                    new Command.AddUnlisted(
+                                                                            id,
+                                                                            issue,
+                                                                            seen,
+                                                                            Recheck.none()))
+                                                    .judged(projects.store(project))
                                                     .revision()
                                                     .value();
                                 } catch (final StoreException.NoSuchIssue gone) {
@@ -411,7 +496,7 @@ public class BoardEdits {
                         () -> {
                             final PlanningStore store = projects.store(project);
                             Edits.comment(store.board(), issue, text);
-                            store.comment(issue, text);
+                            written(project, id -> new Command.Comment(id, issue, text));
                             // Its words are the person's, so only that it was written is logged.
                             LOG.info(
                                     "Wrote a comment on issue {} of project {}",

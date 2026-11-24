@@ -268,9 +268,10 @@ class WindowCommandsTest {
         // on no version at all.
         addInReview().andExpect(status().isCreated());
 
-        assertThat(groups).hasSize(1);
-        assertThat(targets(groups.getFirst())).containsExactly("CD03");
-        final Command command = groups.getFirst().commands().getFirst();
+        assertThat(groups).as("the create, then the move").hasSize(2);
+        assertThat(groups.getFirst().commands().getFirst()).isInstanceOf(Command.CreateIssue.class);
+        assertThat(targets(groups.get(1))).containsExactly("CD03");
+        final Command command = groups.get(1).commands().getFirst();
         states.put("CD03", "Backlog");
         assertThat(command.basis().items())
                 .containsExactly(
@@ -289,7 +290,37 @@ class WindowCommandsTest {
         addInReview()
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:PartlySaved"));
-        assertThat(groups).as("no move handed on").isEmpty();
+        assertThat(groups).as("the create alone, no move handed on").hasSize(1);
+        assertThat(groups.getFirst().commands().getFirst()).isInstanceOf(Command.CreateIssue.class);
+    }
+
+    @Test
+    void aNewIssueIsOneCreateCommandAnsweredWithTheIdTheQueueMade() throws Exception {
+        // Harm: the window shown an id nothing made, or an issue made past the queue.
+        answer =
+                group ->
+                        new CommandOutcome.Done(
+                                current,
+                                Map.of(
+                                        group.commands().getFirst().id(),
+                                        new CommandOutcome.Created("CD09", List.of())));
+
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"repository\": \"porelo-other\", \"title\": \"T\","
+                                                + " \"mustBeTrue\": \"W\", \"seen\": "
+                                                + Seens.of(current)
+                                                + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("CD09"));
+
+        assertThat(groups).hasSize(1);
+        final Command.CreateIssue create =
+                (Command.CreateIssue) groups.getFirst().commands().getFirst();
+        assertThat(create.issue().title()).isEqualTo("T");
+        assertThat(create.basis()).isEqualTo(Basis.of(current));
     }
 
     @Test

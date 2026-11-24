@@ -13,6 +13,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.CommandGroup;
 import org.fuin.porelo.planner.store.CommandOutcome;
+import org.fuin.porelo.planner.store.CommandQueue;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
@@ -82,11 +83,20 @@ final class CommandGroups {
      * @return the board after the group
      */
     static Board saved(final CommandOutcome outcome, final PlanningStore store) {
+        final @Nullable Board board = done(outcome, store).board();
+        return board != null ? board : store.board();
+    }
+
+    /**
+     * Answers a group written whole, or throws what refused it as {@link #saved} does.
+     *
+     * @param outcome what became of the group
+     * @param store the project's store, read for the repositories a refusal names
+     * @return the group written whole
+     */
+    static CommandOutcome.Done done(final CommandOutcome outcome, final PlanningStore store) {
         return switch (outcome) {
-            case CommandOutcome.Done done -> {
-                final @Nullable Board board = done.board();
-                yield board != null ? board : store.board();
-            }
+            case CommandOutcome.Done done -> done;
             case CommandOutcome.Refused refused -> {
                 if (refused.done().isEmpty()) {
                     throw rethrown(refused.cause());
@@ -95,6 +105,84 @@ final class CommandGroups {
             }
             case CommandOutcome.Held held -> throw new StoreException.Busy(own(store.board()));
         };
+    }
+
+    /**
+     * What one command of the window wrote: the board after it when the queue answered one, and
+     * what it made when it is a create. Nothing is read after the write here: a read that failed
+     * then would answer a write that stands as failed, and the window's retry would write it again.
+     *
+     * @param board the board after it, or null when the queue answered none, as for a comment
+     * @param created what a create made, or null for any other command
+     */
+    record Written(@Nullable Board board, CommandOutcome.@Nullable Created created) {
+
+        /**
+         * Answers the board after an edit judged on the versions the window saw, read now when the
+         * queue answered none. A read that fails then answers an error although the edit stands;
+         * the window's retry carries the same versions, which the edit moved, so it is refused as
+         * changed and never written twice.
+         *
+         * @param store the project's store
+         * @return the board after the edit
+         */
+        Board judged(final PlanningStore store) {
+            return board != null ? board : store.board();
+        }
+
+        /**
+         * Answers the board after a create, only as the queue answered it: a create's retry is
+         * judged on no version of what it makes, so a read after it that failed would make it
+         * twice.
+         *
+         * @return the board after the create
+         * @throws StoreException.PartlySaved when the queue answered no board: the item stands and
+         *     the window reads the board again rather than sending the create again
+         */
+        Board afterCreate() {
+            if (board == null) {
+                throw new StoreException.PartlySaved(
+                        "",
+                        List.of(),
+                        made().item()
+                                + " was added, and the board after it could not be read; read the"
+                                + " board again.");
+            }
+            return board;
+        }
+
+        /**
+         * Answers what the create made.
+         *
+         * @return what it made
+         * @throws IllegalStateException when the queue answers nothing made
+         */
+        CommandOutcome.Created made() {
+            if (created == null) {
+                throw new IllegalStateException("The queue answered no item made by the create.");
+            }
+            return created;
+        }
+    }
+
+    /**
+     * Hands one command to a queue as a group of its own and answers what it wrote, or throws what
+     * refused it, as the store gave it.
+     *
+     * @param queue the project's queue
+     * @param store the project's store
+     * @param command makes the command from the id it is given
+     * @return the board the queue answered after it, never read here, and what it made
+     */
+    static Written one(
+            final CommandQueue queue,
+            final PlanningStore store,
+            final java.util.function.Function<String, Command> command) {
+        final String group = UUID.randomUUID().toString();
+        final Command made = command.apply(group + "/0");
+        final CommandOutcome.Done done =
+                done(queue.submit(new CommandGroup(group, List.of(made))), store);
+        return new Written(done.board(), done.created().get(made.id()));
     }
 
     /**
