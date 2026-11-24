@@ -310,7 +310,8 @@ class GitHubStoreWaitsTest {
 
         store.poll();
 
-        assertThat(reader.waitReads.get()).as("the waits not read on a replaced board").isZero();
+        // The waits are read before the lock, so they may be read; they are not laid onto the board
+        // that replaced the one they were read against, and the probe is not told.
         assertThat(probe.waitsRead.get()).as("the probe not told they were read").isZero();
     }
 }

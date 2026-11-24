@@ -99,6 +99,19 @@ public interface BoardReader {
     }
 
     /**
+     * Reads again from GitHub the state of the issues the board's issues wait on that are no items
+     * of it, without laying it onto a board.
+     *
+     * @param config what to read with, as the project's files name it now
+     * @param held the snapshot whose waits are read again
+     * @return the waits read, laid on by {@link #apply(Snapshot, Reread)}; null when none changed
+     */
+    default @Nullable Reread fetchWaits(final ProjectConfig config, final Snapshot held) {
+        final Snapshot fresh = rewait(config, held);
+        return fresh == held ? null : Reread.whole(fresh);
+    }
+
+    /**
      * Reads again the state of the issues the board's issues wait on that are no items of it, and
      * maps the board anew from the snapshot held; a reader that cannot reads the whole project.
      *

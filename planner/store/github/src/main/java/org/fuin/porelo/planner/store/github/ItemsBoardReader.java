@@ -804,6 +804,23 @@ public final class ItemsBoardReader implements BoardReader {
     }
 
     @Override
+    public @Nullable Reread fetchWaits(final ProjectConfig config, final Snapshot held) {
+        final ProjectConfig read = held.config();
+        if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
+            return Reread.whole(read(config));
+        }
+        final Call call =
+                new Call(config, tokens.token(config.forge()), clock.instant().plus(deadline));
+        final Map<String, Snapshot.Waited> waits =
+                readWaits(call, read, offBoard(held.raw(), read));
+        if (waits.equals(held.waits())) {
+            return null;
+        }
+        LOG.info("Read again the state of {} issues the board's issues wait on", waits.size());
+        return new Reread(read, null, Map.of(), Set.of(), Map.of(), waits);
+    }
+
+    @Override
     public Snapshot rewait(final ProjectConfig config, final Snapshot held) {
         final ProjectConfig read = held.config();
         if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {

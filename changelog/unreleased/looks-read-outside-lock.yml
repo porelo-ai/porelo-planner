@@ -1,0 +1,2 @@
+title: The board's reads ask GitHub outside the store's lock and one at a time per project, so a save no longer waits for a poll's answer from GitHub.
+type: changed

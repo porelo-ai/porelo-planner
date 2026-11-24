@@ -167,6 +167,9 @@ class GitHubStoreLookTest {
         /** Run as the list is asked, before it answers. */
         private Runnable onList = () -> {};
 
+        /** Run as a read by id is asked, with the issues it names, before it is answered. */
+        private Consumer<List<String>> onBoard = ids -> {};
+
         /** Run as the whole read asks for the items, before they are answered. */
         private Runnable onItems = () -> {};
 
@@ -225,6 +228,7 @@ class GitHubStoreLookTest {
         public GitHubGraphQl.IssueBoard issueBoard(
                 final String token, final List<String> issueIds, final String projectId) {
             calls.add("issueBoard of " + issueIds);
+            onBoard.accept(issueIds);
             if (boardFailure != null
                     && issueIds.contains("I_2")
                     && boardCallsBeforeFailure-- <= 0) {
@@ -983,10 +987,11 @@ class GitHubStoreLookTest {
                 };
         final Thread reader = new Thread(() -> run(store::refresh, failed), "reader");
         reader.start();
+        // The whole read waits for the look, which waits for the save: reads run one at a time.
+        release.countDown();
         try {
             assertThat(toldWhole.await(5, TimeUnit.SECONDS)).as("the whole read").isTrue();
         } finally {
-            release.countDown();
             saver.join(5000);
             poller.join(5000);
             reader.join(5000);
@@ -1122,6 +1127,146 @@ class GitHubStoreLookTest {
     }
 
     @Test
+    void aSaveGoesToGitHubWhileALooksReadByIdWaitsForItsAnswer() throws Exception {
+        // Harm: every save waits for GitHub's answer to a poll's reads by id, up to the store's
+        // lock wait, and is then refused as busy.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        github.onBoard =
+                ids -> {
+                    if (ids.contains("I_2") && looking.getCount() > 0) {
+                        looking.countDown();
+                        await(release);
+                    }
+                };
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look's read by id asked").isTrue();
+        final Thread saver = new Thread(() -> run(() -> save(store), failed), "saver");
+        saver.start();
+        saver.join(2000);
+        final boolean saved = !saver.isAlive();
+        release.countDown();
+        saver.join(5000);
+        poller.join(5000);
+
+        assertThat(saved).as("the save ended while the look's read waited").isTrue();
+        assertThat(failed.get()).as("a failure of the save or the poll").isNull();
+        final Board board = store.board();
+        assertThat(Objects.requireNonNull(issue(board, 2)).state())
+                .as("the issue the look named")
+                .isEqualTo("Finished");
+        assertThat(story(board).title()).as("the title the save wrote").isEqualTo("Saved");
+    }
+
+    @Test
+    void aLookWhoseItemASaveWroteMeanwhileKeepsTheSavesValue() throws Exception {
+        // Harm: a look that read an item before a save of it lays its older answer over the
+        // save, and the board shows the item as before the save.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(
+                        writes -> {
+                            writes.updateIssue(
+                                    TOKEN, OWNER, "example-project", 2, "Two saved", null, null);
+                            other.title = "Two saved";
+                            other.at = SAVED;
+                        });
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final AtomicBoolean first = new AtomicBoolean(true);
+        github.onBoard =
+                ids -> {
+                    if (ids.contains("I_2") && first.getAndSet(false)) {
+                        looking.countDown();
+                        await(release);
+                        // The look's answer as GitHub gave it before the save's write.
+                        other.title = "Two";
+                    }
+                };
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look's read by id asked").isTrue();
+        final Thread saver = new Thread(() -> run(() -> save(store), failed), "saver");
+        saver.start();
+        saver.join(5000);
+        release.countDown();
+        poller.join(5000);
+
+        assertThat(failed.get()).as("a failure of the save or the poll").isNull();
+        assertThat(Objects.requireNonNull(issue(store.board(), 2)).title())
+                .as("the item's title after the look landed")
+                .isEqualTo("Two saved");
+    }
+
+    @Test
+    void aWholeReadAskedWhileALookReadsWaitsUntilTheLookIsLaidOn() throws Exception {
+        // Harm: a whole read begun before a look lands after it and lays its older items over the
+        // look's, and the look's cursor has moved past the change, so it is never shown again.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held other = github.add(2, false, "Two");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        store.poll();
+        other.option = "O_finished";
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        github.onBoard =
+                ids -> {
+                    if (ids.contains("I_2") && looking.getCount() > 0) {
+                        looking.countDown();
+                        await(release);
+                    }
+                };
+        final AtomicBoolean wholeDuringLook = new AtomicBoolean();
+        github.onItems = () -> wholeDuringLook.set(release.getCount() > 0);
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look's read by id asked").isTrue();
+        final Thread reader = new Thread(() -> run(store::refresh, failed), "reader");
+        reader.start();
+        reader.join(500);
+        release.countDown();
+        poller.join(5000);
+        reader.join(5000);
+
+        assertThat(failed.get()).as("a failure of the look or the whole read").isNull();
+        assertThat(wholeDuringLook).as("the whole read began while the look read").isFalse();
+        assertThat(Objects.requireNonNull(issue(store.board(), 2)).state())
+                .as("the issue the look named")
+                .isEqualTo("Finished");
+    }
+
+    private static void await(final CountDownLatch latch) {
+        try {
+            assertThat(latch.await(5, TimeUnit.SECONDS)).as("released").isTrue();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
     void aSubIssueASaveLinksDuringALookIsReadWithTheStoryTheLookNames() {
         // Harm: a sub-issue a save linked by its database id during a look is not read again
         // with the story the look reads again, so the two stand on the board at other moments.
@@ -1151,12 +1296,14 @@ class GitHubStoreLookTest {
                     }
                 };
         github.calls.clear();
-        store.poll();
+        final Board polled = store.poll();
 
-        final List<String> byId =
-                github.calls.stream().filter(call -> call.startsWith("issueBoard")).toList();
-        assertThat(byId).as("the reads by id, the save's and the fold's").hasSize(2);
-        assertThat(byId.get(1)).as("the fold's read by id").isEqualTo("issueBoard of [I_1, I_2]");
+        // The look's older answer for the story gives way to the save's read, which reads the
+        // story and its new sub-issue at one moment.
+        assertThat(github.calls).as("GitHub's reads").contains("issueBoard of [I_1, I_2]");
+        assertThat(Objects.requireNonNull(issue(polled, 2)).parent())
+                .as("the sub-issue under the story the look named")
+                .isEqualTo(story(polled).id());
     }
 
     @Test
