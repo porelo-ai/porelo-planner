@@ -28,6 +28,10 @@ final class FreshDependencies implements Dependencies {
 
     private final Board board;
 
+    private Snapshot read;
+
+    private final Set<String> readIds = new LinkedHashSet<>();
+
     /**
      * Reads what the recheck needs.
      *
@@ -41,10 +45,35 @@ final class FreshDependencies implements Dependencies {
             final Recheck recheck,
             final BiFunction<Snapshot, Touched.Ids, Snapshot> reread,
             final BoardWriter writer) {
+        this(held, recheck, reread, writer, Set.of());
+    }
+
+    /**
+     * Reads what the recheck needs, and in its first read also the issues given, which the write
+     * then judges by that read instead of reading them again; their own links are not walked.
+     *
+     * @param held the snapshot the store holds
+     * @param recheck what the rules need
+     * @param reread reads the issues named by their node ids again onto a snapshot
+     * @param writer reads an unlisted issue's links
+     * @param alsoRead the node ids of the write's targets
+     */
+    FreshDependencies(
+            final Snapshot held,
+            final Recheck recheck,
+            final BiFunction<Snapshot, Touched.Ids, Snapshot> reread,
+            final BoardWriter writer,
+            final Set<String> alsoRead) {
         this.held = held;
         this.reread = reread;
         this.writer = writer;
-        this.board = recheck.needs().isEmpty() ? held.board() : walk(recheck).board();
+        this.read = held;
+        this.board = recheck.needs().isEmpty() ? held.board() : walk(recheck, alsoRead).board();
+    }
+
+    /** What the walk read before the write, folded onto the snapshot held. */
+    BoardWriter.ReadBefore readBefore() {
+        return new BoardWriter.ReadBefore(read, readIds);
     }
 
     @Override
@@ -101,7 +130,7 @@ final class FreshDependencies implements Dependencies {
      * Reads the items named again, then what they lead to: a story's issues and an issue's parent
      * once, and the blockers of every item read until none is left that the board holds.
      */
-    private Snapshot walk(final Recheck recheck) {
+    private Snapshot walk(final Recheck recheck, final Set<String> alsoRead) {
         final Map<String, String> idOf = new LinkedHashMap<>();
         held.items().forEach((id, item) -> idOf.put(item.issueId(), id));
         final Set<String> wanted = new LinkedHashSet<>();
@@ -127,13 +156,24 @@ final class FreshDependencies implements Dependencies {
             }
         }
         Snapshot now = held;
-        final Set<String> read = new LinkedHashSet<>();
+        final Set<String> followed = new LinkedHashSet<>();
+        final Set<String> targets = new LinkedHashSet<>();
+        alsoRead.forEach(node -> held(List.of(node), idOf, targets));
         boolean first = true;
-        while (!read.containsAll(wanted)) {
+        while (!followed.containsAll(wanted)) {
             final Set<String> next = new LinkedHashSet<>(wanted);
-            next.removeAll(read);
-            now = reread.apply(now, ids(next));
-            read.addAll(next);
+            next.removeAll(followed);
+            final Set<String> fetch = new LinkedHashSet<>(next);
+            if (first) {
+                // The write's targets in the same read, so the write reads none of them again.
+                fetch.addAll(targets);
+            }
+            fetch.removeAll(readIds);
+            if (!fetch.isEmpty()) {
+                now = reread.apply(now, ids(fetch));
+                readIds.addAll(fetch);
+            }
+            followed.addAll(next);
             for (final String node : next) {
                 final String id = idOf.get(node);
                 final ItemView item = id == null ? null : now.items().get(id);
@@ -154,6 +194,7 @@ final class FreshDependencies implements Dependencies {
             }
             first = false;
         }
+        read = now;
         return now;
     }
 

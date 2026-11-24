@@ -11,14 +11,17 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.forge.github.GraphQlCost;
 import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
@@ -350,6 +353,47 @@ class GitHubStoreWriterFailureTest {
     private static NewIssue newIssue() {
         return new NewIssue(
                 "example-project", "New", "A body", null, Worker.AGENT, null, null, null, null);
+    }
+
+    /** A move of the board's first issue to Ready whose rule walks the issue's blockers. */
+    private static Board moveFirst(final GitHubStore store, final Board board) {
+        final String id = board.issues().getFirst().id();
+        return store.save(
+                Basis.of(board),
+                new Writes(Map.of(id, "Ready"), Map.of()),
+                new Recheck(Set.of(Recheck.Need.BLOCKERS), Set.of(id), dependencies -> {}));
+    }
+
+    @Test
+    void aMoveReadsItsIssueFromGitHubOnceBeforeItWrites() {
+        // Harm: every move waits on GitHub twice for the same issue before it writes.
+        final GitHub github = new GitHub();
+        final GitHubStore store = store(github);
+        final Board board = store.refresh();
+        github.calls.clear();
+
+        moveFirst(store, board);
+
+        final int write = github.calls.indexOf("setFieldValues");
+        assertThat(write).as("the move wrote").isNotNegative();
+        assertThat(github.calls.subList(0, write))
+                .as("GitHub's calls before the write")
+                .containsExactly("issueBoard");
+    }
+
+    @Test
+    void aMoveOfAnIssueChangedOnGitHubSinceItWasSeenIsRefusedByTheRecheckRead() {
+        // Harm: a move judged by the rule's read writes over a state another client set since.
+        final GitHub github = new GitHub();
+        final GitHubStore store = store(github);
+        final Board board = store.refresh();
+        github.byId.put("I_1", "O_finished");
+        github.calls.clear();
+
+        assertThatThrownBy(() -> moveFirst(store, board))
+                .as("a move of an issue another client finished since")
+                .isInstanceOf(StoreException.Changed.class);
+        assertThat(github.calls).as("nothing written").doesNotContain("setFieldValues");
     }
 
     @Test

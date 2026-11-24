@@ -738,12 +738,14 @@ public final class GitHubStore implements PlanningStore {
         return served(
                 writing(
                                 () -> {
-                                    final Snapshot now = rechecked(recheck);
+                                    final Snapshot held = current();
+                                    final BoardWriter.ReadBefore read =
+                                            readBefore(held, recheck, targets(held, writes));
                                     CallTimes.phase(
                                             "write",
                                             () -> {
-                                                parts.writer().save(now, basis, writes);
-                                                return now;
+                                                parts.writer().save(held, basis, writes, read);
+                                                return held;
                                             });
                                     return readAfterWriting();
                                 })
@@ -869,19 +871,48 @@ public final class GitHubStore implements PlanningStore {
      */
     private Snapshot rechecked(final Recheck recheck) {
         final Snapshot now = current();
+        readBefore(now, recheck, Set.of());
+        return now;
+    }
+
+    /**
+     * Runs the recheck on what it reads afresh, reading the write's targets in its first read, and
+     * answers what it read for the write to judge them by.
+     */
+    private BoardWriter.ReadBefore readBefore(
+            final Snapshot now, final Recheck recheck, final Set<String> targets) {
         return CallTimes.phase(
                 "recheck",
                 () -> {
-                    recheck.rule()
-                            .accept(
-                                    new FreshDependencies(
-                                            now,
-                                            recheck,
-                                            (base, ids) ->
-                                                    parts.reader().reread(configNow(), base, ids),
-                                            parts.writer()));
-                    return now;
+                    final FreshDependencies fresh =
+                            new FreshDependencies(
+                                    now,
+                                    recheck,
+                                    (base, ids) -> parts.reader().reread(configNow(), base, ids),
+                                    parts.writer(),
+                                    targets);
+                    recheck.rule().accept(fresh);
+                    return fresh.readBefore();
                 });
+    }
+
+    /** The node ids of the items a save writes, as the snapshot holds them. */
+    private static Set<String> targets(final Snapshot now, final Writes writes) {
+        final Set<String> ids = new LinkedHashSet<>();
+        ids.addAll(writes.issues().keySet());
+        ids.addAll(writes.workers().keySet());
+        ids.addAll(writes.stories().keySet());
+        ids.addAll(writes.priorities().keySet());
+        ids.addAll(writes.issueReasons().keySet());
+        ids.addAll(writes.storyReasons().keySet());
+        final Set<String> nodes = new LinkedHashSet<>();
+        for (final String id : ids) {
+            final ItemView item = now.items().get(id);
+            if (item != null) {
+                nodes.add(item.issueId());
+            }
+        }
+        return nodes;
     }
 
     /**

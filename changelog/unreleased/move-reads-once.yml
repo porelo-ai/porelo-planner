@@ -1,0 +1,2 @@
+title: A move reads its issues from GitHub once before it writes, not once for its rule and again for their versions.
+type: changed

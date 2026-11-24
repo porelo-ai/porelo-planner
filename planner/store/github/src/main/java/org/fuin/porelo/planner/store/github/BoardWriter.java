@@ -222,6 +222,39 @@ public interface BoardWriter {
     }
 
     /**
+     * Saves as {@link #save(Snapshot, Basis, Writes)} does, judging each target this save already
+     * read from GitHub by that read instead of reading it again.
+     *
+     * @param current the snapshot the store holds
+     * @param basis the targets' versions the caller saw
+     * @param writes what to write
+     * @param read what this save read of the items before writing
+     */
+    default void save(
+            final Snapshot current, final Basis basis, final Writes writes, final ReadBefore read) {
+        save(current, basis, writes);
+    }
+
+    /**
+     * What a save read from GitHub before its first write.
+     *
+     * @param snapshot the snapshot with the items read folded in
+     * @param issueIds the node ids of the issues read
+     */
+    record ReadBefore(Snapshot snapshot, java.util.Set<String> issueIds) {
+
+        /** Nothing read yet. */
+        public static ReadBefore none(final Snapshot held) {
+            return new ReadBefore(held, java.util.Set.of());
+        }
+
+        /** Copies the ids read. */
+        public ReadBefore {
+            issueIds = java.util.Set.copyOf(issueIds);
+        }
+    }
+
+    /**
      * Adds an issue against the version the caller saw of the story it is hung into.
      *
      * @param current the snapshot the store holds

@@ -158,15 +158,30 @@ public final class FieldsBoardWriter implements BoardWriter {
 
     @Override
     public void save(final Snapshot current, final Basis basis, final Writes writes) {
-        save(current, Against.of(basis), writes);
+        save(current, basis, writes, ReadBefore.none(current));
+    }
+
+    @Override
+    public void save(
+            final Snapshot current, final Basis basis, final Writes writes, final ReadBefore read) {
+        save(current, Against.of(basis), writes, read);
     }
 
     private void save(final Snapshot current, final Against against, final Writes writes) {
+        save(current, against, writes, ReadBefore.none(current));
+    }
+
+    private void save(
+            final Snapshot current,
+            final Against against,
+            final Writes writes,
+            final ReadBefore read) {
         fresh(current, against);
         if (writes.none()) {
             return;
         }
         final Plan plan = new Plan(current, against);
+        plan.readBefore = read;
         writes.issues()
                 .forEach(
                         (id, state) -> {
@@ -1097,9 +1112,13 @@ public final class FieldsBoardWriter implements BoardWriter {
         private WritePace pace =
                 new WritePace(InstantSource.system(), Thread::sleep, "", LimitFactors.DEFAULT);
 
+        /** What the save read already before its first write, judged without a read again. */
+        private ReadBefore readBefore;
+
         Plan(final Snapshot current, final Against against) {
             this.current = current;
             this.against = against;
+            this.readBefore = ReadBefore.none(current);
         }
 
         /**
@@ -1858,7 +1877,14 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Set<String> changed = new TreeSet<>();
             final Map<String, String> fieldNames = new LinkedHashMap<>();
             current.config().fieldIds().forEach((name, fieldId) -> fieldNames.put(fieldId, name));
-            final List<Map.Entry<String, ItemView>> all = new ArrayList<>(items.entrySet());
+            final List<Map.Entry<String, ItemView>> all = new ArrayList<>();
+            for (final Map.Entry<String, ItemView> entry : items.entrySet()) {
+                if (readBefore.issueIds().contains(entry.getValue().issueId())) {
+                    judgeRead(entry.getKey(), entry.getValue(), basis, changed);
+                } else {
+                    all.add(entry);
+                }
+            }
             for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
                 final List<Map.Entry<String, ItemView>> chunk =
                         all.subList(from, Math.min(all.size(), from + GitHubGraphQl.MAX_ISSUES));
@@ -1892,6 +1918,40 @@ public final class FieldsBoardWriter implements BoardWriter {
             if (!changed.isEmpty()) {
                 throw new StoreException.Changed(List.copyOf(changed));
             }
+        }
+
+        /**
+         * Judges an item this save read already before its first write, as a read by id would: an
+         * item gone from the project, or a target whose version differs from the one the caller
+         * saw, is refused.
+         */
+        private void judgeRead(
+                final String id,
+                final ItemView item,
+                final Basis basis,
+                final Set<String> changed) {
+            final @Nullable Version seen = targets.contains(id) ? basis.of(id) : null;
+            final ItemView live = readBefore.snapshot().items().get(id);
+            GitHubGraphQl.@Nullable BoardIssue issue = null;
+            for (final GitHubGraphQl.ProjectItem raw : readBefore.snapshot().raw().values()) {
+                final GitHubGraphQl.BoardIssue each = raw.issue();
+                if (each != null && each.id().equals(item.issueId())) {
+                    issue = each;
+                    break;
+                }
+            }
+            if (live == null || issue == null || !item.itemId().equals(live.itemId())) {
+                if (seen == null) {
+                    throw new StoreException.NotSavable(
+                            id, "it is no longer an item of the project");
+                }
+                changed.add(id);
+                return;
+            }
+            if (seen != null && !seen.equals(ItemVersions.of(live))) {
+                changed.add(id);
+            }
+            reads.put(item.issueId(), issue);
         }
 
         /** Whether the comment keeping a reason stands on its item already, found by its marker. */
