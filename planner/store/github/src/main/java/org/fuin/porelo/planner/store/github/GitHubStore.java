@@ -2084,6 +2084,31 @@ public final class GitHubStore implements PlanningStore {
         return CallTimes.phase("reread", this::readAfterWritingTimed);
     }
 
+    /**
+     * Reads the items given by id, and with them, at one moment, every sub-issue a parent among
+     * them gained or lost since the board held, which the board may not hold yet: a child's place
+     * comes from its own item, so a parent read alone would stand without it.
+     */
+    private Reread fetchWithChildren(final Snapshot held, final Touched.Ids ids) {
+        final Reread delta = parts.reader().fetch(configNow(), held, ids, Map.of());
+        final Set<String> children = new LinkedHashSet<>();
+        delta.put().forEach((id, item) -> children.addAll(movedChildren(held.raw().get(id), item)));
+        children.removeAll(delta.issues());
+        if (children.isEmpty()) {
+            return delta;
+        }
+        final Set<String> withChildren = new LinkedHashSet<>(ids.issues());
+        withChildren.addAll(delta.issues());
+        withChildren.addAll(children);
+        return parts.reader()
+                .fetch(
+                        configNow(),
+                        held,
+                        new Touched.Ids(
+                                withChildren, ids.items(), ids.numbered(), ids.databaseIds()),
+                        Map.of());
+    }
+
     private Snapshot readAfterWritingTimed() {
         try {
             final Snapshot held = snapshot;
@@ -2092,8 +2117,7 @@ public final class GitHubStore implements PlanningStore {
             }
             final Touched.Ids written = touched.ids();
             // GitHub's lists show the save a moment after it; until then it is held.
-            final Snapshot fresh =
-                    merged(parts.reader().fetch(configNow(), held, written, Map.of()), written);
+            final Snapshot fresh = merged(fetchWithChildren(held, written), written);
             if (fresh == null) {
                 return readWhole(configNow(), WholeRead.WRITTEN);
             }
@@ -2314,16 +2338,13 @@ public final class GitHubStore implements PlanningStore {
             // an earlier save of the same items stays held until this one replaces it.
             final Snapshot fresh =
                     merged(
-                            parts.reader()
-                                    .fetch(
-                                            configNow(),
-                                            held,
-                                            new Touched.Ids(
-                                                    issues,
-                                                    items,
-                                                    written.numbered(),
-                                                    written.databaseIds()),
-                                            Map.of()),
+                            fetchWithChildren(
+                                    held,
+                                    new Touched.Ids(
+                                            issues,
+                                            items,
+                                            written.numbered(),
+                                            written.databaseIds())),
                             wrote ? written : null);
             if (fresh == null) {
                 return null;

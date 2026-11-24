@@ -1257,6 +1257,39 @@ class GitHubStoreLookTest {
                 .isEqualTo("Finished");
     }
 
+    @Test
+    void aParentReadAgainAfterAChangeBringsItsNewSubIssueOntoTheBoard() {
+        // Harm: a sub-issue added to the project under a parent since the board was read is missed
+        // when the parent is read again by id after a refusal, so a task's retry judged on that
+        // board advances the parent over its open child.
+        final GitHub github = new GitHub();
+        github.add(1, true, "Story");
+        final AtomicReference<Consumer<ProjectWrites>> saving = new AtomicReference<>(writes -> {});
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        store.poll();
+        final Held parent = Objects.requireNonNull(github.issues.get("I_1"));
+        final Held child = github.add(2, false, "Child");
+        parent.subs.add(child.id);
+        child.parent = parent.id;
+        final String story = story(store.board()).id();
+        saving.set(
+                writes -> {
+                    throw new org.fuin.porelo.planner.store.StoreException.Changed(List.of(story));
+                });
+
+        assertThatThrownBy(() -> save(store))
+                .as("the save refused as changed")
+                .isInstanceOf(org.fuin.porelo.planner.store.StoreException.Changed.class);
+
+        final Board board = store.board();
+        final Issue placed = issue(board, 2);
+        assertThat(placed).as("the new sub-issue on the board").isNotNull();
+        assertThat(story(board).issues())
+                .as("the story's issues")
+                .contains(Objects.requireNonNull(placed).id());
+    }
+
     private static void await(final CountDownLatch latch) {
         try {
             assertThat(latch.await(5, TimeUnit.SECONDS)).as("released").isTrue();
@@ -1301,9 +1334,9 @@ class GitHubStoreLookTest {
         // The look's older answer for the story gives way to the save's read, which reads the
         // story and its new sub-issue at one moment.
         assertThat(github.calls).as("GitHub's reads").contains("issueBoard of [I_1, I_2]");
-        assertThat(Objects.requireNonNull(issue(polled, 2)).parent())
+        assertThat(story(polled).issues())
                 .as("the sub-issue under the story the look named")
-                .isEqualTo(story(polled).id());
+                .contains(Objects.requireNonNull(issue(polled, 2)).id());
     }
 
     @Test
