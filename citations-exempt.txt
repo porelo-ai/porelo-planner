@@ -41,12 +41,10 @@ planner/core/src/test/java/org/fuin/porelo/planner/core/WorkProposalTest.java
 planner/core/src/test/java/org/fuin/porelo/planner/core/WorkOrderTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/StoryWorkHttpTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/CommitCommandTest.java
-planner/app/src/test/java/org/fuin/porelo/planner/app/StageCommandProcessTest.java
 # The Git store's own stories code: its tests and fixture copies of other repositories' issues name issues and
 # stories on purpose, to watch the reading take them.
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueIndexesTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/CommitRulesTest.java
-planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StageCommandTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueSchemaTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssueSourceTest.java
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/IssuesIndexTest.java
@@ -384,18 +382,7 @@ planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/SaveFilesTest.
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StoryHeadTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/LogLinesTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/WorkAnswersTest.java
-# The work tools' tests and their fixture, a project and a repository beside it as the build tools indexed them: their
-# made-up issues and stories name ids of that shape on purpose.
-planner/app/src/test/java/org/fuin/porelo/planner/app/WorkCommandsTest.java
-planner/app/src/test/java/org/fuin/porelo/planner/app/WorkFixture.java
-planner/app/src/test/resources/work/porelo-alpha/issues/AB01-The-First-Step.md
-planner/app/src/test/resources/work/porelo-alpha/issues/AB02-The-Second-Step.md
-planner/app/src/test/resources/work/porelo-alpha/issues/AB03-The-Third-Step.md
-planner/app/src/test/resources/work/porelo-alpha/issues/README.md
-planner/app/src/test/resources/work/porelo-sample/stories/README.md
-planner/app/src/test/resources/work/porelo-sample/stories/ST1-The-First-Release.md
-planner/app/src/test/resources/work/porelo-sample/stories/ST2-The-Second-Release.md
-planner/app/src/test/resources/work/porelo-sample/stories/ST3-An-Earlier-Release.md
+# The idea hand-in tests use made-up issue ids to check their links.
 planner/core/src/test/java/org/fuin/porelo/planner/core/HandedIdeasTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/IdeasEndpointTest.java
 # The screen's copies of the planner's mock answers and the test that serves them: the mock board's made-up ids.

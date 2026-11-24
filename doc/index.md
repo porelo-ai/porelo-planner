@@ -7,8 +7,8 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 
 - **It reads the planning store:** the stories of the project repository and the issues, with their sub-issues, of
   each repository, in the states of the project's workflow.
-- **It writes state changes straight to the store**, committed and pushed with the person's own Git login, and keeps
-  the stories index as the project's tools write it. A move of an issue from a state the workflow lacks, which
+- **It writes state changes straight to the store**, committed and pushed with the person's own Git login, and writes
+  the stories index itself after each change. A move of an issue from a state the workflow lacks, which
   repairs it, adds no move to its stage record in `stats/`, since a record names only states of the workflow.
 - **It answers the open issues that are no items of a GitHub-tracked project**, as one made by hand on GitHub is, in
   the board's `unlisted`, which the window shows apart from the board; the Git store and the mock mode answer it
@@ -35,36 +35,23 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 
 ## The work tools
 
-The same executable indexes and checks a repository's issues and the project's stories, checks a range of commits or
-the recent pushes to `main`, and records an agent's stages, when its first argument is `issues`, `stories`,
-`check-commits`, `check-pushes` or `stage`. It then starts no server, opens no port and reads no planner configuration; it answers and
-exits. Each command is run from the repository's root:
+The same executable checks a range of commits when its first argument is `check-commits`. It starts no server, opens
+no port and reads no planner configuration; it answers and exits. Run it from the repository's root:
 
 | Command | What it does |
 |---|---|
-| `issues index <dir>` | Writes each directory's `README.md` under `<dir>` from its issues' heads. |
-| `issues check <dir>` | Checks every head by `issue-1.json` and the workflow, each wait and parent, and each index against what the heads give; writes nothing. |
-| `stories index <dir>` | Writes each story's text above `## Data` and the stories' `README.md` from the heads, the issues read from the checkouts beside the project's own. |
-| `stories check <dir>` | Checks every story's head, the issues it names in their repositories' indexes, each story's text and the stories' `README.md`; writes nothing. |
-| `stories cut <version> <dir> --after <yyyy-mm-dd>` | Prints a release's notes: the stories tested after that day, each linked on the host and under the owner `project.yml` names for the project. |
 | `check-commits <range> [--outside]` | Checks each commit of a Git range against the shared rules on commit messages - a subject of at most 72 characters, only trailers below it, no issue number, told by its shape or as a GitHub reference, nobody named or credited, in the trailers too, a sign-off's name apart, no trailer but `Assisted-by:`, `Signed-off-by:`, one `Porelo-Issue: <owner>/<repository>#<number>` per issue, the one place a number may stand, and Porelo's own, and no closing keyword such as `Fixes` before an issue reference anywhere; it reads nothing from a commit's tree. With `--outside`, each commit also carries its author's `Signed-off-by:`; with `--event` instead of a range, the range and whether it comes from outside are read from the workflow's event. GitHub's and Dependabot's own commits are exempt, except with `--outside`, where a commit's recorded names are the pull request's own word. |
-| `check-pushes --since <hours>` | Checks each push to `main` of the last hours, read from GitHub's repository activity, by its own range as `check-commits` checks it; the token comes from `GITHUB_TOKEN` alone. |
-| `stage begin\|end <issue> <stage> [options]` | Opens or closes an agent's stage record of an issue in `stats/<issue>.jsonl`, with the tokens of a session file; the open stage and the session's path stay private under the Git directory. |
-| `stage median\|p80 <size>` | Prints the minutes a size took: the seed's and each finished issue's measured stages, the median or the 80th percentile. |
 
 - **Exit 0** is a pass, with one `OK` line on standard output. **Exit 1** is a refusal: each fault on standard error,
   then their count. **Exit 2** is no answer: something could not be read or written, or the arguments are no command,
   in which case the usage is said.
-- **The stories commands read the issue indexes from the checkouts beside the project's own**, named as
-  `project.yml` names the repositories, and never over the network; the project's checkout is the nearest directory
-  above `<dir>` that holds `project.yml`.
 - **`check-commits` reads the Git repository it is run in** and refuses a range that starts with `-`. A log that does
   not split into its commits, because a name, address or message holds Git's separators, is no answer.
-- **`check-pushes` reads only `https://api.github.com`**, follows no redirect, and gives no answer for a server
-  other than GitHub's; the token goes into no line it says and to no other program.
+- **`issues`, `stories`, `stage` and `check-pushes` are no longer part of the planner.** Each exits with code 2 and
+  a message on standard error, before the server starts, with or without a leading `--limits` line.
 - **A character from a repository that could steer a terminal** - a control, format or line separator character - is
   written as its `\uXXXX` escape in every line the tools say.
-- From the packages it is `/usr/libexec/porelo/planner issues check issues`.
+- From the packages it is `/usr/libexec/porelo/planner check-commits HEAD~1..HEAD`.
 - **A repository's CI downloads the bare executable** from Artifactory's `porelo-files` repository, pinned by version
   and SHA-256: `porelo-files/porelo-planner/<version>/porelo-planner-<version>-linux-x86_64`. Every push to `main`
   publishes one under its package version, `x.y.z~snapshot.<run>`, and every release under `x.y.z`; the Build's summary

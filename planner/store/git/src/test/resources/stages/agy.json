@@ -1,8 +1,0 @@
-{
-  "response": "Example response",
-  "usage": {
-    "input_tokens": 12,
-    "cache_read_input_tokens": 5,
-    "output_tokens": 8
-  }
-}

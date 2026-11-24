@@ -73,7 +73,6 @@ fixture() {
     issue AB04 "The Fourth Step" Implementing
     issue AB05 "The Fifth Step" Estimated
     issue AB06 "The Sixth Step" Review
-    st_cli "$ST_DIR/work/$ALPHA" issues index issues || st_die "issues index of $ALPHA failed: $ST_BODY"
 
     st_repo "$OWN"
     st_write "$OWN" project.yml <<EOF
@@ -103,8 +102,6 @@ EOF
     story ST1 "A Story Set By Hand" Backlog AB01 AB02
     story ST2 "A Story Moved On The Board" - AB03 AB04
     story ST3 "A Story Its Issues Place" - AB05 AB06
-    st_cli "$ST_DIR/work/$OWN" stories index stories || st_die "stories index of $OWN failed: $ST_BODY"
-    st_cli "$ST_DIR/work/$ALPHA" issues check issues || st_die "issues check of $ALPHA failed: $ST_BODY"
 
     st_push "$ALPHA" "Add the issues"
     st_push "$OWN" "Add the project and its stories"
@@ -118,19 +115,6 @@ board_story() {
         return 1
     }
     jq -c --arg id "$1" '.stories[] | select(.id == $id)' <<<"$ST_BODY"
-}
-
-step_1() {
-    local clones line
-    clones=$(st_clones "$OWN" "$ALPHA") || st_no "a clone of $OWN and $ALPHA" "git clone failed" || return 1
-    st_cli "$clones/$OWN" stories index stories || st_no "stories index stories exits 0" "$ST_BODY" || return 1
-    line=$(grep -E '^WARN +ST1:' <<<"$ST_BODY" || true)
-    [[ $line == *'stated Backlog'* && $line == *AB01*Implementing* && $line == *AB02*Finished* ]] ||
-        st_no "a warning that ST1 stays Backlog naming AB01 Implementing and AB02 Finished" "${ST_BODY:-no output}" ||
-        return 1
-    st_is "ST1's head" Backlog "$(st_head "$clones/$OWN/stories/ST1-A-Story-Set-By-Hand.md" | jq -r '.state')" || return 1
-    st_is "ST1's row in stories/README.md" Backlog "$(st_section "$clones/$OWN/stories/README.md" st1)" || return 1
-    st_is "the index leaves the clone unchanged" "" "$(git -C "$clones/$OWN" status --porcelain)"
 }
 
 # Previews a batch and saves it with the preview's digest and the versions of its targets, confirmed: save MOVES.
@@ -221,7 +205,6 @@ step_7() {
 st_setup "$@"
 fixture
 st_planner "$PROJECT" "$OWN"
-st_step 1 "stories index keeps a stated Backlog and warns naming the issues" step_1
 st_step 2 "an open story stands where its issues give, whatever its head states" step_2
 st_step 3 "a move of an open story to another open state is refused" step_3
 st_step 4 "a story rejected through the planner stands closed" step_4

@@ -51,8 +51,6 @@ fixture() {
     printf '# Issues\n\nThe issues of %s.\n' "$ALPHA" | st_write "$ALPHA" issues/README.md
     issue AB01 "The First Step" Analyzed
     issue AB02 "The Second Step" Analyzed
-    st_cli "$ST_DIR/work/$ALPHA" issues index issues || st_die "issues index of $ALPHA failed: $ST_BODY"
-    st_cli "$ST_DIR/work/$ALPHA" issues check issues || st_die "issues check of $ALPHA failed: $ST_BODY"
 
     st_repo "$OWN"
     st_write "$OWN" project.yml <<EOF
@@ -99,7 +97,6 @@ EOF
 }
 \`\`\`
 EOF
-    st_cli "$ST_DIR/work/$OWN" stories index stories || st_die "stories index of $OWN failed: $ST_BODY"
 
     st_push "$ALPHA" "Add the issues"
     st_push "$OWN" "Add the project and its story"
@@ -165,8 +162,6 @@ step_4() {
     while IFS= read -r subject; do
         [[ $subject == *' [skip ci]' ]] || st_no "every planning commit ends in [skip ci]" "$subject" || return 1
     done <<<"$subjects"
-    st_cli "$dir" issues check issues || st_no "issues check issues exits 0" "$ST_BODY" || return 1
-    [[ $ST_BODY == OK* ]] || st_no "issues check issues prints OK" "$ST_BODY"
 }
 
 step_5() {
@@ -196,7 +191,7 @@ st_planner "$PROJECT" "$OWN"
 st_step 1 "the repository of the issues has no build of its own" step_1
 st_step 2 "an issue moved between two planning states through the planner is saved" step_2
 st_step 3 "an idea handed in through the planner gets the next free number" step_3
-st_step 4 "a fresh clone holds the move, its stage record, the idea, both index rows and a passing check" step_4
+st_step 4 "a fresh clone holds the move, its stage record, the idea and both index rows" step_4
 st_step 5 "a head broken by hand is warned on its issue, and the rest of the board stands" step_5
 st_skip 6 "porelo-buildtools and every repository build without the story and issue commands" \
     "their own builds show it"

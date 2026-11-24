@@ -12,14 +12,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.store.git.ServedRepositories;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The native executable, started and called as the window will; run by {@code -Pnative verify}. A
@@ -563,75 +568,125 @@ class NativeStartIT {
                 .isEqualTo(expected.toString(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    // Prevents a repository's check from passing or failing in the native executable otherwise
-    // than in the JVM: schemas, YAML and JSON are read where only the image can lack metadata.
-    @Test
-    void theNativeExecutableRunsTheWorkToolsAsTheJvmDoes(@TempDir final Path dir) throws Exception {
-        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
-        assertThat(executable).as("the native executable the build wrote").isExecutable();
-        final List<String> commands =
-                List.of(
-                        "issues check porelo-alpha/issues",
-                        "issues index porelo-alpha/issues",
-                        "stories check porelo-sample/stories",
-                        "stories index porelo-sample/stories",
-                        "stories cut 1.2.0 porelo-sample/stories --after 2026-10-31");
-        for (int i = 0; i < commands.size(); i++) {
-            final Path jvm = WorkFixture.copy(dir.resolve("jvm-" + i));
-            final Path image = WorkFixture.copy(dir.resolve("native-" + i));
-            for (final Path root : List.of(jvm, image)) {
-                // Stale, so the index commands write and the checks refuse.
+    @ParameterizedTest
+    @CsvSource({
+        "range, false, 0",
+        "range, true, 1",
+        "event, false, 0",
+        "event, true, 1",
+        "missing-event, false, 2"
+    })
+    void theNativeExecutableChecksCommitsAsTheJvmDoes(
+            final String mode, final boolean outside, final int code, @TempDir final Path dir)
+            throws Exception {
+        // Harm: a native commit check passes an unsigned outside commit or cannot read an event.
+        final ServedRepositories repositories = new ServedRepositories(dir);
+        final String name = "Describe the work";
+        repositories.repository(name, Map.of("sample", "before"));
+        final String base = repositories.head(name);
+        repositories.repository(name, Map.of("sample", "after"));
+        final String head = repositories.head(name);
+        final Path root = repositories.work(name);
+        final List<String> args = new ArrayList<>(List.of("check-commits"));
+        final Map<String, String> environment = new HashMap<>();
+        if (mode.equals("range")) {
+            args.add(base + ".." + head);
+            if (outside) args.add("--outside");
+        } else {
+            args.add("--event");
+            final Path event = dir.resolve("event.json");
+            if (mode.equals("event")) {
                 Files.writeString(
-                        root.resolve("porelo-alpha/issues/README.md"),
-                        "# Issues\n\nThe issues of porelo-alpha.\n");
-                Files.delete(root.resolve("porelo-sample/stories/README.md"));
+                        event,
+                        """
+                        {"pull_request": {
+                          "base": {"sha": "%s"},
+                          "head": {"sha": "%s", "repo": {"full_name": "example/sample"}},
+                          "author_association": "%s", "user": {"login": "jane"}
+                        }}
+                        """
+                                .formatted(base, head, outside ? "CONTRIBUTOR" : "MEMBER"));
             }
-            final WorkFixture.Answer expected =
-                    WorkFixture.planner(arguments(jvm, commands.get(i)));
-            final Path out = dir.resolve("out-" + i);
-            final Path err = dir.resolve("err-" + i);
-            final List<String> command = new ArrayList<>();
-            command.add(executable.toString());
-            command.addAll(List.of(arguments(image, commands.get(i))));
-            final Process process =
-                    new ProcessBuilder(command)
-                            .redirectOutput(out.toFile())
-                            .redirectError(err.toFile())
-                            .start();
-            try {
-                assertThat(process.waitFor(60, TimeUnit.SECONDS))
-                        .as("%s ends by itself", commands.get(i))
-                        .isTrue();
-                assertThat(process.exitValue())
-                        .as("the exit code of %s, %s", commands.get(i), Files.readString(err))
-                        .isEqualTo(expected.code());
-                assertThat(Files.readString(out).replace(image.toString(), "<root>"))
-                        .as("the answer of %s", commands.get(i))
-                        .isEqualTo(expected.out().replace(jvm.toString(), "<root>"));
-                assertThat(Files.readString(err).replace(image.toString(), "<root>"))
-                        .as("the faults of %s", commands.get(i))
-                        .isEqualTo(expected.err().replace(jvm.toString(), "<root>"));
-            } finally {
-                process.destroyForcibly();
-            }
-            assertThat(Files.readString(image.resolve("porelo-alpha/issues/README.md")))
-                    .as("the issues index after %s", commands.get(i))
-                    .isEqualTo(Files.readString(jvm.resolve("porelo-alpha/issues/README.md")));
-            assertThat(storiesIndex(image))
-                    .as("the stories index after %s", commands.get(i))
-                    .isEqualTo(storiesIndex(jvm));
+            environment.putAll(
+                    Map.of(
+                            "GITHUB_EVENT_PATH", event.toString(),
+                            "GITHUB_EVENT_NAME", "pull_request",
+                            "GITHUB_SHA", head,
+                            "GITHUB_REPOSITORY", "example/sample",
+                            "GITHUB_SERVER_URL", "https://github.com"));
         }
+        final CommandAnswer expected = command(root, "jvm", args, environment);
+        assertThat(expected.code()).as("the fixture's JVM result: %s", expected).isEqualTo(code);
+        final CommandAnswer actual = command(root, "native", args, environment);
+
+        assertThat(actual).as("the native exit code and both streams").isEqualTo(expected);
     }
 
-    private static String storiesIndex(final Path root) throws IOException {
-        final Path index = root.resolve("porelo-sample/stories/README.md");
-        return Files.exists(index) ? Files.readString(index) : "(none)";
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void theNativeExecutableRejectsARemovedCommandBeforeStartingTheServer(
+            final boolean withLimits, @TempDir final Path dir) throws Exception {
+        // Harm: an old script starts a native server and hangs instead of receiving exit 2.
+        final List<String> args =
+                withLimits ? List.of("--limits", "services=2.0", "stories") : List.of("stories");
+        final CommandAnswer expected = command(dir, "jvm", args, Map.of());
+        assertThat(expected.code()).as("the removed command exits before Spring").isEqualTo(2);
+        assertThat(expected.out()).as("no command or server output").isEmpty();
+        assertThat(expected.err())
+                .as("the removed command is named in the refusal")
+                .contains("stories", "no longer part of the planner");
+
+        assertThat(command(dir, "native", args, Map.of()))
+                .as("the native rejection matches the JVM")
+                .isEqualTo(expected);
     }
 
-    private static String[] arguments(final Path root, final String command) {
-        return Arrays.stream(command.split(" "))
-                .map(arg -> arg.startsWith("porelo-") ? root.resolve(arg).toString() : arg)
-                .toArray(String[]::new);
+    /** What a command answered: its exit code and its two streams. */
+    private record CommandAnswer(int code, String out, String err) {}
+
+    /** Runs the same command in each runtime with only the workflow variables the fixture gives. */
+    private static CommandAnswer command(
+            final Path root,
+            final String runtime,
+            final List<String> args,
+            final Map<String, String> environment)
+            throws Exception {
+        final List<String> launch = new ArrayList<>();
+        if (runtime.equals("native")) {
+            final Path executable =
+                    Path.of(System.getProperty("planner.executable", "missing")).toAbsolutePath();
+            assertThat(executable).as("the native executable the build wrote").isExecutable();
+            launch.add(executable.toString());
+        } else {
+            launch.add(ProcessHandle.current().info().command().orElseThrow());
+            launch.add("-XX:-UsePerfData");
+            launch.add("-cp");
+            launch.add(System.getProperty("java.class.path"));
+            launch.add(PlannerApplication.class.getName());
+        }
+        launch.addAll(args);
+        final Path out = root.resolve(runtime + ".out");
+        final Path err = root.resolve(runtime + ".err");
+        final ProcessBuilder builder =
+                new ProcessBuilder(launch)
+                        .directory(root.toFile())
+                        .redirectOutput(out.toFile())
+                        .redirectError(err.toFile());
+        builder.environment().keySet().removeIf(variable -> variable.startsWith("GITHUB_"));
+        builder.environment().put("GIT_CONFIG_GLOBAL", "/dev/null");
+        builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
+        builder.environment().putAll(RuntimeDirectories.environment(root));
+        builder.environment().putAll(environment);
+        final Process process = builder.start();
+        try {
+            assertThat(process.waitFor(60, TimeUnit.SECONDS))
+                    .as("%s %s ends by itself", runtime, args)
+                    .isTrue();
+            return new CommandAnswer(
+                    process.exitValue(), Files.readString(out), Files.readString(err));
+        } finally {
+            process.destroyForcibly();
+        }
     }
 
     /** Starts the planner, calls it with and without its token, stops it; returns the token. */

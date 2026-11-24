@@ -93,7 +93,7 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
-        <!-- While the build tools still carry the work tools, a test runs both on one fixture. -->
+        <!-- The planner's commit check is held to the build tools' rule on the same fixture. -->
         <dependency>
             <groupId>org.fuin.porelo</groupId>
             <artifactId>porelo-release</artifactId>
@@ -204,8 +204,8 @@
                     </dependency>
                 </dependencies>
             </plugin>
-            <!-- Any work command of the planner, in a JVM of its own at the repository's root, for a workflow that
-                 builds no executable: '-pl planner/app exec:exec@planner -Dplanner.args=...' after an install. -->
+            <!-- The planner's check-commits or check-serialization, in a JVM at the repository's root:
+                 '-pl planner/app exec:exec@planner -Dplanner.args=...' after an install. -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>

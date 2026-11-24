@@ -102,8 +102,8 @@ public class PlannerApplication {
      * work command's name; otherwise starts the planner and serves it until it is stopped. A
      * refused limits line ends the planner with {@value #REFUSED_LINE} before anything starts.
      *
-     * @param args optionally {@code --limits <line>} first, then {@code issues}, {@code stories} or
-     *     another work command and its arguments, or Spring Boot's command line arguments, such as
+     * @param args optionally {@code --limits <line>} first, then {@code check-commits} and its
+     *     arguments, {@code check-serialization}, or Spring Boot's command line arguments, such as
      *     {@code --server.port=0}, {@code --mock} for the mock mode and {@code --end-with-input} to
      *     end once the standard input closes
      */

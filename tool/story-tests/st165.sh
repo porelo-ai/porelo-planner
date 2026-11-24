@@ -69,7 +69,6 @@ fixture() {
     issue AB01 "The First Step" Backlog
     issue AB02 "The Second Step" Backlog
     issue AB03 "The Third Step" Estimated
-    st_cli "$ST_DIR/work/$ALPHA" issues index issues || st_die "issues index of $ALPHA failed: $ST_BODY"
 
     st_repo "$OWN"
     st_write "$OWN" project.yml <<EOF
@@ -98,8 +97,6 @@ EOF
     printf '# Stories\n' | st_write "$OWN" stories/README.md
     story ST1 "A Story Set Right" Backlog AB01 AB02
     story ST2 "A Story Whose Issue Is Set Right" Estimated AB03
-    st_cli "$ST_DIR/work/$OWN" stories index stories || st_die "stories index of $OWN failed: $ST_BODY"
-    st_cli "$ST_DIR/work/$ALPHA" issues check issues || st_die "issues check of $ALPHA failed: $ST_BODY"
 
     st_push "$ALPHA" "Add the issues"
     st_push "$OWN" "Add the project and its stories"

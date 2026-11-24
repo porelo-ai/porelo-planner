@@ -5,16 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.OptionalInt;
 import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** The limits line the planner takes first on its command line, before Spring or a work tool. */
 class PlannerCommandLineTest {
-
-    @TempDir Path dir;
 
     /** What the command line answered before the server would start. */
     private record Answer(OptionalInt code, String out, String err) {}
@@ -29,6 +27,29 @@ class PlannerCommandLineTest {
                         new PrintStream(err, true, StandardCharsets.UTF_8));
         return new Answer(
                 code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "issues, false",
+        "stories, false",
+        "stage, false",
+        "check-pushes, false",
+        "issues, true",
+        "stories, true",
+        "stage, true",
+        "check-pushes, true"
+    })
+    void aRemovedCommandEndsBeforeTheServerStarts(final String command, final boolean withLimits) {
+        // Harm: a script still calling a removed command starts a server and hangs.
+        final Answer answer =
+                withLimits ? work("--limits", "services=2.0", command) : work(command);
+
+        assertThat(answer.code()).as("the removed command exits before Spring").hasValue(2);
+        assertThat(answer.out()).as("no command or server output").isEmpty();
+        assertThat(answer.err())
+                .as("the removed command is named in the refusal")
+                .contains(command, "no longer part of the planner");
     }
 
     @Test
@@ -66,7 +87,7 @@ class PlannerCommandLineTest {
     @Test
     void theOptionAfterAWorkCommandIsRefusedWith64() {
         // Harm: a build's check run at limits other than those its command line names.
-        final Answer answer = work("issues", "check", dir.toString(), "--limits", "polling=2");
+        final Answer answer = work("check-commits", "HEAD", "--limits", "polling=2");
 
         assertThat(answer.code()).as("the exit code").hasValue(64);
         assertThat(answer.err())
@@ -98,18 +119,10 @@ class PlannerCommandLineTest {
     @Test
     void aWorkCommandAfterTheLineRuns() {
         // Harm: a build that hands its check the limits line starting a server instead.
-        final Answer answer =
-                work(
-                        "--limits",
-                        "services=2.0,retries=1.5",
-                        "issues",
-                        "check",
-                        dir.resolve("missing").toString());
+        final Answer answer = work("--limits", "services=2.0,retries=1.5", "check-commits");
 
         assertThat(answer.code()).as("the check's own exit code, %s", answer.err()).hasValue(2);
-        assertThat(answer.err())
-                .as("the check's own words")
-                .startsWith("could not read " + dir.resolve("missing") + ": ");
+        assertThat(answer.err()).as("the check's own words").startsWith("usage: check-commits ");
     }
 
     @Test

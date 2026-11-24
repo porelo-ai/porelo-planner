@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
-import org.fuin.porelo.planner.app.WorkFixture.Answer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +24,9 @@ import org.junit.jupiter.params.provider.ValueSource;
  * root, beside the build tools' command it replaces while they still carry it.
  */
 class CommitCommandTest {
+
+    /** What a command answered: its exit code and its two streams. */
+    private record Answer(int code, String out, String err) {}
 
     private static final String PLANNER = "org.fuin.porelo.planner.app.PlannerApplication";
 
