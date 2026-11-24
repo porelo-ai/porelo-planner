@@ -204,7 +204,7 @@ class WorkRunTest {
                                         run.issues(),
                                         false,
                                         false,
-                                        true)));
+                                        WorkRunTest.pendingMark())));
         final int writes = f.record.writes;
 
         f.run.snapshot();
@@ -213,7 +213,7 @@ class WorkRunTest {
         f.run.view((board, snapshot) -> snapshot);
         f.run.preview(List.of(new Moves.Move(false, "AA1", "Backlog")));
 
-        assertThat(f.run.work("ST1").pending()).as("still the save's own mark").isTrue();
+        assertThat(f.run.work("ST1").pending()).as("still the save's own mark").isNotNull();
         assertThat(f.run.work("ST1").halted()).as("not halted").isFalse();
         assertThat(f.record.writes).as("no reader wrote the record").isEqualTo(writes);
     }
@@ -1569,7 +1569,7 @@ class WorkRunTest {
 
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("the run goes on").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("the choice saved")
                 .isEqualTo("Review");
@@ -1616,7 +1616,7 @@ class WorkRunTest {
                         e -> assertThat(e.ids()).as("the changed").containsExactly("AA1"));
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("the run is not halted").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
         assertThat(f.store.saves - saves).as("nothing saved").isZero();
         assertThat(f.record.wentBack).as("every write takes a newer generation").isFalse();
     }
@@ -3192,18 +3192,16 @@ class WorkRunTest {
     }
 
     @Test
-    void everySaveRefusalHaltsAllUnstartedWork() {
-        // Prevents continuation after any failed save, including a partially pushed batch.
+    void everySaveRefusalTheStoreMayHaveWrittenPartOfHaltsAllUnstartedWork() {
+        // Prevents continuation after a failed save that may have written part, a partially
+        // pushed batch included.
         for (final StoreException refusal :
                 List.of(
                         new StoreException.Busy("alpha"),
-                        new StoreException.StaleRevision("board@2"),
                         new StoreException.NoSuchStory("ST1"),
                         new StoreException.NoSuchIssue("AA1"),
-                        new StoreException.NotSavable("AA1", "failed"),
                         new StoreException.WorkflowMissing("alpha"),
                         new StoreException.CredentialRefused("alpha"),
-                        new StoreException.NoForgeAccess("https://github.com", "Projects"),
                         new StoreException.Unreachable("alpha", "failed"),
                         new StoreException.Unreadable("alpha", "failed"),
                         new StoreException.PartlySaved("alpha", List.of("beta"), "failed"))) {
@@ -3233,13 +3231,106 @@ class WorkRunTest {
         }
     }
 
+    /** The store's refusals that come before it writes anything. */
+    static List<StoreException> refusedBeforeWriting() {
+        return List.of(
+                new StoreException.Changed(List.of("AA1")),
+                new StoreException.BasisIncomplete(List.of("AA1")),
+                new StoreException.StaleRevision("board@2"),
+                new StoreException.NotSavable("AA1", "failed"),
+                new StoreException.NoForgeAccess("https://github.com", "Projects"));
+    }
+
     @Test
-    void anEndRefusedForAMissingForgeAccessIsToldAgainAsThatRefusal() {
-        // Harm: a task's end sent again answered as another refusal or a crash, so the window
-        // offers no token for the forge, or for another forge or right than the one refused.
+    void aTasksSaveRefusedBeforeWritingKeepsItsEventUnderNeedsYouWithoutHalting() {
+        // Harm: a run halted for the owner account to clear by hand though the store wrote
+        // nothing, or a task's end lost because its save was refused.
+        for (final StoreException refusal : refusedBeforeWriting()) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            f.start(offer);
+            final int offers = f.run.work("ST1").offers().size();
+            final int saves = f.store.saves;
+            f.store.failure = refusal;
+
+            assertThatThrownBy(
+                            () ->
+                                    f.run.report(
+                                            "task",
+                                            new WorkRun.Report(
+                                                    offer.offer(),
+                                                    WorkRun.Event.ENDED,
+                                                    "box",
+                                                    "workstation",
+                                                    ended("Built"))))
+                    .as("the refusal reaches the caller")
+                    .isSameAs(refusal);
+
+            final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+            final WorkRun.Offer ended =
+                    run.offers().stream()
+                            .filter(o -> o.id().equals(offer.offer()))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(run.halted()).as(refusal + ": not halted").isFalse();
+            assertThat(run.pending()).as(refusal + ": no mark left").isNull();
+            assertThat(ended.status()).as(refusal + ": the end recorded").isEqualTo("ENDED");
+            assertThat(ended.refusal())
+                    .as(refusal + ": the refusal kept")
+                    .isNotNull()
+                    .extracting(WorkRun.SaveFailure::name)
+                    .isEqualTo(refusal.getClass().getSimpleName());
+            assertThat(run.issues().get("AA1").reason())
+                    .as(refusal + ": the issue under Needs you")
+                    .isEqualTo("SAVE_REFUSED");
+            assertThat(run.offers()).as(refusal + ": no following task offered").hasSize(offers);
+            assertThat(f.store.saves).as(refusal + ": nothing saved").isEqualTo(saves);
+        }
+    }
+
+    @Test
+    void anOwnerAccountsSaveRefusedBeforeWritingLeavesTheRunAsItStood() {
+        // Harm: a run halted, or left pending, by an owner account's choice the store refused
+        // before writing anything, where the window only needs to look again. A save against the
+        // versions seen meets no stale revision: the store answers a moved board as Busy there.
+        for (final StoreException refusal :
+                refusedBeforeWriting().stream()
+                        .filter(r -> !(r instanceof StoreException.StaleRevision))
+                        .toList()) {
+            final Fixture f = new Fixture();
+            unreadableReading(f);
+            final Basis seen = Basis.of(f.store.board());
+            final WorkRun.Run before = f.run.work("ST1");
+            final int saves = f.store.saves;
+            f.store.failure = refusal;
+
+            assertThatThrownBy(
+                            () ->
+                                    f.run.choose(
+                                            "ST1",
+                                            "AA1",
+                                            1,
+                                            ReadingCycle.Choice.REVIEW_ANYWAY,
+                                            "",
+                                            seen,
+                                            null))
+                    .as(refusal + ": the refusal reaches the caller")
+                    .isSameAs(refusal);
+
+            assertThat(f.run.work("ST1")).as(refusal + ": the run as it stood").isEqualTo(before);
+            assertThat(f.store.saves).as(refusal + ": nothing saved").isEqualTo(saves);
+            assertThat(f.record.wentBack).as(refusal + ": no generation reused").isFalse();
+        }
+    }
+
+    @Test
+    void aRefusedEndIsToldAgainWhileTheAccessIsMissingAndSavedByTheNextIdenticalReport() {
+        // Harm: a task's end the store refused for a missing forge access answered as another
+        // refusal, so the window offers no token for it, or never saved once the token is given.
         final Fixture f = new Fixture();
         final WorkRun.Offered offer = f.order().tasks().getFirst();
         f.start(offer);
+        final int saves = f.store.saves;
         f.store.failure = new StoreException.NoForgeAccess("https://github.com", "Projects");
         final WorkRun.Report end =
                 new WorkRun.Report(
@@ -3247,10 +3338,9 @@ class WorkRunTest {
         assertThatThrownBy(() -> f.run.report("task", end))
                 .as("the save's refusal")
                 .isInstanceOf(StoreException.NoForgeAccess.class);
-        f.store.failure = null;
 
         assertThatThrownBy(() -> f.run.report("task", end))
-                .as("the same end sent again")
+                .as("the same end sent again while the access is missing")
                 .isInstanceOfSatisfying(
                         StoreException.NoForgeAccess.class,
                         again -> {
@@ -3259,6 +3349,306 @@ class WorkRunTest {
                                     .isEqualTo("https://github.com");
                             assertThat(again.right()).as("the right named").isEqualTo("Projects");
                         });
+        assertThat(f.store.saves).as("nothing saved yet").isEqualTo(saves);
+        f.store.failure = null;
+
+        f.run.report("task", end);
+        final WorkRun.Run saved = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(f.store.saves).as("the end saved once").isEqualTo(saves + 1);
+        assertThat(saved.offers().stream().filter(o -> o.id().equals(offer.offer())))
+                .as("the refusal cleared")
+                .allMatch(o -> o.refusal() == null && o.status().equals("ENDED"));
+        assertThat(saved.issues().get("AA1").reason())
+                .as("the issue no longer refused")
+                .isNotEqualTo("SAVE_REFUSED");
+
+        f.run.report("task", end);
+        assertThat(f.store.saves).as("a further identical end saves nothing").isEqualTo(saves + 1);
+        assertThat(f.run.work("ST1")).as("and changes nothing").isEqualTo(saved);
+    }
+
+    @Test
+    void aStartResentAfterARefusedEndNeverUndoesTheEnd() {
+        // Harm: a late or resent start judged again over an end the store refused, so the end
+        // is lost and a finished task stands at work.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        f.store.failure = new StoreException.NoForgeAccess("https://github.com", "Projects");
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "workstation",
+                                                ended("Built"))))
+                .as("the end's refusal")
+                .isInstanceOf(StoreException.NoForgeAccess.class);
+        f.store.failure = null;
+        final int saves = f.store.saves;
+
+        catchThrowable(() -> f.start(offer));
+
+        assertThat(f.run.work("ST1").offers().stream().filter(o -> o.id().equals(offer.offer())))
+                .as("the end still recorded")
+                .allMatch(o -> o.status().equals("ENDED"));
+        assertThat(f.run.active("ST1")).as("no task at work").isEmpty();
+        assertThat(f.store.saves).as("nothing saved by the start").isEqualTo(saves);
+    }
+
+    @Test
+    void anEndRefusedForAMissingForgeAccessOnAHaltedRunIsToldAgainAsThatRefusal() {
+        // Harm: a halted run's kept refusal told again without the right refused, so the window
+        // offers no token for it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        f.store.failure = new StoreException.NoForgeAccess("https://github.com", "Projects");
+        final WorkRun.Report end =
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built"));
+        assertThatThrownBy(() -> f.run.report("task", end))
+                .isInstanceOf(StoreException.NoForgeAccess.class);
+        final WorkRun.Run kept = f.run.work("ST1");
+        f.record.value =
+                withRun(
+                        f.record.value,
+                        new WorkRun.Run(
+                                kept.id(),
+                                kept.story(),
+                                kept.to(),
+                                kept.mode(),
+                                kept.comment(),
+                                kept.coordinator(),
+                                kept.readingRounds(),
+                                kept.issueReadingRounds(),
+                                kept.repositories(),
+                                kept.since(),
+                                kept.offers(),
+                                kept.issues(),
+                                false,
+                                true,
+                                null));
+        f.store.failure = null;
+        final int saves = f.store.saves;
+
+        assertThatThrownBy(() -> f.run.report("task", end))
+                .as("the same end sent to the halted run")
+                .isInstanceOfSatisfying(
+                        StoreException.NoForgeAccess.class,
+                        again ->
+                                assertThat(again.right())
+                                        .as("the right named")
+                                        .isEqualTo("Projects"));
+        assertThat(f.store.saves).as("nothing saved").isEqualTo(saves);
+    }
+
+    @Test
+    void aRefusedStartStaysStartedAndIsSavedByTheNextIdenticalStart() {
+        // Harm: a task at work recorded as offered, so its end is refused, or its start never
+        // saved once the store takes it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String before = f.store.board().issue("AA1").orElseThrow().state();
+        f.store.failure = new StoreException.NotSavable("AA1", "failed");
+        assertThatThrownBy(() -> f.start(offer))
+                .as("the start's refusal")
+                .isInstanceOf(StoreException.NotSavable.class);
+        assertThat(f.run.work("ST1").offers().stream().filter(o -> o.id().equals(offer.offer())))
+                .as("the start recorded")
+                .allMatch(o -> o.status().equals("STARTED") && "task".equals(o.task()));
+        assertThat(f.run.active("ST1")).as("the task at work").containsExactly("task");
+        f.store.failure = null;
+
+        f.start(offer);
+
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the start saved")
+                .isNotEqualTo(before);
+        assertThat(f.run.work("ST1").offers().stream().filter(o -> o.id().equals(offer.offer())))
+                .as("the refusal cleared")
+                .allMatch(o -> o.refusal() == null && o.status().equals("STARTED"));
+    }
+
+    @Test
+    void aWriterMeetingARunPendingByAnotherSaveIsRefusedAndHaltsNothing() {
+        // Harm: a run halted, or a save passed, while its own save is still at GitHub.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        f.record.value = withRun(f.record.value, marked(f.run.work("ST1"), pendingMark()));
+        final WorkRun.Snapshot before = f.record.value;
+
+        for (final Runnable writer :
+                List.<Runnable>of(
+                        () -> f.run.stop("ST1"),
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "workstation",
+                                                ended("Built"))))) {
+            assertThatThrownBy(writer::run)
+                    .as("the writer")
+                    .isInstanceOfSatisfying(
+                            WorkRefusal.class,
+                            e -> {
+                                assertThat(e.name()).as("the conflict").isEqualTo("RunChanged");
+                                assertThat(e.parameters().get("story"))
+                                        .as("the run named")
+                                        .isEqualTo("ST1");
+                            });
+        }
+        assertThat(f.record.value).as("the record unchanged").isEqualTo(before);
+        assertThat(f.run.work("ST1").halted()).as("not halted").isFalse();
+    }
+
+    @Test
+    void aWriterOfAnotherStoryIsNotHeldByAPendingRun() {
+        // Harm: one save in flight refusing every story's writers.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final WorkRun.Run other = otherStory(f.run.work("ST1"), "ST9", pendingMark());
+        f.record.value = withRun(f.record.value, other);
+
+        f.start(offer);
+
+        assertThat(f.run.active("ST1"))
+                .as("the other story's task started")
+                .containsExactly("task");
+        assertThat(f.record.value.runs().get("ST9"))
+                .as("the pending run untouched")
+                .isEqualTo(other);
+    }
+
+    @Test
+    void onlyTheSaveThatSetAMarkClearsIt() {
+        // Harm: one save clearing, or writing over, another save's mark on the same run.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final WorkRun.PendingSave another = pendingMark();
+        f.store.onSave =
+                () -> {
+                    f.store.onSave = null;
+                    f.record.value = withRun(f.record.value, marked(f.run.work("ST1"), another));
+                };
+
+        assertThatThrownBy(() -> f.start(offer))
+                .as("the save whose mark was replaced")
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(f.record.value.runs().get("ST1").pending())
+                .as("the other save's mark stands")
+                .isEqualTo(another);
+    }
+
+    @Test
+    void aSavesOutcomeLeavesAnotherRunWrittenMeanwhileAsItStands() {
+        // Harm: a save settling its outcome writes back the record it read before GitHub
+        // answered, wiping another save's mark or run written meanwhile.
+        for (final boolean refused : List.of(false, true)) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            final WorkRun.Run other = otherStory(f.run.work("ST1"), "ST9", pendingMark());
+            f.store.onSave =
+                    () -> {
+                        f.store.onSave = null;
+                        f.record.value = withRun(f.record.value, other);
+                        if (refused) {
+                            f.store.failure = new StoreException.Changed(List.of("AA1"));
+                        }
+                    };
+
+            catchThrowable(() -> f.start(offer));
+
+            assertThat(f.record.value.runs().get("ST9"))
+                    .as("refused " + refused + ": the run written meanwhile")
+                    .isEqualTo(other);
+        }
+    }
+
+    @Test
+    void aSaveThatFailsInAnyWayLeavesNoMark() {
+        // Harm: a run left pending for good by a save that threw what no refusal names.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.onSave =
+                () -> {
+                    throw new IllegalArgumentException("broken answer");
+                };
+
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(IllegalArgumentException.class);
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.pending()).as("no mark left").isNull();
+        assertThat(run.halted()).as("halted, since what was written is unknown").isTrue();
+    }
+
+    @Test
+    void aGoneStorysRunWhoseSaveIsInFlightIsKept() {
+        // Harm: a run dropped from the record while its save is at GitHub, so the save's outcome
+        // finds no run to settle.
+        final Fixture f = new Fixture();
+        f.order();
+        final WorkRun.Run gone = otherStory(f.run.work("ST1"), "ST9", pendingMark());
+        final WorkRun.Snapshot record = withRun(f.record.value, gone);
+
+        assertThat(WorkRun.withoutGoneRuns(record, f.store.board()).runs())
+                .as("the run of a story no longer shown, its save in flight")
+                .containsEntry("ST9", gone);
+    }
+
+    /** The record with one run put in, as another call wrote it. */
+    static WorkRun.Snapshot withRun(final WorkRun.Snapshot record, final WorkRun.Run run) {
+        final Map<String, WorkRun.Run> runs = new java.util.LinkedHashMap<>(record.runs());
+        runs.put(run.story(), run);
+        return new WorkRun.Snapshot(
+                record.generation() + 1, runs, record.ideas(), record.results());
+    }
+
+    /** The run with a save's mark set. */
+    static WorkRun.Run marked(final WorkRun.Run run, final WorkRun.PendingSave mark) {
+        return new WorkRun.Run(
+                run.id(),
+                run.story(),
+                run.to(),
+                run.mode(),
+                run.comment(),
+                run.coordinator(),
+                run.readingRounds(),
+                run.issueReadingRounds(),
+                run.repositories(),
+                run.since(),
+                run.offers(),
+                run.issues(),
+                run.stopped(),
+                run.halted(),
+                mark);
+    }
+
+    /** A run of another story, offering nothing, with the given mark. */
+    static WorkRun.Run otherStory(
+            final WorkRun.Run like, final String story, final WorkRun.@Nullable PendingSave mark) {
+        return new WorkRun.Run(
+                java.util.UUID.randomUUID().toString(),
+                story,
+                like.to(),
+                like.mode(),
+                like.comment(),
+                like.coordinator(),
+                like.readingRounds(),
+                like.issueReadingRounds(),
+                like.repositories(),
+                like.since(),
+                List.of(),
+                Map.of(),
+                false,
+                false,
+                mark);
     }
 
     @Test
@@ -4177,13 +4567,18 @@ class WorkRunTest {
                                         run.issues(),
                                         false,
                                         false,
-                                        true)));
+                                        WorkRunTest.pendingMark())));
         final WorkRun restarted = new WorkRun(f.store, f.record, f.clock);
         restarted.repair();
         assertThat(restarted.work("ST1").halted())
                 .as("ambiguous persistence stops for attention")
                 .isTrue();
         assertThat(f.store.saves).as("startup never retries the pending save").isEqualTo(1);
+    }
+
+    /** The mark of a save in flight, by an id of its own. */
+    static WorkRun.PendingSave pendingMark() {
+        return new WorkRun.PendingSave(java.util.UUID.randomUUID().toString(), List.of("AA1"));
     }
 
     /** An end whose work already landed, as Porelo reports it once its work left the gate. */
@@ -5459,7 +5854,7 @@ class WorkRunTest {
         f.start(offer);
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("the start was saved once more, so the run goes on").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
         assertThat(f.store.saves).as("the start's writes are saved exactly once").isEqualTo(1);
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("the issue stands in the working state")
@@ -5485,14 +5880,14 @@ class WorkRunTest {
                         offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("the end was saved once more, so the run goes on").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
         assertThat(f.store.saves - before)
                 .as("the end's writes are saved exactly once")
                 .isEqualTo(1);
     }
 
     @Test
-    void aStartOnABoardThatMovedItsIssueAwayIsRefusedNamingWhyAndHaltsNothing() {
+    void aStartOnABoardThatMovedItsIssueAwayStaysUnderNeedsYouNamingWhy() {
         // Harm: a start saved for issues the moved board no longer gives this story, or a run
         // halted by a refusal that came before anything was written.
         final Fixture f = new Fixture();
@@ -5528,8 +5923,11 @@ class WorkRunTest {
                                         .as("why")
                                         .isEqualTo("The offered ownership has changed."));
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
-        assertThat(run.halted()).as("nothing was written, so the run does not halt").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.halted()).as("not halted: the store wrote nothing").isFalse();
+        assertThat(run.issues().get("AA1").reason())
+                .as("the issue under Needs you")
+                .isEqualTo("SAVE_REFUSED");
+        assertThat(run.pending()).as("no save is left pending").isNull();
         assertThat(f.store.saves).as("nothing was saved").isZero();
     }
 
@@ -5660,7 +6058,7 @@ class WorkRunTest {
                 .isEqualTo("Renamed on the tracker");
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("the run goes on").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
     }
 
     @Test
@@ -5936,7 +6334,10 @@ class WorkRunTest {
         assertThat(f.store.refreshes).as("no whole read").isZero();
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
         assertThat(run.halted()).as("a refusal before the write halts nothing").isFalse();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isNull();
+        assertThat(run.issues().get("AA1").reason())
+                .as("the issue under Needs you")
+                .isEqualTo("SAVE_REFUSED");
     }
 
     @Test

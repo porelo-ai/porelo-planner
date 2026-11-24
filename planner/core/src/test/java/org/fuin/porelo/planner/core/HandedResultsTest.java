@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.time.Clock;
@@ -51,7 +52,8 @@ class HandedResultsTest {
                         List.of("AA1"),
                         List.of("plan: x"),
                         "",
-                        1));
+                        1,
+                        ""));
         final List<HandedResults.Handed> forged =
                 List.of(
                         new HandedResults.Handed(
@@ -60,21 +62,24 @@ class HandedResultsTest {
                                 List.of("AA1"),
                                 List.of(),
                                 "",
-                                1),
+                                1,
+                                ""),
                         new HandedResults.Handed(
                                 HandedResults.MISSING,
                                 "analyze",
                                 List.of("AA1"),
                                 List.of(),
                                 "gone\u202e",
-                                1),
+                                1,
+                                ""),
                         new HandedResults.Handed(
                                 HandedResults.REFUSED,
                                 "analyze",
                                 List.of("AA1"),
                                 List.of("plan: bad\nline"),
                                 "",
-                                1));
+                                1,
+                                ""));
         for (final HandedResults.Handed handed : forged) {
             assertThat(
                             catchThrowableOfType(
@@ -560,32 +565,106 @@ class HandedResultsTest {
     }
 
     @Test
-    void aSaveLeftPendingByARestartIsRefusedWithoutAskingTheStore() {
-        // Prevents a result saved twice after the planner stopped during its save.
+    void aResultHandedInAgainWhileItsSaveRunsIsRefusedAsInFlightAndWritesNothing() {
+        // Harm: a result told lost, and recorded refused for good, while its own save is still
+        // at the store.
         final Stage f = new Stage();
         final WorkRun.Offered offer = f.started();
         f.record.value =
-                HandedResults.with(
+                HandedResults.pending(
                         f.record.value,
                         offer.offer(),
-                        HandedResults.PENDING,
                         "task",
                         List.of("AA1"),
-                        List.of(),
-                        "");
+                        java.util.UUID.randomUUID().toString());
+        final WorkRun.Snapshot before = f.record.value;
 
         final WorkRefusal refused =
                 catchThrowableOfType(WorkRefusal.class, () -> f.handIn(offer, valid()));
 
-        assertThat(refused).as("the pending save is refused").isNotNull();
-        assertThat(faults(refused))
-                .as("the fault")
-                .singleElement()
-                .satisfies(fault -> assertThat(fault).as("the fault").startsWith("result: "));
+        assertThat(refused).as("the hand-in is refused").isNotNull();
+        assertThat(faults(refused)).as("the fault").containsExactly(HandedResults.IN_FLIGHT);
         assertThat(f.store.attempts).as("the store is not asked").isZero();
-        assertThat(f.record.value.results().get(offer.offer()).status())
-                .as("the pending save is recorded as refused")
-                .isEqualTo(HandedResults.REFUSED);
+        assertThat(f.record.value).as("nothing is written").isEqualTo(before);
+    }
+
+    @Test
+    void anEndWhileItsResultsSaveRunsAsksNothingOfTheOwnerAccount() {
+        // Harm: a stage's end, arriving while its result's save is at the store, stamps its
+        // issues under Needs you as if no result came, though the save moves them.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        f.record.value =
+                HandedResults.pending(
+                        f.record.value,
+                        offer.offer(),
+                        "task",
+                        List.of("AA1"),
+                        java.util.UUID.randomUUID().toString());
+
+        f.end(offer);
+
+        assertThat(f.run.work("ST1").issues().get("AA1").needsYou())
+                .as("the issue asks nothing while its result is saved")
+                .isFalse();
+        assertThat(f.told).as("no line says the result did not end").isEmpty();
+    }
+
+    @Test
+    void atOpenAResultLeftPendingIsRefusedWithoutAskingTheStore() {
+        // Prevents a result saved twice after the planner stopped during its save, and a
+        // result kept pending for good.
+        for (final String save : List.of(java.util.UUID.randomUUID().toString(), "")) {
+            final Stage f = new Stage();
+            final WorkRun.Offered offer = f.started();
+            f.record.value =
+                    HandedResults.pending(
+                            f.record.value, offer.offer(), "task", List.of("AA1"), save);
+
+            f.run.repair();
+
+            final HandedResults.Handed handed = f.record.value.results().get(offer.offer());
+            assertThat(handed.status())
+                    .as("the pending save is recorded as refused, named or not")
+                    .isEqualTo(HandedResults.REFUSED);
+            assertThat(handed.faults()).as("the fault").containsExactly(HandedResults.NOT_ENDED);
+            final WorkRefusal again =
+                    catchThrowableOfType(WorkRefusal.class, () -> f.handIn(offer, valid()));
+            assertThat(faults(again))
+                    .as("a later hand-in")
+                    .containsExactly(HandedResults.NOT_ENDED);
+            assertThat(f.store.attempts).as("the store is not asked").isZero();
+        }
+    }
+
+    @Test
+    void aResultSavesOutcomeLeavesAnotherOffersEntryAsItStands() {
+        // Harm: a result's save, settling its outcome, writes back the record it read before the
+        // store answered, so an entry written meanwhile is lost.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final String other = java.util.UUID.randomUUID().toString();
+        f.store.during =
+                () ->
+                        f.record.value =
+                                HandedResults.with(
+                                        f.record.value,
+                                        other,
+                                        HandedResults.MISSING,
+                                        "other",
+                                        List.of("AA1"),
+                                        List.of(),
+                                        "none");
+        f.store.failure = new StoreException.Busy("alpha");
+
+        catchThrowable(() -> f.handIn(offer, valid()));
+
+        assertThat(f.record.value.results())
+                .as("the entry written while the save ran")
+                .containsKey(other);
+        assertThat(f.record.value.results())
+                .as("the refused save's own entry is gone")
+                .doesNotContainKey(offer.offer());
     }
 
     @Test
@@ -759,6 +838,11 @@ class HandedResultsTest {
         final List<StageResult> results = new ArrayList<>();
         @Nullable StoreException failure;
 
+        /**
+         * Runs once inside the next result save, as another call's change while it is at GitHub.
+         */
+        @Nullable Runnable during;
+
         ResultStore() {
             final WorkRule analysis =
                     new WorkRule(
@@ -844,6 +928,11 @@ class HandedResultsTest {
         @Override
         public Board saveResult(final StageResult result) {
             attempts++;
+            final Runnable meanwhile = during;
+            if (meanwhile != null) {
+                during = null;
+                meanwhile.run();
+            }
             if (failure != null) {
                 throw failure;
             }

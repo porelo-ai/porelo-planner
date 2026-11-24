@@ -501,7 +501,7 @@ class BoardReadsTest {
                         Map.of("porelo-store#2", progress),
                         true,
                         false,
-                        false);
+                        null);
         records.open("alpha", "git@example.org:a/porelo-store.git", null)
                 .locked(
                         session -> {

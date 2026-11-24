@@ -755,11 +755,27 @@ public final class WorkRecord implements AutoCloseable {
             return stored;
         }
 
-        /** Keeps a generation for readers unless a save's pending mark stands in it. */
+        /**
+         * Keeps a generation for readers: every run as written, but a run whose save's pending mark
+         * stands in it as it was last settled, so one save in flight holds back no other run.
+         */
         private WorkRun.Snapshot settle(final WorkRun.Snapshot snapshot) {
-            if (snapshot.runs().values().stream().noneMatch(WorkRun.Run::pending)) {
-                settled = snapshot;
-            }
+            final WorkRun.Snapshot held = settled;
+            final Map<String, WorkRun.Run> runs = new java.util.LinkedHashMap<>();
+            snapshot.runs()
+                    .forEach(
+                            (story, run) -> {
+                                final WorkRun.Run before =
+                                        held == null ? null : held.runs().get(story);
+                                if (run.pending() == null) {
+                                    runs.put(story, run);
+                                } else if (before != null) {
+                                    runs.put(story, before);
+                                }
+                            });
+            settled =
+                    new WorkRun.Snapshot(
+                            snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
             return snapshot;
         }
 
@@ -836,7 +852,24 @@ public final class WorkRecord implements AutoCloseable {
             if (tree instanceof ObjectNode root && !root.has("results")) {
                 root.putObject("results");
             }
+            // A result written before saves were named names none.
+            for (final JsonNode result : tree.path("results")) {
+                if (result instanceof ObjectNode handed && !handed.has("save")) {
+                    handed.put("save", "");
+                }
+            }
             for (final JsonNode run : tree.path("runs")) {
+                // A run written before saves were named carries a bare mark: none, or one whose
+                // save the repair at open halts.
+                if (run instanceof ObjectNode marked && marked.path("pending").isBoolean()) {
+                    if (marked.path("pending").booleanValue()) {
+                        final ObjectNode mark = marked.putObject("pending");
+                        mark.put("id", "");
+                        mark.putArray("items");
+                    } else {
+                        marked.putNull("pending");
+                    }
+                }
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
                     // A main recorded before the rule's offered agents were proposed names none.
@@ -1190,6 +1223,10 @@ public final class WorkRecord implements AutoCloseable {
                                         || !UUID.fromString(run.id()).toString().equals(run.id())
                                         || run.readingRounds() < 1) {
                                     throw new IllegalArgumentException("a run fails its check");
+                                }
+                                final WorkRun.PendingSave mark = run.pending();
+                                if (mark != null) {
+                                    WorkRun.PendingSave.checked(mark);
                                 }
                                 run.issues()
                                         .forEach(

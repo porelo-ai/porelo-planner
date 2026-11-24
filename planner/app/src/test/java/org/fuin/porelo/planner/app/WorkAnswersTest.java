@@ -242,7 +242,7 @@ class WorkAnswersTest {
                                 Map.of("AA1", progress),
                                 true,
                                 false,
-                                false)));
+                                null)));
     }
 
     private static Board board() {

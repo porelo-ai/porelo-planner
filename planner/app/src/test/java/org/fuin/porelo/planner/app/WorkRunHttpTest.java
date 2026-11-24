@@ -290,7 +290,7 @@ class WorkRunHttpTest {
                                                         "")),
                                         false,
                                         false,
-                                        false)));
+                                        null)));
         assertThat(stopped.runs().get("ST1").issues().get("AA1").rounds().stopped())
                 .as("the fixture's reading of AA1 stopped")
                 .isTrue();
@@ -1119,7 +1119,7 @@ class WorkRunHttpTest {
                 Map.of("AA1", progress),
                 false,
                 false,
-                false);
+                null);
     }
 
     private JsonNode offerWork(final String story) throws Exception {

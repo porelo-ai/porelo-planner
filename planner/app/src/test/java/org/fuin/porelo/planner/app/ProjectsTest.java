@@ -147,7 +147,7 @@ class ProjectsTest {
         final WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
         final Projects projects = projects(records);
         projects.put("alpha", "git@example.org:a/p.git", null);
-        final WorkRun work = projects.work("alpha");
+        final WorkRun.Record record = records.open("alpha", "git@example.org:a/p.git", null);
         final Object monitor = new Object();
         final CountDownLatch holding = new CountDownLatch(1);
         projects.onRetired(
@@ -164,7 +164,7 @@ class ProjectsTest {
                                 synchronized (monitor) {
                                     holding.countDown();
                                     try {
-                                        work.lockedView((board, snapshot) -> snapshot);
+                                        record.locked(WorkRun.Session::read);
                                     } catch (final RuntimeException refused) {
                                         events.add("viewer refused");
                                     }

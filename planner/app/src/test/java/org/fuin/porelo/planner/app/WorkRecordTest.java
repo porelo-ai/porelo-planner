@@ -838,7 +838,8 @@ class WorkRecordTest {
                         List.of("AA1"),
                         List.of("issues[0].size: The size must be one of XS, S, M, L, XL."),
                         "",
-                        2);
+                        2,
+                        "");
         final WorkRun.Run run = writeTaskRecord("workstation");
         final var environment = Map.of("XDG_STATE_HOME", directory.toString());
         try (WorkRecord records = new WorkRecord(environment, false)) {
@@ -892,6 +893,170 @@ class WorkRecordTest {
             assertThat(olderOffer.binding().rule().result())
                     .as("a rule recorded before stages hands back no result")
                     .isNull();
+        }
+    }
+
+    @Test
+    void aRecordWrittenBeforeSavesWereNamedOpensAndTheRepairAtOpenSettlesItsMarks()
+            throws Exception {
+        // Harm: a record that a save left pending before saves were named refused as malformed,
+        // so the owner account's runs are lost, or its marks kept pending for good.
+        final String offer = "00000000-0000-0000-0000-000000000003";
+        final WorkRun.Run run = writeTaskRecord("workstation");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final ObjectNode document = (ObjectNode) json.readTree(Files.readString(file));
+        ((ObjectNode) document.path("runs").path(run.story())).put("pending", true);
+        final ObjectNode handed = document.putObject("results").putObject(offer);
+        handed.put("status", HandedResults.PENDING);
+        handed.put("task", "task");
+        handed.putArray("issues").add("AA1");
+        handed.putArray("faults");
+        handed.put("reason", "");
+        handed.put("order", 1);
+        Files.writeString(file, json.writeValueAsString(document));
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final WorkRun.Snapshot older = record.locked(WorkRun.Session::read);
+            assertThat(older.runs().get(run.story()).pending())
+                    .as("the bare mark, read as a mark naming no save")
+                    .isEqualTo(new WorkRun.PendingSave("", List.of()));
+            assertThat(older.results().get(offer).save())
+                    .as("the pending result, naming no save")
+                    .isEmpty();
+
+            new WorkRun(new NoStore(), record, java.time.Clock.systemUTC()).repair();
+
+            final WorkRun.Snapshot repaired = record.latest();
+            assertThat(repaired.runs().get(run.story()).halted()).as("the run halted").isTrue();
+            assertThat(repaired.runs().get(run.story()).pending()).as("no mark left").isNull();
+            assertThat(repaired.results().get(offer).status())
+                    .as("the result refused")
+                    .isEqualTo(HandedResults.REFUSED);
+        }
+    }
+
+    @Test
+    void aForgedMarkIsRefusedAtOpenAndAMarkTheRecordWritesOpens() throws Exception {
+        // Harm: a work.json edited by hand or another program carrying a mark the planner never
+        // writes, named in logs and answers as if it were a save of its own.
+        final WorkRun.Run run = writeTaskRecord("workstation");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String written = Files.readString(file);
+        final var environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final String uuid = "00000000-0000-0000-0000-00000000000b";
+        final java.util.function.BiFunction<String, List<String>, Boolean> opens =
+                (id, items) -> {
+                    try {
+                        final ObjectNode document = (ObjectNode) json.readTree(written);
+                        final ObjectNode mark =
+                                ((ObjectNode) document.path("runs").path(run.story()))
+                                        .putObject("pending");
+                        if (id == null) {
+                            mark.putNull("id");
+                        } else {
+                            mark.put("id", id);
+                        }
+                        final var array = mark.putArray("items");
+                        items.forEach(array::add);
+                        Files.writeString(file, json.writeValueAsString(document));
+                        try (WorkRecord records = new WorkRecord(environment, false)) {
+                            records.open("project", "https://example.org/store.git", null)
+                                    .locked(WorkRun.Session::read);
+                            return true;
+                        } catch (final WorkRefusal refused) {
+                            assertThat(refused.getMessage())
+                                    .as("the refusal")
+                                    .contains("fails its check");
+                            return false;
+                        }
+                    } catch (final java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                };
+
+        assertThat(opens.apply(uuid, List.of("AA1", "ST1"))).as("a save's mark").isTrue();
+        assertThat(opens.apply("", List.of())).as("a mark from before saves were named").isTrue();
+        assertThat(opens.apply(null, List.of("AA1"))).as("no id").isFalse();
+        assertThat(opens.apply("save-1", List.of("AA1"))).as("an id that is no UUID").isFalse();
+        assertThat(opens.apply("", List.of("AA1"))).as("no id, but items").isFalse();
+        assertThat(opens.apply(uuid, List.of("AA\u00071"))).as("a control character").isFalse();
+    }
+
+    @Test
+    void aReaderSeesEveryRunButOneWhoseSaveIsInFlight() throws Exception {
+        // Harm: one save in flight freezing what readers see of every other story's run.
+        final WorkRun.Run run = writeTaskRecord("workstation");
+        final WorkRun.Run other =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000009",
+                        "ST9",
+                        run.to(),
+                        run.mode(),
+                        run.comment(),
+                        run.coordinator(),
+                        run.readingRounds(),
+                        run.issueReadingRounds(),
+                        run.repositories(),
+                        run.since(),
+                        List.of(),
+                        Map.of(),
+                        false,
+                        false,
+                        null);
+        final WorkRun.Run marked =
+                new WorkRun.Run(
+                        run.id(),
+                        run.story(),
+                        run.to(),
+                        run.mode(),
+                        run.comment(),
+                        run.coordinator(),
+                        run.readingRounds(),
+                        run.issueReadingRounds(),
+                        run.repositories(),
+                        run.since(),
+                        run.offers(),
+                        run.issues(),
+                        run.stopped(),
+                        run.halted(),
+                        new WorkRun.PendingSave(
+                                "00000000-0000-0000-0000-00000000000a", List.of("AA1")));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            record.locked(
+                    session -> {
+                        session.read();
+                        session.write(
+                                new WorkRun.Snapshot(2, Map.of(run.story(), marked, "ST9", other)));
+                        return true;
+                    });
+
+            final WorkRun.Snapshot seen = record.latest();
+            assertThat(seen.runs().get("ST9"))
+                    .as("the other story's run, as written")
+                    .isEqualTo(other);
+            assertThat(seen.runs().get(run.story()))
+                    .as("the run whose save is in flight, as last settled")
+                    .isEqualTo(run);
+        }
+    }
+
+    /** A store no call of these tests reaches. */
+    private static final class NoStore implements org.fuin.porelo.planner.store.PlanningStore {
+        @Override
+        public org.fuin.porelo.planner.store.Board board() {
+            throw new UnsupportedOperationException("not read");
+        }
+
+        @Override
+        public org.fuin.porelo.planner.store.Board refresh() {
+            throw new UnsupportedOperationException("not read");
         }
     }
 
@@ -1027,7 +1192,7 @@ class WorkRecordTest {
                         Map.of(),
                         false,
                         false,
-                        false);
+                        null);
         try (WorkRecord records =
                 new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
             records.open("project", "https://example.org/store.git", null)
@@ -1122,7 +1287,7 @@ class WorkRecordTest {
                         Map.of("AA1", progress),
                         false,
                         false,
-                        false);
+                        null);
         try (WorkRecord records = new WorkRecord(environment, false)) {
             records.open("project", "https://example.org/store.git", null)
                     .locked(
@@ -1726,7 +1891,7 @@ class WorkRecordTest {
             assertThat(after.runs())
                     .as("the other save's mark, written after this one's, stands")
                     .containsKeys("ST1", "ST2");
-            assertThat(after.runs().get("ST1").pending()).isFalse();
+            assertThat(after.runs().get("ST1").pending()).isNull();
             assertThat(after.generation())
                     .as("each step writes the next generation, whatever its change says")
                     .isEqualTo(3);
@@ -1816,7 +1981,7 @@ class WorkRecordTest {
                             .locked(session -> session.read().runs());
             assertThat(runs.get("ST1").pending())
                     .as("the outcome recorded before the guard was let go")
-                    .isFalse();
+                    .isNull();
         }
     }
 
@@ -1950,9 +2115,9 @@ class WorkRecordTest {
         try (WorkRecord records = new WorkRecord(after, false)) {
             final WorkRun.Record record =
                     records.open("project", "https://example.org/store.git", null);
-            final boolean pending =
+            final WorkRun.PendingSave pending =
                     record.locked(session -> session.read().runs().get("ST1").pending());
-            assertThat(pending).as("the pending run is in the record whole").isTrue();
+            assertThat(pending).as("the pending run is in the record whole").isNotNull();
             new WorkRun(
                             new org.fuin.porelo.planner.store.PlanningStore() {
                                 @Override
@@ -1970,7 +2135,7 @@ class WorkRecordTest {
                             why -> {})
                     .repair();
             final WorkRun.Run repaired = record.locked(session -> session.read().runs().get("ST1"));
-            assertThat(repaired.pending()).isFalse();
+            assertThat(repaired.pending()).isNull();
             assertThat(repaired.halted()).as("the open halts the save cut off").isTrue();
         }
     }
@@ -1979,6 +2144,7 @@ class WorkRecordTest {
         return (WorkRecord.Entry) records.open("project", "https://example.org/store.git", null);
     }
 
+    /** A run of the story, pending under a save's mark when asked. */
     private static WorkRun.Run run(final String story, final boolean pending) {
         return new WorkRun.Run(
                 "00000000-0000-0000-0000-000000000001",
@@ -1995,7 +2161,10 @@ class WorkRecordTest {
                 Map.of(),
                 false,
                 false,
-                pending);
+                pending
+                        ? new WorkRun.PendingSave(
+                                "00000000-0000-0000-0000-00000000000a", List.of("AA1"))
+                        : null);
     }
 
     private static WorkRun.Snapshot withRun(

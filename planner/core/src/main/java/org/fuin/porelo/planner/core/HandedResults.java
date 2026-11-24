@@ -36,6 +36,13 @@ public final class HandedResults {
     /** An offer whose save began and has not ended. */
     public static final String PENDING = "PENDING";
 
+    /** The fault of a result whose save a stopped planner left pending; it is not made again. */
+    static final String NOT_ENDED =
+            "result: The save of this offer's result did not end and is not made again.";
+
+    /** The fault of a result handed in again while its own save is still at the store. */
+    static final String IN_FLIGHT = "result: The save of this offer's result is still in flight.";
+
     /**
      * An offer whose result the forge refused for the person's access before anything was written;
      * a later hand-in saves it, even after its task ended.
@@ -74,6 +81,8 @@ public final class HandedResults {
      * @param faults the refusal's faults, empty unless refused
      * @param reason why the result is missing, empty unless missing
      * @param order the record's generation when it was written, the oldest the lowest
+     * @param save the id of the save in flight while {@value #PENDING}, which alone settles it;
+     *     empty otherwise, and for a mark written before saves were named
      */
     public record Handed(
             String status,
@@ -81,7 +90,8 @@ public final class HandedResults {
             List<String> issues,
             List<String> faults,
             String reason,
-            long order) {
+            long order,
+            String save) {
 
         /** Copies the lists. */
         public Handed {
@@ -564,7 +574,7 @@ public final class HandedResults {
             case REFUSED ->
                     "its result was refused: "
                             + (handed.faults().isEmpty() ? "" : handed.faults().getFirst());
-            case PENDING -> "the save of its result did not end";
+            case PENDING -> "the save of its result is still in flight";
             case WAITING -> "the save of its result waits for the person's access to the forge";
             default -> "its result is saved";
         };
@@ -602,6 +612,12 @@ public final class HandedResults {
         }
         Ids.task(handed.task());
         handed.issues().forEach(Ids::issue);
+        // A mark written before saves were named carries no id; the repair at open refuses it.
+        if (!handed.save().isEmpty()
+                && (!PENDING.equals(handed.status())
+                        || !UUID.fromString(handed.save()).toString().equals(handed.save()))) {
+            throw new IllegalArgumentException("a handed result names a save it cannot have");
+        }
     }
 
     /**
@@ -624,9 +640,46 @@ public final class HandedResults {
             final List<String> issues,
             final List<String> faults,
             final String reason) {
+        return kept(
+                snapshot,
+                offer,
+                new Handed(status, task, issues, faults, reason, snapshot.generation() + 1, ""));
+    }
+
+    /**
+     * Records an offer's result as pending under the save that writes it.
+     *
+     * @param snapshot the record
+     * @param offer the offer
+     * @param task the task the offer is bound to
+     * @param issues the offer's issues
+     * @param save the save's own id
+     * @return the record with the pending result
+     */
+    static WorkRun.Snapshot pending(
+            final WorkRun.Snapshot snapshot,
+            final String offer,
+            final String task,
+            final List<String> issues,
+            final String save) {
+        return kept(
+                snapshot,
+                offer,
+                new Handed(PENDING, task, issues, List.of(), "", snapshot.generation() + 1, save));
+    }
+
+    /**
+     * Records an offer's outcome as given, dropping the oldest beyond {@value #MOST_KEPT}, or
+     * removes the offer's outcome when none is given.
+     */
+    static WorkRun.Snapshot kept(
+            final WorkRun.Snapshot snapshot, final String offer, final @Nullable Handed handed) {
         final Map<String, Handed> results = new LinkedHashMap<>(snapshot.results());
-        results.put(
-                offer, new Handed(status, task, issues, faults, reason, snapshot.generation() + 1));
+        if (handed == null) {
+            results.remove(offer);
+        } else {
+            results.put(offer, handed);
+        }
         while (results.size() > MOST_KEPT) {
             results.entrySet().stream()
                     .min(Comparator.comparingLong(entry -> entry.getValue().order()))

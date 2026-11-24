@@ -371,6 +371,45 @@ public final class WorkRun {
         }
     }
 
+    /**
+     * The save a run's pending mark names: only that save clears the mark, and the repair at open
+     * halts a mark whose save did not end.
+     *
+     * @param id the save's own id; empty for a mark written before saves were named
+     * @param items the issues and stories the save writes
+     */
+    public record PendingSave(String id, List<String> items) {
+        /** Copies the items. */
+        public PendingSave {
+            items = List.copyOf(items);
+        }
+
+        /**
+         * Checks a mark as the record keeps it: a save's id, or empty only for a mark written
+         * before saves were named, which names no items.
+         *
+         * @param mark the mark
+         * @throws IllegalArgumentException when a part fails its check
+         */
+        public static void checked(final PendingSave mark) {
+            final String id = Objects.requireNonNull(mark.id(), "a mark names its save");
+            if (id.isEmpty()
+                    ? !mark.items().isEmpty()
+                    : !UUID.fromString(id).toString().equals(id)) {
+                throw new IllegalArgumentException("a mark fails its check");
+            }
+            // An issue's id takes a story's too, ST and a number, and a tracker reference.
+            mark.items().forEach(Ids::issue);
+        }
+
+        /** The mark of one save of the given writes, under an id of its own. */
+        static PendingSave of(final Writes writes) {
+            final List<String> items = new ArrayList<>(writes.issues().keySet());
+            items.addAll(writes.stories().keySet());
+            return new PendingSave(UUID.randomUUID().toString(), items);
+        }
+    }
+
     /** One story's accepted order, task bindings and retained reading state. */
     public record Run(
             String id,
@@ -387,7 +426,7 @@ public final class WorkRun {
             Map<String, NextStep.Progress> issues,
             boolean stopped,
             boolean halted,
-            boolean pending) {
+            @Nullable PendingSave pending) {
         /** Makes each published run a snapshot rather than a shared mutable object. */
         public Run {
             issueReadingRounds = List.copyOf(issueReadingRounds);
@@ -731,7 +770,7 @@ public final class WorkRun {
                                     progress,
                                     false,
                                     false,
-                                    false);
+                                    null);
                     final Snapshot next = replace(snapshot, run);
                     session.preflight(next);
                     session.write(next);
@@ -789,12 +828,20 @@ public final class WorkRun {
                                 task, report.event(), "The report contradicts the task binding.");
                     }
                     if (report.event() == Event.STARTED && known.task() != null) {
+                        // Only the start itself is judged again; a start resent after the task's
+                        // end is answered with what stands, so the end is never undone.
+                        if (known.status().equals("STARTED") && unsaved(run, known)) {
+                            return again(session, snapshot, run, known, task, report);
+                        }
                         replayFailure(known);
                         return answer(run, known.following());
                     }
                     if (report.event() != Event.STARTED && !known.status().equals("STARTED")) {
                         if (known.status().equals(report.event().name())
                                 && known.fingerprint().equals(fingerprint(report))) {
+                            if (unsaved(run, known)) {
+                                return again(session, snapshot, run, known, task, report);
+                            }
                             replayFailure(known);
                             return answer(run, known.following());
                         }
@@ -811,23 +858,98 @@ public final class WorkRun {
                     try {
                         return answer(saved(session, snapshot, judged, board), judged.following());
                     } catch (final StoreException.Changed moved) {
-                        // Nothing was written and the run stands as it was; the store holds the
-                        // items named read anew, so the event is judged once more on them. A
-                        // store that lost its board would read it whole here, so it is refused.
+                        // Nothing was written; the store holds the items named read anew, so the
+                        // event is judged once more on them, from the run as it stood before it,
+                        // on the record as it stands now, so what another save wrote meanwhile
+                        // stays. A store that lost its board would read it whole here, so the
+                        // event stays refused under Needs you.
                         if (store.held().isEmpty()) {
                             throw moved;
                         }
+                        final Snapshot now = session.read();
+                        final Map<String, Run> runs = new LinkedHashMap<>(now.runs());
+                        runs.put(run.story(), run);
                         final Snapshot base =
-                                new Snapshot(
-                                        session.read().generation(),
-                                        snapshot.runs(),
-                                        snapshot.ideas(),
-                                        snapshot.results());
-                        final Board now = store.board();
-                        final Judged again = judge(base, run, known, task, report, now);
-                        return answer(saved(session, base, again, now), again.following());
+                                new Snapshot(now.generation(), runs, now.ideas(), now.results());
+                        final Board read = store.board();
+                        final Judged again = judge(base, run, known, task, report, read);
+                        return answer(saved(session, base, again, read), again.following());
                     }
                 });
+    }
+
+    /** The store's refusals that come before it writes anything. */
+    private static final Set<String> BEFORE_WRITING =
+            Set.of("Changed", "BasisIncomplete", "StaleRevision", "NotSavable", "NoForgeAccess");
+
+    /**
+     * Whether an offer's event stands recorded with a refusal the store gave before it wrote
+     * anything, so the task's next identical report saves what its judgment planned once more.
+     */
+    private static boolean unsaved(final Run run, final Offer known) {
+        final SaveFailure refusal = known.refusal();
+        return !run.halted() && refusal != null && BEFORE_WRITING.contains(refusal.name());
+    }
+
+    /**
+     * Judges an event the store refused before writing once more, on the board read now, from the
+     * offer as it stood before the event, and saves it; a state the board already holds writes
+     * nothing, and a save that stands clears the refusal.
+     */
+    private Answer again(
+            final Session session,
+            final Snapshot snapshot,
+            final Run run,
+            final Offer known,
+            final String task,
+            final Report report) {
+        final boolean start = report.event() == Event.STARTED;
+        if (start && run.stopped()) {
+            throw WorkRefusal.taskNotAnswered(task, report.offer());
+        }
+        final Offer before =
+                new Offer(
+                        known.id(),
+                        known.arguments(),
+                        known.binding(),
+                        start ? "OFFERED" : "STARTED",
+                        start ? null : known.task(),
+                        start ? null : known.containerId(),
+                        start ? null : known.machine(),
+                        known.since(),
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null,
+                        known.reviewAnyway(),
+                        known.reworkComment(),
+                        known.rework());
+        final Draft draft = new Draft(run);
+        draft.set(before);
+        known.binding()
+                .issues()
+                .forEach(
+                        id ->
+                                draft.progress.computeIfPresent(
+                                        id,
+                                        (key, p) ->
+                                                p.reason().equals("SAVE_REFUSED")
+                                                        ? new NextStep.Progress(
+                                                                p.rounds(),
+                                                                p.findings(),
+                                                                false,
+                                                                "NONE",
+                                                                p.answer())
+                                                        : p));
+        final Run reverted = draft.freeze();
+        final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
+        runs.put(run.story(), reverted);
+        final Snapshot base =
+                new Snapshot(snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
+        final Board board = store.board();
+        final Judged judged = judge(base, reverted, before, task, report, board);
+        return answer(saved(session, snapshot, judged, board), judged.following());
     }
 
     /** An event's judgment on one board: the record and run to save and the store's writes. */
@@ -836,13 +958,14 @@ public final class WorkRun {
 
     /**
      * Saves a task's start or end against the versions of the items its judgment read on the board,
-     * so only a change of one of them refuses it; a refusal restores the record from before the
-     * judgment.
+     * so only a change of one of them refuses it; a refusal before writing keeps the event with the
+     * refusal under Needs you.
      */
     private Run saved(
             final Session session, final Snapshot before, final Judged judged, final Board board) {
         return save(
                 session,
+                false,
                 before,
                 judged.recorded(),
                 judged.draft(),
@@ -1028,8 +1151,10 @@ public final class WorkRun {
         final HandedResults.Handed handed = snapshot.results().get(known.id());
         if (handed != null
                 && (HandedResults.SAVED.equals(handed.status())
-                        || HandedResults.WAITING.equals(handed.status()))) {
-            // A result waiting for the forge access is handed in again, its issues where they are.
+                        || HandedResults.WAITING.equals(handed.status())
+                        || HandedResults.PENDING.equals(handed.status()))) {
+            // A result waiting for the forge access is handed in again, its issues where they are;
+            // one whose save is still in flight moves them with that save.
             return snapshot;
         }
         final String why = HandedResults.why(handed);
@@ -1194,11 +1319,58 @@ public final class WorkRun {
 
     /**
      * Repairs the record once, as a project opens: a run a save left pending, which only a save
-     * that died midway leaves, is halted, and readers of an older record are named their builds.
-     * Readers do not repair, since a run pending while they read is a save's own in flight.
+     * that died midway leaves, is halted, and readers of an older record are named their builds. A
+     * result left pending is refused as not ended. Neither readers nor writers repair, since a run
+     * pending while they read is a save's own in flight.
      */
     public void repair() {
-        record.locked(this::read);
+        record.locked(
+                session -> {
+                    repaired(session);
+                    return read(session);
+                });
+    }
+
+    /**
+     * Halts each run a save left pending and refuses each result whose save did not end: at open no
+     * save of this planner is in flight, so every mark is one a stopped planner left.
+     */
+    private static void repaired(final Session session) {
+        final Snapshot read = session.read();
+        final Map<String, Run> runs = new LinkedHashMap<>(read.runs());
+        for (final Run run : read.runs().values()) {
+            if (run.pending() != null) {
+                final Draft draft = new Draft(run);
+                draft.pending = null;
+                draft.halted = true;
+                draft.voidOffers();
+                draft.progress.replaceAll((id, p) -> p.attention("SAVE_REFUSED"));
+                runs.put(run.story(), draft.freeze());
+            }
+        }
+        Snapshot snapshot = new Snapshot(read.generation(), runs, read.ideas(), read.results());
+        for (final Map.Entry<String, HandedResults.Handed> result : read.results().entrySet()) {
+            final HandedResults.Handed known = result.getValue();
+            if (HandedResults.PENDING.equals(known.status())) {
+                snapshot =
+                        HandedResults.with(
+                                snapshot,
+                                result.getKey(),
+                                HandedResults.REFUSED,
+                                known.task(),
+                                known.issues(),
+                                List.of(HandedResults.NOT_ENDED),
+                                "");
+            }
+        }
+        if (!snapshot.equals(read)) {
+            session.write(
+                    new Snapshot(
+                            Math.max(snapshot.generation(), read.generation() + 1),
+                            snapshot.runs(),
+                            snapshot.ideas(),
+                            snapshot.results()));
+        }
     }
 
     /**
@@ -1696,9 +1868,11 @@ public final class WorkRun {
                         throw HandedResults.refused(
                                 "offer: The offer's task hands back no result.");
                     }
-                    // A result the forge refused for access stays to be handed in after the end.
+                    // A result the forge refused for access stays to be handed in after the end,
+                    // as does one whose end the store refused before it wrote anything.
                     if (!(bound.status().equals("STARTED")
-                                    || waiting && bound.status().equals("ENDED"))
+                                    || bound.status().equals("ENDED")
+                                            && (waiting || unsaved(run, bound)))
                             || run.stopped()
                             || run.halted()) {
                         throw HandedResults.refused("offer: The offer's task is not at work.");
@@ -1774,39 +1948,36 @@ public final class WorkRun {
                         binding.state(),
                         binding.rule().done(),
                         java.util.Objects.requireNonNull(handIn.result()));
-        final Snapshot pending =
-                HandedResults.with(
-                        snapshot,
-                        offer,
-                        HandedResults.PENDING,
-                        task,
-                        binding.issues(),
-                        List.of(),
-                        "");
-        write(session, pending);
+        final String save = UUID.randomUUID().toString();
+        final HandedResults.@Nullable Handed before = snapshot.results().get(offer);
+        write(session, HandedResults.pending(snapshot, offer, task, binding.issues(), save));
         final Board saved;
         try {
             saved = store.saveResult(result);
         } catch (final UnsupportedOperationException notOffered) {
             // A store that saves no result saved nothing, so the window may hand it in again.
-            session.write(snapshot);
+            settleResult(session, offer, save, now -> HandedResults.kept(now, offer, before));
             throw notOffered;
         } catch (final StoreException.NoForgeAccess noAccess) {
             // Nothing was written; kept as waiting, so the task's end loses no result handed in
-            // again once the person handed a token on.
-            session.write(
-                    HandedResults.with(
-                            snapshot,
-                            offer,
-                            HandedResults.WAITING,
-                            task,
-                            binding.issues(),
-                            List.of(),
-                            ""));
+            // again once the owner account handed a token on.
+            settleResult(
+                    session,
+                    offer,
+                    save,
+                    now ->
+                            HandedResults.with(
+                                    now,
+                                    offer,
+                                    HandedResults.WAITING,
+                                    task,
+                                    binding.issues(),
+                                    List.of(),
+                                    ""));
             throw noAccess;
         } catch (final StoreException.Busy | StoreException.StaleRevision notStarted) {
             // The store refuses these before it writes anything, so the window tries again later.
-            session.write(snapshot);
+            settleResult(session, offer, save, now -> HandedResults.kept(now, offer, before));
             throw notStarted;
         } catch (final RuntimeException failed) {
             final List<String> said =
@@ -1816,30 +1987,57 @@ public final class WorkRun {
                                             failed.getMessage() == null
                                                     ? failed.getClass().getSimpleName()
                                                     : failed.getMessage()));
-            session.write(
-                    HandedResults.with(
-                            pending,
-                            offer,
-                            HandedResults.REFUSED,
-                            task,
-                            binding.issues(),
-                            said,
-                            ""));
+            settleResult(
+                    session,
+                    offer,
+                    save,
+                    now ->
+                            HandedResults.with(
+                                    now,
+                                    offer,
+                                    HandedResults.REFUSED,
+                                    task,
+                                    binding.issues(),
+                                    said,
+                                    ""));
             throw HandedResults.refused(said);
         }
-        session.write(
-                HandedResults.with(
-                        pending,
-                        offer,
-                        HandedResults.SAVED,
-                        task,
-                        binding.issues(),
-                        List.of(),
-                        ""));
+        settleResult(
+                session,
+                offer,
+                save,
+                now ->
+                        HandedResults.with(
+                                now,
+                                offer,
+                                HandedResults.SAVED,
+                                task,
+                                binding.issues(),
+                                List.of(),
+                                ""));
         return new HandedResults.Answer(HandedResults.SAVED, saved, binding.issues());
     }
 
-    /** Answers an offer's recorded outcome; a save left pending is refused from now on. */
+    /**
+     * Writes a result save's outcome for its own offer alone, on the record as it stands now;
+     * refused when the offer's pending result is not this save's.
+     */
+    private static void settleResult(
+            final Session session,
+            final String offer,
+            final String save,
+            final java.util.function.UnaryOperator<Snapshot> outcome) {
+        final Snapshot now = session.read();
+        final HandedResults.Handed standing = now.results().get(offer);
+        if (standing == null
+                || !HandedResults.PENDING.equals(standing.status())
+                || !save.equals(standing.save())) {
+            throw new IllegalStateException("The result's mark is not this save's");
+        }
+        session.write(outcome.apply(now));
+    }
+
+    /** Answers an offer's recorded outcome; a save in flight is refused as in flight. */
     private HandedResults.Answer replayed(
             final Session session,
             final Snapshot snapshot,
@@ -1849,23 +2047,10 @@ public final class WorkRun {
             case HandedResults.SAVED, HandedResults.MISSING -> {
                 return new HandedResults.Answer(known.status(), store.board(), known.issues());
             }
-            case HandedResults.PENDING -> {
-                final List<String> said =
-                        List.of(
-                                "result: The save of this offer's result did not end and is not"
-                                        + " made again.");
-                write(
-                        session,
-                        HandedResults.with(
-                                snapshot,
-                                offer,
-                                HandedResults.REFUSED,
-                                known.task(),
-                                known.issues(),
-                                said,
-                                ""));
-                throw HandedResults.refused(said);
-            }
+            case HandedResults.PENDING ->
+                    // Its own save is still at the store, which alone settles it; a save a stopped
+                    // planner left is refused by the repair at open.
+                    throw HandedResults.refused(List.of(HandedResults.IN_FLIGHT));
             default -> throw HandedResults.refused(known.faults());
         }
     }
@@ -2330,7 +2515,7 @@ public final class WorkRun {
             final Session session, final Snapshot snapshot, final Set<String> moved) {
         Snapshot next = snapshot;
         for (final Run run : snapshot.runs().values()) {
-            if (run.pending()) {
+            if (run.pending() != null) {
                 continue;
             }
             final Draft draft = new Draft(run);
@@ -2392,7 +2577,10 @@ public final class WorkRun {
         }
     }
 
-    /** Saves a run's writes as {@link #save} does, with no rule read again by the store. */
+    /**
+     * Saves the owner account's writes, or a run's that write nothing, as {@link #save} does,
+     * checked by the versions the owner account saw, with no rule read again by the store.
+     */
     private Run save(
             final Session session,
             final Snapshot snapshot,
@@ -2404,6 +2592,7 @@ public final class WorkRun {
             final Basis seen) {
         return save(
                 session,
+                true,
                 snapshot,
                 snapshot,
                 draft,
@@ -2416,13 +2605,17 @@ public final class WorkRun {
     }
 
     /**
-     * Saves a run's writes, pending first, and the run after them; a refused save halts the run.
+     * Saves a run's writes, pending first under a mark naming this save, and the run after them.
      * Writes are checked by the versions of their targets, the owner account's as it saw them and a
-     * task's as its judgment read them, and by the recheck's rule; a target or a read item changed
-     * since is refused as such, with the record restored to {@code before}.
+     * task's as its judgment read them, and by the recheck's rule. A refusal the store gives before
+     * writing anything leaves an owner account's run as it stood before the judgment, and keeps a
+     * task's event with the refusal under Needs you, for its next identical report to save again,
+     * with the offer's result as {@code before}, the record before the judgment, holds it; any
+     * other failure halts the run. Only this save's mark is settled, on the record as it is.
      */
     private Run save(
             final Session session,
+            final boolean owner,
             final Snapshot before,
             final Snapshot snapshot,
             final Draft draft,
@@ -2455,23 +2648,44 @@ public final class WorkRun {
             tell(draft);
             return saved;
         }
-        draft.pending = true;
+        final PendingSave mark = PendingSave.of(writes);
+        draft.pending = mark;
         final Snapshot pending = replace(snapshot, draft.freeze());
         preflight(session, pending, planned, issue);
         session.write(pending);
         try {
             store.save(seen, writes, recheck);
-        } catch (final StoreException.Changed | StoreException.BasisIncomplete stale) {
-            // Nothing was written: the record stands as it was before the judgment.
-            session.write(
-                    new Snapshot(
-                            pending.generation() + 1,
-                            before.runs(),
-                            before.ideas(),
-                            before.results()));
-            throw stale;
-        } catch (final StoreException | UnsupportedOperationException refused) {
-            draft.pending = false;
+        } catch (final StoreException.Changed
+                | StoreException.BasisIncomplete
+                | StoreException.StaleRevision
+                | StoreException.NotSavable
+                | StoreException.NoForgeAccess unwritten) {
+            if (owner) {
+                // Nothing was written: the owner account looks again, and the run stands as it
+                // was before the judgment.
+                settleOwn(session, mark, draft.story, snapshot.runs().get(draft.story));
+            } else {
+                // Nothing was written: the task's event stands with the refusal, under Needs
+                // you, and the task's next identical report saves it once more; the offer's
+                // result stands as before the judgment, so a result handed in later is taken.
+                final HandedResults.@Nullable Handed result = before.results().get(eventOffer);
+                settleOwn(
+                        session,
+                        mark,
+                        draft.story,
+                        refusedEvent(snapshot, draft, eventOffer, unwritten),
+                        results -> {
+                            if (result == null) {
+                                results.remove(eventOffer);
+                            } else {
+                                results.put(eventOffer, result);
+                            }
+                            return results;
+                        });
+            }
+            throw unwritten;
+        } catch (final RuntimeException refused) {
+            draft.pending = null;
             draft.halted = true;
             draft.voidOffers();
             draft.progress.replaceAll((id, p) -> p.attention("SAVE_REFUSED"));
@@ -2492,18 +2706,114 @@ public final class WorkRun {
                                             o.fingerprint(),
                                             List.of(),
                                             List.of(),
-                                            SaveFailure.of(refused),
+                                            refused instanceof StoreException
+                                                            || refused
+                                                                    instanceof
+                                                                    UnsupportedOperationException
+                                                    ? SaveFailure.of(refused)
+                                                    : null,
                                             o.reviewAnyway(),
                                             o.reworkComment(),
                                             o.rework()));
-            session.write(replace(pending, draft.freeze()));
+            settleOwn(session, mark, draft.story, draft.freeze());
             throw refused;
         }
-        draft.pending = false;
+        draft.pending = null;
         final Run saved = draft.freeze();
-        session.write(replace(pending, saved));
+        settleOwn(session, mark, draft.story, saved);
         tell(draft);
         return saved;
+    }
+
+    /**
+     * Writes a save's outcome for its own run alone, on the record as it stands now, so another
+     * save's mark is never written back over; refused when the run's mark is not this save's.
+     *
+     * @param session the record
+     * @param mark the save's own mark
+     * @param story the run's story
+     * @param run the run as the save leaves it, or null when the save leaves none
+     */
+    private static void settleOwn(
+            final Session session,
+            final PendingSave mark,
+            final String story,
+            final @Nullable Run run) {
+        settleOwn(session, mark, story, run, results -> results);
+    }
+
+    /**
+     * Settles as above, the handed results as they stand now changed by {@code results}, such as an
+     * offer's result put back to what it was before a refused event's judgment.
+     */
+    private static void settleOwn(
+            final Session session,
+            final PendingSave mark,
+            final String story,
+            final @Nullable Run run,
+            final java.util.function.UnaryOperator<Map<String, HandedResults.Handed>> results) {
+        final Snapshot now = session.read();
+        final Run standing = now.runs().get(story);
+        if (standing == null || !mark.equals(standing.pending())) {
+            throw new IllegalStateException("The run's mark is not this save's");
+        }
+        final Map<String, Run> runs = new LinkedHashMap<>(now.runs());
+        if (run == null) {
+            runs.remove(story);
+        } else {
+            runs.put(story, run);
+        }
+        session.write(
+                new Snapshot(
+                        now.generation() + 1,
+                        runs,
+                        now.ideas(),
+                        results.apply(new LinkedHashMap<>(now.results()))));
+    }
+
+    /**
+     * The run as it stood before a task's event, with the event recorded on its offer and the
+     * store's refusal kept there, its issues under Needs you; nothing else the event's judgment
+     * planned, such as a following task, is kept, since the store wrote nothing.
+     */
+    private static Run refusedEvent(
+            final Snapshot snapshot,
+            final Draft draft,
+            final String eventOffer,
+            final StoreException refused) {
+        final Run before = Objects.requireNonNull(snapshot.runs().get(draft.story));
+        final Offer accepted =
+                draft.offers.stream()
+                        .filter(o -> o.id().equals(eventOffer))
+                        .findFirst()
+                        .orElseThrow();
+        final Draft kept = new Draft(before);
+        kept.pending = null;
+        kept.set(
+                new Offer(
+                        accepted.id(),
+                        accepted.arguments(),
+                        accepted.binding(),
+                        accepted.status(),
+                        accepted.task(),
+                        accepted.containerId(),
+                        accepted.machine(),
+                        accepted.since(),
+                        accepted.ended(),
+                        accepted.fingerprint(),
+                        List.of(),
+                        List.of(),
+                        SaveFailure.of(refused),
+                        accepted.reviewAnyway(),
+                        accepted.reworkComment(),
+                        accepted.rework()));
+        accepted.binding()
+                .issues()
+                .forEach(
+                        id ->
+                                kept.progress.computeIfPresent(
+                                        id, (key, p) -> p.attention("SAVE_REFUSED")));
+        return kept.freeze();
     }
 
     /**
@@ -2767,20 +3077,16 @@ public final class WorkRun {
         return new NextStep.Result(NOTHING, List.of(), attention, List.of(), unavailable);
     }
 
+    /**
+     * Reads the record for a writer, naming readers of an older record their builds; a run pending
+     * here is another save's in flight, which only that save settles, so nothing is halted.
+     */
     private Snapshot read(final Session session) {
         Snapshot snapshot = session.read();
         for (final Run run : List.copyOf(snapshot.runs().values())) {
-            if (run.pending()) {
-                final Draft draft = new Draft(run);
-                draft.pending = false;
-                draft.halted = true;
-                draft.voidOffers();
-                draft.progress.replaceAll((id, p) -> p.attention("SAVE_REFUSED"));
-                snapshot = replace(snapshot, draft.freeze());
-                session.write(snapshot);
+            if (run.pending() != null) {
+                continue;
             }
-        }
-        for (final Run run : List.copyOf(snapshot.runs().values())) {
             final Draft draft = new Draft(run);
             final Run named = readersNamingTheirBuilds(run, draft);
             if (named != run) {
@@ -2907,7 +3213,8 @@ public final class WorkRun {
                         .collect(java.util.stream.Collectors.toSet());
         final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
         for (final Run run : snapshot.runs().values()) {
-            if (shown.contains(run.story())) {
+            // A run whose save is in flight is settled by that save alone.
+            if (shown.contains(run.story()) || run.pending() != null) {
                 continue;
             }
             final List<String> working =
@@ -2925,7 +3232,15 @@ public final class WorkRun {
                 : new Snapshot(snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
     }
 
+    /**
+     * The record with one run replaced; a run whose save is in flight is refused as changed, so a
+     * writer that would change it neither halts it nor passes its save.
+     */
     private static Snapshot replace(final Snapshot snapshot, final Run run) {
+        final Run standing = snapshot.runs().get(run.story());
+        if (standing != null && standing.pending() != null) {
+            throw WorkRefusal.runChanged(run.story(), "The run's save is still in flight.");
+        }
         final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
         runs.put(run.story(), run);
         if (snapshot.generation() == Long.MAX_VALUE) {
@@ -3462,7 +3777,7 @@ public final class WorkRun {
         private final Map<String, String> unavailable = new LinkedHashMap<>();
         private boolean stopped;
         private boolean halted;
-        private boolean pending;
+        private @Nullable PendingSave pending;
 
         private Draft(final Run run) {
             original = run;
