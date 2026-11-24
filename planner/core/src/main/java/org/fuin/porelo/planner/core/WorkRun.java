@@ -809,19 +809,23 @@ public final class WorkRun {
                     final Board board = store.board();
                     final Judged judged = judge(snapshot, run, known, task, report, board);
                     try {
-                        return answer(saved(session, judged, board), judged.following());
-                    } catch (final StoreException.StaleRevision moved) {
-                        // Nothing was pushed and the run stands halted, so the event is judged
-                        // once more on the board as it is now and saved once more.
+                        return answer(saved(session, snapshot, judged, board), judged.following());
+                    } catch (final StoreException.Changed moved) {
+                        // Nothing was written and the run stands as it was; the store holds the
+                        // items named read anew, so the event is judged once more on them. A
+                        // store that lost its board would read it whole here, so it is refused.
+                        if (store.held().isEmpty()) {
+                            throw moved;
+                        }
                         final Snapshot base =
                                 new Snapshot(
                                         session.read().generation(),
                                         snapshot.runs(),
                                         snapshot.ideas(),
                                         snapshot.results());
-                        final Board now = store.refresh();
+                        final Board now = store.board();
                         final Judged again = judge(base, run, known, task, report, now);
-                        return answer(saved(session, again, now), again.following());
+                        return answer(saved(session, base, again, now), again.following());
                     }
                 });
     }
@@ -830,16 +834,24 @@ public final class WorkRun {
     private record Judged(
             Snapshot recorded, Draft draft, Writes writes, String offer, List<String> following) {}
 
-    private Run saved(final Session session, final Judged judged, final Board board) {
+    /**
+     * Saves a task's start or end against the versions of the items its judgment read on the board,
+     * so only a change of one of them refuses it; a refusal restores the record from before the
+     * judgment.
+     */
+    private Run saved(
+            final Session session, final Snapshot before, final Judged judged, final Board board) {
         return save(
                 session,
+                before,
                 judged.recorded(),
                 judged.draft(),
                 judged.writes(),
                 judged.offer(),
                 board,
                 null,
-                null);
+                Basis.of(board),
+                RunReads.recheck(board, judged.draft().story));
     }
 
     /** Judges a task's start or end on one board, refusing an event that board no longer allows. */
@@ -2393,12 +2405,7 @@ public final class WorkRun {
         }
     }
 
-    /**
-     * Saves a run's writes, pending first, and the run after them; a refused save halts the run.
-     * Writes given the versions a person saw are checked by their targets alone, and a target
-     * changed since is refused as such with the run left as it stood; writes without them, a task's
-     * start or end, go against the revision of {@code base}.
-     */
+    /** Saves a run's writes as {@link #save} does, with no rule read again by the store. */
     private Run save(
             final Session session,
             final Snapshot snapshot,
@@ -2407,7 +2414,37 @@ public final class WorkRun {
             final String eventOffer,
             final Board base,
             final @Nullable String issue,
-            final @Nullable Basis seen) {
+            final Basis seen) {
+        return save(
+                session,
+                snapshot,
+                snapshot,
+                draft,
+                writes,
+                eventOffer,
+                base,
+                issue,
+                seen,
+                Recheck.none());
+    }
+
+    /**
+     * Saves a run's writes, pending first, and the run after them; a refused save halts the run.
+     * Writes are checked by the versions of their targets, the owner account's as it saw them and a
+     * task's as its judgment read them, and by the recheck's rule; a target or a read item changed
+     * since is refused as such, with the record restored to {@code before}.
+     */
+    private Run save(
+            final Session session,
+            final Snapshot before,
+            final Snapshot snapshot,
+            final Draft draft,
+            final Writes writes,
+            final String eventOffer,
+            final Board base,
+            final @Nullable String issue,
+            final Basis seen,
+            final Recheck recheck) {
         final Run finalRun = draft.freeze();
         final Board planned = issue == null ? base : staged(base, writes.issues());
         try {
@@ -2436,19 +2473,15 @@ public final class WorkRun {
         preflight(session, pending, planned, issue);
         session.write(pending);
         try {
-            if (seen == null) {
-                store.save(base.revision(), writes);
-            } else {
-                store.save(seen, writes, Recheck.none());
-            }
+            store.save(seen, writes, recheck);
         } catch (final StoreException.Changed | StoreException.BasisIncomplete stale) {
-            // Nothing was written: the person looks again, and the run stands as it was.
+            // Nothing was written: the record stands as it was before the judgment.
             session.write(
                     new Snapshot(
                             pending.generation() + 1,
-                            snapshot.runs(),
-                            snapshot.ideas(),
-                            snapshot.results()));
+                            before.runs(),
+                            before.ideas(),
+                            before.results()));
             throw stale;
         } catch (final StoreException | UnsupportedOperationException refused) {
             draft.pending = false;

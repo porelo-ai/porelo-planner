@@ -11,9 +11,12 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Dependencies;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.junit.jupiter.api.Test;
@@ -111,31 +114,19 @@ class HandedIdeasTest {
     }
 
     @Test
-    void aStaleRevisionRefreshesAndTriesOnceMore() {
-        // The planner, not the window, holds the revision; a store moved by another save is normal.
-        store.failures.add(new StoreException.StaleRevision("r2"));
+    void anIdeaIsSavedOnABoardAnotherSaveMovedWithoutReadingItWhole() {
+        // Harm: every idea handed in after another save reads the whole project inside the work
+        // record's lock, or is refused though it changes no item held.
+        store.moved = true;
 
         assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
-                .as("the idea is saved on the second try")
+                .as("the idea is saved on the first try")
                 .isEqualTo("ST1");
-        assertThat(store.refreshes).as("one refresh").isEqualTo(1);
-        assertThat(store.attempts).as("two tries").isEqualTo(2);
-    }
-
-    @Test
-    void aSecondStaleRevisionIsAnsweredAndLeavesTheOfferFreeForARetry() {
-        // A loop of refreshes would hang the call; a kept pending offer would refuse every retry.
-        store.failures.add(new StoreException.StaleRevision("r2"));
-        store.failures.add(new StoreException.StaleRevision("r3"));
-
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the second stale revision is answered")
-                .isInstanceOf(StoreException.StaleRevision.class);
-        assertThat(store.attempts).as("two tries, no more").isEqualTo(2);
-        assertThat(record.value.ideas()).as("the offer is not kept").doesNotContainKey(OFFER);
-        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
-                .as("a retry saves")
-                .isEqualTo("ST1");
+        assertThat(store.refreshes).as("no whole read").isZero();
+        assertThat(store.attempts).as("one try").isEqualTo(1);
+        assertThat(store.bases)
+                .as("saved against no item's version, since it changes none")
+                .containsExactly(Basis.none());
     }
 
     @Test
@@ -346,6 +337,12 @@ class HandedIdeasTest {
 
         int refreshes;
 
+        /** Whether another save moved the board since it was read, so its revision is stale. */
+        boolean moved;
+
+        /** The versions each save by its items was checked against. */
+        final List<Basis> bases = new ArrayList<>();
+
         Board shown = NewIdeasTest.BOARD;
 
         @Override
@@ -360,7 +357,23 @@ class HandedIdeasTest {
         }
 
         @Override
+        public NewIdea.Added createIdea(
+                final Basis basis, final NewIdea idea, final Recheck recheck) {
+            bases.add(basis);
+            recheck.rule().accept(Dependencies.of(shown));
+            return made(idea);
+        }
+
+        @Override
         public NewIdea.Added createIdea(final Revision revision, final NewIdea idea) {
+            if (moved) {
+                attempts++;
+                throw new StoreException.StaleRevision("moved");
+            }
+            return made(idea);
+        }
+
+        private NewIdea.Added made(final NewIdea idea) {
             attempts++;
             final var check = during;
             if (check != null) {

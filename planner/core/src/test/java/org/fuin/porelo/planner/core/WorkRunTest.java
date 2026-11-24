@@ -20,6 +20,7 @@ import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
@@ -5542,8 +5543,9 @@ class WorkRunTest {
     }
 
     @Test
-    void aStartOnABoardThatMovedItsIssueAwayStillHaltsTheRunNamingWhy() {
-        // Prevents a start saved for issues the moved board no longer gives this story.
+    void aStartOnABoardThatMovedItsIssueAwayIsRefusedNamingWhyAndHaltsNothing() {
+        // Harm: a start saved for issues the moved board no longer gives this story, or a run
+        // halted by a refusal that came before anything was written.
         final Fixture f = new Fixture();
         final WorkRun.Offered offer = f.order().tasks().getFirst();
         f.store.moves.add(
@@ -5577,30 +5579,415 @@ class WorkRunTest {
                                         .as("why")
                                         .isEqualTo("The offered ownership has changed."));
         final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
-        assertThat(run.halted()).as("the run halts").isTrue();
+        assertThat(run.halted()).as("nothing was written, so the run does not halt").isFalse();
         assertThat(run.pending()).as("no save is left pending").isFalse();
         assertThat(f.store.saves).as("nothing was saved").isZero();
     }
 
+    /** Checks the fixture's saves by items, as GitHub's store does, with these issues added. */
+    private static void itemsChecked(final Fixture f, final Issue... added) {
+        final Board held = f.store.current;
+        final List<Issue> issues = new java.util.ArrayList<>(held.issues());
+        issues.addAll(List.of(added));
+        final Board board =
+                new Board(
+                        held.revision(),
+                        held.workflow(),
+                        held.stories(),
+                        issues,
+                        held.work(),
+                        held.repositories());
+        f.store.current = board;
+        f.store.github = board;
+        f.store.itemsChecked = true;
+    }
+
+    /** The board with one issue's title or parent changed, as an edit on the tracker. */
+    private static Board edited(
+            final Board board, final String id, final String title, final @Nullable String parent) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        !i.id().equals(id)
+                                                ? i
+                                                : new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        title,
+                                                        i.state(),
+                                                        i.size(),
+                                                        i.blockedBy(),
+                                                        parent,
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        i.risk()))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** The board with an issue closed on the tracker. */
+    private static Board closedOn(final Board board, final String id) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(
+                                i ->
+                                        !i.id().equals(id)
+                                                ? i
+                                                : new Issue(
+                                                        i.id(),
+                                                        i.repository(),
+                                                        i.title(),
+                                                        "Finished",
+                                                        i.size(),
+                                                        i.blockedBy(),
+                                                        i.parent(),
+                                                        i.link(),
+                                                        i.text(),
+                                                        i.worker(),
+                                                        i.risk()))
+                        .toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** An issue outside the story, in its first state. */
+    private static Issue apart(final String id, final @Nullable String parent) {
+        return new Issue(id, "alpha", "Apart", "Backlog", null, List.of(), parent, null, "");
+    }
+
     @Test
-    void aStartOnABoardThatMovesOnEverySaveHaltsTheRunAfterTheSecondTry() {
-        // Prevents a run that retries without end, and a start saved on a board it never read.
+    void aTaskStartStandsThoughAnIssueOutsideItsStoryChangedBeforeItsSave() {
+        // Harm: task reports refused as stale whenever anything else on the board moved, and
+        // judged once more after a read of the whole project.
         final Fixture f = new Fixture();
+        itemsChecked(f, apart("BB1", null));
         final WorkRun.Offered offer = f.order().tasks().getFirst();
-        f.store.moves.add(board -> board);
-        f.store.moves.add(board -> board);
-        f.store.moves.add(board -> board);
+        final int before = f.store.attempts;
+        f.store.moves.add(board -> edited(board, "BB1", "Moved elsewhere", null));
+
+        f.start(offer);
+
+        assertThat(f.store.attempts - before).as("the start saved at its first try").isEqualTo(1);
+        assertThat(f.store.refreshes).as("no whole read").isZero();
+        assertThat(f.active("ST1")).as("the task is at work").containsExactly("task");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stands in the working state")
+                .isEqualTo("Building");
+    }
+
+    @Test
+    void aTaskEndWhoseOwnIssueChangedIsJudgedOnceMoreOnThatIssueReadAnew() {
+        // Harm: a whole read of a large project inside the work record's lock, or a task's end
+        // written over an edit made on the tracker since it was judged.
+        final Fixture f = new Fixture();
+        itemsChecked(f);
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final int before = f.store.attempts;
+        final int saved = f.store.saves;
+        f.store.moves.add(board -> edited(board, "AA1", "Renamed on the tracker", null));
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+
+        assertThat(f.store.attempts - before)
+                .as("refused once by the issue's version, then saved")
+                .isEqualTo(2);
+        assertThat(f.store.saves - saved).as("the end saved once").isEqualTo(1);
+        assertThat(f.store.refreshes).as("no whole read").isZero();
+        assertThat(f.store.board().issue("AA1").orElseThrow().title())
+                .as("the edit made on the tracker stands")
+                .isEqualTo("Renamed on the tracker");
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("the run goes on").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
+    }
+
+    @Test
+    void aSubIssueAttachedBeforeATaskEndsSaveIsReadBeforeTheEndIsJudgedOnceMore() {
+        // Harm: a task's end judged again without a sub-issue attached on the tracker since,
+        // so its parent advances over the open child.
+        final Fixture alone = new Fixture();
+        itemsChecked(alone, apart("AA1.1", "AA1"));
+        final WorkRun.Offered first = alone.order().tasks().getFirst();
+        alone.start(first);
+        alone.run.report(
+                "task",
+                new WorkRun.Report(
+                        first.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+        final String underChild = alone.store.board().issue("AA1").orElseThrow().state();
+
+        final Fixture f = new Fixture();
+        itemsChecked(f, apart("AA1.1", null));
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        f.store.moves.add(board -> edited(board, "AA1.1", "Apart", "AA1"));
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+
+        assertThat(f.store.board().issue("AA1.1").orElseThrow().parent())
+                .as("the sub-issue read anew under its parent")
+                .isEqualTo("AA1");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the parent where an end judged with its open child leaves it")
+                .isEqualTo(underChild);
+        assertThat(f.store.refreshes).as("no whole read").isZero();
+    }
+
+    @Test
+    void aStartWhoseStoreDroppedItsBoardIsRefusedWithoutAWholeRead() {
+        // Harm: the retry of a task's report reading the whole project inside the work record's
+        // lock, after the store failed to read the refused items again.
+        final Fixture f = new Fixture();
+        itemsChecked(f);
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final int before = f.store.attempts;
+        f.store.dropsBoard = true;
+        f.store.moves.add(board -> edited(board, "AA1", "Renamed on the tracker", null));
+
+        assertThatThrownBy(() -> f.start(offer))
+                .as("the refusal reaches the caller")
+                .isInstanceOf(StoreException.Changed.class);
+
+        assertThat(f.store.attempts - before).as("no second judgment is saved").isEqualTo(1);
+        assertThat(f.store.refreshes).as("no whole read under the lock").isZero();
+    }
+
+    /**
+     * A parent with two sub-issues, built and read, whose blocking findings lead into a rework that
+     * hands back an analysis: the parent read waits for its sub-issues, so its next step is taken
+     * when a later end of the run finds them past it.
+     */
+    private static Board stagedUnderParent() {
+        final org.fuin.porelo.planner.store.Workflow workflow =
+                new org.fuin.porelo.planner.store.Workflow(
+                        List.of(
+                                "Backlog",
+                                "Building",
+                                "Reading",
+                                "Reworking",
+                                "Review",
+                                "Finished"),
+                        List.of(),
+                        List.of("Finished"));
+        final WorkRule reworking =
+                new WorkRule(
+                        List.of("Reading"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Rework {story}: {issues}; {tasks}",
+                        Map.of("codex", "model"),
+                        Map.of(),
+                        WorkRule.Result.ANALYSIS);
+        return new Board(
+                new Revision("board@1"),
+                workflow,
+                List.of(
+                        new Story(
+                                "ST1",
+                                "Story",
+                                "Backlog",
+                                "High",
+                                null,
+                                List.of("AA1", "AA2"),
+                                "",
+                                null)),
+                List.of(
+                        new Issue(
+                                "AA1",
+                                "alpha",
+                                "Parent",
+                                "Backlog",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "**What must be true.** Preserve work."),
+                        new Issue(
+                                "AA1.1", "alpha", "Child", "Backlog", null, List.of(), "AA1", null,
+                                ""),
+                        new Issue(
+                                "AA2",
+                                "alpha",
+                                "Reworked",
+                                "Backlog",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "")),
+                new Work(
+                        Map.of(
+                                "Building",
+                                NextStepTest.rule("Building"),
+                                "Reading",
+                                NextStepTest.rule("Reading"),
+                                "Reworking",
+                                reworking),
+                        List.of()),
+                org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha")));
+    }
+
+    /** Ends a task, built or read without findings. */
+    private static List<WorkRun.Offered> ran(
+            final Fixture f, final WorkRun.Offered offer, final String answer) {
+        final String task = "task-" + offer.offer();
+        f.run.report(
+                task,
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        return f.run.report(
+                        task,
+                        new WorkRun.Report(
+                                offer.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended(answer)))
+                .tasks();
+    }
+
+    @Test
+    void aStagedEndRefusedBeforeItWroteLeavesTheResultHandedInLaterTaken() {
+        // Harm: a stage's end refused before anything was written keeps its result recorded as
+        // missing, so the result its task hands in afterwards is dropped.
+        final Fixture f = new Fixture();
+        f.store.current = stagedUnderParent();
+        itemsChecked(f);
+        // Two rounds of reading, so blocking findings lead to a choice of rework, not a stop.
+        final List<WorkRun.Offered> builds =
+                f.run.order(
+                                "ST1",
+                                "Building",
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 2, null),
+                                WorkRun.Start.NONE)
+                        .tasks();
+        final List<WorkRun.Offered> readers = new java.util.ArrayList<>();
+        // The sub-issue is built first, so the parent's build goes on to its reading.
+        for (final WorkRun.Offered build : builds.reversed()) {
+            readers.addAll(ran(f, build, "Built"));
+        }
+        // The parent's reading ends while its sub-issue still reads, so the parent waits.
+        ran(f, readerOf(readers, "AA1"), "Findings:\n");
+        ran(f, readerOf(readers, "AA2"), "Findings:\n1. blocking | - | - | Preserve data");
+        final WorkRun.Offered stage =
+                f.run.choose(
+                                "ST1",
+                                "AA2",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "",
+                                Basis.of(f.store.board()),
+                                null)
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "stage",
+                new WorkRun.Report(
+                        stage.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        // The sub-issue is closed on the tracker, so the stage's end takes the parent's step.
+        final Board closed = closedOn(java.util.Objects.requireNonNull(f.store.github), "AA1.1");
+        f.store.github = closed;
+        f.store.current = FakeStore.folded(f.store.current, closed, Set.of("AA1.1"));
+        f.store.moves.add(board -> edited(board, "AA1", "First edit", null));
+        f.store.moves.add(board -> edited(board, "AA1", "Second edit", null));
+        final int attempts = f.store.attempts;
+        final int saves = f.store.saves;
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "stage",
+                                        new WorkRun.Report(
+                                                stage.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "workstation",
+                                                new WorkRun.Ended(
+                                                        "2026-01-01T00:00:00Z",
+                                                        true,
+                                                        "",
+                                                        "Done",
+                                                        0))))
+                .as("the stage's end, refused before it wrote")
+                .isInstanceOf(StoreException.Changed.class);
+        assertThat(f.store.attempts - attempts)
+                .as("the end's step of the parent went to the store, and once more")
+                .isEqualTo(2);
+        assertThat(f.store.saves - saves).as("nothing was written").isZero();
+        assertThat(f.record.value.results())
+                .as("no outcome is recorded for the stage's offer")
+                .doesNotContainKey(stage.offer());
+
+        final HandedResults.Answer answer =
+                f.run.result(
+                        "stage",
+                        stage.offer(),
+                        HandedResultsTest.hand(
+                                HandedResultsTest.file(
+                                        HandedResultsTest.entry(
+                                                "AA2",
+                                                "Read the code.",
+                                                "M",
+                                                "One module.",
+                                                null))));
+
+        assertThat(answer.outcome())
+                .as("the result handed in later")
+                .isEqualTo(HandedResults.SAVED);
+        assertThat(f.store.board().issue("AA2").orElseThrow().state())
+                .as("the result moved its issue to the rule's done")
+                .isEqualTo("Review");
+    }
+
+    /** The reader offered for one issue. */
+    private static WorkRun.Offered readerOf(final List<WorkRun.Offered> readers, final String id) {
+        return readers.stream()
+                .filter(o -> o.task().issues().equals(List.of(id)))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void aStartWhoseIssueChangesBeforeEverySaveIsRefusedAfterItsSecondJudgment() {
+        // Harm: a run that retries without end, a start saved over an edit made on the tracker,
+        // or a refusal before anything was written that halts the run.
+        final Fixture f = new Fixture();
+        itemsChecked(f);
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final int before = f.store.attempts;
+        f.store.moves.add(board -> edited(board, "AA1", "First edit", null));
+        f.store.moves.add(board -> edited(board, "AA1", "Second edit", null));
+        f.store.moves.add(board -> edited(board, "AA1", "Third edit", null));
+
         assertThatThrownBy(() -> f.start(offer))
                 .as("the second refusal reaches the caller")
-                .isInstanceOf(StoreException.StaleRevision.class);
-        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
-        assertThat(run.halted()).as("the run halts").isTrue();
-        assertThat(run.pending()).as("no save is left pending").isFalse();
-        assertThat(run.issues().get("AA1").reason())
-                .as("the issue needs attention")
-                .isEqualTo("SAVE_REFUSED");
-        assertThat(f.store.moved).as("the save was tried exactly twice").isEqualTo(2);
+                .isInstanceOf(StoreException.Changed.class);
+
+        assertThat(f.store.attempts - before).as("the save was tried exactly twice").isEqualTo(2);
         assertThat(f.store.saves).as("nothing was saved").isZero();
+        assertThat(f.store.refreshes).as("no whole read").isZero();
+        final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(run.halted()).as("a refusal before the write halts nothing").isFalse();
+        assertThat(run.pending()).as("no save is left pending").isFalse();
     }
 
     @Test
@@ -5917,16 +6304,126 @@ class WorkRunTest {
                             source.repositories());
         }
 
-        /** Returns exactly the saved planning state. */
+        /** Returns exactly the saved planning state, read whole once the board was dropped. */
         @Override
         public Board board() {
+            if (dropped) {
+                dropped = false;
+                return refresh();
+            }
             return current;
         }
+
+        /**
+         * Whether saves by versions are checked as GitHub's store checks them: against the items
+         * read afresh from {@link #github}, which the queued moves change, the board held showing
+         * only what a refused save names read anew.
+         */
+        boolean itemsChecked;
+
+        /** The board as the tracker holds it, in the mode that checks items. */
+        @Nullable Board github;
+
+        /** The saves by versions asked for, refused or not. */
+        int attempts;
+
+        /** Whether a refused save fails to read its items again, so the store drops its board. */
+        boolean dropsBoard;
+
+        /** Whether the board is dropped, so the next answer reads it whole. */
+        boolean dropped;
+
+        @Override
+        public java.util.Optional<Revision> held() {
+            return dropped ? java.util.Optional.empty() : java.util.Optional.of(current.revision());
+        }
+
+        /** The whole reads asked for. */
+        int refreshes;
 
         /** Models refresh without another system. */
         @Override
         public Board refresh() {
+            refreshes++;
+            final Board truth = github;
+            if (itemsChecked && truth != null) {
+                current = truth;
+            }
             return current;
+        }
+
+        /** Checks items as GitHub's store does in the mode that checks items, else as any store. */
+        @Override
+        public Board save(final Basis basis, final Writes writes, final Recheck recheck) {
+            attempts++;
+            if (failure != null) {
+                throw failure;
+            }
+            final Board truth = github;
+            if (!itemsChecked || truth == null) {
+                return PlanningStore.super.save(basis, writes, recheck);
+            }
+            Board now = truth;
+            final java.util.function.UnaryOperator<Board> move = moves.poll();
+            if (move != null) {
+                moved++;
+                now = move.apply(now);
+                github = now;
+            }
+            // One read before the write: the targets, the items the rule names and their
+            // sub-issues, as the tracker holds them, folded onto the board held.
+            final java.util.Set<String> read = new java.util.TreeSet<>(writes.targets());
+            read.addAll(recheck.from());
+            now.issues().stream()
+                    .filter(i -> i.parent() != null && recheck.from().contains(i.parent()))
+                    .forEach(i -> read.add(i.id()));
+            final Board fresh = folded(current, now, read);
+            try {
+                basis.unchanged(fresh, writes.targets());
+                recheck.rule().accept(org.fuin.porelo.planner.store.Dependencies.of(fresh));
+            } catch (final StoreException.Changed changed) {
+                // The store reads the items named again, and only those.
+                if (dropsBoard) {
+                    dropped = true;
+                } else {
+                    current = folded(current, now, java.util.Set.copyOf(changed.ids()));
+                }
+                throw changed;
+            }
+            current = now;
+            final Board saved = written(writes);
+            github = saved;
+            return saved;
+        }
+
+        /** The board held with the items named as the tracker holds them. */
+        static Board folded(final Board held, final Board truth, final java.util.Set<String> ids) {
+            final List<Issue> issues = new java.util.ArrayList<>();
+            for (final Issue issue : held.issues()) {
+                if (!ids.contains(issue.id())) {
+                    issues.add(issue);
+                } else {
+                    truth.issue(issue.id()).ifPresent(issues::add);
+                }
+            }
+            truth.issues().stream()
+                    .filter(i -> ids.contains(i.id()) && held.issue(i.id()).isEmpty())
+                    .forEach(issues::add);
+            final List<Story> stories = new java.util.ArrayList<>();
+            for (final Story story : held.stories()) {
+                if (!ids.contains(story.id())) {
+                    stories.add(story);
+                } else {
+                    truth.story(story.id()).ifPresent(stories::add);
+                }
+            }
+            return new Board(
+                    new Revision(held.revision().value() + "+"),
+                    held.workflow(),
+                    stories,
+                    issues,
+                    held.work(),
+                    held.repositories());
         }
 
         /** Makes store writes observable and can refuse before changing them. */
@@ -5951,6 +6448,11 @@ class WorkRunTest {
             if (!revision.equals(current.revision())) {
                 throw new StoreException.StaleRevision(current.revision().value());
             }
+            return written(writes);
+        }
+
+        /** Writes onto the board held, as the store's read after its writes shows them. */
+        private Board written(final Writes writes) {
             saves++;
             final List<Issue> issues =
                     current.issues().stream()
@@ -6010,6 +6512,25 @@ class WorkRunTest {
                             current.work(),
                             current.repositories());
             return current;
+        }
+
+        /** The stage results saved. */
+        final List<org.fuin.porelo.planner.store.StageResult> results = new java.util.ArrayList<>();
+
+        /** Saves a stage's result by moving its issues to the states it names. */
+        @Override
+        public Board saveResult(final org.fuin.porelo.planner.store.StageResult result) {
+            if (failure != null) {
+                throw failure;
+            }
+            results.add(result);
+            final Map<String, String> moved = new java.util.LinkedHashMap<>();
+            result.issues().forEach(issue -> moved.put(issue.id(), issue.to()));
+            final Board saved = written(new Writes(moved, Map.of()));
+            if (itemsChecked) {
+                github = saved;
+            }
+            return saved;
         }
 
         /** One issue's state is the aggregate in this fixture. */

@@ -1,0 +1,2 @@
+title: A task's start and end are refused only when an item they read changed, not when another item of the board moved, and are judged once more on the items read anew without a whole read of the project.
+type: fixed

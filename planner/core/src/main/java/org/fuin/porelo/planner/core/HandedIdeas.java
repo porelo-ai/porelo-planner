@@ -4,11 +4,14 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.StoreException;
 import org.jspecify.annotations.Nullable;
 
@@ -123,8 +126,8 @@ public final class HandedIdeas {
         if (known != null) {
             return known(known);
         }
-        Board board = store.board();
-        NewIdea checked = NewIdeas.check(board, idea, shape);
+        final Board board = store.board();
+        final NewIdea checked = NewIdeas.check(board, idea, shape);
         // A run whose story is gone would be taken over by a new story saved under its ID; it goes
         // in the same write that records the save as pending, so no stop between them keeps it.
         final WorkRun.Snapshot pending =
@@ -136,16 +139,17 @@ public final class HandedIdeas {
         session.write(pending);
         final NewIdea.Added added;
         try {
-            NewIdea.Added saved;
-            try {
-                saved = store.createIdea(board.revision(), checked);
-            } catch (final StoreException.StaleRevision stale) {
-                // Nothing was pushed, so the idea is saved once against the board as it is now.
-                board = store.refresh();
-                checked = NewIdeas.check(board, idea, shape);
-                saved = store.createIdea(board.revision(), checked);
-            }
-            added = saved;
+            // An idea changes no item held, so no other save refuses it and no board is read
+            // whole; its own check runs once more where the store saves it.
+            added =
+                    store.createIdea(
+                            Basis.none(),
+                            checked,
+                            new Recheck(
+                                    Set.of(),
+                                    Set.of(),
+                                    dependencies ->
+                                            NewIdeas.check(dependencies.board(), idea, shape)));
         } catch (final StoreException.PartlySaved partly) {
             session.write(
                     with(pending, offer, new Handed(PARTLY, null, partly.pushed(), next(pending))));
