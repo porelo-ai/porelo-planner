@@ -144,6 +144,38 @@ class HandedIdeasTest {
     }
 
     @Test
+    void aRefusalThatMayHaveWrittenKeepsTheOfferPendingSoAResendMakesNoSecondIdea() {
+        // Harm: a resent hand-in saves the idea once more after a save whose story may stand.
+        store.failures.add(new StoreException.Unreachable("alpha", "timed out"));
+
+        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("the store's refusal is answered")
+                .isInstanceOf(StoreException.Unreachable.class);
+        assertThat(record.value.ideas())
+                .as("the offer kept pending")
+                .hasEntrySatisfying(OFFER, kept -> assertThat(kept.status()).isEqualTo("PENDING"));
+        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("the resend refused")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(store.attempts).as("the store asked once").isEqualTo(1);
+    }
+
+    @Test
+    void anIdeaItsOwnCheckRefusesWhereTheStoreSavesLeavesTheOfferFree() {
+        // Harm: an idea refused for good by a check that runs before the store writes anything.
+        store.failures.add(
+                WorkRefusal.ideaRefused("The idea is refused.", List.of("title: taken"), null));
+
+        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("the check's refusal is answered")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(record.value.ideas()).as("the offer is not kept").isEmpty();
+        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
+                .as("a retry saves")
+                .isEqualTo("ST1");
+    }
+
+    @Test
     void theOfferIsRecordedAsPendingBeforeTheStoreSaves() {
         // A save that is not preceded by its record cannot be told from a fresh offer after a stop.
         store.during = () -> record.value.ideas().get(OFFER).status();

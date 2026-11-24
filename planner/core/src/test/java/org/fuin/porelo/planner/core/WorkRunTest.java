@@ -17,6 +17,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Command;
+import org.fuin.porelo.planner.store.CommandGroup;
+import org.fuin.porelo.planner.store.CommandOutcome;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
@@ -1287,7 +1290,7 @@ class WorkRunTest {
                         "box",
                         "workstation",
                         ended("Findings:\n1. blocking | - | - | Preserve data")));
-        f.store.failure = new StoreException.Busy("alpha");
+        f.store.failure = new StoreException.Unreachable("alpha", "timed out");
         assertThatThrownBy(
                         () ->
                                 f.run.choose(
@@ -1299,7 +1302,7 @@ class WorkRunTest {
                                         Basis.of(f.store.board()),
                                         null))
                 .as("the refused choice save halts the run after a counted reading")
-                .isInstanceOf(StoreException.Busy.class);
+                .isInstanceOf(StoreException.Unreachable.class);
         f.store.failure = null;
         final var decision =
                 new WorkOrder.Decision("AGENT", Basis.of(f.store.board()), null, "", 1, null);
@@ -3197,7 +3200,6 @@ class WorkRunTest {
         // pushed batch included.
         for (final StoreException refusal :
                 List.of(
-                        new StoreException.Busy("alpha"),
                         new StoreException.NoSuchStory("ST1"),
                         new StoreException.NoSuchIssue("AA1"),
                         new StoreException.WorkflowMissing("alpha"),
@@ -3238,7 +3240,8 @@ class WorkRunTest {
                 new StoreException.BasisIncomplete(List.of("AA1")),
                 new StoreException.StaleRevision("board@2"),
                 new StoreException.NotSavable("AA1", "failed"),
-                new StoreException.NoForgeAccess("https://github.com", "Projects"));
+                new StoreException.NoForgeAccess("https://github.com", "Projects"),
+                new StoreException.Busy("alpha"));
     }
 
     @Test
@@ -3482,9 +3485,19 @@ class WorkRunTest {
         f.record.value = withRun(f.record.value, marked(f.run.work("ST1"), pendingMark()));
         final WorkRun.Snapshot before = f.record.value;
 
-        for (final Runnable writer :
-                List.<Runnable>of(
-                        () -> f.run.stop("ST1"),
+        assertThatThrownBy(() -> f.run.stop("ST1"))
+                .as("the owner account's stop")
+                .isInstanceOfSatisfying(
+                        WorkRefusal.class,
+                        e -> {
+                            assertThat(e.name()).as("the conflict").isEqualTo("RunChanged");
+                            assertThat(e.parameters().get("story"))
+                                    .as("the run named")
+                                    .isEqualTo("ST1");
+                        });
+        // A mark no save of this planner holds stands still after the wait: the task is told the
+        // project is busy, and nothing is judged on the tentative run.
+        assertThatThrownBy(
                         () ->
                                 f.run.report(
                                         "task",
@@ -3493,20 +3506,342 @@ class WorkRunTest {
                                                 WorkRun.Event.ENDED,
                                                 "box",
                                                 "workstation",
-                                                ended("Built"))))) {
-            assertThatThrownBy(writer::run)
-                    .as("the writer")
-                    .isInstanceOfSatisfying(
-                            WorkRefusal.class,
-                            e -> {
-                                assertThat(e.name()).as("the conflict").isEqualTo("RunChanged");
-                                assertThat(e.parameters().get("story"))
-                                        .as("the run named")
-                                        .isEqualTo("ST1");
-                            });
-        }
+                                                ended("Built"))))
+                .as("the task's report")
+                .isInstanceOf(StoreException.Busy.class);
         assertThat(f.record.value).as("the record unchanged").isEqualTo(before);
         assertThat(f.run.work("ST1").halted()).as("not halted").isFalse();
+    }
+
+    /** Starts the offer's task on a thread of its own, its group held at the queue. */
+    private static CompletableFuture<Void> heldStart(
+            final Fixture f, final WorkRun.Offered offer, final CountDownLatch[] held)
+            throws InterruptedException {
+        final CompletableFuture<Void> starting = CompletableFuture.runAsync(() -> f.start(offer));
+        assertThat(held[0].await(5, TimeUnit.SECONDS))
+                .as("the start's group at the store")
+                .isTrue();
+        return starting;
+    }
+
+    @Test
+    void aRunSaveHoldsNoLockOfTheRecordWhileItsCommandsAreWritten() throws Exception {
+        // Harm: a task's report, and every other writer of the project, waiting on an unrelated
+        // save while GitHub answers it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Void> starting = heldStart(f, offer, held);
+        try {
+            assertThat(
+                            CompletableFuture.supplyAsync(() -> f.run.alone(() -> "answered"))
+                                    .get(2, TimeUnit.SECONDS))
+                    .as("another writer answered while the save is at the store")
+                    .isEqualTo("answered");
+            assertThat(f.run.work("ST1").pending())
+                    .as("the run marked while its save is at the store")
+                    .isNotNull();
+        } finally {
+            held[1].countDown();
+        }
+        starting.get(5, TimeUnit.SECONDS);
+        assertThat(f.run.work("ST1").pending()).as("the save settled").isNull();
+        assertThat(f.record.marks).as("no mark left").isEmpty();
+        assertThat(f.active("ST1")).as("the task is at work").containsExactly("task");
+    }
+
+    @Test
+    void aRunSaveIsOneGroupNamedByItsMarkAndJudgedOnTheVersionsItRead() throws Exception {
+        // Harm: a save written over items changed since its judgment, and a mark the repair and
+        // the settling cannot tie to its save.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final Basis judged = Basis.of(f.store.board());
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Void> starting = heldStart(f, offer, held);
+        try {
+            final CommandGroup group = f.queue.groups.getLast();
+            assertThat(f.run.work("ST1").pending().id())
+                    .as("the pending mark names the group")
+                    .isEqualTo(group.id());
+            assertThat(group.commands())
+                    .as("each command carries the versions the start was judged on")
+                    .isNotEmpty()
+                    .allSatisfy(command -> assertThat(command.basis()).isEqualTo(judged));
+            assertThat(group.commands().getFirst().recheck().from())
+                    .as("the read set is checked before anything is written")
+                    .contains("ST1");
+        } finally {
+            held[1].countDown();
+        }
+        starting.get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aResentStartWhileItsSaveIsInFlightWaitsAndAnswersWhatWasSaved() throws Exception {
+        // Harm: a resent start answered from the tentative run, before GitHub took its save.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Void> starting = heldStart(f, offer, held);
+        final CompletableFuture<Void> resent;
+        try {
+            resent = CompletableFuture.runAsync(() -> f.start(offer));
+            assertThat(f.record.awaiting.await(5, TimeUnit.SECONDS))
+                    .as("the resend waits for the save")
+                    .isTrue();
+            assertThat(resent).as("nothing is answered while the save is at the store").isNotDone();
+        } finally {
+            held[1].countDown();
+        }
+        starting.get(5, TimeUnit.SECONDS);
+        resent.get(5, TimeUnit.SECONDS);
+        assertThat(f.queue.groups).as("one save, the resend judged nothing again").hasSize(1);
+        assertThat(f.active("ST1")).as("the task is at work").containsExactly("task");
+    }
+
+    @Test
+    void aSecondReportWaitingOnTheSameStoryIsRefusedAtOnce() throws Exception {
+        // Harm: reports of one story piling up behind a save that does not end.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Void> starting = heldStart(f, offer, held);
+        final CompletableFuture<Void> first;
+        try {
+            first = CompletableFuture.runAsync(() -> f.start(offer));
+            assertThat(f.record.awaiting.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> f.start(offer))
+                    .as("the second waiter")
+                    .isInstanceOf(StoreException.Busy.class);
+        } finally {
+            held[1].countDown();
+        }
+        starting.get(5, TimeUnit.SECONDS);
+        first.get(5, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aWriterOfAnIssueWhoseRunSaveIsInFlightIsRefusedAsWorkRunning() throws Exception {
+        // Harm: a worker set or a proposal written or judged beside a task's end still at GitHub,
+        // over the run that end would settle; the tentative run holds no started task to refuse
+        // them.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final CountDownLatch[] held = f.queue.holdNext();
+        final CompletableFuture<Void> ending =
+                CompletableFuture.runAsync(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.offer(),
+                                                WorkRun.Event.ENDED,
+                                                "box",
+                                                "workstation",
+                                                ended("Built"))));
+        try {
+            assertThat(held[0].await(5, TimeUnit.SECONDS)).as("the end at the store").isTrue();
+            for (final Runnable writer :
+                    List.<Runnable>of(
+                            () -> f.run.worker("AA1", () -> "written"),
+                            () -> f.run.propose("ST1", "Building"))) {
+                assertThatThrownBy(writer::run)
+                        .as("the writer")
+                        .isInstanceOfSatisfying(
+                                WorkRefusal.class,
+                                e -> {
+                                    assertThat(e.name()).isEqualTo("WorkRunning");
+                                    assertThat(e.parameters().get("story")).isEqualTo("ST1");
+                                });
+            }
+        } finally {
+            held[1].countDown();
+        }
+        ending.get(5, TimeUnit.SECONDS);
+        assertThat(f.run.worker("AA1", () -> "written"))
+                .as("the writer goes through once the end is settled")
+                .isEqualTo("written");
+    }
+
+    @Test
+    void aRefusalAfterAnEarlierCommandWroteHaltsTheRun() {
+        // Harm: a save GitHub took in part passed as refused before writing, its run going on
+        // over issues written halfway.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.queue.answer =
+                new CommandOutcome.Refused(
+                        new Command.Comment("c1", "AA1", "x"),
+                        new StoreException.Changed(List.of("AA1")),
+                        List.of(new Command.Comment("c0", "AA1", "x")),
+                        List.of());
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(StoreException.Changed.class);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.halted()).as("halted").isTrue();
+        assertThat(run.pending()).as("no mark left").isNull();
+        assertThat(f.queue.groups).as("not judged and sent once more").hasSize(1);
+        assertThatThrownBy(() -> f.start(offer))
+                .as("a resend is told the same refusal")
+                .isInstanceOf(StoreException.Changed.class);
+    }
+
+    @Test
+    void aFoldedSaveRefusedPartWayHaltsTheRunThoughItNamesNoCommandWritten() {
+        // Harm: a save GitHub took in part, refused as a whole by the folded write, passed as
+        // refused before writing, so its run goes on over issues written halfway.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.failure =
+                new StoreException.PartlySaved("alpha", List.of("beta"), "A repository failed.");
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(StoreException.PartlySaved.class);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.halted()).as("halted").isTrue();
+        assertThat(run.pending()).as("no mark left").isNull();
+        assertThat(f.queue.groups).as("not judged and sent once more").hasSize(1);
+    }
+
+    @Test
+    void anErrorOrACheckedCauseOfARefusalIsPassedOnAfterTheRunHalts() {
+        // Harm: what the store's call threw lost behind another exception, or the run left
+        // pending, when it is no runtime exception.
+        final Error error = new Error("The store's call broke.");
+        final java.io.IOException checked = new java.io.IOException("The line dropped.");
+        for (final Throwable cause : List.<Throwable>of(error, checked)) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            f.queue.answer =
+                    new CommandOutcome.Refused(
+                            new Command.Comment("c0", "AA1", "x"), cause, List.of(), List.of());
+            final Throwable thrown = catchThrowable(() -> f.start(offer));
+            if (cause instanceof Error) {
+                assertThat(thrown).as("the error as it is").isSameAs(error);
+            } else {
+                assertThat(thrown).as("the checked cause wrapped").hasCause(checked);
+            }
+            assertThat(f.run.work("ST1").halted()).as(cause + ": halted").isTrue();
+            assertThat(f.run.work("ST1").pending()).as(cause + ": no mark left").isNull();
+        }
+    }
+
+    @Test
+    void aGroupHeldUnsentKeepsTheTasksEventUnderNeedsYouWithoutHalting() {
+        // Harm: a task halted by a group the stand-in queue never sent, which writes nothing.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.queue.answer = new CommandOutcome.Held(List.of(), "held");
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(StoreException.Busy.class);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.halted()).as("not halted").isFalse();
+        assertThat(run.pending()).as("no mark left").isNull();
+        assertThat(run.issues().get("AA1").reason())
+                .as("the issue under Needs you")
+                .isEqualTo("SAVE_REFUSED");
+    }
+
+    @Test
+    void aSubmitThatThrowsHaltsTheRunAndEndsItsMark() {
+        // Harm: a run left pending and its mark open until a restart, holding up every report of
+        // its story.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.queue.failure = new IllegalStateException("The queue failed");
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(IllegalStateException.class);
+        assertThat(f.run.work("ST1").halted()).as("halted").isTrue();
+        assertThat(f.run.work("ST1").pending()).as("no pending mark").isNull();
+        assertThat(f.record.marks).as("no mark left").isEmpty();
+    }
+
+    @Test
+    void anOutcomeThatCannotBeRecordedEndsTheMarkLeavesTheRunForTheRepairAndIsTold() {
+        // Harm: a waiting report held until the bound by a mark nobody ends, and an outcome lost
+        // without a word.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.record.refuseOutcome = new IllegalStateException("The disk is gone");
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(IllegalStateException.class);
+        f.record.refuseOutcome = null;
+        assertThat(f.record.marks).as("the mark ended").isEmpty();
+        assertThat(f.run.work("ST1").pending())
+                .as("the run left pending for the repair at the next open")
+                .isNotNull();
+        assertThat(f.told).as("the lost outcome told").anyMatch(line -> line.contains("ST1"));
+    }
+
+    @Test
+    void anErrorFromTheQueueHaltsTheRunEndsItsMarkAndIsThrownAsItIs() {
+        // Harm: a run left pending and its mark open until a restart, holding up every report of
+        // its story, because the queue broke with an Error rather than an exception.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final Error broken = new Error("The queue broke");
+        f.queue.failure = broken;
+
+        assertThat(catchThrowable(() -> f.start(offer))).as("the error as it is").isSameAs(broken);
+        assertThat(f.run.work("ST1").halted()).as("halted").isTrue();
+        assertThat(f.run.work("ST1").pending()).as("no pending mark").isNull();
+        assertThat(f.record.marks).as("no mark left").isEmpty();
+    }
+
+    @Test
+    void anErrorRecordingTheOutcomeEndsTheMarkIsToldAndIsThrownAsItIs() {
+        // Harm: a waiting report held until the bound by a mark nobody ends, because the record
+        // broke with an Error rather than an exception.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final Error broken = new Error("The record broke");
+        f.record.refuseOutcome = broken;
+
+        final Throwable thrown = catchThrowable(() -> f.start(offer));
+        f.record.refuseOutcome = null;
+
+        assertThat(thrown).as("the error as it is").isSameAs(broken);
+        assertThat(f.record.marks).as("the mark ended").isEmpty();
+        assertThat(f.told).as("the lost outcome told").anyMatch(line -> line.contains("ST1"));
+    }
+
+    @Test
+    void aRefusedSaveWhoseOutcomeCannotBeRecordedThrowsTheRefusalWithThatFailureKept() {
+        // Harm: the store's refusal, which says what to do next, lost behind the record's
+        // failure, or the record's failure lost behind the refusal, in the answer and the log.
+        for (final StoreException refusal :
+                List.of(
+                        new StoreException.Unreachable("alpha", "timed out"),
+                        new StoreException.NotSavable("AA1", "failed"))) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            final IllegalStateException lost = new IllegalStateException("The disk is gone");
+            f.store.failure = refusal;
+            f.record.refuseOutcome = lost;
+
+            final Throwable thrown = catchThrowable(() -> f.start(offer));
+            f.record.refuseOutcome = null;
+
+            assertThat(thrown).as(refusal + ": the refusal thrown").isSameAs(refusal);
+            assertThat(thrown.getSuppressed())
+                    .as(refusal + ": the record's failure kept with it")
+                    .containsExactly(lost);
+            assertThat(f.record.marks).as(refusal + ": the mark ended").isEmpty();
+        }
+    }
+
+    @Test
+    void anOutcomeThatNoLongerFitsTheRecordKeepsNoNextStepAndSettles() {
+        // Harm: a save GitHub took left pending, and halted at the next open, because the run it
+        // leaves no longer fits the record.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.record.refuseOutcomeOnce =
+                WorkRefusal.recordUnavailable("project", "The work record is full.");
+        f.start(offer);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.pending()).as("settled").isNull();
+        assertThat(run.halted()).as("not halted: the save stands").isFalse();
+        assertThat(f.record.marks).as("no mark left").isEmpty();
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the start saved")
+                .isEqualTo("Building");
     }
 
     @Test
@@ -3672,7 +4007,7 @@ class WorkRunTest {
                 "child",
                 new WorkRun.Report(
                         child.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
-        f.store.failure = new StoreException.Busy("alpha");
+        f.store.failure = new StoreException.Unreachable("alpha", "timed out");
         assertThatThrownBy(
                         () ->
                                 f.run.report(
@@ -3684,7 +4019,7 @@ class WorkRunTest {
                                                 "workstation",
                                                 ended("Built"))))
                 .as("a refused save halts the run")
-                .isInstanceOf(StoreException.Busy.class);
+                .isInstanceOf(StoreException.Unreachable.class);
         f.store.failure = null;
         final int saves = f.store.saves;
         final var late =
@@ -6430,10 +6765,135 @@ class WorkRunTest {
         /** Whether a write reused or lowered a generation already written. */
         boolean wentBack;
 
+        /** Guards the short steps, which never wait for the writer's monitor. */
+        private final Object steps = new Object();
+
+        /** The ids of the marks standing. */
+        final java.util.Set<String> marks = new java.util.HashSet<>();
+
+        /** Runs once in the next outcome step, before its change, as a step that waits. */
+        volatile @Nullable Runnable onOutcome;
+
+        /** Refuses each next outcome step's write, as a record that cannot be written. */
+        volatile @Nullable Throwable refuseOutcome;
+
+        /** Refuses the next outcome step's write once. */
+        volatile @Nullable RuntimeException refuseOutcomeOnce;
+
         /** Publishes the last complete generation without entering the writer's monitor. */
         @Override
         public WorkRun.Snapshot latest() {
             return value;
+        }
+
+        @Override
+        public WorkRun.Mark mark(
+                final String id, final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            synchronized (steps) {
+                if (!marks.add(id)) {
+                    throw new IllegalArgumentException("A mark with this id is in flight");
+                }
+                try {
+                    next(change);
+                } catch (final RuntimeException refused) {
+                    marks.remove(id);
+                    throw refused;
+                }
+                return () -> id;
+            }
+        }
+
+        @Override
+        public WorkRun.Snapshot outcome(
+                final WorkRun.Mark mark,
+                final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            final Runnable hook = onOutcome;
+            if (hook != null) {
+                onOutcome = null;
+                hook.run();
+            }
+            synchronized (steps) {
+                if (!marks.contains(mark.id())) {
+                    return value;
+                }
+                final Throwable refused = refuseOutcome;
+                if (refused instanceof Error error) {
+                    throw error;
+                }
+                if (refused != null) {
+                    throw (RuntimeException) refused;
+                }
+                final RuntimeException once = refuseOutcomeOnce;
+                if (once != null) {
+                    refuseOutcomeOnce = null;
+                    throw once;
+                }
+                next(change);
+                marks.remove(mark.id());
+                steps.notifyAll();
+                return value;
+            }
+        }
+
+        @Override
+        public void abandon(final WorkRun.Mark mark) {
+            synchronized (steps) {
+                marks.remove(mark.id());
+                steps.notifyAll();
+            }
+        }
+
+        /** Counted down by each caller that begins to wait for a mark. */
+        volatile CountDownLatch awaiting = new CountDownLatch(1);
+
+        /** Waits at most two seconds. */
+        @Override
+        public boolean awaitEnded(final String id) {
+            final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            synchronized (steps) {
+                awaiting.countDown();
+                while (marks.contains(id)) {
+                    final long left = deadline - System.nanoTime();
+                    if (left <= 0) {
+                        return false;
+                    }
+                    try {
+                        TimeUnit.NANOSECONDS.timedWait(steps, left);
+                    } catch (final InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+
+        /** Writes the next generation of the record as it stands, changed; under the steps. */
+        private void next(final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            final WorkRun.Snapshot now = value;
+            final WorkRun.Snapshot changed = change.apply(now);
+            final WorkRun.Snapshot next =
+                    new WorkRun.Snapshot(
+                            now.generation() + 1,
+                            changed.runs(),
+                            changed.ideas(),
+                            changed.results());
+            capacity(next);
+            writes++;
+            value = next;
+        }
+
+        /** Fakes only capacity, not the store. */
+        void capacity(final WorkRun.Snapshot snapshot) {
+            if (refuseReaders
+                    && snapshot.runs().values().stream()
+                            .flatMap(r -> r.offers().stream())
+                            .anyMatch(
+                                    o ->
+                                            o.status().equals("OFFERED")
+                                                    && o.binding().role().equals("READER"))) {
+                throw WorkRefusal.recordUnavailable("project", "The work record is full.");
+            }
         }
 
         /** Serializes actions as a disk record must. */
@@ -6473,18 +6933,7 @@ class WorkRunTest {
                         /** Fakes only capacity, not the store. */
                         @Override
                         public void preflight(final WorkRun.Snapshot snapshot) {
-                            if (refuseReaders
-                                    && snapshot.runs().values().stream()
-                                            .flatMap(r -> r.offers().stream())
-                                            .anyMatch(
-                                                    o ->
-                                                            o.status().equals("OFFERED")
-                                                                    && o.binding()
-                                                                            .role()
-                                                                            .equals("READER"))) {
-                                throw WorkRefusal.recordUnavailable(
-                                        "project", "The work record is full.");
-                            }
+                            capacity(snapshot);
                         }
 
                         /** Keeps the board a decision's save is checked against. */
@@ -6504,7 +6953,9 @@ class WorkRunTest {
         final FakeStore store = new FakeStore();
         final Memory record = new Memory();
         final Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
-        final WorkRun run = new WorkRun(store, record, clock);
+        final HeldQueue queue = new HeldQueue(store);
+        final List<String> told = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final WorkRun run = new WorkRun(store, record, clock, told::add, queue);
 
         /** The orders a fixture offered on its way, as the window was given them. */
         final List<WorkOrder.Task> offered = new java.util.ArrayList<>();
@@ -6528,10 +6979,10 @@ class WorkRunTest {
         /** The story's run halted by a refused save of its task's start, the task since ended. */
         WorkRun.Run halted() {
             final WorkRun.Offered offer = order().tasks().getFirst();
-            store.failure = new StoreException.Busy("alpha");
+            store.failure = new StoreException.Unreachable("alpha", "timed out");
             assertThatThrownBy(() -> start(offer))
                     .as("the start's save is refused")
-                    .isInstanceOf(StoreException.Busy.class);
+                    .isInstanceOf(StoreException.Unreachable.class);
             store.failure = null;
             run.report(
                     "task",

@@ -1905,9 +1905,9 @@ class WorkRecordTest {
     }
 
     @Test
-    void aWriterIsRefusedOnlyWhenAStepWroteSinceItEnteredOrWrote() throws Exception {
-        // Prevents a writer overwriting a step made while it worked, without refusing a writer
-        // that writes the same or a lower generation, as a rollback does.
+    void aWriterIsRefusedOnlyWhenAStepWroteItsStorySinceItEnteredOrWrote() throws Exception {
+        // Prevents a writer overwriting a step made on its story while it worked, without
+        // refusing a writer that writes the same or a lower generation, as a rollback does.
         final var entered = new CountDownLatch(1);
         final var release = new CountDownLatch(1);
         try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
@@ -1931,7 +1931,7 @@ class WorkRecordTest {
                                                 final WorkRun.Snapshot read = session.read();
                                                 entered.countDown();
                                                 await(release);
-                                                session.write(withRun(read, run("ST9", false)));
+                                                session.write(withRun(read, run("ST1", false)));
                                                 return null;
                                             }));
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
@@ -1948,6 +1948,44 @@ class WorkRecordTest {
                     .as("the refusal names the run the step changed")
                     .containsEntry("story", "ST1");
             assertThat(record.latest().runs()).as("the step's mark stands").containsOnlyKeys("ST1");
+        }
+    }
+
+    @Test
+    void aStepOnAnotherStoryIsNoConflictAndBothChangesStand() throws Exception {
+        // Harm: a task's report refused as changed because another story's save was marked or
+        // settled while the report was judged.
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            final var working =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                final WorkRun.Snapshot read = session.read();
+                                                entered.countDown();
+                                                await(release);
+                                                session.write(withRun(read, run("ST9", false)));
+                                                return null;
+                                            }));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            final WorkRecord.Mark mark = record.mark("save-1", with(run("ST1", true)));
+            record.outcome(mark, with(run("ST1", false)));
+            final long settled = record.latest().generation();
+            release.countDown();
+            working.get(5, TimeUnit.SECONDS);
+            assertThat(record.latest().runs())
+                    .as("the writer's run and the other story's settled run both stand")
+                    .containsOnlyKeys("ST1", "ST9");
+            assertThat(record.latest().runs().get("ST1").pending())
+                    .as("the other story as its outcome left it")
+                    .isNull();
+            assertThat(record.latest().generation())
+                    .as("the write comes after the steps")
+                    .isGreaterThan(settled);
         }
     }
 
@@ -2036,9 +2074,10 @@ class WorkRecordTest {
     @Test
     void aCloseWaitsForTheWriterAndTheMarksWithinOneBound() throws Exception {
         // Prevents a close waiting its bound once for the writer and again for each mark.
+        final Duration bound = Duration.ofSeconds(2);
         final var entered = new CountDownLatch(1);
         final var release = new CountDownLatch(1);
-        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(500));
+        try (WorkRecord records = new WorkRecord(Map.of(), true, bound);
                 var executor = Executors.newFixedThreadPool(2)) {
             final WorkRecord.Entry record = entry(records);
             record.mark("save-1", with(run("ST1", true)));
@@ -2053,21 +2092,31 @@ class WorkRecordTest {
                                             }));
             try {
                 assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-                executor.submit(
-                        () -> {
-                            try {
-                                Thread.sleep(400);
-                            } catch (final InterruptedException interrupted) {
-                                Thread.currentThread().interrupt();
-                            }
-                            release.countDown();
-                        });
                 final long started = System.nanoTime();
-                assertThat(catchThrowableOfType(WorkRefusal.class, () -> records.forget("project")))
-                        .isNotNull();
-                assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+                final ThreadPoints<Void> closing =
+                        ThreadPoints.run(() -> records.forget("project"));
+                closing.reaches("drain");
+                // The writer holds at least three quarters of the bound; a load that delays this
+                // thread only makes it hold longer, which a restarted deadline shows the more.
+                final long held = started + bound.toNanos() * 3 / 4 - System.nanoTime();
+                if (held > 0) {
+                    TimeUnit.NANOSECONDS.sleep(held);
+                }
+                final long releasedAt = System.nanoTime() - started;
+                release.countDown();
+                assertThat(
+                                catchThrowableOfType(
+                                        java.util.concurrent.ExecutionException.class,
+                                        () -> closing.task().get(10, TimeUnit.SECONDS)))
+                        .as("the close is refused once its bound ran out")
+                        .hasCauseInstanceOf(WorkRefusal.class);
+                final long elapsed = System.nanoTime() - started;
+                // One bound in all ends near the bound; a bound per wait ends no earlier than the
+                // writer's release plus a whole bound. Half the release time lies between.
+                assertThat(TimeUnit.NANOSECONDS.toMillis(elapsed))
                         .as("one bound in all, not one per wait")
-                        .isLessThan(800);
+                        .isLessThan(TimeUnit.NANOSECONDS.toMillis(bound.toNanos() + releasedAt / 2))
+                        .isLessThan(2 * bound.toMillis());
             } finally {
                 release.countDown();
             }

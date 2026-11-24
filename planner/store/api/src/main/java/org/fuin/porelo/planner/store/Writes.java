@@ -170,6 +170,28 @@ public record Writes(
     }
 
     /**
+     * Answers the part of the writes that changes one item alone: its state, worker, priority and
+     * reason, as these writes hold them.
+     *
+     * @param target the issue's or story's id
+     * @return the writes of that item, none when these writes leave it alone
+     */
+    public Writes only(final String target) {
+        return new Writes(
+                one(issues, target),
+                one(stories, target),
+                one(workers, target),
+                one(priorities, target),
+                one(issueReasons, target),
+                one(storyReasons, target));
+    }
+
+    private static <V> Map<String, V> one(final Map<String, V> map, final String target) {
+        final V value = map.get(target);
+        return value == null ? Map.of() : Map.of(target, value);
+    }
+
+    /**
      * Writes that set no priority.
      *
      * @param issues the issues' new states, by id

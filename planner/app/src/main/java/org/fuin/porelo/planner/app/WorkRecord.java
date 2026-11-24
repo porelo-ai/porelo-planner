@@ -332,7 +332,7 @@ public final class WorkRecord implements AutoCloseable {
      * A save's mark on a record, between the step that marks and the step that records its outcome;
      * made only by its own record and ended at most once.
      */
-    public static final class Mark {
+    public static final class Mark implements WorkRun.Mark {
         private final Object owner;
         private final String id;
 
@@ -344,11 +344,7 @@ public final class WorkRecord implements AutoCloseable {
             this.id = id;
         }
 
-        /**
-         * Answers the id the save gave its mark.
-         *
-         * @return the id
-         */
+        @Override
         public String id() {
             return id;
         }
@@ -545,7 +541,8 @@ public final class WorkRecord implements AutoCloseable {
          *     since the save judged it
          * @return the mark, for its outcome
          */
-        Mark mark(
+        @Override
+        public Mark mark(
                 final String id, final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
             if (id.isBlank()) {
                 throw new IllegalArgumentException("A mark needs an id");
@@ -577,9 +574,11 @@ public final class WorkRecord implements AutoCloseable {
          * @param change what the outcome changes, as for {@link #mark}
          * @return the record as it now stands
          */
-        WorkRun.Snapshot outcome(
-                final Mark mark, final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
-            ownMark(mark);
+        @Override
+        public WorkRun.Snapshot outcome(
+                final WorkRun.Mark given,
+                final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            final Mark mark = ownMark(given);
             mutex.lock();
             try {
                 if (!mark.open) {
@@ -600,8 +599,9 @@ public final class WorkRecord implements AutoCloseable {
          *
          * @param mark the save's mark
          */
-        void abandon(final Mark mark) {
-            ownMark(mark);
+        @Override
+        public void abandon(final WorkRun.Mark given) {
+            final Mark mark = ownMark(given);
             mutex.lock();
             try {
                 if (mark.open) {
@@ -612,9 +612,35 @@ public final class WorkRecord implements AutoCloseable {
             }
         }
 
-        private void ownMark(final Mark mark) {
-            if (mark.owner != this) {
+        private Mark ownMark(final WorkRun.Mark given) {
+            if (!(given instanceof Mark mark) || mark.owner != this) {
                 throw new IllegalArgumentException("The mark is another record's");
+            }
+            return mark;
+        }
+
+        /**
+         * Waits, at most the record's bound for a close, until no mark of that id stands; answered
+         * at once when none does.
+         */
+        @Override
+        public boolean awaitEnded(final String id) {
+            final long deadline = System.nanoTime() + drain.toNanos();
+            mutex.lock();
+            try {
+                while (marks.containsKey(id)) {
+                    final long left = deadline - System.nanoTime();
+                    if (left <= 0) {
+                        return false;
+                    }
+                    marksEnded.awaitNanos(left);
+                }
+                return true;
+            } catch (final InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw unavailable(project, "The wait for a save of " + project + " was stopped.");
+            } finally {
+                mutex.unlock();
             }
         }
 
@@ -1070,8 +1096,10 @@ public final class WorkRecord implements AutoCloseable {
 
         /**
          * Flushes a new private sibling, atomically replaces the record and syncs its directory,
-         * under the mutex; refused with {@code RunChanged} when a step changed the record since
-         * this caller of {@link #locked} entered or last wrote.
+         * under the mutex. When a step changed the record since this caller of {@link #locked}
+         * entered or last wrote, the caller's own changes are laid onto the record as it now
+         * stands; refused with {@code RunChanged} only when the step changed a story's run, or an
+         * offer's idea or result, that the caller's write changes too.
          */
         @Override
         public void write(final WorkRun.Snapshot snapshot) {
@@ -1079,46 +1107,62 @@ public final class WorkRecord implements AutoCloseable {
             mutex.lock();
             try {
                 final WorkRun.Snapshot seen = expected;
-                if (writer && seen != null && seen != stored) {
-                    throw changedSince(seen, snapshot);
-                }
-                store(snapshot);
+                final WorkRun.Snapshot now = stored;
+                final WorkRun.Snapshot written =
+                        writer && seen != null && seen != now
+                                ? laid(seen, now, snapshot)
+                                : snapshot;
+                store(written);
                 if (writer) {
-                    expected = snapshot;
+                    expected = written;
                 }
             } finally {
                 mutex.unlock();
             }
         }
 
-        /** Names the story whose run a step changed under a writer, else one the writer changes. */
-        private WorkRefusal changedSince(
-                final WorkRun.Snapshot seen, final WorkRun.Snapshot written) {
-            final WorkRun.Snapshot now = stored;
-            final java.util.TreeSet<String> stories = new java.util.TreeSet<>();
-            stories.addAll(seen.runs().keySet());
-            stories.addAll(now.runs().keySet());
-            String story = null;
-            for (final String each : stories) {
-                if (!java.util.Objects.equals(seen.runs().get(each), now.runs().get(each))) {
-                    story = each;
-                    break;
+        /** The caller's changes since {@code seen} laid onto the record as it now stands. */
+        private WorkRun.Snapshot laid(
+                final WorkRun.Snapshot seen,
+                final WorkRun.Snapshot now,
+                final WorkRun.Snapshot written) {
+            return new WorkRun.Snapshot(
+                    Math.max(written.generation(), Math.addExact(now.generation(), 1)),
+                    laid(seen.runs(), now.runs(), written.runs(), true),
+                    laid(seen.ideas(), now.ideas(), written.ideas(), false),
+                    laid(seen.results(), now.results(), written.results(), false));
+        }
+
+        /**
+         * One part of the record with the caller's changes laid on: an entry the caller left as it
+         * saw it, or wrote as it now stands, keeps what stands now.
+         */
+        private <V> Map<String, V> laid(
+                final Map<String, V> seen,
+                final Map<String, V> now,
+                final Map<String, V> written,
+                final boolean runs) {
+            final Map<String, V> laid = new java.util.LinkedHashMap<>(now);
+            final java.util.TreeSet<String> keys = new java.util.TreeSet<>(seen.keySet());
+            keys.addAll(written.keySet());
+            for (final String key : keys) {
+                final V mine = written.get(key);
+                if (java.util.Objects.equals(mine, seen.get(key))
+                        || java.util.Objects.equals(mine, now.get(key))) {
+                    continue;
+                }
+                if (!java.util.Objects.equals(seen.get(key), now.get(key))) {
+                    throw WorkRefusal.runChanged(
+                            runs ? key : project,
+                            "The work record changed while this change was judged.");
+                }
+                if (mine == null) {
+                    laid.remove(key);
+                } else {
+                    laid.put(key, mine);
                 }
             }
-            if (story == null) {
-                story =
-                        written.runs().keySet().stream()
-                                .filter(
-                                        each ->
-                                                !java.util.Objects.equals(
-                                                        written.runs().get(each),
-                                                        now.runs().get(each)))
-                                .sorted()
-                                .findFirst()
-                                .orElse(project);
-            }
-            return WorkRefusal.runChanged(
-                    story, "The work record changed while this change was judged.");
+            return laid;
         }
 
         /** Writes the record and holds it; under the mutex. */

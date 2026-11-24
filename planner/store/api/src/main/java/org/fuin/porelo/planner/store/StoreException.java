@@ -38,11 +38,18 @@ public abstract sealed class StoreException extends RuntimeException
 
     /**
      * The kinds a store gives before it writes anything of the write refused: a write refused with
-     * one of them wrote nothing, every other failure may have written part of it.
+     * one of them wrote nothing, every other failure may have written part of it. A store answers
+     * Busy only while it waits for the project's lock or a read, or when the board moved under
+     * every attempt and none of them was kept, so a busy store wrote nothing either.
      */
     public static final java.util.Set<String> BEFORE_WRITING =
             java.util.Set.of(
-                    "Changed", "BasisIncomplete", "StaleRevision", "NotSavable", "NoForgeAccess");
+                    "Changed",
+                    "BasisIncomplete",
+                    "StaleRevision",
+                    "NotSavable",
+                    "NoForgeAccess",
+                    "Busy");
 
     /**
      * Tells whether a write's failure is a refusal given before anything was written.

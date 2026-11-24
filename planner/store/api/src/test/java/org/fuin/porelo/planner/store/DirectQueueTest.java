@@ -436,12 +436,12 @@ class DirectQueueTest {
                         new StoreException.BasisIncomplete(List.of("AA1")),
                         new StoreException.StaleRevision("r2"),
                         new StoreException.NotSavable("AA1", "failed"),
-                        new StoreException.NoForgeAccess("https://github.com", "issues"));
+                        new StoreException.NoForgeAccess("https://github.com", "issues"),
+                        new StoreException.Busy("porelo-lib"));
         final List<RuntimeException> maybe =
                 List.of(
                         new StoreException.PartlySaved("porelo-lib", List.of(), "failed"),
                         new StoreException.Unreachable("porelo-lib", "timed out"),
-                        new StoreException.Busy("porelo-lib"),
                         new IllegalStateException("failed after the write"));
         for (final RuntimeException cause : before) {
             assertThat(refusedBy(cause).mayHaveWritten()).as(cause.toString()).isFalse();

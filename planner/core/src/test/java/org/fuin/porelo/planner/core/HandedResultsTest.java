@@ -495,6 +495,27 @@ class HandedResultsTest {
     }
 
     @Test
+    void anErrorSavingTheResultIsRecordedAsARefusalAndThrownAsItIs() {
+        // Harm: a result left pending with its mark open until a restart, refusing every hand-in
+        // of the offer, because the store broke with an Error rather than an exception.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final Error broken = new Error("The store broke");
+        f.store.during =
+                () -> {
+                    throw broken;
+                };
+
+        assertThat(catchThrowable(() -> f.handIn(offer, valid())))
+                .as("the error as it is")
+                .isSameAs(broken);
+        assertThat(f.record.marks).as("the mark ended").isEmpty();
+        assertThat(f.record.value.results().get(offer.offer()).status())
+                .as("recorded as refused")
+                .isEqualTo(HandedResults.REFUSED);
+    }
+
+    @Test
     void aFailedSaveIsRecordedAsARefusalThatAReplayAnswersWithoutTheStore() {
         // Prevents a result saved twice after a save whose outcome was not seen.
         final Stage f = new Stage();
@@ -635,6 +656,55 @@ class HandedResultsTest {
                     .containsExactly(HandedResults.NOT_ENDED);
             assertThat(f.store.attempts).as("the store is not asked").isZero();
         }
+    }
+
+    @Test
+    void aResultSaveHoldsNoLockOfTheRecordWhileTheStoreSavesIt() {
+        // Harm: a stage result's save holding up every writer of the project while GitHub
+        // answers it.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        final List<Object> meanwhile = new ArrayList<>();
+        f.store.during =
+                () ->
+                        meanwhile.add(
+                                catchThrowable(
+                                        () ->
+                                                meanwhile.add(
+                                                        java.util.concurrent.CompletableFuture
+                                                                .supplyAsync(
+                                                                        () ->
+                                                                                f.run.alone(
+                                                                                        () ->
+                                                                                                "answered"))
+                                                                .get(
+                                                                        2,
+                                                                        java.util.concurrent
+                                                                                .TimeUnit
+                                                                                .SECONDS))));
+
+        assertThat(f.handIn(offer, valid()).outcome()).isEqualTo(HandedResults.SAVED);
+
+        assertThat(meanwhile)
+                .as("another writer answered during the save, and nothing failed")
+                .containsExactly("answered", null);
+        assertThat(f.record.marks).as("no mark left").isEmpty();
+    }
+
+    @Test
+    void aResultHandedInWhileItsRunsSaveIsInFlightIsRefused() {
+        // Harm: a result judged on a run its own save still holds tentative, and saved beside it.
+        final Stage f = new Stage();
+        final WorkRun.Offered offer = f.started();
+        f.record.value =
+                WorkRunTest.withRun(
+                        f.record.value,
+                        WorkRunTest.marked(f.run.work("ST1"), WorkRunTest.pendingMark()));
+
+        assertThatThrownBy(() -> f.handIn(offer, valid()))
+                .isInstanceOfSatisfying(
+                        WorkRefusal.class, e -> assertThat(e.name()).isEqualTo("WorkRunning"));
+        assertThat(f.store.results).as("nothing saved").isEmpty();
     }
 
     @Test

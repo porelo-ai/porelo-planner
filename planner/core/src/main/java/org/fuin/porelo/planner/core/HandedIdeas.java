@@ -4,10 +4,15 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Command;
+import org.fuin.porelo.planner.store.CommandGroup;
+import org.fuin.porelo.planner.store.CommandOutcome;
+import org.fuin.porelo.planner.store.CommandQueue;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -108,6 +113,7 @@ public final class HandedIdeas {
      * Saves an idea under the record's lock.
      *
      * @param store the project's store
+     * @param queue the project's command queue, which writes the idea
      * @param session the locked record
      * @param snapshot the record as read under the lock
      * @param offer the discussion's offer, checked
@@ -117,6 +123,7 @@ public final class HandedIdeas {
      */
     static String save(
             final PlanningStore store,
+            final CommandQueue queue,
             final WorkRun.Session session,
             final WorkRun.Snapshot snapshot,
             final String offer,
@@ -137,30 +144,46 @@ public final class HandedIdeas {
                         new Handed(PENDING, null, List.of(), next(snapshot)));
         session.preflight(pending);
         session.write(pending);
-        final NewIdea.Added added;
-        try {
-            // An idea changes no item held, so no other save refuses it and no board is read
-            // whole; its own check runs once more where the store saves it.
-            added =
-                    store.createIdea(
-                            Basis.none(),
-                            checked,
-                            new Recheck(
-                                    Set.of(),
-                                    Set.of(),
-                                    dependencies ->
-                                            NewIdeas.check(dependencies.board(), idea, shape)));
-        } catch (final StoreException.PartlySaved partly) {
+        // An idea changes no item held, so no other save refuses it and no board is read whole;
+        // its own check runs once more where the store saves it.
+        final Command.CreateIdea create =
+                new Command.CreateIdea(
+                        "idea",
+                        checked,
+                        Basis.none(),
+                        new Recheck(
+                                Set.of(),
+                                Set.of(),
+                                dependencies -> NewIdeas.check(dependencies.board(), idea, shape)));
+        // A queue that fails to answer may have written the idea: the offer stays pending, so a
+        // resent hand-in is refused rather than saved a second time.
+        final CommandOutcome outcome =
+                queue.submit(new CommandGroup(UUID.randomUUID().toString(), List.of(create)));
+        if (outcome instanceof CommandOutcome.Done done) {
+            final String story = Objects.requireNonNull(done.created().get(create.id())).item();
+            session.write(with(pending, offer, new Handed(DONE, story, List.of(), next(pending))));
+            return story;
+        }
+        final Throwable refused;
+        final boolean unwritten;
+        if (outcome instanceof CommandOutcome.Refused refusal) {
+            refused = refusal.cause();
+            // The idea's own check runs where the store saves it, before anything is written.
+            unwritten = !refusal.mayHaveWritten() || refused instanceof WorkRefusal;
+        } else {
+            // Only the stand-in queue holds a group, nothing of which was sent.
+            refused = new StoreException.Busy("");
+            unwritten = true;
+        }
+        if (refused instanceof StoreException.PartlySaved partly) {
             session.write(
                     with(pending, offer, new Handed(PARTLY, null, partly.pushed(), next(pending))));
-            throw partly;
-        } catch (final RuntimeException refused) {
+        } else if (unwritten) {
             session.write(without(pending, offer));
-            throw refused;
         }
-        session.write(
-                with(pending, offer, new Handed(DONE, added.story(), List.of(), next(pending))));
-        return added.story();
+        // A refusal that may have written keeps the offer pending, so no resend makes a second
+        // idea.
+        throw WorkRun.passedOn(refused);
     }
 
     private static String known(final Handed known) {

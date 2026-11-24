@@ -843,7 +843,7 @@ class WorkRunHttpTest {
     void aStartReplacingAnotherRunOverAHaltedRunIsTheRunConflict() throws Exception {
         // The window reads a changed run as a conflict and reloads; a refused move it would not.
         final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
-        store.busy = true;
+        store.unreachable = true;
         final int refusedStart =
                 mvc.perform(
                                 post("/projects/project/tasks/build/events")
@@ -853,7 +853,7 @@ class WorkRunHttpTest {
                         .getResponse()
                         .getStatus();
         assertThat(refusedStart).as("the start's save is refused").isNotEqualTo(200);
-        store.busy = false;
+        store.unreachable = false;
         call("/tasks/build/events", event(offer, "ENDED", "Built"), 200);
         assertThat(java.util.Objects.requireNonNull(projects.work("project").work("ST1")).halted())
                 .as("the refused save halted the run")
@@ -1213,7 +1213,7 @@ class WorkRunHttpTest {
     private static final class Store implements PlanningStore {
         private Board current;
         private int saves = 1;
-        private boolean busy;
+        private boolean unreachable;
 
         private Store() {
             final WorkRule build =
@@ -1294,8 +1294,8 @@ class WorkRunHttpTest {
         /** Makes the actual planning effect observable through HTTP. */
         @Override
         public Board save(final Revision revision, final Writes writes) {
-            if (busy) {
-                throw new StoreException.Busy("project");
+            if (unreachable) {
+                throw new StoreException.Unreachable("project", "timed out");
             }
             final Issue old = current.issues().getFirst();
             final String state = writes.issues().getOrDefault(old.id(), old.state());
