@@ -397,6 +397,12 @@ public final class GitHubStoreOpener implements TrackedStores {
                         .refusals(new ForgeAccessRefusals(GITHUB))
                         .probe(probes.get())
                         .copies(copies())
+                        // A save answers before the board's copy is on disk.
+                        .copyWrites(
+                                command ->
+                                        Thread.ofVirtual()
+                                                .name("planner-board-copy")
+                                                .start(command))
                         .changes(changes.get())
                         .labels(new RepositoryLabels(labels)),
                 tokens,

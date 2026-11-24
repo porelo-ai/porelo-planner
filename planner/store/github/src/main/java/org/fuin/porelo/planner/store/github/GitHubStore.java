@@ -81,6 +81,7 @@ public final class GitHubStore implements PlanningStore {
      *     null to keep none
      * @param changes tells what changed on the board since its copy's last look
      * @param labels the repositories' labels, read at the project's first read and at each refresh
+     * @param copyWrites runs each write of the copy, the newest board waiting the one written
      */
     public record Parts(
             BoardReader reader,
@@ -91,7 +92,8 @@ public final class GitHubStore implements PlanningStore {
             StoryStates storyStates,
             @Nullable BoardCopies copies,
             TrackerChanges changes,
-            RepositoryLabels labels) {
+            RepositoryLabels labels,
+            Executor copyWrites) {
 
         /**
          * Parts that only read, knowing no change probe and no stage numbers.
@@ -110,7 +112,8 @@ public final class GitHubStore implements PlanningStore {
                     storyStates,
                     null,
                     TrackerChanges.NONE,
-                    RepositoryLabels.NONE);
+                    RepositoryLabels.NONE,
+                    Runnable::run);
         }
 
         /**
@@ -121,7 +124,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts writer(final BoardWriter other) {
             return new Parts(
-                    reader, other, probe, refusals, metrics, storyStates, copies, changes, labels);
+                    reader,
+                    other,
+                    probe,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    copies,
+                    changes,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -132,7 +144,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts probe(final ChangeProbe other) {
             return new Parts(
-                    reader, writer, other, refusals, metrics, storyStates, copies, changes, labels);
+                    reader,
+                    writer,
+                    other,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    copies,
+                    changes,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -143,7 +164,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts refusals(final AccessRefusals other) {
             return new Parts(
-                    reader, writer, probe, other, metrics, storyStates, copies, changes, labels);
+                    reader,
+                    writer,
+                    probe,
+                    other,
+                    metrics,
+                    storyStates,
+                    copies,
+                    changes,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -154,7 +184,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts metrics(final StageMetrics other) {
             return new Parts(
-                    reader, writer, probe, refusals, other, storyStates, copies, changes, labels);
+                    reader,
+                    writer,
+                    probe,
+                    refusals,
+                    other,
+                    storyStates,
+                    copies,
+                    changes,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -165,7 +204,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts copies(final @Nullable BoardCopies other) {
             return new Parts(
-                    reader, writer, probe, refusals, metrics, storyStates, other, changes, labels);
+                    reader,
+                    writer,
+                    probe,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    other,
+                    changes,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -176,7 +224,16 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts changes(final TrackerChanges other) {
             return new Parts(
-                    reader, writer, probe, refusals, metrics, storyStates, copies, other, labels);
+                    reader,
+                    writer,
+                    probe,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    copies,
+                    other,
+                    labels,
+                    copyWrites);
         }
 
         /**
@@ -187,7 +244,36 @@ public final class GitHubStore implements PlanningStore {
          */
         public Parts labels(final RepositoryLabels other) {
             return new Parts(
-                    reader, writer, probe, refusals, metrics, storyStates, copies, changes, other);
+                    reader,
+                    writer,
+                    probe,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    copies,
+                    changes,
+                    other,
+                    copyWrites);
+        }
+
+        /**
+         * The parts with the board's copy written by [other], so a save never waits for the disk.
+         *
+         * @param other runs each write of the copy; the newest board waiting is the one written
+         * @return the parts
+         */
+        public Parts copyWrites(final Executor other) {
+            return new Parts(
+                    reader,
+                    writer,
+                    probe,
+                    refusals,
+                    metrics,
+                    storyStates,
+                    copies,
+                    changes,
+                    labels,
+                    other);
         }
     }
 
@@ -225,6 +311,9 @@ public final class GitHubStore implements PlanningStore {
      * every other item and names these unread until the next look or save reads them by id.
      */
     private volatile Touched.@Nullable Ids unread;
+
+    /** Writes the board's copy behind the saves, the newest board waiting the one written. */
+    private final CopyWriter copyWriter;
 
     /** Where the tracker's look for changes stands, kept with the copy. */
     private volatile ChangeCursor cursor = ChangeCursor.NONE;
@@ -343,6 +432,7 @@ public final class GitHubStore implements PlanningStore {
         this.tokens = tokens;
         this.lockWait = lockWait;
         this.touched = touched;
+        this.copyWriter = new CopyWriter(parts.copyWrites());
     }
 
     @Override
@@ -999,6 +1089,8 @@ public final class GitHubStore implements PlanningStore {
     @Override
     public void retire() {
         retired = true;
+        // The next start shows the last board held, not one a write still waiting would replace.
+        copyWriter.finish();
     }
 
     @Override
@@ -2184,18 +2276,33 @@ public final class GitHubStore implements PlanningStore {
         if (copies == null) {
             return;
         }
-        try {
-            final BoardCopy copy =
-                    parts.reader().toCopy(fresh, cursor, saves.items(), Map.copyOf(listedAt));
-            if (copy == null) {
-                copies.remove(BoardCopyMapping.project(fresh.config()));
-            } else {
-                copies.write(copy);
-            }
-        } catch (final RuntimeException e) {
-            // A copy that may be older than the board held is never shown at the next start.
-            LOG.warn("The board's copy could not be written: {}", e.getClass().getSimpleName());
-            removeCopy();
+        // Taken now, so the copy describes this board even when it is written after the next.
+        final ChangeCursor at = cursor;
+        final List<TrackedItem> held = saves.items();
+        final Map<String, Instant> listed = Map.copyOf(listedAt);
+        final boolean taken =
+                copyWriter.offer(
+                        () -> {
+                            try {
+                                final BoardCopy copy =
+                                        parts.reader().toCopy(fresh, at, held, listed);
+                                if (copy == null) {
+                                    copies.remove(BoardCopyMapping.project(fresh.config()));
+                                } else {
+                                    copies.write(copy);
+                                }
+                            } catch (final RuntimeException e) {
+                                // A copy that may be older than the board held is never shown at
+                                // the next
+                                // start.
+                                LOG.warn(
+                                        "The board's copy could not be written: {}",
+                                        e.getClass().getSimpleName());
+                                removeCopyNow(copies);
+                            }
+                        });
+        if (!taken) {
+            LOG.info("The board's copy is not written, since the store was retired");
         }
     }
 
@@ -2214,6 +2321,11 @@ public final class GitHubStore implements PlanningStore {
         if (copies == null) {
             return;
         }
+        // Ordered with the writes, so a copy removed never comes back from one waiting before it.
+        copyWriter.offer(() -> removeCopyNow(copies));
+    }
+
+    private void removeCopyNow(final BoardCopies copies) {
         try {
             copies.remove(BoardCopyMapping.project(config));
         } catch (final RuntimeException e) {

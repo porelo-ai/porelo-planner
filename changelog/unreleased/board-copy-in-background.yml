@@ -1,0 +1,2 @@
+title: A save answers before the board's copy is written to disk; one writer per project writes the newest board and the stop writes the last one.
+type: changed

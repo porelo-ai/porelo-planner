@@ -213,6 +213,16 @@ class GitHubStoreCopyTest {
             final AccessRefusals refusals,
             final TrackerChanges changes,
             final Touched touched) {
+        return store(github, writer, refusals, changes, touched, Runnable::run);
+    }
+
+    private GitHubStore store(
+            final GitHub github,
+            final BoardWriter writer,
+            final AccessRefusals refusals,
+            final TrackerChanges changes,
+            final Touched touched,
+            final java.util.concurrent.Executor copyWrites) {
         final StoryStates states = issueStates -> issueStates.isEmpty() ? null : "Idea";
         final ItemsBoardReader reader =
                 new ItemsBoardReader(
@@ -230,7 +240,8 @@ class GitHubStoreCopyTest {
                         .writer(writer)
                         .refusals(refusals)
                         .copies(copies())
-                        .changes(changes),
+                        .changes(changes)
+                        .copyWrites(copyWrites),
                 origin -> TOKEN,
                 Duration.ofSeconds(2),
                 touched,
@@ -382,6 +393,76 @@ class GitHubStoreCopyTest {
                 .extracting(org.fuin.porelo.planner.store.Story::title)
                 .containsExactly("Saved");
         assertThat(later.calls).as("GitHub's reads at the next start").isEmpty();
+    }
+
+    @Test
+    void aSaveAnswersBeforeItsCopyIsWrittenAndTheStopWritesTheNewestBoard() {
+        // Harm: every save held behind a disk write of the whole board; or a start that shows an
+        // older board than the last one held, because an older copy was written after it.
+        heldBefore();
+        final GitHub github = new GitHub();
+        final Touched touched = new Touched();
+        final ProjectWrites recorded =
+                touched.recording(
+                        (ProjectWrites)
+                                java.lang.reflect.Proxy.newProxyInstance(
+                                        ProjectWrites.class.getClassLoader(),
+                                        new Class<?>[] {ProjectWrites.class},
+                                        (proxy, method, args) -> null));
+        final List<Runnable> waiting = new java.util.ArrayList<>();
+        final java.util.concurrent.atomic.AtomicReference<String> title =
+                new java.util.concurrent.atomic.AtomicReference<>("Saved once");
+        final GitHubStore store =
+                store(
+                        github,
+                        new BoardWriter() {
+                            @Override
+                            public void save(
+                                    final Snapshot current,
+                                    final Revision revision,
+                                    final Writes writes) {
+                                recorded.updateIssue(
+                                        TOKEN,
+                                        OWNER,
+                                        "example-project",
+                                        1,
+                                        title.get(),
+                                        null,
+                                        null);
+                                github.title = title.get();
+                            }
+                        },
+                        AccessRefusals.DEFAULT,
+                        TrackerChanges.NONE,
+                        touched,
+                        waiting::add);
+        waiting.forEach(Runnable::run);
+        waiting.clear();
+        final Board board = store.board();
+
+        final Board once = store.save(board.revision(), new Writes(Map.of(), Map.of()));
+        title.set("Saved twice");
+        store.save(once.revision(), new Writes(Map.of(), Map.of()));
+
+        assertThat(copies().read(PROJECT, CONFIG.commit()).orElseThrow().items())
+                .as("the copy while both saves' copies wait to be written")
+                .filteredOn(item -> item.id().equals("PVTI_1"))
+                .extracting(item -> java.util.Objects.requireNonNull(item.issue()).title())
+                .doesNotContain("Saved once", "Saved twice");
+
+        store.retire();
+
+        assertThat(copies().read(PROJECT, CONFIG.commit()).orElseThrow().items())
+                .as("the copy after the store stopped")
+                .filteredOn(item -> item.id().equals("PVTI_1"))
+                .extracting(item -> java.util.Objects.requireNonNull(item.issue()).title())
+                .containsExactly("Saved twice");
+        waiting.forEach(Runnable::run);
+        assertThat(copies().read(PROJECT, CONFIG.commit()).orElseThrow().items())
+                .as("the copy after the writer's late turn found nothing older to write")
+                .filteredOn(item -> item.id().equals("PVTI_1"))
+                .extracting(item -> java.util.Objects.requireNonNull(item.issue()).title())
+                .containsExactly("Saved twice");
     }
 
     private static final ChangeCursor LOOKED =
