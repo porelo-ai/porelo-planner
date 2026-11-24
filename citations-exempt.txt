@@ -403,3 +403,5 @@ tool/story-tests/st315.sh
 planner/store/github/src/test/java/org/fuin/porelo/planner/store/github/IssueMappingTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/TrackerIdsHttpTest.java
 planner/store/api/src/test/java/org/fuin/porelo/planner/store/TrackedItemsTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/CommandGroupsTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/WindowCommandsTest.java

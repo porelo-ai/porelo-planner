@@ -310,6 +310,17 @@ public class StoreConfiguration {
     }
 
     /**
+     * The queues the window's saves are handed to: each writes a group by calling its project's
+     * store directly, the mock mode's too.
+     *
+     * @return the queues
+     */
+    @Bean
+    public CommandQueues commandQueues() {
+        return CommandQueues.DIRECT;
+    }
+
+    /**
      * The mock board, read only when the mock mode asks for it.
      *
      * @return the store serving it

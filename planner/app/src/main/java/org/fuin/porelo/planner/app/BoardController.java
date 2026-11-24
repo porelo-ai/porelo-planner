@@ -84,6 +84,7 @@ import org.fuin.porelo.planner.store.github.BodySections;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -124,15 +125,45 @@ public class BoardController {
 
     private final ChangesRegistry changes;
 
+    private final CommandQueues queues;
+
     /**
-     * Makes the controller.
+     * Makes the controller, its saves written by calling each project's store directly.
      *
      * @param projects the projects the window has given
      * @param changes tells a followed project's windows of a save
      */
     public BoardController(final Projects projects, final ChangesRegistry changes) {
+        this(projects, changes, CommandQueues.DIRECT);
+    }
+
+    /**
+     * Makes the controller.
+     *
+     * @param projects the projects the window has given
+     * @param changes tells a followed project's windows of a save
+     * @param queues gives each project's saves the queue that writes their commands
+     */
+    @Autowired
+    public BoardController(
+            final Projects projects, final ChangesRegistry changes, final CommandQueues queues) {
         this.projects = projects;
         this.changes = changes;
+        this.queues = queues;
+    }
+
+    /**
+     * Hands a save to the project's queue as one command per item, each judged on the version seen
+     * of it, and answers the board after it.
+     */
+    private Board submitted(
+            final String name,
+            final PlanningStore store,
+            final Writes writes,
+            final Basis seen,
+            final Recheck recheck) {
+        return CommandGroups.saved(
+                queues.queue(name, store).submit(CommandGroups.of(writes, seen, recheck)), store);
     }
 
     /**
@@ -660,9 +691,11 @@ public class BoardController {
             final Set<String> from = new java.util.TreeSet<>(Moves.touched(board, moves));
             from.addAll(Moves.stories(board, moves));
             saved =
-                    store.save(
-                            basis,
+                    submitted(
+                            name,
+                            store,
                             planned.writes(),
+                            basis,
                             new Recheck(
                                     Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
                                     from,
@@ -805,9 +838,25 @@ public class BoardController {
         // a preview.
         final Board moved;
         try {
-            final Moves.Planned planned =
-                    Moves.check(made, List.of(new Moves.Move(false, added.id(), state)), runs);
-            moved = store.save(made.revision(), new Writes(planned.issues(), planned.stories()));
+            final List<Moves.Move> move = List.of(new Moves.Move(false, added.id(), state));
+            final Moves.Planned planned = Moves.check(made, move, runs);
+            // Judged on the new issue's version on the board its create answered, as a window's
+            // move is judged on the versions it saw, never on the board's revision.
+            final Basis judged =
+                    new Basis(Map.of(added.id(), made.issue(added.id()).orElseThrow().version()));
+            judged.unchanged(store.board(), Set.of(added.id()));
+            final Set<String> from = new java.util.TreeSet<>(Moves.touched(made, move));
+            from.addAll(Moves.stories(made, move));
+            moved =
+                    submitted(
+                            name,
+                            store,
+                            new Writes(planned.issues(), planned.stories()),
+                            judged,
+                            new Recheck(
+                                    Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
+                                    from,
+                                    dependencies -> Rules.moves(dependencies, move, runs)));
         } catch (final RuntimeException e) {
             throw new StoreException.PartlySaved(
                     issue.repository(),
@@ -965,7 +1014,12 @@ public class BoardController {
         }
         try {
             final String saved =
-                    store.save(body.seen(), writes, Rules.workerRecheck(issue, body.worker()))
+                    submitted(
+                                    name,
+                                    store,
+                                    writes,
+                                    body.seen(),
+                                    Rules.workerRecheck(issue, body.worker()))
                             .revision()
                             .value();
             LOG.info(
@@ -1020,7 +1074,8 @@ public class BoardController {
             return new PrioritySaved(board.revision().value());
         }
         try {
-            final String saved = store.save(body.seen(), writes, Recheck.none()).revision().value();
+            final String saved =
+                    submitted(name, store, writes, body.seen(), Recheck.none()).revision().value();
             LOG.info(
                     "Saved the priority of story {} of project {} as revision {}",
                     LogText.of(story),
