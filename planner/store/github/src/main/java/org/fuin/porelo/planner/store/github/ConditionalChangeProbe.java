@@ -49,6 +49,12 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
     static final int PARALLEL = 4;
 
     /**
+     * How many pages of items one deadline covers: GitHub gives a page of a hundred items in about
+     * 2 s, so a board of about 1750 items takes 32 to 36 s for its 18 pages.
+     */
+    static final int PAGES_IN_DEADLINE = 10;
+
+    /**
      * One page of the project's items as last answered: where it starts, its tag, the next, and
      * whether it held a whole page of items.
      */
@@ -261,7 +267,7 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
         final String token = tokens.token(config.forge());
         final Look look;
         try {
-            look = look(config, token, known, pages);
+            look = look(config, token, known, pages, current.items().size());
         } catch (final StoreException.Unreachable e) {
             failed = null;
             throw e;
@@ -472,9 +478,13 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
     }
 
     private Look look(
-            final ProjectConfig config, final String token, final Tags known, final boolean pages) {
+            final ProjectConfig config,
+            final String token,
+            final Tags known,
+            final boolean pages,
+            final int held) {
         final String owner = config.project().owner();
-        final long end = System.nanoTime() + deadline.toNanos();
+        final long end = System.nanoTime() + budget(held).toNanos();
         final AtomicBoolean over = new AtomicBoolean();
         final Map<String, CompletableFuture<ConditionalReads.Answer>> issues =
                 new LinkedHashMap<>();
@@ -530,6 +540,23 @@ public final class ConditionalChangeProbe implements ChangeProbe, Pace {
             issues.values().forEach(future -> future.cancel(true));
             items.cancel(true);
         }
+    }
+
+    /**
+     * The time one look may take: the deadline for up to {@value #PAGES_IN_DEADLINE} pages of
+     * items, and a share of it for each page beyond, since the pages are asked one after another,
+     * each by the cursor the one before it gave. A look with less time than its pages take never
+     * ends, keeps no tags, and so leaves every look after it a whole read.
+     *
+     * @param items how many items the board held
+     * @return the time
+     */
+    Duration budget(final int items) {
+        final long pages =
+                Math.max(1, (items + ConditionalReads.PAGE_SIZE - 1) / ConditionalReads.PAGE_SIZE);
+        return pages <= PAGES_IN_DEADLINE
+                ? deadline
+                : deadline.multipliedBy(pages).dividedBy(PAGES_IN_DEADLINE);
     }
 
     private static Look judged(

@@ -113,6 +113,67 @@ class ItemVersionsTest {
     }
 
     @Test
+    void anUnchangedItemWithAPriorityKeepsTheVersionTheBoardGaveIt() {
+        // Harm: the read right before a write leaves out the priority the issue's own field
+        // holds, so every write to an item with a priority is refused as changed since it was read.
+        final GitHubGraphQl.IssueRefs none =
+                new GitHubGraphQl.IssueRefs(List.of(), new GitHubGraphQl.PageInfo(false, null), 0);
+        final GitHubGraphQl.BoardIssue issue =
+                new GitHubGraphQl.BoardIssue(
+                        "I_1",
+                        1L,
+                        1,
+                        "One",
+                        "",
+                        "OPEN",
+                        null,
+                        Instant.parse("2026-11-20T10:00:00Z"),
+                        "example-org/example-project",
+                        List.of(),
+                        null,
+                        none,
+                        none,
+                        new GitHubGraphQl.PageInfo(false, null),
+                        null,
+                        null,
+                        List.of(new GitHubGraphQl.IssueFieldOption(FieldNames.PRIORITY, "High")),
+                        0);
+        final ItemView held =
+                new ItemView(
+                        "PVTI_1",
+                        "I_1",
+                        "example-project",
+                        1,
+                        "One",
+                        "",
+                        true,
+                        null,
+                        // The fields as the board read maps them, the issue's priority among them.
+                        ItemsBoardReader.values(List.of(), Map.of(), issue),
+                        List.of(),
+                        null,
+                        List.of(),
+                        List.of(),
+                        URI.create("https://github.com/example-org/example-project/issues/1"),
+                        Instant.parse("2026-11-20T10:00:00Z"),
+                        false);
+
+        final Version live =
+                ItemVersions.of(
+                        new GitHubGraphQl.IssueOnBoard(
+                                issue,
+                                "PVTI_1",
+                                List.of(),
+                                new GitHubGraphQl.PageInfo(false, null),
+                                0),
+                        Map.of(),
+                        held);
+
+        assertThat(held.fields()).containsEntry(FieldNames.PRIORITY, "High");
+        assertThat(live).isEqualTo(ItemVersions.of(held));
+    }
+
+    @Test
     void everyLabelOrFieldValueAddedPastThePageChangesTheItemsVersion() {
         // Harm: a second label or field value added past the page read leaves the item's version
         // as it was once one lies there, so a write made against the board read before it is

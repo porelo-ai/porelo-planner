@@ -534,6 +534,35 @@ class NativeStartIT {
         return answer.statusCode() + " " + answer.body();
     }
 
+    @Test
+    void theNativeExecutableWritesAndReadsBackEveryBoundTypeAsTheJvmDoes(@TempDir final Path dir)
+            throws Exception {
+        // Harm: a type the image cannot bind, such as a GitHub answer or a record of the board's
+        // copy, found only when a person's planner reads or writes it.
+        final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
+        assertThat(executable).as("the native executable the build wrote").isExecutable();
+        final java.io.ByteArrayOutputStream expected = new java.io.ByteArrayOutputStream();
+        assertThat(
+                        SerializationCheck.run(
+                                new java.io.PrintStream(
+                                        expected, true, java.nio.charset.StandardCharsets.UTF_8),
+                                System.err))
+                .as("the JVM's own check")
+                .isZero();
+        final Path out = dir.resolve("out");
+        final Path err = dir.resolve("err");
+        final Process process =
+                new ProcessBuilder(executable.toString(), SerializationCheck.NAME)
+                        .redirectOutput(out.toFile())
+                        .redirectError(err.toFile())
+                        .start();
+        assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("the check ends by itself").isTrue();
+        assertThat(process.exitValue()).as("the image's check, %s", Files.readString(err)).isZero();
+        assertThat(Files.readString(out))
+                .as("each type with as many values as the JVM writes")
+                .isEqualTo(expected.toString(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
     // Prevents a repository's check from passing or failing in the native executable otherwise
     // than in the JVM: schemas, YAML and JSON are read where only the image can lack metadata.
     @Test

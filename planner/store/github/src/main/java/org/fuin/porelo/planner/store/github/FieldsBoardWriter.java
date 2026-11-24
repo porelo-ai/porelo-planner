@@ -242,11 +242,11 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /**
-     * Makes the story labeled as one, adds it to the project with its Priority and Rank, then makes
-     * each issue in the idea's order, adds it to the project, makes it the story's next sub-issue
-     * and sets its fields before the next one is made. A creation cut off midway is finished by
-     * sending it again: what the earlier try made is taken, never made twice, and the answer names
-     * every issue.
+     * Makes the story of the issue type Story, adds it to the project with its Priority and Rank,
+     * then makes each issue in the idea's order, adds it to the project, makes it the story's next
+     * sub-issue and sets its fields before the next one is made. A creation cut off midway is
+     * finished by sending it again: what the earlier try made is taken, never made twice, and the
+     * answer names every issue.
      */
     @Override
     public IdeaIds createIdea(final Snapshot current, final Revision revision, final NewIdea idea) {

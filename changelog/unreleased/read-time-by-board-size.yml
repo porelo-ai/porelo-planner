@@ -1,0 +1,2 @@
+title: The change check and the read of the issues outside the project take time in proportion to the board's item pages and repositories, so a large board is no longer read whole at each look or shown with old lists.
+type: fixed

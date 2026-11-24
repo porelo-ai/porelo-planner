@@ -31,9 +31,7 @@ import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.aot.hint.BindingReflectionHintsRegistrar;
 import org.springframework.aot.hint.RuntimeHints;
-import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.aot.hint.predicate.RuntimeHintsPredicates;
 
 /** The sources the planner refuses before it touches Git or the cache. */
@@ -43,40 +41,33 @@ class StoreConfigurationTest {
             StoreConfiguration.fromGit(StoreConfiguration.gitProjects(Map.of()));
 
     @Test
-    void theNativeImageKeepsEveryRecordACopyIsMadeOf() throws NoSuchMethodException {
+    void theNativeImageKeepsEveryRecordACopyIsMadeOf() {
         // Harm: a copy the native executable cannot read or write, found only on a person's
         // computer, since Fory makes a record the image does not reflect on in the JVM alone.
-        final RegisterReflectionForBinding hints =
-                StoreConfiguration.class
-                        .getDeclaredMethod(
-                                "gitProjects",
-                                java.time.Duration.class,
-                                org.springframework.beans.factory.ObjectProvider.class)
-                        .getAnnotation(RegisterReflectionForBinding.class);
+        final RuntimeHints runtime = new RuntimeHints();
+        new BoundTypes.Hints().registerHints(runtime, null);
 
-        assertThat(hints).as("the native hints").isNotNull();
-        assertThat(Stream.concat(Stream.of(hints.value()), Stream.of(hints.classes())).toList())
+        assertThat(BoundTypes.COPY)
                 .as("the records the native image reflects on")
                 .containsAll(BoardCopies.records());
+        assertThat(
+                        BoardCopies.records().stream()
+                                .filter(
+                                        type ->
+                                                !RuntimeHintsPredicates.reflection()
+                                                        .onType(type)
+                                                        .test(runtime))
+                                .toList())
+                .as("the copy's records the native image does not bind")
+                .isEmpty();
     }
 
     @Test
-    void theNativeImageKeepsEveryGitHubModelTheStoreSendsOrReads() throws NoSuchMethodException {
+    void theNativeImageKeepsEveryGitHubModelTheStoreSendsOrReads() {
         // Harm: a GitHub answer the native executable cannot bind, such as the organization's
         // issue fields, so every priority save fails on a person's computer alone.
-        final RegisterReflectionForBinding hints =
-                StoreConfiguration.class
-                        .getDeclaredMethod(
-                                "gitProjects",
-                                java.time.Duration.class,
-                                org.springframework.beans.factory.ObjectProvider.class)
-                        .getAnnotation(RegisterReflectionForBinding.class);
         final RuntimeHints runtime = new RuntimeHints();
-        new BindingReflectionHintsRegistrar()
-                .registerReflectionHints(
-                        runtime.reflection(),
-                        Stream.concat(Stream.of(hints.value()), Stream.of(hints.classes()))
-                                .toArray(Type[]::new));
+        new BoundTypes.Hints().registerHints(runtime, null);
         final Set<Class<?>> models = new LinkedHashSet<>();
         for (final Method method : GitHubClient.class.getMethods()) {
             if (STORE_CALLS.contains(method.getName())) {
@@ -118,15 +109,19 @@ class StoreConfigurationTest {
                     "addSubIssue",
                     "createIssue",
                     "createIssueComment",
+                    "createLabel",
+                    "deleteLabel",
                     "issue",
                     "issueComments",
                     "issueFields",
                     "issues",
                     "issuesIfChanged",
+                    "labels",
                     "removeBlockedBy",
                     "removeSubIssue",
                     "reprioritizeSubIssue",
                     "updateIssue",
+                    "updateLabel",
                     "user");
 
     /** Adds the forge's REST models a type names, type arguments included. */

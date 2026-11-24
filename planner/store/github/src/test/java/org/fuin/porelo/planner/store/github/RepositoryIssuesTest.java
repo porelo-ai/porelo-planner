@@ -12,6 +12,7 @@ import org.fuin.porelo.forge.github.model.AuthorAssociation;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class RepositoryIssuesTest {
@@ -337,5 +338,49 @@ class RepositoryIssuesTest {
         assertThatThrownBy(() -> read(OWN))
                 .as("the read stopped by the refused token")
                 .isInstanceOf(GitHubException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 10})
+    void upToTenRepositoriesTheBudgetIsTheDeadline(final int repositories) {
+        // Harm: a board of a few repositories given more time than it needs, so a slow GitHub
+        // holds the board longer.
+        assertThat(issues.budget(repositories))
+                .as("the budget of up to ten repositories")
+                .isEqualTo(RepositoryIssues.DEADLINE);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"11,22", "20,40", "35,70"})
+    void beyondTenRepositoriesTheBudgetGrowsByAShareOfTheDeadlineForEach(
+            final int repositories, final int seconds) {
+        // Harm: the lists of a board with many repositories are cut short at every load, since
+        // they are asked one after another and take longer than one deadline.
+        assertThat(issues.budget(repositories))
+                .as("the budget of " + repositories + " repositories")
+                .isEqualTo(Duration.ofSeconds(seconds));
+    }
+
+    @Test
+    void aSpentBudgetOfManyRepositoriesNamesTheScaledBudgetNotTheDeadline() {
+        // Harm: a person told the lists were cut at 20 s on a board that was given 40 s, so the
+        // fault misleads what to change.
+        final String[] names = new String[20];
+        for (int n = 0; n < names.length; n++) {
+            names[n] = "example-repository-" + n;
+            github.holds(names[n], OpenIssues.numbered(names[n], 1, 2));
+        }
+        // The first ask leaves 25 s of the 40 s, the second 50 s: past the scaled budget, and
+        // past the deadline already after the first.
+        github.perAsk = Duration.ofSeconds(25);
+
+        final RepositoryIssues.Read read = read(names);
+
+        assertThat(github.asks).as("the pages asked within the scaled budget").hasSize(2);
+        assertThat(read.faults())
+                .as("one fault naming the scaled budget")
+                .singleElement()
+                .asString()
+                .contains(RepositoryIssues.BUDGET_SPENT, "within 40 s");
     }
 }

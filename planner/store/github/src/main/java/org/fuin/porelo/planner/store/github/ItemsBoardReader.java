@@ -573,7 +573,12 @@ public final class ItemsBoardReader implements BoardReader {
             return List.of();
         }
         // The lists' own deadline: a read sent again never runs into the project's.
-        final Call call = new Call(config, token, clock.instant().plus(unlisted.deadline()), true);
+        final Call call =
+                new Call(
+                        config,
+                        token,
+                        clock.instant().plus(unlisted.budget(config.names().size())),
+                        true);
         final String owner = config.project().owner();
         final RepositoryIssues.Read read =
                 unlisted.read(
@@ -1416,7 +1421,7 @@ public final class ItemsBoardReader implements BoardReader {
         /** Refuses the read once its deadline has passed. */
         void inTime() {
             if (lists && clock.instant().isAfter(until)) {
-                throw new RepositoryIssues.OutOfTime(unlisted.deadline());
+                throw new RepositoryIssues.OutOfTime(unlisted.budget(config.names().size()));
             }
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(

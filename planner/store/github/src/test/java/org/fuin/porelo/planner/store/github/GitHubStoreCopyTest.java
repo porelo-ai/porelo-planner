@@ -28,6 +28,7 @@ import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
+import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -467,5 +468,92 @@ class GitHubStoreCopyTest {
         assertThat(again.calls)
                 .as("the reads for an item the copy lacks")
                 .containsExactly("projectFields", "projectItems");
+    }
+
+    /** A copy whose board carries the fault a read of the other repositories' lists cut short. */
+    private void heldWithListsCutShort(final boolean cut) {
+        heldBefore();
+        final BoardCopy copy = copies().read(PROJECT, CONFIG.commit()).orElseThrow();
+        final TrackerBoard board = copy.board();
+        final List<String> faults = new ArrayList<>(board.faults());
+        if (cut) {
+            faults.add(
+                    RepositoryIssues.BUDGET_SPENT
+                            + " within 20 s; the list last read is shown for example-project");
+        }
+        copies().write(
+                        new BoardCopy(
+                                copy.project(),
+                                copy.filesCommit(),
+                                copy.repositories(),
+                                copy.takenAt(),
+                                new TrackerBoard(
+                                        board.id(),
+                                        board.fieldIds(),
+                                        board.fieldNames(),
+                                        board.optionIds(),
+                                        faults,
+                                        board.restFieldIds(),
+                                        board.priorities()),
+                                copy.items(),
+                                copy.cursor(),
+                                copy.held(),
+                                copy.waits(),
+                                copy.unlisted()));
+    }
+
+    @Test
+    void aCopyHoldingListsCutShortReadsTheBoardWholeAtItsFirstPollInsteadOfLooking() {
+        // Harm: a board shown with the lists of a read cut short, and no look ever reads them
+        // again, since a look sees only what changed on the project.
+        heldWithListsCutShort(true);
+        final GitHub github = new GitHub();
+        final List<ChangeCursor> asked = new ArrayList<>();
+        final GitHubStore store =
+                store(
+                        github,
+                        BoardWriter.NONE,
+                        AccessRefusals.DEFAULT,
+                        (config, token, cursor, known) -> {
+                            asked.add(cursor);
+                            return Optional.of(
+                                    new TrackerChanges.Changed(
+                                            Set.of(), Set.of(), Set.of(), LOOKED));
+                        });
+        store.board();
+
+        store.poll();
+
+        assertThat(asked).as("the looks for changes asked").isEmpty();
+        assertThat(github.calls)
+                .as("the first poll's reads")
+                .containsExactly("projectFields", "projectItems");
+    }
+
+    @Test
+    void aCopyWithoutListsCutShortTakesTheLookAtItsFirstPoll() {
+        // Harm: every start from a copy reads the whole board again, though nothing was cut short.
+        heldWithListsCutShort(false);
+        final GitHub github = new GitHub();
+        final List<ChangeCursor> asked = new ArrayList<>();
+        final GitHubStore store =
+                store(
+                        github,
+                        BoardWriter.NONE,
+                        AccessRefusals.DEFAULT,
+                        (config, token, cursor, known) -> {
+                            asked.add(cursor);
+                            return Optional.of(
+                                    new TrackerChanges.Changed(
+                                            Set.of("PVTI_1"), Set.of(), Set.of(), LOOKED));
+                        });
+        store.board();
+
+        store.poll();
+
+        assertThat(asked).as("the looks for changes asked").hasSize(1);
+        assertThat(github.calls)
+                .as("only the item the look named is read at the first poll")
+                .containsExactly("issueBoard of [I_1]");
     }
 }

@@ -12,45 +12,11 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.forge.github.GitHubClient;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
-import org.fuin.porelo.forge.github.model.Enterprise;
-import org.fuin.porelo.forge.github.model.Integration;
-import org.fuin.porelo.forge.github.model.IntegrationPermissions;
-import org.fuin.porelo.forge.github.model.Issue;
-import org.fuin.porelo.forge.github.model.IssueComment;
-import org.fuin.porelo.forge.github.model.IssueField;
-import org.fuin.porelo.forge.github.model.IssueFieldOptionsInner;
-import org.fuin.porelo.forge.github.model.IssueFieldValue;
-import org.fuin.porelo.forge.github.model.IssueFieldValueMultiSelectOptionsInner;
-import org.fuin.porelo.forge.github.model.IssueFieldValueSingleSelectOption;
-import org.fuin.porelo.forge.github.model.IssueLabelsInner;
-import org.fuin.porelo.forge.github.model.IssueType;
-import org.fuin.porelo.forge.github.model.IssuesAddBlockedByDependencyRequest;
-import org.fuin.porelo.forge.github.model.IssuesAddSubIssueRequest;
-import org.fuin.porelo.forge.github.model.IssuesCreateRequest;
-import org.fuin.porelo.forge.github.model.IssuesCreateRequestIssueFieldValuesInner;
-import org.fuin.porelo.forge.github.model.IssuesRemoveSubIssueRequest;
-import org.fuin.porelo.forge.github.model.IssuesReprioritizeSubIssueRequest;
-import org.fuin.porelo.forge.github.model.IssuesUpdate200Response;
-import org.fuin.porelo.forge.github.model.IssuesUpdateCommentRequest;
-import org.fuin.porelo.forge.github.model.IssuesUpdateRequest;
-import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInner;
-import org.fuin.porelo.forge.github.model.PrivateUser;
-import org.fuin.porelo.forge.github.model.PublicUser;
-import org.fuin.porelo.forge.github.model.SimpleUser;
-import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
-import org.fuin.porelo.planner.app.answers.ReadingReply;
-import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.mock.MockMode;
 import org.fuin.porelo.planner.app.mock.MockStore;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
-import org.fuin.porelo.planner.store.cache.BoardCopy;
-import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
-import org.fuin.porelo.planner.store.cache.TrackedItem;
-import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
-import org.fuin.porelo.planner.store.cache.TrackedWait;
-import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
@@ -66,12 +32,12 @@ import org.fuin.porelo.planner.store.local.ItemsDirectories;
 import org.fuin.porelo.planner.store.local.LocalDirectoryStores;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
-import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 
@@ -80,6 +46,7 @@ import org.springframework.http.HttpStatus;
  * the mock mode each served from the mock board.
  */
 @Configuration(proxyBeanMethods = false)
+@ImportRuntimeHints(BoundTypes.Hints.class)
 public class StoreConfiguration {
 
     /**
@@ -89,52 +56,6 @@ public class StoreConfiguration {
      */
     @Bean
     @Lazy
-    // The forge client binds GitHub's REST answers to these by reflection, which a native image
-    // keeps only for the types named.
-    @RegisterReflectionForBinding({
-        IssueComment.class,
-        IssuesUpdateCommentRequest.class,
-        IssuesUpdateRequest.class,
-        IssuesUpdate200Response.class,
-        Issue.class,
-        // A story made outside the project is told by its issue type alone.
-        IssueType.class,
-        Integration.class,
-        IntegrationPermissions.class,
-        Enterprise.class,
-        IssuesCreateRequest.class,
-        IssuesAddSubIssueRequest.class,
-        IssuesAddBlockedByDependencyRequest.class,
-        IssuesRemoveSubIssueRequest.class,
-        IssuesReprioritizeSubIssueRequest.class,
-        IssueLabelsInner.class,
-        // The organization's issue fields, which hold an issue's priority, and an issue's values.
-        IssueField.class,
-        IssueFieldOptionsInner.class,
-        IssueFieldValue.class,
-        IssueFieldValueSingleSelectOption.class,
-        IssueFieldValueMultiSelectOptionsInner.class,
-        IssuesCreateRequestIssueFieldValuesInner.class,
-        IssuesUpdateRequestIssueFieldValuesInner.class,
-        SimpleUser.class,
-        PrivateUser.class,
-        PublicUser.class,
-        UsersGetAuthenticated200Response.class,
-        // Apache Fory makes the board copy's records through their constructors by reflection.
-        BoardCopy.class,
-        BoardCopy.Project.class,
-        TrackerBoard.class,
-        TrackedItem.class,
-        TrackedItem.Issue.class,
-        TrackedItem.Links.class,
-        TrackedItem.Link.class,
-        TrackedItem.Value.class,
-        TrackedItem.Choice.class,
-        ChangeCursor.class,
-        ChangeCursor.Page.class,
-        TrackedWait.class,
-        TrackedUnlisted.class
-    })
     public GitProjects gitProjects(
             @Value("${planner.github.read-silence:60s}") final Duration readSilence,
             final ObjectProvider<LimitFactors> limits) {
@@ -400,11 +321,6 @@ public class StoreConfiguration {
 
     /** Creates private disk records outside mock mode and memory records within it. */
     @Bean(destroyMethod = "close")
-    @RegisterReflectionForBinding({
-        WorkRecord.Document.class,
-        TaskEventReply.class,
-        ReadingReply.class
-    })
     public WorkRecord workRecord(
             final ObjectProvider<MockMode> mode, final ObjectProvider<LimitFactors> limits) {
         final Map<String, String> environment = System.getenv();

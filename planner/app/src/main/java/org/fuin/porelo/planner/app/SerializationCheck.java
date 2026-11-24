@@ -1,0 +1,355 @@
+package org.fuin.porelo.planner.app;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.RecordComponent;
+import java.lang.reflect.Type;
+import java.math.BigDecimal;
+import java.net.URI;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import org.fuin.porelo.planner.store.cache.BoardCopy;
+import org.fuin.porelo.planner.store.cache.ForyEncoding;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * The executable's check of its own image: every bound type is filled, written and read back, so a
+ * type the image cannot bind is found by running the executable, not on a person's computer.
+ *
+ * <p>Each line names a type and how many values its written form holds, so the executable's answer
+ * can be held to the JVM's: a value the image drops shows as a smaller count.
+ */
+final class SerializationCheck {
+
+    /** The command's name. */
+    static final String NAME = "check-serialization";
+
+    /** The exit code when a type is not read back as it was written. */
+    static final int FAILED = 1;
+
+    /** How deep records are filled; deeper ones stay empty, as GitHub's own nest without end. */
+    private static final int DEPTH = 6;
+
+    /** The texts a record is made with, the first it takes kept. */
+    private static final List<String> TEXTS =
+            List.of("sample", "porelo-ai/sample#1"); // not-a-citation
+
+    private static final Instant WHEN = Instant.parse("2026-01-02T03:04:05Z");
+
+    /** The forge client's own mapper, with its readers for GitHub's untyped unions. */
+    private final ObjectMapper json = forgeMapper();
+
+    private SerializationCheck() {}
+
+    /**
+     * Writes and reads back every bound type, one line each.
+     *
+     * @param out where each type's line goes
+     * @param err where each failure goes
+     * @return 0 when every type came back as it was written, {@value #FAILED} otherwise
+     */
+    static int run(final PrintStream out, final PrintStream err) {
+        final SerializationCheck check = new SerializationCheck();
+        boolean failed = false;
+        for (final Class<?> type : BoundTypes.GITHUB) {
+            try {
+                out.println(type.getSimpleName() + " " + check.json(type) + " values");
+            } catch (final IOException | RuntimeException | LinkageError e) {
+                err.println(type.getName() + " is not read back: " + e);
+                failed = true;
+            }
+        }
+        for (final Class<?> type : BoundTypes.OWN) {
+            try {
+                out.println(type.getSimpleName() + " " + own(type) + " values");
+            } catch (final RuntimeException | LinkageError e) {
+                err.println(type.getName() + " is not read back: " + e);
+                failed = true;
+            }
+        }
+        try {
+            out.println(BoardCopy.class.getSimpleName() + " " + check.copy() + " records");
+        } catch (final IOException | RuntimeException | LinkageError e) {
+            err.println(BoardCopy.class.getName() + " is not read back: " + e);
+            failed = true;
+        }
+        return failed ? FAILED : 0;
+    }
+
+    /**
+     * The mapper the forge client reads GitHub's answers with, as the planner builds the client;
+     * the forge keeps it to its package, so it is reached the one way the image registers.
+     */
+    static ObjectMapper forgeMapper() {
+        try {
+            final java.lang.reflect.Method mapper =
+                    Class.forName(BoundTypes.FORGE_JSON)
+                            .getDeclaredMethod(
+                                    "mapper", org.fuin.porelo.forge.github.Strictness.class);
+            mapper.setAccessible(true);
+            return (ObjectMapper)
+                    mapper.invoke(null, org.fuin.porelo.forge.github.Strictness.LENIENT);
+        } catch (final ReflectiveOperationException e) {
+            throw new IllegalStateException("the forge client's mapper is not reached: " + e, e);
+        }
+    }
+
+    /** Writes a filled instance of the planner's own as the work record does, and reads it back. */
+    private static int own(final Class<?> type) {
+        final Object sample = Objects.requireNonNull(fill(type, 0), type.getName());
+        final String written = WorkRecord.JSON.writerFor(type).writeValueAsString(sample);
+        final Object read = WorkRecord.JSON.readerFor(type).readValue(written);
+        if (!sample.equals(read)) {
+            throw new IllegalStateException("written " + written + ", read back differently");
+        }
+        return WorkRecord.JSON.readTree(written).size();
+    }
+
+    /** Writes a filled instance as JSON, reads it back and answers how many values it held. */
+    private int json(final Class<?> type) throws IOException {
+        final Object sample = Objects.requireNonNull(fill(sampleType(type), 0), type.getName());
+        final String written = json.writeValueAsString(sample);
+        final Object read = json.readerFor(type).readValue(written);
+        final String again = json.writeValueAsString(read);
+        if (!written.equals(again)) {
+            throw new IllegalStateException("written " + written + ", read back as " + again);
+        }
+        final JsonNode tree = json.readTree(written);
+        if (tree.isEmpty()) {
+            throw new IllegalStateException("written without a value: " + written);
+        }
+        return tree.size();
+    }
+
+    /** Writes a filled copy as Fory does, reads it back and answers how many records it held. */
+    private int copy() throws IOException {
+        final BoardCopy sample = (BoardCopy) Objects.requireNonNull(fill(BoardCopy.class, 0));
+        final ForyEncoding fory = new ForyEncoding();
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        fory.encode(sample, bytes);
+        final BoardCopy read =
+                fory.decode(new ByteArrayInputStream(bytes.toByteArray()), bytes.size());
+        if (!sample.equals(read)) {
+            throw new IllegalStateException("the copy read back differs from the one written");
+        }
+        final Set<Class<?>> records = new LinkedHashSet<>();
+        records(read, records);
+        return records.size();
+    }
+
+    /** The first bound type an interface's answer is made of, or the type itself. */
+    private static Class<?> sampleType(final Class<?> type) {
+        if (!type.isInterface()) {
+            return type;
+        }
+        return BoundTypes.GITHUB.stream()
+                .filter(made -> !made.isInterface() && type.isAssignableFrom(made))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no type makes " + type.getName()));
+    }
+
+    /** Adds the record types an object is made of, itself included. */
+    private static void records(final @Nullable Object value, final Set<Class<?>> found) {
+        if (value instanceof Iterable<?> items) {
+            items.forEach(item -> records(item, found));
+        } else if (value instanceof Map<?, ?> map) {
+            map.values().forEach(item -> records(item, found));
+        } else if (value != null && value.getClass().isRecord()) {
+            found.add(value.getClass());
+            for (final RecordComponent component : value.getClass().getRecordComponents()) {
+                try {
+                    records(component.getAccessor().invoke(value), found);
+                } catch (final ReflectiveOperationException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+        }
+    }
+
+    /** A value of a type with every part set, records filled to {@value #DEPTH} deep. */
+    private static @Nullable Object fill(final Type type, final int depth) {
+        if (type instanceof ParameterizedType parameterized) {
+            final Class<?> raw = (Class<?>) parameterized.getRawType();
+            final Type[] arguments = parameterized.getActualTypeArguments();
+            if (List.class.isAssignableFrom(raw)) {
+                return listOf(element(arguments[0], depth + 1));
+            }
+            if (Set.class.isAssignableFrom(raw)) {
+                return setOf(element(arguments[0], depth + 1));
+            }
+            if (Map.class.isAssignableFrom(raw)) {
+                final Map<Object, Object> map = new LinkedHashMap<>();
+                final Object key = element(arguments[0], depth + 1);
+                final Object value = element(arguments[1], depth + 1);
+                if (key != null && value != null) {
+                    map.put(key, value);
+                }
+                return map;
+            }
+            return fill(raw, depth);
+        }
+        if (!(type instanceof Class<?> plain)) {
+            return "sample";
+        }
+        return plainValue(plain, depth);
+    }
+
+    /**
+     * An element of a collection, or none when its record's own rules refuse a value filled without
+     * regard to the others, such as a task that must work an issue its run names.
+     */
+    private static @Nullable Object element(final Type type, final int depth) {
+        try {
+            return fill(type, depth);
+        } catch (final IllegalStateException e) {
+            return null;
+        }
+    }
+
+    private static @Nullable Object plainValue(final Class<?> type, final int depth) {
+        if (type == String.class || type == Object.class) {
+            return "sample";
+        }
+        if (type == long.class || type == Long.class) {
+            return 7L;
+        }
+        if (type == int.class || type == Integer.class) {
+            return 3;
+        }
+        if (type == boolean.class || type == Boolean.class) {
+            return true;
+        }
+        if (type == double.class || type == Double.class) {
+            return 1.5;
+        }
+        if (type == float.class || type == Float.class) {
+            return 2.5f;
+        }
+        if (type == BigDecimal.class) {
+            return new BigDecimal("4.5");
+        }
+        if (type == URI.class) {
+            return URI.create("https://example.org/sample");
+        }
+        if (type == Instant.class) {
+            return WHEN;
+        }
+        if (type == OffsetDateTime.class) {
+            return WHEN.atOffset(ZoneOffset.UTC);
+        }
+        if (type == LocalDate.class) {
+            return LocalDate.of(2026, 1, 2);
+        }
+        if (type == UUID.class) {
+            return new UUID(1, 2);
+        }
+        if (type.isEnum()) {
+            return type.getEnumConstants()[0];
+        }
+        if (type.isInterface() && depth <= DEPTH) {
+            return BoundTypes.all().stream()
+                    .filter(made -> !made.isInterface() && type.isAssignableFrom(made))
+                    .findFirst()
+                    .map(made -> plainValue(made, depth))
+                    .orElse(null);
+        }
+        if (depth > DEPTH || type.isInterface() || type.isArray() || type.isPrimitive()) {
+            return null;
+        }
+        if (type.isRecord()) {
+            return record(type, depth);
+        }
+        return type.getName().startsWith("org.fuin.porelo.") ? bean(type, depth) : null;
+    }
+
+    /**
+     * A record made through its canonical constructor with each component filled; its text first as
+     * a plain word, then as an issue's reference, for a record that holds one.
+     */
+    private static Object record(final Class<?> type, final int depth) {
+        final RecordComponent[] components = type.getRecordComponents();
+        final Class<?>[] types = new Class<?>[components.length];
+        for (int i = 0; i < components.length; i++) {
+            types[i] = components[i].getType();
+        }
+        final Constructor<?> canonical;
+        try {
+            canonical = type.getDeclaredConstructor(types);
+        } catch (final NoSuchMethodException e) {
+            throw new IllegalStateException("cannot make " + type.getName() + ": " + e, e);
+        }
+        RuntimeException refused = null;
+        for (final String text : TEXTS) {
+            final Object[] values = new Object[components.length];
+            for (int i = 0; i < components.length; i++) {
+                final Object value =
+                        types[i] == String.class
+                                ? text
+                                : fill(components[i].getGenericType(), depth + 1);
+                values[i] =
+                        value == null && types[i].isPrimitive() ? plainValue(types[i], 0) : value;
+            }
+            try {
+                return canonical.newInstance(values);
+            } catch (final java.lang.reflect.InvocationTargetException e) {
+                refused =
+                        new IllegalStateException(
+                                "cannot make " + type.getName() + ": " + e.getCause(),
+                                e.getCause());
+            } catch (final ReflectiveOperationException e) {
+                throw new IllegalStateException("cannot make " + type.getName() + ": " + e, e);
+            }
+        }
+        throw Objects.requireNonNull(refused);
+    }
+
+    /** A bean made through its constructor, each property set through its setter. */
+    private static @Nullable Object bean(final Class<?> type, final int depth) {
+        try {
+            final Object bean = type.getConstructor().newInstance();
+            for (final java.lang.reflect.Method method : type.getMethods()) {
+                if (method.getName().startsWith("set")
+                        && method.getParameterCount() == 1
+                        && method.getReturnType() == void.class) {
+                    final Object value = fill(method.getGenericParameterTypes()[0], depth + 1);
+                    if (value != null) {
+                        method.invoke(bean, value);
+                    }
+                }
+            }
+            return bean;
+        } catch (final NoSuchMethodException e) {
+            return null;
+        } catch (final ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot make " + type.getName() + ": " + e, e);
+        }
+    }
+
+    private static List<Object> listOf(final @Nullable Object value) {
+        final List<Object> list = new ArrayList<>();
+        if (value != null) {
+            list.add(value);
+        }
+        return List.copyOf(list);
+    }
+
+    private static Set<Object> setOf(final @Nullable Object value) {
+        return value == null ? Set.of() : Set.of(value);
+    }
+}

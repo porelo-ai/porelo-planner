@@ -42,6 +42,9 @@ public final class RepositoryIssues {
      */
     static final Duration DEADLINE = Duration.ofSeconds(20);
 
+    /** How many repositories one deadline covers. */
+    static final int REPOSITORIES_IN_DEADLINE = 10;
+
     /** One page of a repository's open issues as GitHub answers it. */
     @FunctionalInterface
     public interface Pages {
@@ -186,6 +189,21 @@ public final class RepositoryIssues {
     }
 
     /**
+     * The time one read of the given number of repositories may take: the deadline for up to
+     * {@value #REPOSITORIES_IN_DEADLINE} repositories, and a share of it for each beyond, since the
+     * lists are asked one after another and GitHub takes almost a second for each page, even one it
+     * answers unchanged.
+     *
+     * @param repositories how many repositories are read
+     * @return the time
+     */
+    Duration budget(final int repositories) {
+        return repositories <= REPOSITORIES_IN_DEADLINE
+                ? deadline
+                : deadline.multipliedBy(repositories).dividedBy(REPOSITORIES_IN_DEADLINE);
+    }
+
+    /**
      * Holds a copy's lists for the repositories that hold none yet, so a repository the next read
      * cannot list keeps them; their pages are read anew, since no tag was kept.
      *
@@ -224,7 +242,8 @@ public final class RepositoryIssues {
             final Fetch fetch,
             final InstantSource clock,
             final String token) {
-        final Instant until = clock.instant().plus(deadline);
+        final Duration budget = budget(repositories.size());
+        final Instant until = clock.instant().plus(budget);
         final List<String> faults = new ArrayList<>();
         final List<String> notRead = new ArrayList<>();
         int requests = 0;
@@ -316,7 +335,7 @@ public final class RepositoryIssues {
             faults.add(
                     BUDGET_SPENT
                             + " within "
-                            + Seconds.of(deadline)
+                            + Seconds.of(budget)
                             + " s; the list last read is shown for "
                             + String.join(", ", notRead));
         }

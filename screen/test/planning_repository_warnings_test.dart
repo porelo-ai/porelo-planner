@@ -207,6 +207,8 @@ void main() {
         },
       },
     ]);
+    await tester.tap(find.byKey(const Key('planning-repository-warnings-fold')));
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('planning-repository-warning repo-a TopicLabels')), findsOneWidget);
     expect(find.byKey(const Key('planning-repository-warning repo-b TopicLabels')), findsOneWidget);

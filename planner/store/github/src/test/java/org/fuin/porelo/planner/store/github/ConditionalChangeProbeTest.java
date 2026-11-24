@@ -1252,4 +1252,32 @@ class ConditionalChangeProbeTest {
         nanos.addAndGet(ConditionalChangeProbe.WAITS_EVERY.toNanos());
         assertThat(probe.waitsChanged(board)).as("the same change once the minute passed").isTrue();
     }
+
+    @Test
+    void aLookOfUpToTenPagesOfItemsHasTheDeadline() {
+        // Harm: a look on a small board given more time than it needs.
+        final ConditionalChangeProbe probe = probe(github);
+
+        assertThat(probe.budget(0)).as("an empty board").isEqualTo(ConditionalChangeProbe.DEADLINE);
+        final int tenPages = ConditionalReads.PAGE_SIZE * ConditionalChangeProbe.PAGES_IN_DEADLINE;
+        assertThat(probe.budget(tenPages))
+                .as("exactly ten pages")
+                .isEqualTo(ConditionalChangeProbe.DEADLINE);
+    }
+
+    @Test
+    void aLookBeyondTenPagesOfItemsGetsAShareOfTheDeadlineForEachPage() {
+        // Harm: a look on a large board can never finish in time, keeps no tags, and so every
+        // look after it reads the whole board.
+        final ConditionalChangeProbe probe = probe(github);
+        final int pageSize = ConditionalReads.PAGE_SIZE;
+
+        assertThat(probe.budget(pageSize * ConditionalChangeProbe.PAGES_IN_DEADLINE + 1))
+                .as("one item past ten pages, eleven pages")
+                .isEqualTo(ConditionalChangeProbe.DEADLINE.multipliedBy(11).dividedBy(10));
+        assertThat(probe.budget(1750))
+                .as("1750 items, eighteen pages")
+                .isEqualTo(ConditionalChangeProbe.DEADLINE.multipliedBy(18).dividedBy(10))
+                .isEqualTo(Duration.ofSeconds(54));
+    }
 }

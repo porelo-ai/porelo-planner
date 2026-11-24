@@ -306,6 +306,9 @@
             <id>dev</id>
             <properties>
                 <spring-boot.run.skip>false</spring-boot.run.skip>
+                <!-- More arguments for the planner's JVM, such as a debugger's agent; DevTools restarts within that
+                     JVM, so they hold over every restart. -->
+                <planner.dev.jvm></planner.dev.jvm>
             </properties>
             <dependencies>
                 <dependency>
@@ -323,7 +326,7 @@
                         <version>${spring-boot.version}</version>
                         <configuration>
                             <mainClass>org.fuin.porelo.planner.app.PlannerApplication</mainClass>
-                            <jvmArguments>-Dspring.devtools.livereload.enabled=false</jvmArguments>
+                            <jvmArguments>-Dspring.devtools.livereload.enabled=false ${planner.dev.jvm}</jvmArguments>
                         </configuration>
                     </plugin>
                 </plugins>

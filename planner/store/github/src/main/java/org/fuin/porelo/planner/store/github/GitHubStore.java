@@ -454,6 +454,7 @@ public final class GitHubStore implements PlanningStore {
         CONFIG("the project's files changed"),
         UNTOLD("the change look gave no answer"),
         UNLISTED("the change check saw a change the item list does not show"),
+        COPY_CUT("the copy's issues outside the project were not all read"),
         PROBED("the change check saw a change"),
         RELOAD("a read anew was asked for"),
         RESULT("a stage result names an issue the board does not hold"),
@@ -464,6 +465,12 @@ public final class GitHubStore implements PlanningStore {
         WholeRead(final String words) {
             this.words = words;
         }
+    }
+
+    /** Whether a board's lists of the issues outside the project were read in part. */
+    private static boolean listsCutShort(final Snapshot board) {
+        return board.board().faults().stream()
+                .anyMatch(fault -> fault.startsWith(RepositoryIssues.BUDGET_SPENT));
     }
 
     private static long millis(final long from, final long to) {
@@ -997,6 +1004,11 @@ public final class GitHubStore implements PlanningStore {
             if (current == null || !current.config().commit().equals(now.commit())) {
                 return wholeBesideSaves(
                         now, true, current == null ? WholeRead.FIRST : WholeRead.CONFIG);
+            }
+            if (fromCopy && listsCutShort(current)) {
+                // The copy holds lists a read before it cut short: no look tells what they lack,
+                // so they are read anew at once, never shown with the fault of a past read.
+                return wholeBesideSaves(now, true, WholeRead.COPY_CUT);
             }
             if (fromCopy || parts.changes() != TrackerChanges.NONE) {
                 final Looked looked = lookBesideSaves(now, current);

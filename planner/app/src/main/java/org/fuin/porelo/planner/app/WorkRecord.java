@@ -58,7 +58,9 @@ public final class WorkRecord implements AutoCloseable {
 
     static final int MOST_RECORD = 16 * 1024 * 1024;
     private static final int END_RESERVE = 2 * 1024 * 1024;
-    private static final JsonMapper JSON =
+
+    /** The work record's JSON, held strict, which the executable's own check also writes. */
+    static final JsonMapper JSON =
             JsonMapper.builder()
                     .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
                     .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -68,6 +70,7 @@ public final class WorkRecord implements AutoCloseable {
                     .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
                     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
                     .build();
+
     private final Map<String, String> environment;
     private final PrivateFiles files;
     private final boolean memory;

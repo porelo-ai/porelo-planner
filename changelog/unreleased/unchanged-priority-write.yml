@@ -1,0 +1,2 @@
+title: A write to an issue with a priority is no longer refused as changed when the issue is unchanged, and the refusal of a changed item reaches the window as 409 instead of 500.
+type: fixed

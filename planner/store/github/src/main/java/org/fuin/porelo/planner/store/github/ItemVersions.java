@@ -89,7 +89,8 @@ final class ItemVersions {
                         Objects.requireNonNullElse(issue.body(), ""),
                         "OPEN".equals(issue.state()),
                         reason == null ? null : reason.toLowerCase(Locale.ROOT),
-                        ItemsBoardReader.values(now.values(), fieldNames),
+                        // The priority lies in the issue's own field, as the board read takes it.
+                        ItemsBoardReader.values(now.values(), fieldNames, issue),
                         issue.labels(),
                         issue.parentId(),
                         issue.subIssues().nodes().stream().map(GitHubGraphQl.IssueRef::id).toList(),

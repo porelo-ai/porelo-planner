@@ -91,6 +91,9 @@ public class PlannerApplication {
         if (WorkCommands.named(rest)) {
             return OptionalInt.of(WorkCommands.run(launch.rest(), out, err, launch.limits()));
         }
+        if (rest.length == 1 && rest[0].equals(SerializationCheck.NAME)) {
+            return OptionalInt.of(SerializationCheck.run(out, err));
+        }
         return OptionalInt.empty();
     }
 

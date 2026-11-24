@@ -118,8 +118,9 @@ class _CorrectionMenu extends StatelessWidget {
 }
 
 /// What the last whole board found wrong in the project's repositories themselves, in the planning header, each with
-/// the correction its store offers; nothing when there is none.
-class PlanningRepositoryWarnings extends StatelessWidget {
+/// the correction its store offers; nothing when there is none. One warning is shown whole; several take one line until
+/// the person opens them, so they never push the board out of sight.
+class PlanningRepositoryWarnings extends StatefulWidget {
   /// Shows [board]'s repository warnings.
   const PlanningRepositoryWarnings({required this.board, super.key});
 
@@ -127,10 +128,46 @@ class PlanningRepositoryWarnings extends StatelessWidget {
   final PlanningBoard board;
 
   @override
+  State<PlanningRepositoryWarnings> createState() => _PlanningRepositoryWarningsState();
+}
+
+class _PlanningRepositoryWarningsState extends State<PlanningRepositoryWarnings> {
+  bool _open = false;
+
+  PlanningBoard get board => widget.board;
+
+  @override
   Widget build(BuildContext context) {
     final warnings = board.repositoryWarnings;
     if (warnings.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final list = _list(warnings, theme);
+    if (warnings.length < 2) return list;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          key: const Key('planning-repository-warnings-fold'),
+          onTap: () => setState(() => _open = !_open),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: Space.small,
+            children: [
+              Icon(Icons.warning_amber_outlined, size: PlanningStyle.rowIcon, color: theme.colorScheme.error),
+              Flexible(child: Text('${warnings.length} warnings about the repositories — ${_open ? 'hide' : 'show'}')),
+            ],
+          ),
+        ),
+        if (_open)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
+            child: SingleChildScrollView(child: list),
+          ),
+      ],
+    );
+  }
+
+  Widget _list(List<PlanRepositoryWarning> warnings, ThemeData theme) {
     return Column(
       key: const Key('planning-repository-warnings'),
       crossAxisAlignment: CrossAxisAlignment.start,

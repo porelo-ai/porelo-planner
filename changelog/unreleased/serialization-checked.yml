@@ -1,0 +1,2 @@
+title: The native executable checks that it writes and reads back every type it binds, with the command check-serialization.
+type: added
