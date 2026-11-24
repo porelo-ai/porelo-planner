@@ -1293,6 +1293,55 @@ class PlanningBoard extends ChangeNotifier {
     }
   }
 
+  /// The saves the planner keeps for the person on this board, as the last whole board named them; empty when none.
+  List<PlanHeldSave> get heldSaves => snapshot?.heldSaves ?? const [];
+
+  /// Why the held save [save] cannot be resent or dropped now, or null when it can.
+  String? heldSaveUnavailable(String save) => _disposed || !live
+      ? 'the planning board is not live'
+      : actionBusy || saving
+      ? 'waiting for the planner'
+      : !heldSaves.any((held) => held.id == save)
+      ? 'the save is no longer held'
+      : null;
+
+  /// Sends the held save [save] again; answers whether the planner wrote it. The board that follows no longer holds
+  /// it; a refusal's words stand in [actionProblem].
+  Future<bool> resendSave(String save) async {
+    final held = heldSaves.where((each) => each.id == save).firstOrNull;
+    if (held != null && !held.resendable) {
+      actionProblem = 'The save was not resent: the planner does not resend it.';
+      _changed();
+      return false;
+    }
+    return _heldSaveCall(save, 'resent', (source, name) => source.resendSave(name, save));
+  }
+
+  /// Drops the held save [save], writing nothing; answers whether the planner dropped it.
+  Future<bool> dropSave(String save) => _heldSaveCall(save, 'dropped', (source, name) => source.dropSave(name, save));
+
+  Future<bool> _heldSaveCall(String save, String done, Future<void> Function(PlanningSource, String) call) async {
+    if (heldSaveUnavailable(save) case final reason?) {
+      actionProblem = 'The save was not $done: $reason.';
+      _changed();
+      return false;
+    }
+    _beginAction();
+    final source = backend;
+    final name = project;
+    actionBusy = true;
+    _changed();
+    try {
+      await call(source, name);
+      return true;
+    } catch (error) {
+      if (_sameBoard(source, name)) reportActionProblem(error);
+      return false;
+    } finally {
+      if (_sameBoard(source, name)) _endAction();
+    }
+  }
+
   /// Drops each pending priority the board carries, or whose save was answered and a newer board has come since.
   void _reconcilePriorities(PlanningSnapshot reply) {
     if (!reply.complete || reply.revision.isEmpty) return;
@@ -3555,6 +3604,17 @@ String _failureWords(Object error) {
       final ids = missing is List ? missing.whereType<String>().toList() : const <String>[];
       return 'The board shown does not hold ${ids.isEmpty ? 'an item this needs' : ids.join(', ')}. '
           'Look at the board again and choose again.';
+    }
+    // A held save's refusals name what the person can do now, whatever words the planner sent.
+    if (error.name == 'NoSuchSave') return 'The save is no longer held. Look at the board again.';
+    if (error.name == 'SaveNotHeld') return 'The save is not held: it runs, or was sent again.';
+    if (error.name == 'SaveOfRun') return 'The save is a halted run\'s: its run\'s Stop or Start decides it.';
+    if (error.name == 'SaveFromElsewhere') {
+      final repository = error.parameters['repository'];
+      final branch = error.parameters['branch'];
+      return 'The save was kept from '
+          '${repository is String && repository.isNotEmpty ? repository : 'another repository'}'
+          '${branch is String && branch.isNotEmpty ? ' on $branch' : ''}, so it is never written here.';
     }
     if (error.name == 'PartlySaved') {
       final pushed = error.parameters['pushed'];

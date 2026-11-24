@@ -3323,6 +3323,7 @@ Map<String, dynamic> planningSummary(Map<String, dynamic> board) => {
   // A planner's event is a whole board, so the screen takes changed rules from it.
   for (final part in const ['states', 'phases', 'work', 'faults', 'rules', 'repositoryWarnings'])
     if (board[part] case final List<dynamic> value) part: value,
+  if (board['heldSaves'] case final List<dynamic> heldSaves) 'heldSaves': heldSaves,
   if (board['unlisted'] case final List<dynamic> unlisted)
     'unlisted': [
       for (final item in unlisted)

@@ -457,6 +457,19 @@ class MockPlanningSource implements PlanningSource {
   final listCalls = <Map<String, Object>>[];
 
   @override
+  Future<String> resendSave(String project, String save) async {
+    board(project);
+    // The mock board keeps no outbox, as the planner's mock mode keeps none.
+    throw mockRefusal('NoSuchSave', {'save': save});
+  }
+
+  @override
+  Future<void> dropSave(String project, String save) async {
+    board(project);
+    throw mockRefusal('NoSuchSave', {'save': save});
+  }
+
+  @override
   Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen) async {
     listCalls.add({'project': project, 'issue': issue, 'seen': seen});
     if (moveGate case final gate?) await gate.future;
@@ -489,6 +502,7 @@ class MockPlanningSource implements PlanningSource {
       'faults': current['faults'] ?? <dynamic>[],
       'reasons': current['reasons'] ?? false,
       'tracker': ?current['tracker'],
+      'heldSaves': current['heldSaves'] ?? <dynamic>[],
     });
   }
 
@@ -499,6 +513,7 @@ class MockPlanningSource implements PlanningSource {
       'stories': mockVersionedStories(current),
       'revision': current['revision'],
       'open': current['open'],
+      'heldSaves': current['heldSaves'] ?? <dynamic>[],
     });
   }
 

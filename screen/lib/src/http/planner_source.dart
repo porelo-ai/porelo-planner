@@ -620,6 +620,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   // An issue's or a story's id, as the versions seen name them.
   static final _itemId = RegExp('${_issueId.pattern}|${_storyId.pattern}');
   // A tracker's reference alone, as an issue made outside the project is named.
+  static final _saveId = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
   static final _trackerId = RegExp(r'^(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
   static final _login = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$');
   static const _associations = {
@@ -704,6 +705,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       {'issue': _checked('issue', issue, _trackerId), 'seen': _seen(seen)},
     );
     return answer['revision'] as String;
+  }
+
+  @override
+  Future<String> resendSave(String project, String save) async {
+    final answer = await _write(project, ['saves', _checked('save', save, _saveId), 'resend'], null);
+    return answer['revision'] as String;
+  }
+
+  @override
+  Future<void> dropSave(String project, String save) async {
+    await _write(project, ['saves', _checked('save', save, _saveId)], null, method: 'DELETE', answers: false);
   }
 
   @override
@@ -1280,19 +1292,28 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     bool revision = true,
     int? most,
     String method = 'POST',
+    bool answers = true,
   }) async {
     final given = await _bound(project);
     final uri = _uri(project, path);
     final Map<String, dynamic> answer;
     try {
-      answer = await _call(method, uri, body, revision: revision, most: most, answers: true, wait: writeTimeout);
+      answer = await _call(method, uri, body, revision: revision, most: most, answers: answers, wait: writeTimeout);
     } on PlanningRefusal catch (refusal) {
       // Only this explicit refusal proves the planner did not execute the write.
       if (refusal.name != 'NoSuchProject') rethrow;
       await _stillBound(project, given);
       await _retell(project, given);
       await _stillBound(project, given);
-      final retried = await _call(method, uri, body, revision: revision, most: most, answers: true, wait: writeTimeout);
+      final retried = await _call(
+        method,
+        uri,
+        body,
+        revision: revision,
+        most: most,
+        answers: answers,
+        wait: writeTimeout,
+      );
       await _stillBound(project, given);
       return retried;
     }
@@ -1439,6 +1460,10 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
       if (method == 'PUT' && !answers) {
         if (status == HttpStatus.noContent) return const {};
         throw PlanningRefusal('BadAnswer', const {}, 'the planner answered HTTP $status to naming a project, not 204');
+      }
+      if (method == 'DELETE' && !answers) {
+        if (status == HttpStatus.noContent) return const {};
+        throw PlanningRefusal('BadAnswer', const {}, 'the planner answered HTTP $status to a drop, not 204');
       }
       final json = type == 'application/json' ? _json(bytes) : null;
       if (json == null ||

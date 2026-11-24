@@ -1,10 +1,12 @@
 package org.fuin.porelo.planner.core;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.jspecify.annotations.Nullable;
@@ -24,6 +26,8 @@ public final class Changes {
 
     private final Runnable whenIdle;
 
+    private final Supplier<List<?>> held;
+
     private final Set<Subscription> subscriptions = new CopyOnWriteArraySet<>();
 
     /**
@@ -39,9 +43,28 @@ public final class Changes {
     /** Publishes work generations together with the board they decorate. */
     public Changes(
             final PlanningStore store, final Runnable whenIdle, final @Nullable WorkRun work) {
+        this(store, whenIdle, work, List::of);
+    }
+
+    /**
+     * Makes the changes of one project, each board told with the saves the project keeps for the
+     * person.
+     *
+     * @param store the project's store; a project given anew gets changes of its own
+     * @param whenIdle runs once each time the last subscription is closed
+     * @param work the project's work, or null for none
+     * @param held reads the saves the project keeps for the person, as the board carries them,
+     *     compared by equality
+     */
+    public Changes(
+            final PlanningStore store,
+            final Runnable whenIdle,
+            final @Nullable WorkRun work,
+            final Supplier<List<?>> held) {
         this.store = store;
         this.whenIdle = whenIdle;
         this.work = work;
+        this.held = held;
     }
 
     /**
@@ -52,8 +75,15 @@ public final class Changes {
      * @param board the board
      * @param work the local work generation
      * @param reasons whether the board's store keeps a move's reason
+     * @param held the saves the project keeps for the person, as the board carries them
      */
-    public record Frame(Board board, WorkRun.Snapshot work, boolean reasons) {}
+    public record Frame(Board board, WorkRun.Snapshot work, boolean reasons, List<?> held) {
+
+        /** Copies the held saves. */
+        public Frame {
+            held = List.copyOf(held);
+        }
+    }
 
     private Frame frame() {
         final WorkRun run = work;
@@ -61,8 +91,11 @@ public final class Changes {
                 ? new Frame(
                         store.board(),
                         new WorkRun.Snapshot(0, java.util.Map.of()),
-                        store.keepsReasons())
-                : run.view((board, snapshot) -> new Frame(board, snapshot, store.keepsReasons()));
+                        store.keepsReasons(),
+                        held.get())
+                : run.view(
+                        (board, snapshot) ->
+                                new Frame(board, snapshot, store.keepsReasons(), held.get()));
     }
 
     /**
@@ -247,9 +280,10 @@ public final class Changes {
         }
 
         /**
-         * What makes a frame new: its revision, its work generation, its faults and its
-         * repositories' warnings, since a fault such as GitHub's spent rate limit, or a warning a
-         * correction of a repository's labels lifts, comes and goes while the revision stays.
+         * What makes a frame new: its revision, its work generation, its faults, its repositories'
+         * warnings and its held saves, since a fault such as GitHub's spent rate limit, a warning a
+         * correction of a repository's labels lifts, or a held save dropped, comes and goes while
+         * the revision stays.
          */
         private static String identity(final Frame frame) {
             return frame.board().revision().value()
@@ -258,7 +292,9 @@ public final class Changes {
                     + "/"
                     + String.join("\n", frame.board().faults())
                     + "/"
-                    + frame.board().repositoryWarnings();
+                    + frame.board().repositoryWarnings()
+                    + "/"
+                    + frame.held();
         }
 
         /**

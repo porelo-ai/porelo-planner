@@ -198,6 +198,46 @@ void main() {
     expect(seen.map((board) => board.revision), [isNot('changed'), 'changed']);
   });
 
+  // Harm: the window's planning tests never see a held save, because the stand-in's boards leave them out.
+  test('a held save on a mock board reaches the board after a watch event and in the separate reads', () async {
+    const save = '11111111-1111-4111-8111-111111111111';
+    final source = MockPlanningSource();
+    addTearDown(source.end);
+    final seen = <PlanningSnapshot>[];
+    final watch = source.watchStories('demo').listen(seen.add);
+    addTearDown(watch.cancel);
+    await pumpEventQueue();
+
+    source.push(
+      'demo',
+      mockPlanningBoard()
+        ..['revision'] = 'held'
+        ..['heldSaves'] = [
+          {
+            'id': save,
+            'run': false,
+            'earlier': false,
+            'resendable': true,
+            'commands': [
+              {
+                'id': '$save/0',
+                'kind': 'WRITE',
+                'target': 'S1',
+                'state': 'REFUSED',
+                'reason': 'Changed',
+                'subject': 'S1',
+              },
+            ],
+          },
+        ],
+    );
+    await pumpEventQueue();
+
+    expect(seen.last.heldSaves.map((held) => held.id), [save], reason: 'the watch event carries it');
+    final parts = PlanningSnapshot.fromParts(await source.planningWorkflow('demo'), await source.stories('demo'));
+    expect(parts.heldSaves.map((held) => held.id), [save], reason: 'the workflow and story reads carry it');
+  });
+
   // Harm: the window's tests open a Reworking dialog that cannot rework, over rules the planner never serves.
   test('every work rule the stand-in serves names an agent and its model, as the planner\'s do', () async {
     final source = MockPlanningSource();

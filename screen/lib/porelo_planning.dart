@@ -25,6 +25,7 @@ export 'src/story_work_order.dart';
 export 'src/task_runs.dart' show PlanningTaskReports;
 export 'src/ui/actions.dart';
 export 'src/ui/board_filter.dart';
+export 'src/ui/held_saves.dart';
 export 'src/ui/open_work_figures.dart';
 export 'src/ui/planning_detail_widgets.dart';
 export 'src/ui/planning_move_warning.dart';

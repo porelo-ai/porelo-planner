@@ -4819,5 +4819,6 @@
     "item" : "ST193",
     "rule" : "StoryPriorityBelowIssue",
     "words" : "ST193 has a lower priority than its open issue PJ106."
-  } ]
+  } ],
+  "heldSaves" : [ ]
 }

@@ -1547,6 +1547,76 @@ paths:
         '503':
           $ref: '#/components/responses/RecordUnavailable'
 
+  /projects/{project}/saves/{save}/resend:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Save'
+    post:
+      operationId: resendSave
+      summary: Send a held save again
+      description: >-
+        Sends a group of the board's `heldSaves` that is `resendable` again. A window's save turns back to queued
+        and runs again, judged on the versions it was judged on when first sent, never on the board as it stands
+        now; its commands already written are not written again. A run's group, whose task end was refused before
+        it wrote and whose run is not halted, is saved again by its run: the run lands the event it kept against
+        the board as it stands now, once only however often it is sent, as a repeated report is. Either is
+        answered as a move: the revision once the group is written, and the group then leaves `heldSaves`; refused
+        again, it stays there with the new reason, and the refusal is answered. Takes no body. A group that is not
+        refused or held, because it runs or another window resent it, is refused as SaveNotHeld; a halted run's
+        group as SaveOfRun, since the run's own Stop or Start decides it; a group kept from another repository or
+        branch as SaveFromElsewhere, naming that source, since it was never judged against this one.
+      tags: [work]
+      responses:
+        '200':
+          description: Every command of the group is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchSave'
+        '409':
+          $ref: '#/components/responses/SaveConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/saves/{save}:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Save'
+    delete:
+      operationId: dropSave
+      summary: Drop a held save
+      description: >-
+        Removes a group of the board's `heldSaves` from the outbox, a halted run's and one kept from another source
+        among them, writing nothing to the store; what its commands wrote before they were held stays written. The
+        planner's log names the group's id and its commands' targets. No other call removes a held group. A group
+        that is not refused or held, because it runs or another window resent it, is refused as SaveNotHeld.
+      tags: [work]
+      responses:
+        '204':
+          description: The group left the outbox.
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchSave'
+        '409':
+          $ref: '#/components/responses/SaveConflict'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+
   /projects/{project}/tasks/{task}/events:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -1797,6 +1867,13 @@ components:
         character a path segment cannot carry; the planner decodes the segment before it checks the id.
       schema:
         $ref: '#/components/schemas/IssueId'
+    Save:
+      name: save
+      in: path
+      required: true
+      description: The id of a held save, as the board's `heldSaves` names it.
+      schema:
+        $ref: '#/components/schemas/SaveId'
 
   responses:
     RunConflict:
@@ -2581,6 +2658,91 @@ components:
             detail: The project is busy with another save; try again.
             parameters:
               repository: porelo-project
+    NoSuchSave:
+      description: >-
+        The project is not known (NoSuchProject), or its outbox holds no group of that id (NoSuchSave, naming it), as
+        after another window dropped it or once a resend wrote it whole; the window reads the board again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            NoSuchProject:
+              value:
+                type: urn:porelo-planner:NoSuchProject
+                title: NoSuchProject
+                status: 404
+                detail: The project is not known.
+                parameters:
+                  project: example
+            NoSuchSave:
+              value:
+                type: urn:porelo-planner:NoSuchSave
+                title: NoSuchSave
+                status: 404
+                detail: The project holds no such save.
+                parameters:
+                  save: 3f2b8c1e-9a4d-4e6f-b1c2-7d8e9f0a1b2c
+    SaveConflict:
+      description: >-
+        The group is not refused or held, because it runs or another window resent it (SaveNotHeld); on a resend, the
+        group is a halted run's (SaveOfRun) or kept from another repository or branch (SaveFromElsewhere, naming
+        that repository and, when there is one, its branch), or a target changed since the version the group was
+        judged on (ItemChanged, naming each such target and answering it as it stands, or gone), or the group kept
+        no version for a target (BasisIncomplete, naming each), or a run's save is refused because the run keeps its
+        event no longer (RunChanged, naming the story and why). SaveNotHeld, SaveOfRun and SaveFromElsewhere name
+        the group as `save`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            SaveNotHeld:
+              value:
+                type: urn:porelo-planner:SaveNotHeld
+                title: SaveNotHeld
+                status: 409
+                detail: The save is not held; it runs or was sent again.
+                parameters:
+                  save: 3f2b8c1e-9a4d-4e6f-b1c2-7d8e9f0a1b2c
+            SaveOfRun:
+              value:
+                type: urn:porelo-planner:SaveOfRun
+                title: SaveOfRun
+                status: 409
+                detail: The save is a halted run's; the run's Stop or Start decides it.
+                parameters:
+                  save: 3f2b8c1e-9a4d-4e6f-b1c2-7d8e9f0a1b2c
+            SaveFromElsewhere:
+              value:
+                type: urn:porelo-planner:SaveFromElsewhere
+                title: SaveFromElsewhere
+                status: 409
+                detail: The save was kept from another repository or branch.
+                parameters:
+                  save: 3f2b8c1e-9a4d-4e6f-b1c2-7d8e9f0a1b2c
+                  repository: https://github.com/example/old-project.git
+                  branch: planning
+            ItemChanged:
+              value:
+                type: urn:porelo-planner:ItemChanged
+                title: ItemChanged
+                status: 409
+                detail: An item the write changes changed since it was read.
+                parameters:
+                  changed: [PL3]
+                  items:
+                    - id: PL3
+                      gone: true
+            RunChanged:
+              value:
+                type: urn:porelo-planner:RunChanged
+                title: RunChanged
+                status: 409
+                detail: The run keeps no refused event.
+                parameters:
+                  story: ST7
+                  reason: The run keeps no refused event.
 
   schemas:
     Name:
@@ -2612,6 +2774,12 @@ components:
       description: >-
         A story's run, drawn by the planner when the run starts and kept while it stands; opaque to the window, which
         compares it only for equality.
+      type: string
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    SaveId:
+      description: >-
+        A save's group of commands, drawn by the planner when the window's save is taken; opaque to the window, which
+        compares it only for equality and sends it back to resend or drop the group.
       type: string
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     Revision:
@@ -2890,7 +3058,8 @@ components:
         The whole board at one revision, as an event of the stream carries it - the workflow, the project's
         repositories and the stories.
       type: object
-      required: [revision, states, phases, work, faults, reasons, repositories, repositoryWarnings, stories, open, tracker]
+      required:
+        [revision, states, phases, work, faults, reasons, repositories, repositoryWarnings, stories, open, tracker, heldSaves]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -2970,6 +3139,16 @@ components:
             carries it; a window that reads none shows none.
           items:
             $ref: '#/components/schemas/RuleBreach'
+        heldSaves:
+          type: array
+          maxItems: 100
+          description: >-
+            Every save the project's outbox keeps refused or held for the person, the groups written to this
+            project's repository and branch first, in the order they were taken, then those kept from another
+            source; empty when nothing is held, and on a store whose saves go through no outbox. A group stays here
+            until it is resent and written whole, or dropped.
+          items:
+            $ref: '#/components/schemas/HeldSave'
 
     RuleBreach:
       description: >-
@@ -2989,6 +3168,101 @@ components:
         words:
           type: string
           description: The breach in the planner's fixed words, naming items only by their ids.
+
+    HeldSave:
+      description: >-
+        One save the outbox keeps for the person, a group of commands not written whole: refused by the store before
+        it wrote, or held after a command that may stand in part. Every group can be dropped; one that is
+        `resendable` can also be resent.
+      type: object
+      required: [id, run, earlier, resendable, commands]
+      properties:
+        id:
+          $ref: '#/components/schemas/SaveId'
+        run:
+          type: boolean
+          description: >-
+            Whether the group is a run's: either a halted run's, which the run's own Stop or Start decides, or one
+            whose task end was refused before it wrote while its run goes on, which its run saves again on a
+            resend.
+        earlier:
+          type: boolean
+          description: >-
+            Whether the group was kept from another repository or branch the project named before; it is never run
+            against this one, so it can be dropped but not resent.
+        resendable:
+          type: boolean
+          description: >-
+            Whether the group can be resent, as the planner judges it: true for a window's save, and for a run's
+            group whose task end was refused before it wrote while the run is not halted; false for a halted run's
+            group and for one kept from another source. A window offers Resend only when true.
+        repository:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          maxLength: 4096
+          description: The clone URL of the repository the group was to be written to; present only when `earlier`.
+        branch:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          maxLength: 255
+          description: >-
+            The branch the group was to be written to; present only when `earlier` and that source named a branch.
+        commands:
+          type: array
+          minItems: 1
+          maxItems: 200
+          description: Every command of the group in its order, those already written included.
+          items:
+            $ref: '#/components/schemas/HeldCommand'
+
+    HeldCommand:
+      description: >-
+        One command of a held save, told by its kind, its target and where it stands, never by the values it writes.
+      type: object
+      required: [id, kind, target, state, reason, subject]
+      properties:
+        id:
+          description: The command's id, its group's id and its place in the group.
+          type: string
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9]{1,3}$'
+        kind:
+          type: string
+          enum:
+            [WRITE, SET_FIELDS, SET_TEXT, SET_BLOCKERS, SET_STORY_ISSUES, CORRECT_LABELS, COMMENT, CREATE_ISSUE,
+             CREATE_IDEA, CREATE_STORY, ADD_UNLISTED]
+          description: >-
+            What the command writes: WRITE a move's states, workers, priorities and reasons; SET_FIELDS an issue's
+            fields; SET_TEXT an item's title and text; SET_BLOCKERS an issue's blockers; SET_STORY_ISSUES a story's
+            issues; CORRECT_LABELS a repository's labels; COMMENT a comment; CREATE_ISSUE, CREATE_IDEA and
+            CREATE_STORY a new item; ADD_UNLISTED an issue made outside the project.
+        target:
+          description: >-
+            The issue or story the command writes, or for CORRECT_LABELS and a new item the repository it writes to, by
+            its name as Name takes it, without `..`.
+          type: string
+          pattern: '^((?!.*\.\.)[a-z0-9][a-z0-9._-]{0,99}|ST[0-9]{1,5}|[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$'
+        state:
+          type: string
+          enum: [QUEUED, DONE, REFUSED, HELD]
+          description: >-
+            QUEUED waits for the commands before it; DONE is written; REFUSED was refused by the store before it
+            wrote anything; HELD may stand in part, or waits behind a command that does.
+        reason:
+          type: string
+          enum:
+            [NONE, NoSuchStory, NoSuchIssue, WorkflowMissing, CredentialRefused, NoForgeAccess, Unreachable,
+             Unreadable, ItemsDirectoryRefused, StaleRevision, Changed, BasisIncomplete, NotSavable, InStory, Busy,
+             PartlySaved, LabelsNotKept, NotOffered]
+          description: >-
+            Why the command is refused or held, as the store's refusal of that name; NotOffered for a failure that
+            is none of them, NONE for a command queued or done.
+        subject:
+          type: string
+          maxLength: 256
+          description: >-
+            What the reason is about, cleaned as every refusal's words are: at most 256 characters, no control,
+            format, private-use, unassigned or separator character and no blank that shows as nothing; empty when
+            the reason names nothing or its words were not clean.
 
     UnlistedIssue:
       description: >-
@@ -5180,6 +5454,13 @@ components:
               type: string
             repository:
               type: string
+            branch:
+              type: string
+              description: The branch of the source a SaveFromElsewhere refusal names, when it named one.
+            save:
+              allOf:
+                - $ref: '#/components/schemas/SaveId'
+              description: The held save a resend or a drop is refused for.
             address:
               type: string
               description: A forge's https origin, for NoForgeAccess.

@@ -323,7 +323,16 @@ public class EventsController {
                         .id(frame.board().revision().value())
                         .data(
                                 BoardController.boardOf(
-                                        frame.board(), frame.work(), frame.reasons(), tracker),
+                                        frame.board(),
+                                        frame.work(),
+                                        frame.reasons(),
+                                        tracker,
+                                        frame.held().stream()
+                                                .map(
+                                                        org.fuin.porelo.planner.app.answers.HeldSave
+                                                                        .class
+                                                                ::cast)
+                                                .toList()),
                                 MediaType.APPLICATION_JSON));
     }
 }

@@ -872,6 +872,73 @@ class PlanRuleBreach {
   final String words;
 }
 
+/// One command of a save the planner keeps for the person, told by its kind, its target and where it stands, never
+/// by the values it writes.
+class PlanHeldCommand {
+  /// Reads the fields the planner reports.
+  PlanHeldCommand.from(Map<String, dynamic> map)
+    : id = _planText(map, 'id'),
+      kind = _planText(map, 'kind'),
+      target = _planText(map, 'target'),
+      state = _planText(map, 'state'),
+      reason = _planText(map, 'reason'),
+      subject = _planText(map, 'subject');
+
+  /// The command's id.
+  final String id;
+
+  /// What it writes, as the planner names its kind, such as WRITE or SET_TEXT.
+  final String kind;
+
+  /// The issue or story it writes, or the repository it writes to.
+  final String target;
+
+  /// Where it stands: QUEUED, DONE, REFUSED or HELD.
+  final String state;
+
+  /// Why it is refused or held, as the planner names the refusal; NONE for one queued or done.
+  final String reason;
+
+  /// What the reason is about; empty when it names nothing.
+  final String subject;
+}
+
+/// A save the planner keeps for the person, a group of commands not written whole: refused before it wrote, or held
+/// after a command that may stand in part. Every one can be dropped; one that is [resendable] can be resent.
+class PlanHeldSave {
+  /// Reads the fields the planner reports.
+  PlanHeldSave.from(Map<String, dynamic> map)
+    : id = _planText(map, 'id'),
+      run = map['run'] == true,
+      earlier = map['earlier'] == true,
+      // A save kept from elsewhere is never written here, whatever a board says.
+      resendable = map['resendable'] == true && map['earlier'] != true,
+      repository = _planText(map, 'repository'),
+      branch = _planText(map, 'branch'),
+      commands = _planList(map['commands'], PlanHeldCommand.from);
+
+  /// The save's id, which a resend or a drop names.
+  final String id;
+
+  /// Whether a run saves it, rather than a window.
+  final bool run;
+
+  /// Whether it was kept from another repository or branch the project named before.
+  final bool earlier;
+
+  /// Whether the planner resends it; false when the planner did not say, and always when [earlier].
+  final bool resendable;
+
+  /// The repository it was to be written to, named only when [earlier]; empty otherwise.
+  final String repository;
+
+  /// The branch it was to be written to, named only when [earlier] and that source named one; empty otherwise.
+  final String branch;
+
+  /// Every command of it in order, those already written included.
+  final List<PlanHeldCommand> commands;
+}
+
 /// The longest directory the planner takes, in bytes of UTF-8.
 const planningDirectoryMostBytes = 4095;
 
@@ -1016,6 +1083,7 @@ class PlanningSnapshot {
       repositoriesReported = source.repositoriesReported,
       repositoryWarnings = source.repositoryWarnings,
       repositoryWarningsReported = source.repositoryWarningsReported,
+      heldSaves = source.heldSaves,
       // A save may mend or break a rule; none is shown until the next whole board names them anew.
       rules = const [],
       rulesReported = false,
@@ -1033,6 +1101,10 @@ class PlanningSnapshot {
       tracker = PlanningTracker.from(map['tracker']),
       faults = _planStrings(map['faults']),
       unlisted = _planList(map['unlisted'], PlanUnlistedIssue.from),
+      heldSaves = [
+        for (final save in _planList(map['heldSaves'], PlanHeldSave.from))
+          if (save.id.isNotEmpty) save,
+      ],
       rules = [
         for (final breach in _planList(map['rules'], PlanRuleBreach.from))
           if (breach.item.isNotEmpty && breach.words.isNotEmpty) breach,
@@ -1060,6 +1132,8 @@ class PlanningSnapshot {
       faults = workflow.faults,
       // A whole board names them; a story list leaves the last whole board's standing.
       unlisted = board.statesReported ? board.unlisted : workflow.unlisted,
+      // A whole board names them; a story list leaves the last whole board's standing.
+      heldSaves = board.statesReported ? board.heldSaves : workflow.heldSaves,
       repositories = board.repositoriesReported ? board.repositories : workflow.repositories,
       repositoriesReported = board.repositoriesReported || workflow.repositoriesReported,
       // Only a whole board names them; a story list leaves the last whole board's standing.
@@ -1085,6 +1159,7 @@ class PlanningSnapshot {
       tracker = source.tracker,
       faults = source.faults,
       unlisted = source.unlisted,
+      heldSaves = source.heldSaves,
       repositories = source.repositories,
       repositoriesReported = source.repositoriesReported,
       repositoryWarnings = source.repositoryWarnings,
@@ -1112,6 +1187,9 @@ class PlanningSnapshot {
 
   /// The open issues of the project's repositories that are no items of the project; empty when none were reported.
   final List<PlanUnlistedIssue> unlisted;
+
+  /// The saves the planner keeps for the person, its own source's first; empty when none were reported.
+  final List<PlanHeldSave> heldSaves;
 
   /// The project's repositories, its own first, as a whole board names them; empty when none were reported.
   final List<String> repositories;

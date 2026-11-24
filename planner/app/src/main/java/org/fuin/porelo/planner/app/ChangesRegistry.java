@@ -42,6 +42,8 @@ public final class ChangesRegistry implements AutoCloseable {
 
     private final Map<String, Followed> followed = new HashMap<>();
 
+    private final HeldSavesOf held;
+
     private boolean closed;
 
     private record Followed(Changes changes, Polling polling) {}
@@ -123,11 +125,33 @@ public final class ChangesRegistry implements AutoCloseable {
             final Duration probed,
             final ScheduledExecutorService scheduler,
             final Duration longestWait) {
+        this(projects, interval, probed, scheduler, longestWait, HeldSavesOf.NONE);
+    }
+
+    /**
+     * Makes the registry whose boards carry the saves each project's outbox keeps for the person.
+     *
+     * @param projects the projects the window has given
+     * @param interval how often a followed project's repositories are fetched
+     * @param probed how often a followed project whose store asks cheaply whether it changed is
+     *     asked, as its store's pace allows
+     * @param scheduler runs the polls; closed with the registry
+     * @param longestWait the longest wait between two polls of a project, whatever its store names
+     * @param held gives each project the saves its outbox keeps
+     */
+    ChangesRegistry(
+            final Projects projects,
+            final Duration interval,
+            final Duration probed,
+            final ScheduledExecutorService scheduler,
+            final Duration longestWait,
+            final HeldSavesOf held) {
         this.projects = projects;
         this.interval = interval;
         this.probed = probed;
         this.scheduler = scheduler;
         this.longestWait = longestWait;
+        this.held = held;
         projects.onRetired(this::drop);
     }
 
@@ -163,7 +187,11 @@ public final class ChangesRegistry implements AutoCloseable {
             return known.changes().subscribe();
         }
         final Changes changes =
-                new Changes(projects.store(project), () -> idle(project), projects.work(project));
+                new Changes(
+                        projects.store(project),
+                        () -> idle(project),
+                        projects.work(project),
+                        () -> HeldSavesController.answers(project, held.of(project)));
         // Subscribed before it is followed, so a board that cannot be read leaves no polling.
         final Changes.Subscription subscription = changes.subscribe();
         final Polling polling = new Polling(project, changes);

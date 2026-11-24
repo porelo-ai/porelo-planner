@@ -297,7 +297,8 @@ class BoardFaultsTest {
                 board,
                 new WorkRun.Snapshot(0, Map.of()),
                 false,
-                org.fuin.porelo.planner.store.Tracker.GIT);
+                org.fuin.porelo.planner.store.Tracker.GIT,
+                List.of());
     }
 
     /** The mapper the app's Spring Boot sets up, which writes the stream's events. */

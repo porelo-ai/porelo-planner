@@ -370,6 +370,12 @@ class FakePlanningSource implements PlanningSource {
       _notServed('SetItemsDirectory');
 
   @override
+  Future<String> resendSave(String project, String save) async => _notServed('ResendSave');
+
+  @override
+  Future<void> dropSave(String project, String save) async => _notServed('DropSave');
+
+  @override
   Future<PlanIssueDetail> getIssue(String project, String issue) async => _notServed('GetIssue');
 
   @override

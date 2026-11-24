@@ -113,6 +113,24 @@ class ChangesTest {
     }
 
     @Test
+    void aHeldSaveDroppedAtTheSameRevisionIsToldOnce() throws Exception {
+        // Harm: dropping a held save changes no item and keeps the revision, so every window kept
+        // offering a save that no longer exists.
+        final List<String> kept = new java.util.ArrayList<>(List.of("a held save"));
+        final Changes holding = new Changes(store, idle::incrementAndGet, null, () -> kept);
+        final Changes.Subscription one = holding.subscribe();
+        assertThat(one.firstFrame().held()).as("the held save at once").hasSize(1);
+
+        kept.clear();
+        holding.saved();
+        assertThat(one.nextFrame(NOW).map(Changes.Frame::held))
+                .as("the board without it, at the same revision")
+                .contains(List.of());
+        holding.saved();
+        assertThat(one.nextFrame(NOW)).as("told once").isEmpty();
+    }
+
+    @Test
     void thePlannersOwnSaveReachesEachSubscriberOnceAndItsPollNoMore() throws Exception {
         final Changes.Subscription one = changes.subscribe();
         final Board saved = boardAt("r2");

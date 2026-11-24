@@ -237,6 +237,7 @@ public class StoreConfiguration {
      *     rate limit when it did not
      * @param limits the factors from the command line; both intervals and the longest wait between
      *     two polls follow {@code polling}
+     * @param held gives each project the saves its outbox keeps, which its board carries
      * @return the registry
      */
     @Bean(destroyMethod = "close")
@@ -244,7 +245,8 @@ public class StoreConfiguration {
             final Projects projects,
             @Value("${planner.poll-interval:3m}") final Duration interval,
             @Value("${planner.github.poll-interval:30s}") final Duration probed,
-            final ObjectProvider<LimitFactors> limits) {
+            final ObjectProvider<LimitFactors> limits,
+            final HeldSavesOf held) {
         final LimitFactors factors = limits.getIfAvailable(() -> LimitFactors.DEFAULT);
         return new ChangesRegistry(
                 projects,
@@ -252,7 +254,19 @@ public class StoreConfiguration {
                 factors.polling(positive("planner.github.poll-interval", probed)),
                 Executors.newSingleThreadScheduledExecutor(
                         Thread.ofVirtual().name("poll-", 0).factory()),
-                factors.polling(ChangesRegistry.LONGEST_WAIT));
+                factors.polling(ChangesRegistry.LONGEST_WAIT),
+                held);
+    }
+
+    /**
+     * The saves each project's outbox keeps for the person: none, since no project's saves go
+     * through an outbox yet.
+     *
+     * @return the held saves of each project
+     */
+    @Bean
+    HeldSavesOf heldSaves() {
+        return HeldSavesOf.NONE;
     }
 
     /**

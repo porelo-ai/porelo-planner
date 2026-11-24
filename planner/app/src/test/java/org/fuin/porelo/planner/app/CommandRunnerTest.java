@@ -474,6 +474,52 @@ class CommandRunnerTest {
     }
 
     @Test
+    void aResentGroupRunsOnOneThreadOnlyThoughResumeOrAnotherResendComesMeanwhile()
+            throws Exception {
+        // Harm: a group run by two threads at once, so a command such as a comment or a create is
+        // written twice, or the trailing run holds a command the leading one has at the store.
+        final Fake store = new Fake();
+        store.onWrite = command -> new Written.Conflict(List.of("STATE"));
+        final CommandOutbox outbox = outbox();
+        final CommandRunner runner = new CommandRunner(outbox, store);
+        runner.submit(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building"))));
+        store.onWrite = command -> new Written.Done(null, null);
+        store.calls.clear();
+        final CountDownLatch judging = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final AtomicBoolean first = new AtomicBoolean(true);
+        store.onJudge =
+                () -> {
+                    if (first.getAndSet(false)) {
+                        judging.countDown();
+                        try {
+                            release.await(10, TimeUnit.SECONDS);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                };
+        final CompletableFuture<CommandOutcome> resent =
+                CompletableFuture.supplyAsync(() -> runner.resend("g1"));
+        assertThat(judging.await(5, TimeUnit.SECONDS)).as("queued again, being judged").isTrue();
+
+        runner.resume();
+        assertThatThrownBy(() -> runner.resend("g1"))
+                .as("a second resend leaves the running group alone")
+                .isInstanceOf(IllegalStateException.class);
+        release.countDown();
+
+        assertThat(resent.get(10, TimeUnit.SECONDS)).isInstanceOf(CommandOutcome.Done.class);
+        assertThat(store.calls)
+                .as("judged and written once, by the resend alone")
+                .containsExactly("judge g1", "write c1", "write c2", "readAfter");
+        assertThat(outbox.pending()).as("done whole").isEmpty();
+    }
+
+    @Test
     void groupsLeftWaitingAtOpenAreRunByResume() {
         // Harm: a save queued before a restart never sent.
         final Fake store = new Fake();
@@ -525,8 +571,8 @@ class CommandRunnerTest {
                                 runner.submit(
                                         new CommandGroup(
                                                 "g2", List.of(move("c2", "AB2", "Building")))))
-                .as("nothing new is taken")
-                .isInstanceOf(IllegalStateException.class);
+                .as("nothing new is taken, and the caller is told to wait")
+                .isInstanceOf(StoreException.Busy.class);
         release.countDown();
 
         assertThat(drained.get(10, TimeUnit.SECONDS)).isTrue();

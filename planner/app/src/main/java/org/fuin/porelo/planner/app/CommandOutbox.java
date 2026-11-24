@@ -356,6 +356,15 @@ final class CommandOutbox implements AutoCloseable {
     private boolean closed;
 
     /**
+     * The repository and branch this outbox's own groups are written to.
+     *
+     * @return the source
+     */
+    Source source() {
+        return source;
+    }
+
+    /**
      * Keeps one project's commands in its state directory.
      *
      * @param environment the planner's environment, for the words of a local path

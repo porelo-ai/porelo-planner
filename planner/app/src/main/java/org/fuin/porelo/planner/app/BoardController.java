@@ -1246,13 +1246,15 @@ public class BoardController {
      * @param snapshot the local work generation
      * @param reasons whether the board's store keeps a move's reason
      * @param tracker where the board's store keeps the stories and issues
+     * @param held the saves the project's outbox keeps for the person
      * @return the workflow's answer and every story in one
      */
     static org.fuin.porelo.planner.app.answers.Board boardOf(
             final Board board,
             final WorkRun.Snapshot snapshot,
             final boolean reasons,
-            final org.fuin.porelo.planner.store.Tracker tracker) {
+            final org.fuin.porelo.planner.store.Tracker tracker,
+            final List<org.fuin.porelo.planner.app.answers.HeldSave> held) {
         final org.fuin.porelo.planner.app.answers.Workflow workflow =
                 workflowOf(board, reasons, tracker);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
@@ -1281,7 +1283,8 @@ public class BoardController {
                                                 RuleBreach.RuleEnum.fromValue(
                                                         breach.rule().spelled()),
                                                 breach.words()))
-                        .toList());
+                        .toList(),
+                held);
     }
 
     /**

@@ -341,6 +341,15 @@ abstract interface class PlanningSource {
   /// answers the board's revision after the save.
   Future<String> addUnlistedIssue(String project, String issue, Map<String, String> seen);
 
+  /// Sends a save of the board's held saves that is resendable again, as its id [save] names it; answers the board's
+  /// revision once it is written. A save that runs, was sent again or is gone is refused, as is one the planner
+  /// does not resend.
+  Future<String> resendSave(String project, String save);
+
+  /// Drops a save of the board's held saves, as its id [save] names it, writing nothing; one that runs, was sent again
+  /// or is gone is refused.
+  Future<void> dropSave(String project, String save);
+
   /// Reads one issue and its last reader report.
   Future<PlanIssueDetail> getIssue(String project, String issue);
 

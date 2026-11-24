@@ -326,7 +326,8 @@ class ChangesRegistryPaceTest {
                                 projects,
                                 Duration.ofMinutes(3),
                                 Duration.ofSeconds(30),
-                                factors(LimitFactors.parse("polling=2.0")))) {
+                                factors(LimitFactors.parse("polling=2.0")),
+                                HeldSavesOf.NONE)) {
             projects.put("alpha", "one", null);
             final Changes.Subscription one = registry.subscribe("alpha");
 
@@ -349,7 +350,8 @@ class ChangesRegistryPaceTest {
                                                 projects,
                                                 Duration.ZERO,
                                                 Duration.ofSeconds(30),
-                                                factors(LimitFactors.DEFAULT)))
+                                                factors(LimitFactors.DEFAULT),
+                                                HeldSavesOf.NONE))
                 .as("a poll interval of zero")
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("planner.poll-interval");

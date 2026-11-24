@@ -31,6 +31,7 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -82,6 +83,8 @@ class ApiMatchesDescriptionTest {
                     Map.entry("CorrectionConfirm", BoardController.CorrectionConfirm.class),
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
+                    Map.entry("HeldSave", org.fuin.porelo.planner.app.answers.HeldSave.class),
+                    Map.entry("HeldCommand", org.fuin.porelo.planner.app.answers.HeldCommand.class),
                     Map.entry(
                             "UnlistedIssue",
                             org.fuin.porelo.planner.app.answers.UnlistedIssue.class),
@@ -234,6 +237,7 @@ class ApiMatchesDescriptionTest {
                 final GetMapping get = method.getAnnotation(GetMapping.class);
                 final PutMapping put = method.getAnnotation(PutMapping.class);
                 final PostMapping post = method.getAnnotation(PostMapping.class);
+                final DeleteMapping delete = method.getAnnotation(DeleteMapping.class);
                 if (get != null) {
                     served.put(
                             "GET " + path(get.value(), get.path()),
@@ -247,6 +251,11 @@ class ApiMatchesDescriptionTest {
                 if (post != null) {
                     served.put(
                             "POST " + path(post.value(), post.path()),
+                            schemaOf(method.getReturnType()));
+                }
+                if (delete != null) {
+                    served.put(
+                            "DELETE " + path(delete.value(), delete.path()),
                             schemaOf(method.getReturnType()));
                 }
             }

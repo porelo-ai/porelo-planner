@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,6 +42,7 @@ final class CommandRunner implements CommandQueue {
     private final PlanningStore store;
     private final Map<String, Claim> claims = new HashMap<>();
     private final Object gate = new Object();
+    private final Set<String> running = new HashSet<>();
     private boolean draining;
     private int active;
 
@@ -65,8 +67,15 @@ final class CommandRunner implements CommandQueue {
     public CommandOutcome submit(final CommandGroup group) {
         enter();
         try {
-            outbox.enqueue(group);
-            return run(group.id(), true);
+            if (!take(group.id())) {
+                throw new IllegalStateException("The group " + group.id() + " runs already.");
+            }
+            try {
+                outbox.enqueue(group);
+                return run(group.id(), true);
+            } finally {
+                hand(group.id());
+            }
         } finally {
             leave();
         }
@@ -80,6 +89,10 @@ final class CommandRunner implements CommandQueue {
                 if (closing()) {
                     return;
                 }
+                if (!take(group)) {
+                    // Resent or submitted meanwhile: the thread that took it runs it alone.
+                    continue;
+                }
                 try {
                     run(group, false);
                 } catch (final RuntimeException failed) {
@@ -88,6 +101,8 @@ final class CommandRunner implements CommandQueue {
                             "Recovered group {} could not be run: {}",
                             LogText.of(group),
                             cause(failed));
+                } finally {
+                    hand(group);
                 }
             }
         } finally {
@@ -150,7 +165,8 @@ final class CommandRunner implements CommandQueue {
     private void enter() {
         synchronized (gate) {
             if (draining) {
-                throw new IllegalStateException("The project's saves are stopping; try again.");
+                // A wait, not a refusal: the call is answered busy and the group stays as it was.
+                throw new StoreException.Busy(outbox.source().repository());
             }
             active++;
         }
@@ -174,14 +190,61 @@ final class CommandRunner implements CommandQueue {
      *
      * @param group the group's id
      * @return what became of it
+     * @throws StoreException.Busy while the runner drains; the group stays as it was
+     * @throws IllegalStateException when another thread runs the group, or the outbox holds it no
+     *     longer or not held
      */
     CommandOutcome resend(final String group) {
         enter();
         try {
-            outbox.resend(group);
-            return run(group, false);
+            if (!take(group)) {
+                throw new IllegalStateException("The group " + group + " runs already.");
+            }
+            try {
+                outbox.resend(group);
+                return run(group, false);
+            } finally {
+                hand(group);
+            }
         } finally {
             leave();
+        }
+    }
+
+    /**
+     * Removes a held group from the outbox, never while it runs or the runner drains.
+     *
+     * @param group the group's id
+     * @throws StoreException.Busy while the runner drains; the group stays as it was
+     * @throws IllegalStateException when the group runs, or the outbox holds it no longer or not
+     *     held
+     */
+    void drop(final String group) {
+        enter();
+        try {
+            if (!take(group)) {
+                throw new IllegalStateException("The group " + group + " runs already.");
+            }
+            try {
+                outbox.drop(group);
+            } finally {
+                hand(group);
+            }
+        } finally {
+            leave();
+        }
+    }
+
+    /** Takes a group for this thread alone; false when another thread runs it. */
+    private boolean take(final String group) {
+        synchronized (gate) {
+            return running.add(group);
+        }
+    }
+
+    private void hand(final String group) {
+        synchronized (gate) {
+            running.remove(group);
         }
     }
 
