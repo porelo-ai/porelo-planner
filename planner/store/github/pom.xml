@@ -14,6 +14,11 @@
     <packaging>jar</packaging>
     <dependencies>
         <dependency>
+            <groupId>org.fuin.porelo</groupId>
+            <artifactId>porelo-planner-store-files</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
         </dependency>

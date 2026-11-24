@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.wire.LimitFactors;
 
 /**
@@ -282,7 +283,7 @@ public final class CommitRules {
                             "git "
                                     + arguments.getFirst()
                                     + " did not finish within "
-                                    + limit.toSeconds()
+                                    + Seconds.of(limit)
                                     + " seconds");
                 }
                 if (process.exitValue() != 0) {

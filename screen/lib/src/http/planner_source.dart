@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../client.dart';
 import '../models.dart';
 import '../planning_limits.dart';
+import '../seconds.dart';
 import '../story_work_order.dart';
 import '../task_runs.dart';
 import '../work_reply.dart';
@@ -430,7 +431,7 @@ Future<PlannerAnswer> callPlanner(
         throw PlanningRefusal(
           signed == null ? 'PlannerUnreachable' : 'TimedOut',
           const {},
-          'the planner did not answer within ${limit.inSeconds} s',
+          'the planner did not answer within ${secondsOf(limit)} s',
         );
       } on SocketException catch (error) {
         throw PlanningRefusal(
@@ -1381,11 +1382,11 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
           throw PlanningRefusal(
             'PlannerUnreachable',
             const {},
-            'the planner cannot be reached: no connection within ${waited.inSeconds} s',
+            'the planner cannot be reached: no connection within ${secondsOf(waited)} s',
           );
         }
         opened.request.abort();
-        throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${waited.inSeconds} s');
+        throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${secondsOf(waited)} s');
       } on SocketException catch (error) {
         _link.forget(proven);
         throw PlanningRefusal(
@@ -1703,7 +1704,7 @@ class _Watch {
         _request?.abort();
         source._link.forget(proven);
         throw _Lost(
-          PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${source.timeout.inSeconds} s'),
+          PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${secondsOf(source.timeout)} s'),
         );
       } on SocketException catch (error) {
         source._link.forget(proven);
@@ -1767,7 +1768,9 @@ class _Watch {
     deadline = Timer(
       source.timeout,
       () => fail(
-        _Lost(PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${source.timeout.inSeconds} s')),
+        _Lost(
+          PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${secondsOf(source.timeout)} s'),
+        ),
       ),
     );
     reading = _reading = response.listen(
@@ -1828,7 +1831,7 @@ class _Watch {
       quiet = Timer(
         source.silence,
         () => lose(
-          PlanningRefusal('PlannerSilent', const {}, 'the planner sent no line for ${source.silence.inSeconds} s'),
+          PlanningRefusal('PlannerSilent', const {}, 'the planner sent no line for ${secondsOf(source.silence)} s'),
         ),
       );
     }
@@ -1840,7 +1843,7 @@ class _Watch {
       first = Timer(
         source.timeout,
         () => lose(
-          PlanningRefusal('TimedOut', const {}, 'the planner sent no board within ${source.timeout.inSeconds} s'),
+          PlanningRefusal('TimedOut', const {}, 'the planner sent no board within ${secondsOf(source.timeout)} s'),
         ),
       );
     }

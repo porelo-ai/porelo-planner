@@ -9,6 +9,7 @@ import 'models.dart';
 import 'planning_limits.dart';
 import 'hooks.dart';
 import 'run_attention.dart';
+import 'seconds.dart';
 import 'task_runs.dart';
 import 'story_work.dart';
 import 'ui/open_work_figures.dart';
@@ -2556,7 +2557,7 @@ class PlanningBoard extends ChangeNotifier {
         }().timeout(
           readWait,
           onTimeout: () =>
-              throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${readWait.inSeconds} s'),
+              throw PlanningRefusal('TimedOut', const {}, 'the planner did not answer within ${secondsOf(readWait)} s'),
         );
     final shown = snapshot;
     if (!_sameBoard(source, name) || shown == null) return false;

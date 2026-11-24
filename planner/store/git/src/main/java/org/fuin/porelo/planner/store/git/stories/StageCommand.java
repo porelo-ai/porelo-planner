@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
@@ -686,7 +687,7 @@ public final class StageCommand {
             if (!process.waitFor(gitLimit.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
                 throw new IOException(
-                        "git rev-parse did not finish within " + gitLimit.toSeconds() + " seconds");
+                        "git rev-parse did not finish within " + Seconds.of(gitLimit) + " seconds");
             }
             require(
                     process.exitValue() == 0,

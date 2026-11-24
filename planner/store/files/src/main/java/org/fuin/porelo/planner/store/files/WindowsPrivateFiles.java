@@ -510,7 +510,7 @@ public final class WindowsPrivateFiles implements PrivateFiles {
             LOG.info(
                     "{} printed nothing within {} s; started once more",
                     program,
-                    limit.toSeconds());
+                    Seconds.of(limit));
             try {
                 return answer(builder, program, limit);
             } catch (final RuntimeException again) {
@@ -591,7 +591,7 @@ public final class WindowsPrivateFiles implements PrivateFiles {
                 final String late =
                         program
                                 + " did not answer within "
-                                + limit.toSeconds()
+                                + Seconds.of(limit)
                                 + " s; "
                                 + out.sofar()
                                 + ", "

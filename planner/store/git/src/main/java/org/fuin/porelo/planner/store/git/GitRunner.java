@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -227,7 +228,7 @@ public final class GitRunner {
                 kill(process);
                 throw new GitFailure(
                         GitFailure.Kind.UNREACHABLE,
-                        "no answer within " + limit.toSeconds() + " s");
+                        "no answer within " + Seconds.of(limit) + " s");
             }
             final byte[] out = finished(output, process);
             final String err = new String(finished(errors, process), StandardCharsets.UTF_8);
@@ -364,7 +365,7 @@ public final class GitRunner {
         } catch (final TimeoutException e) {
             kill(process);
             throw new GitFailure(
-                    GitFailure.Kind.UNREACHABLE, "no answer within " + limit.toSeconds() + " s");
+                    GitFailure.Kind.UNREACHABLE, "no answer within " + Seconds.of(limit) + " s");
         }
     }
 
@@ -384,7 +385,7 @@ public final class GitRunner {
         } catch (final TimeoutException e) {
             kill(process);
             throw new GitFailure(
-                    GitFailure.Kind.UNREACHABLE, "no answer within " + limit.toSeconds() + " s");
+                    GitFailure.Kind.UNREACHABLE, "no answer within " + Seconds.of(limit) + " s");
         }
     }
 

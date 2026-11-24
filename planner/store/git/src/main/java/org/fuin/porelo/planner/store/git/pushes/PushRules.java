@@ -30,6 +30,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.planner.store.git.stories.CommitRules;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -404,7 +405,7 @@ public final class PushRules {
             try {
                 return task.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
             } catch (TimeoutException ex) {
-                throw new IOException("no answer within " + deadline.toSeconds() + " seconds");
+                throw new IOException("no answer within " + Seconds.of(deadline) + " seconds");
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 throw new InterruptedIOException("interrupted while reading");

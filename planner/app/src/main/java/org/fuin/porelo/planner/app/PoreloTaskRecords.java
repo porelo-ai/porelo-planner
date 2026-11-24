@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
@@ -532,7 +533,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                     kill(process);
                     throw new Unanswered(
                             "Porelo's task records gave no answer within "
-                                    + limit.toSeconds()
+                                    + Seconds.of(limit)
                                     + " s");
                 }
                 final long left = Math.max(0, deadline - System.nanoTime());
@@ -551,7 +552,7 @@ public final class PoreloTaskRecords implements TaskRecords {
             } catch (final TimeoutException ex) {
                 kill(process);
                 throw new Unanswered(
-                        "Porelo's task records gave no answer within " + limit.toSeconds() + " s",
+                        "Porelo's task records gave no answer within " + Seconds.of(limit) + " s",
                         ex);
             } catch (final ExecutionException ex) {
                 kill(process);

@@ -1,10 +1,10 @@
-package org.fuin.porelo.planner.store.github;
+package org.fuin.porelo.planner.store.files;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 
 /** A duration told in seconds as a person reads it, its fraction kept: "60", "0.5", "2.2". */
-final class Seconds {
+public final class Seconds {
 
     private Seconds() {}
 
@@ -15,7 +15,7 @@ final class Seconds {
      * @param duration the duration
      * @return its seconds
      */
-    static String of(final Duration duration) {
+    public static String of(final Duration duration) {
         return BigDecimal.valueOf(duration.toNanos(), 9).stripTrailingZeros().toPlainString();
     }
 }

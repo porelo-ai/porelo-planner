@@ -2077,11 +2077,16 @@ void main() {
         const ['projects', 'demo', 'ideas'],
         json: const {'idea': 'i'},
         address: () async => PlannerAddress(planner.base.port, _token),
+        timeout: limits.servicesOf(const Duration(milliseconds: 2200)),
         limits: limits,
       ),
     );
     expect(unanswered.name, 'TimedOut', reason: 'the planner proved itself, then held its answer');
-    expect(unanswered.description, contains('within 3 s'), reason: 'a tenth of the 30 s request limit');
+    expect(
+      unanswered.description,
+      contains('within 0.22 s'),
+      reason: 'the fractional limit the request kept, so the timeout can be diagnosed',
+    );
 
     // A listener that never answers its proof.
     final silent = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

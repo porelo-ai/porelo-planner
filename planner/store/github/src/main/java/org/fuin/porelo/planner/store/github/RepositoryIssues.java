@@ -19,6 +19,7 @@ import org.fuin.porelo.forge.github.model.Issue;
 import org.fuin.porelo.forge.github.model.IssueType;
 import org.fuin.porelo.forge.github.model.SimpleUser;
 import org.fuin.porelo.planner.store.UnlistedIssue;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

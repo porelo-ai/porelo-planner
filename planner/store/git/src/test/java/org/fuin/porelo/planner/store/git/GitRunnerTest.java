@@ -33,9 +33,12 @@ class GitRunnerTest {
         // check.
         final Path pid = dir.resolve("pid");
         final long start = System.nanoTime();
-        assertThatThrownBy(() -> RUNNER.run(shell("sleep 30 & echo $! > " + pid + "; wait"), null))
-                .as("a call over its limit")
+        final GitRunner runner = new GitRunner(Duration.ofMillis(550), 1024);
+        assertThatThrownBy(() -> runner.run(shell("sleep 30 & echo $! > " + pid + "; wait"), null))
+                .as(
+                        "a call over its limit reports the wait it kept, so a fractional limit can be diagnosed")
                 .isInstanceOf(GitFailure.class)
+                .hasMessageContaining("no answer within 0.55 s")
                 .satisfies(
                         e ->
                                 assertThat(((GitFailure) e).kind())
