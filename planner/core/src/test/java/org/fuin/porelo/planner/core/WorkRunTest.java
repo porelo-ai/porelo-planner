@@ -183,6 +183,92 @@ class WorkRunTest {
     }
 
     @Test
+    void anAnswerToARequestDuringASaveWaitsForNoSave() throws Exception {
+        // Harm: the board, a story's work and a move's preview stand still for seconds behind
+        // every save of the project to GitHub.
+        final Fixture f = new Fixture();
+        f.order();
+        final CountDownLatch held = new CountDownLatch(1);
+        final CompletableFuture<Void> release = new CompletableFuture<>();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            final var saving =
+                    executor.submit(
+                            () ->
+                                    f.run.alone(
+                                            () -> {
+                                                held.countDown();
+                                                release.join();
+                                                return true;
+                                            }));
+            try {
+                assertThat(held.await(5, TimeUnit.SECONDS))
+                        .as("the save holds the record")
+                        .isTrue();
+                final var answers =
+                        executor.submit(
+                                () ->
+                                        List.of(
+                                                f.run.snapshot(),
+                                                java.util.Objects.requireNonNull(f.run.work("ST1")),
+                                                f.run.active("ST1"),
+                                                f.run.view((board, snapshot) -> snapshot),
+                                                f.run.preview(
+                                                        List.of(
+                                                                new Moves.Move(
+                                                                        false, "AA1",
+                                                                        "Backlog")))));
+                assertThat(answers.get(2, TimeUnit.SECONDS))
+                        .as("every answer given while the save holds the record")
+                        .hasSize(5);
+            } finally {
+                release.complete(null);
+            }
+            assertThat(saving.get(5, TimeUnit.SECONDS)).as("the save finishes").isTrue();
+        }
+    }
+
+    @Test
+    void aRunPendingWhileItsSaveIsInFlightIsNotHaltedByAReader() {
+        // Harm: a refresh of the board halts a healthy run whose save is still on its way.
+        final Fixture f = new Fixture();
+        final var offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final WorkRun.Run run = f.run.work("ST1");
+        f.record.value =
+                new WorkRun.Snapshot(
+                        f.record.value.generation() + 1,
+                        Map.of(
+                                "ST1",
+                                new WorkRun.Run(
+                                        run.id(),
+                                        run.story(),
+                                        run.to(),
+                                        run.mode(),
+                                        run.comment(),
+                                        run.coordinator(),
+                                        run.readingRounds(),
+                                        run.issueReadingRounds(),
+                                        run.repositories(),
+                                        run.since(),
+                                        run.offers(),
+                                        run.issues(),
+                                        false,
+                                        false,
+                                        true)));
+        final int writes = f.record.writes;
+
+        f.run.snapshot();
+        f.run.work("ST1");
+        f.run.active("ST1");
+        f.run.view((board, snapshot) -> snapshot);
+        f.run.preview(List.of(new Moves.Move(false, "AA1", "Backlog")));
+
+        assertThat(f.run.work("ST1").pending()).as("still the save's own mark").isTrue();
+        assertThat(f.run.work("ST1").halted()).as("not halted").isFalse();
+        assertThat(f.record.writes).as("no reader wrote the record").isEqualTo(writes);
+    }
+
+    @Test
     void aWriteOfItsOwnRunsUnderTheRecordsLock() {
         // A write beside the record's would move the board under a run's save, which then halts.
         final Fixture f = new Fixture();
@@ -2010,6 +2096,7 @@ class WorkRunTest {
                                         run.halted(),
                                         run.pending())),
                         older.ideas());
+        f.run.repair();
         final WorkRun.Run read = f.run.work("ST1");
         assertThat(
                         read.offers().stream()
@@ -4141,7 +4228,9 @@ class WorkRunTest {
                                         false,
                                         false,
                                         true)));
-        assertThat(new WorkRun(f.store, f.record, f.clock).work("ST1").halted())
+        final WorkRun restarted = new WorkRun(f.store, f.record, f.clock);
+        restarted.repair();
+        assertThat(restarted.work("ST1").halted())
                 .as("ambiguous persistence stops for attention")
                 .isTrue();
         assertThat(f.store.saves).as("startup never retries the pending save").isEqualTo(1);
@@ -4859,7 +4948,9 @@ class WorkRunTest {
                 },
                 runs -> "saved");
 
-        assertThat(f.record.locks).as("preview and save each under the lock").isEqualTo(before + 2);
+        assertThat(f.record.locks)
+                .as("the save under the lock, the preview without it")
+                .isEqualTo(before + 1);
     }
 
     @Test

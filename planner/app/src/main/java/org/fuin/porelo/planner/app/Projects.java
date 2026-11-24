@@ -123,29 +123,28 @@ public final class Projects {
                         Objects.requireNonNull(
                                 opener.open(project, source.repository(), source.branch()),
                                 "store"));
-        final WorkRun.Record record;
+        final WorkRun work;
         try {
-            record = records.open(project, source.repository(), source.branch());
-            record.locked(session -> session.read());
+            final WorkRun.Record record =
+                    records.open(project, source.repository(), source.branch());
+            work =
+                    new WorkRun(
+                            store,
+                            record,
+                            java.time.Clock.systemUTC(),
+                            why ->
+                                    LOG.info(
+                                            "No next step in project {}: {}",
+                                            LogText.of(project),
+                                            LogText.of(why)));
+            // Readers no longer repair, so a save that died midway is settled here, once.
+            work.repair();
         } catch (final RuntimeException | Error e) {
             // The store is kept nowhere, so it is retired here or never.
             store.retire();
             throw e;
         }
-        projects.put(
-                project,
-                new Entry(
-                        source,
-                        store,
-                        new WorkRun(
-                                store,
-                                record,
-                                java.time.Clock.systemUTC(),
-                                why ->
-                                        LOG.info(
-                                                "No next step in project {}: {}",
-                                                LogText.of(project),
-                                                LogText.of(why)))));
+        projects.put(project, new Entry(source, store, work));
     }
 
     /** Forgets every project, retiring its store; the mock mode's reset. */

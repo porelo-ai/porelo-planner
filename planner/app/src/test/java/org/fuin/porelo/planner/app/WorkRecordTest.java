@@ -1429,10 +1429,14 @@ class WorkRecordTest {
             for (int i = 0; i < 3; i++) {
                 store.locked(session -> session.read());
             }
+            for (int i = 0; i < 3; i++) {
+                store.latest();
+            }
 
             assertThat(checks.get())
                     .as(
-                            "the directories are checked when the lock is taken, not again while it is held")
+                            "the directories are checked when the lock is taken, not again while it is held"
+                                    + " nor by a reader")
                     .isEqualTo(1);
         }
     }

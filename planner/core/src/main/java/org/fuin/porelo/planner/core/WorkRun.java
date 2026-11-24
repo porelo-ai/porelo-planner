@@ -1171,12 +1171,22 @@ public final class WorkRun {
                                                 .anyMatch(build.binding().issues()::contains));
     }
 
-    /** Reads the run without inferring anything from a working state when its record was lost. */
+    /**
+     * Reads the run as last written, without waiting for a save in flight and without inferring
+     * anything from a working state when its record was lost.
+     */
     public @Nullable Run work(final String story) {
         Ids.story(story);
-        return record.locked(
-                        session -> java.util.Optional.ofNullable(read(session).runs().get(story)))
-                .orElse(null);
+        return record.latest().runs().get(story);
+    }
+
+    /**
+     * Repairs the record once, as a project opens: a run a save left pending, which only a save
+     * that died midway leaves, is halted, and readers of an older record are named their builds.
+     * Readers do not repair, since a run pending while they read is a save's own in flight.
+     */
+    public void repair() {
+        record.locked(this::read);
     }
 
     /**
@@ -1188,7 +1198,11 @@ public final class WorkRun {
         return answer.apply(store.board(), snapshot);
     }
 
-    /** Reads and repairs work with its board under the writer lock for a consistent view. */
+    /**
+     * Reads and repairs work with its board under the writer lock, for a change event that must
+     * never pair a board with an unfinished save's work; an answer to a request reads {@link #view}
+     * instead and waits for no save.
+     */
     public <T> T lockedView(final java.util.function.BiFunction<Board, Snapshot, T> answer) {
         return record.locked(
                 session -> {
@@ -1197,14 +1211,14 @@ public final class WorkRun {
                 });
     }
 
-    /** Reads one complete generation for board decoration. */
+    /** Reads the last complete written generation for board decoration, without waiting. */
     public Snapshot snapshot() {
-        return record.locked(this::read);
+        return record.latest();
     }
 
     /** Returns recorded active task names, never names inferred from board states. */
     public List<String> active(final String story) {
-        return record.locked(session -> running(read(session), Set.of()).tasks(story));
+        return running(record.latest(), Set.of()).tasks(story);
     }
 
     /** Records cancellation without clearing activity until the window reports a terminal event. */
@@ -1931,8 +1945,8 @@ public final class WorkRun {
     }
 
     /**
-     * Answers what a batch of moves would do, read with the work under the writer lock, writing
-     * nothing.
+     * Answers what a batch of moves would do, read with the work last written and without waiting
+     * for a save in flight, writing nothing; the confirmed save judges it again under the lock.
      *
      * @param moves the moves, in the order sent
      * @return the preview, its targets with the versions the board holds
@@ -1943,12 +1957,8 @@ public final class WorkRun {
         if (quick != null) {
             return quick;
         }
-        return record.locked(
-                session -> {
-                    final Board board = store.board();
-                    final Snapshot snapshot = read(session);
-                    return Moves.preview(board, moves, owners(snapshot), held(snapshot));
-                });
+        final Snapshot snapshot = record.latest();
+        return Moves.preview(store.board(), moves, owners(snapshot), held(snapshot));
     }
 
     /** The preview of moves that change nothing, read without the lock, or null for any other. */

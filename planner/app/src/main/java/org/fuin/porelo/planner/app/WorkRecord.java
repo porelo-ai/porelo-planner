@@ -260,6 +260,13 @@ public final class WorkRecord implements AutoCloseable {
         private @Nullable FileLock fileLock;
         private @Nullable Path directory;
         private volatile WorkRun.Snapshot stored = new WorkRun.Snapshot(0, Map.of());
+
+        /**
+         * The last generation read or written with no save in flight, answered to readers from
+         * memory: no other writer reaches the record while this entry holds its lock file.
+         */
+        private volatile WorkRun.@Nullable Snapshot settled;
+
         private volatile boolean closed;
 
         private Entry(
@@ -332,7 +339,11 @@ public final class WorkRecord implements AutoCloseable {
             }
         }
 
-        /** Atomic replacement lets details read a complete generation without holding up saves. */
+        /**
+         * Answers the last settled generation from memory, without the lock, the disk or a check of
+         * the directories; a save's own pending mark is never answered, so a reader does not take
+         * the save in flight for its end.
+         */
         @Override
         public WorkRun.Snapshot latest() {
             if (closed) {
@@ -340,6 +351,10 @@ public final class WorkRecord implements AutoCloseable {
             }
             if (memory) {
                 return stored;
+            }
+            final WorkRun.Snapshot held = settled;
+            if (held != null) {
+                return held;
             }
             final Path dir;
             try {
@@ -409,14 +424,22 @@ public final class WorkRecord implements AutoCloseable {
             }
             final Document doc = readDocument(opened());
             if (doc == null) {
-                return new WorkRun.Snapshot(0, Map.of());
+                return settle(new WorkRun.Snapshot(0, Map.of()));
             }
             if (!matches(doc)) {
                 final WorkRun.Snapshot reset = new WorkRun.Snapshot(0, Map.of());
                 write(reset);
                 return reset;
             }
-            return snapshot(doc);
+            return settle(snapshot(doc));
+        }
+
+        /** Keeps a generation for readers unless a save's pending mark stands in it. */
+        private WorkRun.Snapshot settle(final WorkRun.Snapshot snapshot) {
+            if (snapshot.runs().values().stream().noneMatch(WorkRun.Run::pending)) {
+                settled = snapshot;
+            }
+            return snapshot;
         }
 
         private @Nullable Document readDocument(final Path dir) {
@@ -729,6 +752,7 @@ public final class WorkRecord implements AutoCloseable {
                 step = "The work record cannot be put in place";
                 SharedFiles.whileShared(() -> replace.move(written, target), limits);
                 temporary = null;
+                settle(snapshot);
                 // Windows opens no directory as a file; its move is durable once it returns.
                 if (!files.windows()) {
                     step = "The work record's directory cannot be synced";

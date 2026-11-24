@@ -1231,7 +1231,7 @@ public class BoardController {
      * @return each target, in the order named
      */
     static List<ChangedItem> changed(final WorkRun work, final List<String> ids) {
-        return work.lockedView(
+        return work.view(
                 (board, snapshot) -> {
                     final OpenWork.Counter counter = new OpenWork.Counter(board);
                     final List<ChangedItem> items = new ArrayList<>();
@@ -1304,7 +1304,7 @@ public class BoardController {
             @PathVariable("project") final String project,
             @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
         final WorkRun work = projects.work(name(project));
-        return work.lockedView(
+        return work.view(
                 (board, snapshot) -> {
                     final OpenWork.Counter counter = new OpenWork.Counter(board);
                     return new StoryList(
@@ -1698,7 +1698,7 @@ public class BoardController {
             @PathVariable("story") final String story) {
         final String checked = storyId(project, story);
         return projects.work(name(project))
-                .lockedView(
+                .view(
                         (board, snapshot) -> {
                             final Story found = found(board, checked);
                             return new StoryWorkReply(
