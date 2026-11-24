@@ -64,6 +64,11 @@ public final class GitHubStore implements PlanningStore {
     static final String UNREAD = "unread";
 
     /**
+     * The start of the board's fault naming items a save wrote and GitHub was not asked for again.
+     */
+    static final String UNREAD_SAVED = "Saved, not read again from GitHub yet: ";
+
+    /**
      * The parts the store is made of; each one left out does nothing or refuses.
      *
      * @param reader reads the project
@@ -214,6 +219,12 @@ public final class GitHubStore implements PlanningStore {
      * the next poll reads it whole rather than asking whether it changed since the copy.
      */
     private volatile boolean fromCopy;
+
+    /**
+     * What saves wrote that GitHub could not be asked for again after them; the board held keeps
+     * every other item and names these unread until the next look or save reads them by id.
+     */
+    private volatile Touched.@Nullable Ids unread;
 
     /** Where the tracker's look for changes stands, kept with the copy. */
     private volatile ChangeCursor cursor = ChangeCursor.NONE;
@@ -1045,6 +1056,16 @@ public final class GitHubStore implements PlanningStore {
      */
     private Snapshot pollBesideSaves() {
         refuseRetired();
+        final Snapshot before = snapshot;
+        if (unread != null && before != null) {
+            // A board read by id gives the look its items as GitHub holds them; a failed read
+            // forgets the board, which this poll then reads whole.
+            locked(
+                    () -> {
+                        readUnread();
+                        return Objects.requireNonNullElse(snapshot, before);
+                    });
+        }
         final ProjectConfig now;
         final Snapshot current = snapshot;
         final boolean same;
@@ -1690,6 +1711,7 @@ public final class GitHubStore implements PlanningStore {
         }
         final List<String> faults = new ArrayList<>(labels.faults(board.names()));
         faults.addAll(parts.probe().pace().faults());
+        faults.addAll(unreadFaults());
         return board.withRepositories(labels.warnings(board.names()), faults);
     }
 
@@ -1866,6 +1888,7 @@ public final class GitHubStore implements PlanningStore {
         }
         return lockedForSave(
                 () -> {
+                    readUnread();
                     touched.clear();
                     try {
                         return work.get();
@@ -1893,9 +1916,16 @@ public final class GitHubStore implements PlanningStore {
                         readAgainById(touched.ids(), e.ids());
                         throw e;
                     } catch (final BoardWriter.AfterWriting e) {
-                        // The read after the writes failed, so the board held may lack them.
-                        saves.forget(touched.ids());
-                        drop();
+                        // The read after the writes failed: the board held keeps every other item
+                        // and names what was written unread until the next look or save reads it.
+                        final Touched.Ids written = touched.ids();
+                        saves.forget(written);
+                        if (written.none()) {
+                            // Nothing says what was written, so only a whole read shows it.
+                            drop();
+                        } else if (snapshot != null) {
+                            unread = joined(unread, written);
+                        }
                         throw e;
                     } catch (final RuntimeException e) {
                         readAgainById(touched.ids(), List.of());
@@ -1912,6 +1942,56 @@ public final class GitHubStore implements PlanningStore {
                         }
                     }
                 });
+    }
+
+    /** Reads by id what earlier saves wrote and GitHub was not asked for again after them. */
+    private void readUnread() {
+        final Touched.Ids pending = unread;
+        if (pending == null) {
+            return;
+        }
+        unread = null;
+        readAgainById(pending, List.of());
+    }
+
+    private static Touched.Ids joined(final Touched.@Nullable Ids one, final Touched.Ids two) {
+        if (one == null) {
+            return two;
+        }
+        final Set<String> issues = new LinkedHashSet<>(one.issues());
+        issues.addAll(two.issues());
+        final Set<String> items = new LinkedHashSet<>(one.items());
+        items.addAll(two.items());
+        final Set<String> numbered = new LinkedHashSet<>(one.numbered());
+        numbered.addAll(two.numbered());
+        final Set<Long> databaseIds = new LinkedHashSet<>(one.databaseIds());
+        databaseIds.addAll(two.databaseIds());
+        return new Touched.Ids(issues, items, numbered, databaseIds);
+    }
+
+    /** The board's fault naming the items saved and not read again, by the board's ids. */
+    private List<String> unreadFaults() {
+        final Touched.Ids pending = unread;
+        final Snapshot held = snapshot;
+        if (pending == null || held == null) {
+            return List.of();
+        }
+        final List<String> names = new ArrayList<>();
+        held.items()
+                .forEach(
+                        (id, item) -> {
+                            if (pending.issues().contains(item.issueId())
+                                    || pending.items().contains(item.itemId())) {
+                                names.add(id);
+                            }
+                        });
+        if (names.isEmpty()) {
+            names.addAll(pending.numbered());
+        }
+        return List.of(
+                UNREAD_SAVED
+                        + (names.isEmpty() ? "items of a save" : String.join(", ", names))
+                        + "; they are read again at the next look or save");
     }
 
     /**
@@ -2095,6 +2175,7 @@ public final class GitHubStore implements PlanningStore {
         // Only the items held keep their times; one gone and back is compared anew.
         listedAt.keySet().retainAll(fresh.raw().keySet());
         if (whole) {
+            unread = null;
             // A look's cursor from before a whole read does not describe its board.
             fromCopy = false;
             cursor = ChangeCursor.NONE;
@@ -2121,6 +2202,7 @@ public final class GitHubStore implements PlanningStore {
     /** Forgets the board held and removes its copy, so neither comes back at the next read. */
     private void drop() {
         snapshot = null;
+        unread = null;
         listedAt.clear();
         fromCopy = false;
         cursor = ChangeCursor.NONE;

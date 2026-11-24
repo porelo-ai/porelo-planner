@@ -512,8 +512,9 @@ class GitHubStoreWriterFailureTest {
     }
 
     @Test
-    void aSaveWhoseReadAfterItsWritesFailsForgetsTheBoard() {
-        // Harm: a board that lacks what the save wrote is served as current.
+    void aSaveWhoseReadAfterItsWritesFailsKeepsTheBoardNamingWhatItWrote() {
+        // Harm: a board that lacks what the save wrote is served as current, or a whole read of
+        // the project for one lost answer.
         final GitHub github = new GitHub();
         final GitHubStore store = store(github);
         final Board board = store.refresh();
@@ -528,10 +529,14 @@ class GitHubStoreWriterFailureTest {
         github.calls.clear();
         final Board read = store.board();
 
-        assertThat(count(github, "projectItems")).as("whole reads").isOne();
-        assertThat(read.issue("example-project#1").orElseThrow().state())
-                .as("the issue moved, as GitHub's list shows it")
-                .isEqualTo("Idea");
+        assertThat(count(github, "projectItems")).as("whole reads").isZero();
+        assertThat(read.faults())
+                .as("the board's fault naming the issue written and not read again")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .startsWith(GitHubStore.UNREAD_SAVED)
+                                        .contains("example-project#1"));
     }
 
     @Test

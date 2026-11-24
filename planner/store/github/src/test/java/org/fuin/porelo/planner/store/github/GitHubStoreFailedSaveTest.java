@@ -235,6 +235,42 @@ class GitHubStoreFailedSaveTest {
     }
 
     @Test
+    void aSaveWhoseReadAfterWritingFailsKeepsTheBoardAndNamesWhatItWroteUntilTheNextLook() {
+        // Harm: one lost answer from GitHub after a save turns the next request into a whole read
+        // of a large project, minutes during which every call waits; or the items written are
+        // shown as current although GitHub was never asked for them again.
+        final Reads reads = new Reads();
+        final GitHubStore store = store(reads, (current, writes) -> writes.issueTaken("I_one"));
+        store.board();
+        reads.byIdFailure = new IllegalStateException("HTTP 502");
+
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("a save written whose read after it failed")
+                .isInstanceOf(StoreException.class);
+        final Board kept = store.board();
+        assertThat(reads.whole.get()).as("whole reads after the failed read").isEqualTo(1);
+        assertThat(kept.revision().value()).as("the board held").isEqualTo("r1");
+        assertThat(kept.faults())
+                .as("the board's fault naming what was written and not read again")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .startsWith(GitHubStore.UNREAD_SAVED)
+                                        .contains("PL1"));
+
+        reads.byIdFailure = null;
+        store.poll();
+
+        assertThat(reads.byId)
+                .as("the items written, read again by id at the next look")
+                .last()
+                .satisfies(ids -> assertThat(ids.issues()).containsExactly("I_one"));
+        assertThat(store.board().faults())
+                .as("the board's faults once the items were read again")
+                .noneSatisfy(fault -> assertThat(fault).startsWith(GitHubStore.UNREAD_SAVED));
+    }
+
+    @Test
     void aSaveWhoseReadAgainFailsDropsTheBoard() {
         // Harm: a board that may hold a part GitHub never showed is served as current.
         final Reads reads = new Reads();

@@ -1,0 +1,2 @@
+title: A save whose read after it fails keeps the rest of the board held and names the items it wrote until the next look reads them again, instead of reading the whole project anew.
+type: changed
