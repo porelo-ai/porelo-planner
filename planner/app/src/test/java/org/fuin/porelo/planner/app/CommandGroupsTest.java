@@ -277,7 +277,8 @@ class CommandGroupsTest {
         assertThatThrownBy(
                         () ->
                                 CommandGroups.saved(
-                                        new CommandOutcome.Held(closing().commands(), "held"),
+                                        new CommandOutcome.Held(
+                                                List.of(), closing().commands(), "held"),
                                         STORE))
                 .isInstanceOf(StoreException.Busy.class);
     }

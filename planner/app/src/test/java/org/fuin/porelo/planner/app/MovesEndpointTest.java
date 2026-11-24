@@ -307,6 +307,26 @@ class MovesEndpointTest {
     }
 
     @Test
+    void aMoveWrittenInPartNamesEachIssueThatMovedWithItsState() throws Exception {
+        // Harm: the window cannot tell the person which issues already moved, so they move them
+        // again or believe nothing changed.
+        failure =
+                new StoreException.PartlySaved(
+                        "porelo-store",
+                        List.of("porelo-store"),
+                        List.of("AB01=Review", "AB02=Review"),
+                        "refused");
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.parameters.issues").value("AB01=Review,AB02=Review"));
+        failure =
+                new StoreException.PartlySaved("porelo-store", List.of("porelo-other"), "refused");
+        moves("{\"moves\": [{\"issue\": \"AB01\", \"to\": \"Review\"}]}")
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.parameters.issues").doesNotExist());
+    }
+
+    @Test
     void aPreviewAnswersEveryIssueThatMovesWithItsDigestAndSavesNothing() throws Exception {
         // Harm: a preview that writes, so a person who cancels has moved the story already.
         current = board("r1", "Review", "Review");

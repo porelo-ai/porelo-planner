@@ -456,6 +456,8 @@ public abstract sealed class StoreException extends RuntimeException
 
         private final java.util.List<String> pushed;
 
+        private final java.util.List<String> issues;
+
         /**
          * Names what was pushed and what failed.
          *
@@ -465,8 +467,35 @@ public abstract sealed class StoreException extends RuntimeException
          */
         public PartlySaved(
                 final String failed, final java.util.List<String> pushed, final String reason) {
+            this(failed, pushed, java.util.List.of(), reason);
+        }
+
+        /**
+         * Names what was pushed, the issues that stand, and what failed.
+         *
+         * @param failed the repository that failed
+         * @param pushed the repositories already pushed, in order
+         * @param issues the issues that stand, each as {@code id=state}, or its id alone when the
+         *     write names no state
+         * @param reason why it failed
+         */
+        public PartlySaved(
+                final String failed,
+                final java.util.List<String> pushed,
+                final java.util.List<String> issues,
+                final String reason) {
             super(failed, reason);
             this.pushed = java.util.List.copyOf(pushed);
+            this.issues = java.util.List.copyOf(issues);
+        }
+
+        /**
+         * Answers the issues that stand.
+         *
+         * @return each as {@code id=state} or its id alone, in the order written
+         */
+        public java.util.List<String> issues() {
+            return issues;
         }
 
         /**

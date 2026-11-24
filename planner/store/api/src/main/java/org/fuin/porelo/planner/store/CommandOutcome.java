@@ -69,15 +69,18 @@ public sealed interface CommandOutcome
     }
 
     /**
-     * The whole group held unsent, such as behind an earlier refusal of one of its items.
+     * The group held for the owner account, the rest of it unsent, such as when the project stayed
+     * busy or the outbox could not be written; the commands before stand.
      *
-     * @param unsent the group's commands, in order
+     * @param done the commands written before it was held, in order; empty for none
+     * @param unsent the group's commands not written, in order
      * @param why one sentence why
      */
-    record Held(List<Command> unsent, String why) implements CommandOutcome {
+    record Held(List<Command> done, List<Command> unsent, String why) implements CommandOutcome {
 
         /** Copies the commands. */
         public Held {
+            done = List.copyOf(done);
             unsent = List.copyOf(unsent);
         }
     }

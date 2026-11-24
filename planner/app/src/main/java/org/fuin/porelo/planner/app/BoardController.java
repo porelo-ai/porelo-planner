@@ -863,9 +863,11 @@ public class BoardController {
                                     from,
                                     dependencies -> Rules.moves(dependencies, move, runs)));
         } catch (final RuntimeException e) {
+            final String stands = made.issue(added.id()).map(Issue::state).orElse("");
             throw new StoreException.PartlySaved(
                     issue.repository(),
                     List.of(issue.repository()),
+                    List.of(stands.isEmpty() ? added.id() : added.id() + "=" + stands),
                     added.id()
                             + " was added in state "
                             + made.issue(added.id()).map(Issue::state).orElse("")

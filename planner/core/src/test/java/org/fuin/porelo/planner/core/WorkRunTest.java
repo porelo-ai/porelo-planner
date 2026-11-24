@@ -3730,7 +3730,7 @@ class WorkRunTest {
         // Harm: a task halted by a group the stand-in queue never sent, which writes nothing.
         final Fixture f = new Fixture();
         final WorkRun.Offered offer = f.order().tasks().getFirst();
-        f.queue.answer = new CommandOutcome.Held(List.of(), "held");
+        f.queue.answer = new CommandOutcome.Held(List.of(), List.of(), "held");
         assertThatThrownBy(() -> f.start(offer)).isInstanceOf(StoreException.Busy.class);
         final WorkRun.Run run = f.run.work("ST1");
         assertThat(run.halted()).as("not halted").isFalse();

@@ -250,7 +250,19 @@ public class Problems {
                             "PartlySaved",
                             HttpStatus.BAD_GATEWAY,
                             detail,
-                            Map.of("pushed", String.join(",", partly.pushed()), "failed", subject));
+                            partly.issues().isEmpty()
+                                    ? Map.of(
+                                            "pushed",
+                                            String.join(",", partly.pushed()),
+                                            "failed",
+                                            subject)
+                                    : Map.of(
+                                            "pushed",
+                                            String.join(",", partly.pushed()),
+                                            "failed",
+                                            subject,
+                                            "issues",
+                                            String.join(",", partly.issues())));
             case StoreException.LabelsNotKept dropped ->
                     problem(
                             "LabelsNotKept",

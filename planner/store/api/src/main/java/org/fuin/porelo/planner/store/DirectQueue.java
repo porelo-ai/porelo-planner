@@ -127,46 +127,74 @@ public final class DirectQueue implements CommandQueue {
     /** Writes one command; answers the board after it, or null for a comment, which has none. */
     private @Nullable Board written(
             final Command command, final Map<String, CommandOutcome.Created> created) {
+        final Written.Done done = one(store, command);
+        final CommandOutcome.Created made = done.created();
+        if (made != null) {
+            created.put(command.id(), made);
+        }
+        return done.board();
+    }
+
+    /**
+     * Writes one command alone through the store's own call for it.
+     *
+     * @param store the store
+     * @param command the command
+     * @return the board after it, null for a comment, which has none, and what a create made
+     */
+    static Written.Done one(final PlanningStore store, final Command command) {
         return switch (command) {
-            case Command.Write write -> store.save(write.basis(), write.writes(), write.recheck());
+            case Command.Write write ->
+                    new Written.Done(
+                            store.save(write.basis(), write.writes(), write.recheck()), null);
             case Command.SetFields set ->
-                    store.setFields(set.basis(), set.issue(), set.fields(), set.recheck());
+                    new Written.Done(
+                            store.setFields(set.basis(), set.issue(), set.fields(), set.recheck()),
+                            null);
             case Command.SetText set ->
-                    store.setText(set.basis(), set.item(), set.edit(), set.recheck());
+                    new Written.Done(
+                            store.setText(set.basis(), set.item(), set.edit(), set.recheck()),
+                            null);
             case Command.SetBlockers set ->
-                    store.setBlockedBy(set.basis(), set.issue(), set.blockedBy(), set.recheck());
+                    new Written.Done(
+                            store.setBlockedBy(
+                                    set.basis(), set.issue(), set.blockedBy(), set.recheck()),
+                            null);
             case Command.SetStoryIssues set ->
-                    store.setStoryIssues(set.basis(), set.story(), set.issues(), set.recheck());
+                    new Written.Done(
+                            store.setStoryIssues(
+                                    set.basis(), set.story(), set.issues(), set.recheck()),
+                            null);
             case Command.CorrectLabels labels ->
-                    store.correctLabels(labels.repository(), labels.calls());
+                    new Written.Done(
+                            store.correctLabels(labels.repository(), labels.calls()), null);
             case Command.Comment comment -> {
                 store.comment(comment.issue(), comment.text());
-                yield null;
+                yield new Written.Done(null, null);
             }
             case Command.CreateIssue create -> {
                 final NewIssue.Added added =
                         store.createIssue(create.basis(), create.issue(), create.recheck());
-                created.put(create.id(), new CommandOutcome.Created(added.id(), List.of()));
-                yield added.board();
+                yield new Written.Done(
+                        added.board(), new CommandOutcome.Created(added.id(), List.of()));
             }
             case Command.CreateIdea create -> {
                 final NewIdea.Added added =
                         store.createIdea(create.basis(), create.idea(), create.recheck());
-                created.put(create.id(), new CommandOutcome.Created(added.story(), added.issues()));
-                yield added.board();
+                yield new Written.Done(
+                        added.board(), new CommandOutcome.Created(added.story(), added.issues()));
             }
             case Command.CreateStory create -> {
                 final NewIdea.Added added =
                         store.createStoryFromIssues(
                                 create.basis(), create.story(), create.recheck());
-                created.put(create.id(), new CommandOutcome.Created(added.story(), added.issues()));
-                yield added.board();
+                yield new Written.Done(
+                        added.board(), new CommandOutcome.Created(added.story(), added.issues()));
             }
-            case Command.AddUnlisted add -> {
-                final Board board = store.addUnlistedIssue(add.basis(), add.issue(), add.recheck());
-                created.put(add.id(), new CommandOutcome.Created(add.issue(), List.of()));
-                yield board;
-            }
+            case Command.AddUnlisted add ->
+                    new Written.Done(
+                            store.addUnlistedIssue(add.basis(), add.issue(), add.recheck()),
+                            new CommandOutcome.Created(add.issue(), List.of()));
         };
     }
 }

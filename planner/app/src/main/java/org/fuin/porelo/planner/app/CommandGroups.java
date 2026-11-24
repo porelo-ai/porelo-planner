@@ -101,9 +101,26 @@ final class CommandGroups {
                 if (refused.done().isEmpty()) {
                     throw rethrown(refused.cause());
                 }
-                throw partly(refused, store.board());
+                throw partly(
+                        refused.done(),
+                        target(refused.refused()),
+                        refused.cause().getMessage(),
+                        store.board(),
+                        refused.cause());
             }
-            case CommandOutcome.Held held -> throw new StoreException.Busy(own(store.board()));
+            case CommandOutcome.Held held -> {
+                final Board board = store.board();
+                if (held.done().isEmpty()) {
+                    throw new StoreException.Busy(own(board));
+                }
+                // Part of it stands: never told as a plain wait, so it is not made again.
+                throw partly(
+                        held.done(),
+                        held.unsent().isEmpty() ? "" : target(held.unsent().getFirst()),
+                        held.why(),
+                        board,
+                        null);
+            }
         };
     }
 
@@ -200,24 +217,51 @@ final class CommandGroups {
     }
 
     /** A group refused after one of its commands was written. */
+    /**
+     * The answer for a group written in part: the repositories that hold what was written, each
+     * issue that stands with the state it was moved to, and the repository not written.
+     */
     private static StoreException.PartlySaved partly(
-            final CommandOutcome.Refused refused, final Board board) {
+            final List<Command> done,
+            final String failed,
+            final @Nullable String why,
+            final Board board,
+            final @Nullable Throwable cause) {
         final Set<String> pushed = new LinkedHashSet<>();
-        refused.done().forEach(command -> pushed.add(repository(board, target(command))));
-        final String failed = target(refused.refused());
+        final List<String> issues = new ArrayList<>();
+        for (final Command command : done) {
+            final String target = target(command);
+            pushed.add(repository(board, target));
+            issues.add(stands(command, target));
+        }
         final StoreException.PartlySaved partly =
                 new StoreException.PartlySaved(
                         repository(board, failed),
                         List.copyOf(pushed),
-                        refused.done().stream()
-                                        .map(CommandGroups::target)
-                                        .collect(Collectors.joining(", "))
+                        issues,
+                        done.stream().map(CommandGroups::target).collect(Collectors.joining(", "))
                                 + " saved; "
-                                + failed
+                                + (failed.isEmpty() ? "the rest" : failed)
                                 + " not saved: "
-                                + refused.cause().getMessage());
-        partly.initCause(refused.cause());
+                                + why);
+        if (cause != null) {
+            partly.initCause(cause);
+        }
         return partly;
+    }
+
+    /** An issue moved by a window's write as {@code id=state}; any other command by its id. */
+    private static String stands(final Command command, final String target) {
+        if (command instanceof Command.Write write) {
+            final String state =
+                    write.writes()
+                            .issues()
+                            .getOrDefault(target, write.writes().stories().get(target));
+            if (state != null) {
+                return target + "=" + state;
+            }
+        }
+        return target;
     }
 
     private static String target(final Command command) {

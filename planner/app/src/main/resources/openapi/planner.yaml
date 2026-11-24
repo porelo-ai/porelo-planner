@@ -2228,6 +2228,9 @@ components:
         Unreadable, with words that say so). The Git store answers once its commits stand in its own clones and pushes afterwards, so a push
         a repository refuses becomes a fault on the board, never this answer; the mock mode answers PartlySaved, naming
         the repositories pushed and the one that failed, for a move of its fixed story over two repositories.
+        A move is written one issue after another, so it is not all or none when another changes one of its issues
+        meanwhile at a place the move writes: it then answers PartlySaved, `issues` naming each issue that stands with
+        its state (`id=state`, comma-joined) and `pushed` the repositories that hold them.
         LabelsNotKept (repository, item) when the tracker, read back after a write of labels, does not carry exactly
         the labels sent, in any case - the topic labels asked and the person's own -, as GitHub drops them without an
         error for an account that may not set them; what else the write saved stands.
@@ -2245,6 +2248,7 @@ components:
                 parameters:
                   pushed: porelo-other
                   failed: porelo-project
+                  issues: PL1=Building
             CredentialRefused:
               value:
                 type: urn:porelo-planner:CredentialRefused

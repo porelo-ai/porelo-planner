@@ -23,6 +23,8 @@ import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.CallTimes;
+import org.fuin.porelo.planner.store.Command;
+import org.fuin.porelo.planner.store.CommandGroup;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -42,6 +44,7 @@ import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.Tracker;
 import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.Written;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
@@ -340,6 +343,8 @@ public final class GitHubStore implements PlanningStore {
      * shows them, kept with the copy.
      */
     private final OwnSaves saves = new OwnSaves();
+
+    private final JudgedViews judgedViews = new JudgedViews();
 
     /**
      * Each item's own last change as the tracker's list showed it at the last look that took it,
@@ -877,6 +882,121 @@ public final class GitHubStore implements PlanningStore {
                                     return readAfterWriting();
                                 })
                         .board());
+    }
+
+    /**
+     * Judges a group under the lock, as a save does: one read afresh of what every command's rule
+     * needs, every rule run on it; each item a command was judged on is kept as it stands, for a
+     * merge should it move before the command is written.
+     */
+    @Override
+    public void judge(final CommandGroup group) {
+        lockedForSave(
+                () -> {
+                    touched.clear();
+                    final Snapshot held = current();
+                    group.commands().forEach(command -> judgedViews.remember(held, command));
+                    readBefore(held, CommandWrites.union(group), Set.of());
+                    return held;
+                });
+    }
+
+    /**
+     * Writes a window's write alone, as a save writes: its target is read again inside the write
+     * and checked on that read right before it, never on the group's judgment; nothing is read
+     * after it, and what it touched is told to a read under way. Any other command is written with
+     * its own call.
+     */
+    @Override
+    public Written writeAlone(final Command command) {
+        if (!(command instanceof Command.Write write)) {
+            return PlanningStore.super.writeAlone(command);
+        }
+        final java.util.concurrent.atomic.AtomicReference<Written> result =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        writing(
+                () -> {
+                    result.set(writtenAlone(write));
+                    return current();
+                });
+        return java.util.Objects.requireNonNull(result.get());
+    }
+
+    /**
+     * Reads the items a group wrote again, once, after its last write, by the items' own ids, so no
+     * save between the group's writes and this read narrows it.
+     */
+    @Override
+    public Board readAfter(final Set<String> written) {
+        return served(
+                writing(
+                                () -> {
+                                    touched.add(writtenIds(written));
+                                    return readAfterWriting();
+                                })
+                        .board());
+    }
+
+    private Touched.Ids writtenIds(final Set<String> written) {
+        final Snapshot held = current();
+        final Set<String> issues = new LinkedHashSet<>();
+        final Set<String> items = new LinkedHashSet<>();
+        for (final String id : written) {
+            final ItemView item = held.items().get(id);
+            if (item != null) {
+                issues.add(item.issueId());
+                items.add(item.itemId());
+            }
+        }
+        return new Touched.Ids(issues, items, Set.of(), Set.of());
+    }
+
+    private Written writtenAlone(final Command.Write write) {
+        final Snapshot held = current();
+        try {
+            parts.writer()
+                    .save(held, write.basis(), write.writes(), BoardWriter.ReadBefore.none(held));
+            return new Written.Done(null, null);
+        } catch (final StoreException.Changed moved) {
+            return mergedAlone(write, held);
+        }
+    }
+
+    /** A write whose target moved: done, merged onto the target as it stands, or a conflict. */
+    private Written mergedAlone(final Command.Write write, final Snapshot held) {
+        final ItemView before = held.items().get(write.target());
+        if (before == null) {
+            return new Written.Conflict(List.of(Place.Kind.ITEM.name()));
+        }
+        final Snapshot fresh =
+                parts.reader()
+                        .reread(
+                                configNow(),
+                                held,
+                                new Touched.Ids(
+                                        Set.of(before.issueId()), Set.of(), Set.of(), Set.of()));
+        final ItemView now = fresh.items().get(write.target());
+        if (now == null) {
+            return new Written.Conflict(List.of(Place.Kind.ITEM.name()));
+        }
+        return switch (CommandWrites.decide(
+                write,
+                judgedViews.judged(write.target(), write.basis().of(write.target())),
+                now,
+                fresh.board(),
+                fresh.config().workflow())) {
+            case CommandWrites.Done done -> new Written.Done(null, null);
+            case CommandWrites.Conflict conflict -> new Written.Conflict(conflict.places());
+            case CommandWrites.Rebased rebased -> {
+                parts.writer()
+                        .save(
+                                fresh,
+                                rebased.basis(),
+                                rebased.writes(),
+                                BoardWriter.ReadBefore.none(fresh));
+                yield new Written.Done(null, null);
+            }
+        };
     }
 
     @Override

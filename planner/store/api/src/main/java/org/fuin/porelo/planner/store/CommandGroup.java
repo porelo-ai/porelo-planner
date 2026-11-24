@@ -9,11 +9,25 @@ import java.util.List;
  *
  * @param id the group's own id
  * @param commands the commands, at least one, each with an id of its own
+ * @param story the story whose run saves the group, empty for a window's save
  */
-public record CommandGroup(String id, List<Command> commands) {
+public record CommandGroup(String id, List<Command> commands, String story) {
 
-    /** Refuses a blank id, an empty group and a command id named twice. */
+    /**
+     * A window's save.
+     *
+     * @param id the group's own id
+     * @param commands the commands
+     */
+    public CommandGroup(final String id, final List<Command> commands) {
+        this(id, commands, "");
+    }
+
+    /** Refuses a blank id, an empty group, a command id named twice and a story id malformed. */
     public CommandGroup {
+        if (!story.isEmpty()) {
+            Ids.story(story);
+        }
         if (id.isBlank()) {
             throw new IllegalArgumentException("A command group is named by an id.");
         }

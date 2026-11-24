@@ -28,6 +28,20 @@ final class DurableFile {
     private final PrivateFiles files;
     private final WorkRecord.Replace replace;
     private final LimitFactors limits;
+    private final DirectorySync sync;
+
+    /** Syncs a directory, so a move in it is durable. */
+    @FunctionalInterface
+    interface DirectorySync {
+
+        /**
+         * Syncs it.
+         *
+         * @param directory the directory
+         * @throws IOException when it cannot be synced
+         */
+        void sync(Path directory) throws IOException;
+    }
 
     /**
      * Keeps files with the platform's private files, an atomic replacing move and the planner's
@@ -48,9 +62,28 @@ final class DurableFile {
     /** Keeps files with the given private files, replacing a file as told. */
     DurableFile(
             final PrivateFiles files, final WorkRecord.Replace replace, final LimitFactors limits) {
+        this(files, replace, limits, DurableFile::synced);
+    }
+
+    /** Keeps files with the given private files, replacing and syncing as told. */
+    DurableFile(
+            final PrivateFiles files,
+            final WorkRecord.Replace replace,
+            final LimitFactors limits,
+            final DirectorySync sync) {
         this.files = files;
         this.replace = replace;
         this.limits = limits;
+        this.sync = sync;
+    }
+
+    /** The file was put in place, but its directory could not be synced: the new file may stand. */
+    static final class NotSynced extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        NotSynced(final IOException cause) {
+            super(cause.getMessage(), cause);
+        }
     }
 
     /** The file too large to be read. */
@@ -71,6 +104,20 @@ final class DurableFile {
      * @throws IOException when a step fails; the message names the step
      */
     void write(final Path target, final byte[] bytes) throws IOException {
+        write(target, bytes, () -> {});
+    }
+
+    /**
+     * Puts the bytes in place of the file as {@link #write(Path, byte[])} does, and runs the step
+     * given once the new file is in place, before the directory is synced.
+     *
+     * @param target the file
+     * @param bytes its new content
+     * @param moved what follows the file being in place
+     * @throws NotSynced when the file is in place but its directory not synced
+     * @throws IOException when a step before the move fails: the file is unchanged
+     */
+    void write(final Path target, final byte[] bytes, final Runnable moved) throws IOException {
         final Path dir = Objects.requireNonNull(target.getParent(), "a file in a directory");
         final String name = target.getFileName().toString();
         final String stem = name.endsWith(".json") ? name.substring(0, name.length() - 5) : name;
@@ -97,11 +144,13 @@ final class DurableFile {
             final Path written = temporary;
             SharedFiles.whileShared(() -> replace.move(written, target), limits);
             temporary = null;
+            moved.run();
             // Windows opens no directory as a file; its move is durable once it returns.
             if (!files.windows()) {
-                try (FileChannel channel =
-                        FileChannel.open(dir, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
-                    channel.force(true);
+                try {
+                    sync.sync(dir);
+                } catch (final IOException unsynced) {
+                    throw new NotSynced(unsynced);
                 }
             }
         } catch (final UnsupportedOperationException failed) {
@@ -167,6 +216,13 @@ final class DurableFile {
                     Files.delete(each);
                 }
             }
+        }
+    }
+
+    private static void synced(final Path directory) throws IOException {
+        try (FileChannel channel =
+                FileChannel.open(directory, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            channel.force(true);
         }
     }
 

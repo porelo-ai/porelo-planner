@@ -138,7 +138,7 @@ class CommandOutboxTest {
     /** Leaves a group with its first command begun, as a planner stopped during its call. */
     private void begunAndStopped(final CommandGroup group) {
         final CommandOutbox first = outbox();
-        first.open(BEFORE);
+        first.open(() -> BEFORE);
         first.enqueue(group);
         first.begin(group.commands().getFirst().id());
         first.close();
@@ -159,12 +159,12 @@ class CommandOutboxTest {
         // Harm: a save lost by a restart before its first call.
         final Command.Write first = move("c1", "AA1", "Building");
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(first, move("c2", "AB2", "Building"))));
         outbox.close();
 
         final CommandOutbox again = outbox();
-        assertThat(again.open(BEFORE)).as("nothing was begun").isEmpty();
+        assertThat(again.open(() -> BEFORE)).as("nothing was begun").isEmpty();
 
         assertThat(state(again, "c1")).isEqualTo(State.QUEUED);
         assertThat(state(again, "c2")).isEqualTo(State.QUEUED);
@@ -202,7 +202,7 @@ class CommandOutboxTest {
         final CommandOutbox outbox =
                 new CommandOutbox(
                         environment(), directory, "planning", "porelo-lib", "main", files, failing);
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
         final String before = Files.readString(file());
 
@@ -219,7 +219,7 @@ class CommandOutboxTest {
                 "{\"torn");
         outbox.close();
         final CommandOutbox again = outbox();
-        again.open(BEFORE);
+        again.open(() -> BEFORE);
         assertThat(state(again, "c1")).isEqualTo(State.QUEUED);
         assertThat(directory.resolve("outbox-left.tmp"))
                 .as("a sibling left is removed")
@@ -232,7 +232,7 @@ class CommandOutboxTest {
         begunAndStopped(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
 
         final CommandOutbox again = outbox();
-        assertThat(again.open(BEFORE)).containsEntry("c1", State.QUEUED);
+        assertThat(again.open(() -> BEFORE)).containsEntry("c1", State.QUEUED);
         assertThat(state(again, "c1")).isEqualTo(State.QUEUED);
     }
 
@@ -246,7 +246,7 @@ class CommandOutboxTest {
         final Board after = with(BEFORE, issue("AA1", "Building", List.of("AB2")));
 
         final CommandOutbox again = outbox();
-        assertThat(again.open(after)).containsEntry("c1", State.DONE);
+        assertThat(again.open(() -> after)).containsEntry("c1", State.DONE);
         assertThat(state(again, "c1")).isEqualTo(State.DONE);
         assertThat(state(again, "c2")).as("the next one waits").isEqualTo(State.QUEUED);
     }
@@ -261,7 +261,7 @@ class CommandOutboxTest {
         final Board moved = with(BEFORE, issue("AA1", "Review", List.of("AB2")));
 
         final CommandOutbox again = outbox();
-        assertThat(again.open(moved))
+        assertThat(again.open(() -> moved))
                 .containsEntry("c1", State.HELD)
                 .containsEntry("c2", State.HELD);
         final CommandOutbox.Told held = again.pending().getFirst().commands().getFirst();
@@ -277,7 +277,7 @@ class CommandOutboxTest {
         final Board closed = with(BEFORE, issue("AA1", "Done", List.of("AB2")));
 
         final CommandOutbox again = outbox();
-        assertThat(again.open(closed)).containsEntry("c1", State.HELD);
+        assertThat(again.open(() -> closed)).containsEntry("c1", State.HELD);
     }
 
     @Test
@@ -293,16 +293,16 @@ class CommandOutboxTest {
                                         Basis.none(),
                                         Recheck.none()))));
         final CommandOutbox again = outbox();
-        assertThat(again.open(BEFORE)).containsEntry("c1", State.HELD);
+        assertThat(again.open(() -> BEFORE)).containsEntry("c1", State.HELD);
         again.close();
 
         final CommandOutbox other = outbox("other");
-        other.open(BEFORE);
+        other.open(() -> BEFORE);
         other.enqueue(new CommandGroup("g2", List.of(new Command.Comment("c2", "AA1", "Seen."))));
         other.begin("c2");
         other.close();
         final CommandOutbox last = outbox("other");
-        assertThat(last.open(BEFORE)).containsEntry("c2", State.HELD);
+        assertThat(last.open(() -> BEFORE)).containsEntry("c2", State.HELD);
     }
 
     @Test
@@ -310,11 +310,11 @@ class CommandOutboxTest {
         // Harm: a command read back after a restart written over a blocker that moved since it was
         // judged, as no rule of it survives the restart.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
         outbox.close();
         final CommandOutbox again = outbox();
-        again.open(BEFORE);
+        again.open(() -> BEFORE);
         final Command read = again.command("c1");
         assertThat(read.recheck().from())
                 .as("every item judged is read afresh")
@@ -361,12 +361,12 @@ class CommandOutboxTest {
     void aFileOfAnotherBranchIsNeverRunAndItsCommandsAreKeptHeld() throws IOException {
         // Harm: commands judged on one branch written to another.
         final CommandOutbox outbox = outbox("main");
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
         outbox.close();
 
         final CommandOutbox other = outbox("feature");
-        other.open(BEFORE);
+        other.open(() -> BEFORE);
         final List<CommandOutbox.Group> pending = other.pending();
         assertThat(pending).hasSize(1);
         assertThat(pending.getFirst().earlier()).as("kept aside").isTrue();
@@ -378,12 +378,12 @@ class CommandOutboxTest {
         other.close();
 
         edit("\"format\":1", "\"format\":2");
-        assertThatThrownBy(() -> outbox("feature").open(BEFORE))
+        assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("a newer form")
                 .isInstanceOf(WorkRefusal.class);
         edit("\"format\":2", "\"format\":1");
         edit("\"project\":\"planning\"", "\"project\":\"another\"");
-        assertThatThrownBy(() -> outbox("feature").open(BEFORE))
+        assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("another project's")
                 .isInstanceOf(WorkRefusal.class);
     }
@@ -393,7 +393,7 @@ class CommandOutboxTest {
         // Harm: a save queued so near the cap that holding or ending its commands cannot be
         // written.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
         final String before = Files.readString(file());
         final String large = "x".repeat(CommandOutbox.MOST - CommandOutbox.RESERVE / 2);
@@ -415,7 +415,7 @@ class CommandOutboxTest {
         // Harm: a command sent before the one it follows, or a file whose order the outbox never
         // makes read as a queue to run.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(
                 new CommandGroup(
                         "g1",
@@ -440,7 +440,7 @@ class CommandOutboxTest {
     void aTornOrForgedFileIsRefusedLoud() throws IOException {
         // Harm: a forged or broken queue run against the store.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(
                 new CommandGroup(
                         "g1",
@@ -467,7 +467,7 @@ class CommandOutboxTest {
         for (final String text : forged) {
             assertThat(text).as("forged").isNotEqualTo(good);
             Files.writeString(file(), text);
-            assertThatThrownBy(() -> outbox().open(BEFORE))
+            assertThatThrownBy(() -> outbox().open(() -> BEFORE))
                     .as(text)
                     .isInstanceOf(WorkRefusal.class);
         }
@@ -477,7 +477,7 @@ class CommandOutboxTest {
     void aClosedOutboxWritesNothing() {
         // Harm: a runner left from before writing beside the outbox of the project opened again.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
         outbox.close();
 
@@ -512,7 +512,7 @@ class CommandOutboxTest {
         // Harm: a command that may stand in part sent again, or one refused before writing held
         // for the owner account; a group's later commands sent after one before them failed.
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(
                 new CommandGroup(
                         "g1",
@@ -621,12 +621,12 @@ class CommandOutboxTest {
                                 Recheck.none()),
                         new Command.AddUnlisted("c11", "AC3", Basis.of(BEFORE), Recheck.none()));
         final CommandOutbox outbox = outbox();
-        outbox.open(BEFORE);
+        outbox.open(() -> BEFORE);
         outbox.enqueue(new CommandGroup("g1", all));
         outbox.close();
 
         final CommandOutbox again = outbox();
-        again.open(BEFORE);
+        again.open(() -> BEFORE);
         for (final Command queued : all) {
             final Command read = again.command(queued.id());
             assertThat(withoutRule(read)).as(queued.id()).isEqualTo(withoutRule(queued));
@@ -654,5 +654,202 @@ class CommandOutboxTest {
                 .replaceAll(
                         "recheck=Recheck\\[needs=\\[[^\\]]*\\], from=\\[[^\\]]*\\], rule=[^\\]]*\\]",
                         "");
+    }
+
+    @Test
+    void aSyncFailureAfterTheMoveKeepsMemoryWithTheFileAndSaysTheGroupMayStand() {
+        // Harm: a group told "not queued" that the file holds, so it is run after a restart while
+        // the caller made the save again.
+        final PrivateFiles files = PrivateFiles.of(environment());
+        final AtomicInteger syncs = new AtomicInteger();
+        final DurableFile unsynced =
+                new DurableFile(
+                        files,
+                        (written, target) ->
+                                Files.move(
+                                        written,
+                                        target,
+                                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING),
+                        LimitFactors.DEFAULT,
+                        dir -> {
+                            if (syncs.incrementAndGet() == 1) {
+                                throw new IOException("the disk did not answer");
+                            }
+                        });
+        final CommandOutbox outbox =
+                new CommandOutbox(
+                        environment(),
+                        directory,
+                        "planning",
+                        "porelo-lib",
+                        "main",
+                        files,
+                        unsynced);
+        outbox.open(() -> BEFORE);
+
+        assertThatThrownBy(
+                        () ->
+                                outbox.enqueue(
+                                        new CommandGroup(
+                                                "g1", List.of(move("c1", "AA1", "Building")))))
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("may stand");
+
+        assertThat(state(outbox, "c1")).as("memory follows the file").isEqualTo(State.QUEUED);
+        outbox.close();
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(state(again, "c1")).as("the file holds it").isEqualTo(State.QUEUED);
+    }
+
+    @Test
+    void aCommandResumedAndThenRefusedIsHeldNeverToldUnwritten() {
+        // Harm: a command that may stand in part from before the restart told as never written,
+        // so the owner account sends it again over what it wrote.
+        begunAndStopped(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        final CommandOutbox again = outbox();
+        assertThat(again.open(() -> BEFORE)).containsEntry("c1", State.QUEUED);
+        again.begin("c1");
+
+        assertThat(again.refused("c1", new StoreException.Changed(List.of("AA1")), false, BEFORE))
+                .isEqualTo(State.HELD);
+    }
+
+    @Test
+    void aConflictKeepsItsPlacesForTheOwnerAccountAndHoldsTheTail() {
+        // Harm: the owner account told of a conflict without where it lies, or a tail written after
+        // it.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building"))));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE", "FIELD:Size"));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        final List<CommandOutbox.Told> told = again.told("g1");
+        assertThat(told.getFirst().state()).isEqualTo(State.REFUSED);
+        assertThat(told.getFirst().places()).containsExactly("STATE", "FIELD:Size");
+        assertThat(told.get(1).state()).isEqualTo(State.HELD);
+    }
+
+    @Test
+    void onlyAHeldGroupIsDroppedOrResentAndOneOfAnotherSourceIsNeverResent() {
+        // Harm: a waiting save dropped unseen, or a save judged on one branch sent to another.
+        final CommandOutbox outbox = outbox("main");
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        assertThatThrownBy(() -> outbox.drop("g1")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> outbox.resend("g1")).isInstanceOf(IllegalStateException.class);
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.resend("g1");
+        assertThat(state(outbox, "c1")).as("waits again").isEqualTo(State.QUEUED);
+        assertThat(outbox.command("c1").basis())
+                .as("with the versions it was judged on")
+                .isEqualTo(Basis.of(BEFORE));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+
+        final CommandOutbox other = outbox("feature");
+        other.open(() -> BEFORE);
+        assertThatThrownBy(() -> other.resend("g1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("porelo-lib on main");
+        other.drop("g1");
+        assertThat(other.pending()).as("dropped").isEmpty();
+    }
+
+    @Test
+    void aGroupWrittenWholeIsForgottenInMemoryToo() {
+        // Harm: memory growing with every save, and a command run again from memory once its group
+        // left the file.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        outbox.begin("c1");
+        outbox.done("c1");
+
+        assertThatThrownBy(() -> outbox.command("c1")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void anOpenReadsTheBoardOnlyWhenACommandWasBegun() {
+        // Harm: every project open paying a whole board read, though nothing was begun.
+        final AtomicInteger reads = new AtomicInteger();
+        final CommandOutbox first = outbox();
+        first.open(
+                () -> {
+                    reads.incrementAndGet();
+                    return BEFORE;
+                });
+        first.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        first.close();
+        final CommandOutbox waiting = outbox();
+        waiting.open(
+                () -> {
+                    reads.incrementAndGet();
+                    return BEFORE;
+                });
+        waiting.close();
+        assertThat(reads).as("nothing begun, nothing read").hasValue(0);
+
+        begunAndStopped(new CommandGroup("g2", List.of(move("c2", "AB2", "Building"))));
+        final CommandOutbox begun = outbox();
+        begun.open(
+                () -> {
+                    reads.incrementAndGet();
+                    return BEFORE;
+                });
+        assertThat(reads).as("one read for the begun command").hasValue(1);
+    }
+
+    @Test
+    void aGroupHeldByTheRepairAtOpenWaitsForTheOwnerAccountWithItsReason() {
+        // Harm: a group the run's pending mark names sent again by itself, though its run halted.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building"))));
+        outbox.begin("c1");
+        outbox.done("c1");
+
+        outbox.hold("g1", new StoreException.Changed(List.of("AB2")));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(again.told("g1"))
+                .extracting(CommandOutbox.Told::state)
+                .containsExactly(State.DONE, State.HELD);
+        assertThat(again.told("g1").get(1).why()).isNotNull();
+        assertThat(again.waiting()).as("never run by itself").isEmpty();
+    }
+
+    @Test
+    void aRunsGroupKeepsItsStoryAndIsNeverSentAgainByTheOwnerAccount() {
+        // Harm: a run's save sent again behind its halt, so the story moves while its run stopped.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building")), "ST1"));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(again.story("g1")).as("kept in the file").isEqualTo("ST1");
+        assertThat(again.pending().getFirst().story()).isEqualTo("ST1");
+        assertThatThrownBy(() -> again.resend("g1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ST1");
     }
 }

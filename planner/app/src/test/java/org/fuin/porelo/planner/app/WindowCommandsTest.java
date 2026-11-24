@@ -361,7 +361,7 @@ class WindowCommandsTest {
     @Test
     void aGroupHeldUnsentIsBusy() throws Exception {
         // Harm: a move nothing wrote answered as saved.
-        answer = group -> new CommandOutcome.Held(group.commands(), "held");
+        answer = group -> new CommandOutcome.Held(List.of(), group.commands(), "held");
 
         moveBoth()
                 .andExpect(status().isServiceUnavailable())

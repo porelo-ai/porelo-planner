@@ -338,6 +338,33 @@ void main() {
     expect(board.moveRefusal?.parameters, {'pushed': 'repo', 'failed': 'other'});
   });
 
+  // Harm: a move written only in part hides which issues already moved, so the person moves them again or
+  // believes nothing changed.
+  test('a partly written move names each issue that moved and its state', () {
+    expect(
+      planningFailureWords(
+        const PlanningRefusal(
+          'PartlySaved',
+          {
+            'pushed': 'porelo-lib',
+            'failed': 'porelo-lib',
+            'issues': 'AA1=Building,porelo-ai/porelo-lib#12=Review,AB2',
+          }, // not-a-citation
+          'Part of the move was written.',
+        ),
+      ),
+      'Part of the move was written. Pushed: porelo-lib. Not pushed: porelo-lib. '
+      'Moved: AA1 to Building, porelo-ai/porelo-lib#12 to Review, AB2.', // not-a-citation
+    );
+    expect(
+      planningFailureWords(
+        const PlanningRefusal('PartlySaved', {'pushed': 'repo', 'failed': 'other'}, 'Partly saved.'),
+      ),
+      'Partly saved. Pushed: repo. Not pushed: other.',
+      reason: 'no issues, no Moved',
+    );
+  });
+
   // Harm: refusal text can conceal or reorder the destination and reason shown to the person.
   test('every refusal word shown strips controls and bidirectional formatting', () {
     for (final error in [

@@ -49,6 +49,8 @@ class IssuesEndpointTest {
 
     private boolean createsInState;
 
+    private @Nullable RuntimeException moveFailure;
+
     private boolean setsLabels = true;
 
     private final List<Writes> moves = new ArrayList<>();
@@ -109,6 +111,9 @@ class IssuesEndpointTest {
 
                     @Override
                     public Board save(final Revision revision, final Writes writes) {
+                        if (moveFailure != null) {
+                            throw moveFailure;
+                        }
                         moves.add(writes);
                         current = withIssue("r3", writes.issues().get("CD03"), Worker.AGENT);
                         return current;
@@ -278,6 +283,17 @@ class IssuesEndpointTest {
         assertThat(current.issue("CD03").orElseThrow().state())
                 .as("the moved issue")
                 .isEqualTo("Backlog");
+    }
+
+    @Test
+    void aNewIssueWhoseMoveFailsIsNamedWithTheStateItStandsIn() throws Exception {
+        // Harm: the window told part was written without which issue stands where, so the person
+        // adds the issue again.
+        moveFailure = new StoreException.Changed(List.of("CD03"));
+        issueInState("Backlog")
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:PartlySaved"))
+                .andExpect(jsonPath("$.parameters.issues").value("CD03=Idea"));
     }
 
     @ParameterizedTest

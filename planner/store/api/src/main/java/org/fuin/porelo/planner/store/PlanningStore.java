@@ -376,6 +376,43 @@ public interface PlanningStore {
      */
 
     /**
+     * Judges a group of commands before the first of them is written: every command's rule runs on
+     * what the store reads afresh for all of them in one read. A store that keeps its own lock
+     * judges on the board it holds; each command is checked again on its own write.
+     *
+     * @param group the group
+     * @throws StoreException a rule's refusal; then nothing of the group is written
+     */
+    default void judge(final CommandGroup group) {
+        final Board board = board();
+        for (final Command command : group.commands()) {
+            command.recheck().rule().accept(Dependencies.of(board));
+        }
+    }
+
+    /**
+     * Writes one command alone, checked on its target as read right before the write. A store that
+     * keeps its own lock writes it with its own call for it, which reads the board after.
+     *
+     * @param command the command
+     * @return written, or a conflict for the owner account
+     * @throws StoreException a refusal, as the command's own call gives it
+     */
+    default Written writeAlone(final Command command) {
+        return DirectQueue.one(this, command);
+    }
+
+    /**
+     * Reads the items a group wrote again, once after its last write.
+     *
+     * @param written the ids of the items written
+     * @return the board after them
+     */
+    default Board readAfter(final Set<String> written) {
+        return board();
+    }
+
+    /**
      * Saves a batch of writes against the versions the caller saw.
      *
      * @param basis the targets' versions the caller saw

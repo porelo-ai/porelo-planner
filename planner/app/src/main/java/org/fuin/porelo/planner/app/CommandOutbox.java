@@ -11,27 +11,28 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.CommandGroup;
+import org.fuin.porelo.planner.store.CommandShown;
 import org.fuin.porelo.planner.store.Fields;
-import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.RepositoryWarning;
 import org.fuin.porelo.planner.store.StoreException;
-import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Writes;
+import org.fuin.porelo.planner.store.Written;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.wire.LimitFactors;
@@ -122,10 +123,21 @@ final class CommandOutbox implements AutoCloseable {
      * @param name the kind, empty for none
      * @param subject what it is about
      * @param right the right a forge named as missing, empty for none
+     * @param places the places of a conflict, by their fixed names; empty for any other reason
      */
-    record Why(String name, String subject, String right) {
+    record Why(String name, String subject, String right, List<String> places) {
 
         static final Why NONE = new Why("", "", "");
+
+        /** Copies the places. */
+        Why {
+            places = List.copyOf(places);
+        }
+
+        /** A reason without places. */
+        Why(final String name, final String subject, final String right) {
+            this(name, subject, right, List.of());
+        }
 
         /** Keeps a store's refusal as it can be told again; any other failure as NotOffered. */
         static Why of(final Throwable cause) {
@@ -145,6 +157,9 @@ final class CommandOutbox implements AutoCloseable {
         /** Whether it is one the file may keep: a known kind with bounded, shown words. */
         boolean sound() {
             if (!REASONS.contains(name)
+                    || !places.isEmpty() && !name.equals("Changed")
+                    || places.size() > Written.Conflict.MOST
+                    || places.stream().anyMatch(p -> !Written.Conflict.PLACE.matcher(p).matches())
                     || subject.codePointCount(0, subject.length()) > MOST_SUBJECT
                     || subject.codePoints().anyMatch(Writes.Reason::unshown)) {
                 return false;
@@ -249,6 +264,10 @@ final class CommandOutbox implements AutoCloseable {
      * @param changes its changes
      * @param state where it stands
      * @param why why it is refused or held; {@link Why#NONE} otherwise
+     * @param resumed whether it was begun before and may stand in part, so a later refusal of it
+     *     holds it instead of telling it unwritten
+     * @param story the story whose run saves its group, empty for a window's save; a run's group is
+     *     repaired by its run, never sent again by the owner account
      */
     record Entry(
             String group,
@@ -258,10 +277,17 @@ final class CommandOutbox implements AutoCloseable {
             Map<String, String> judged,
             Changes changes,
             State state,
-            Why why) {
+            Why why,
+            boolean resumed,
+            String story) {
 
         Entry to(final State next, final Why because) {
-            return new Entry(group, id, kind, target, judged, changes, next, because);
+            return new Entry(
+                    group, id, kind, target, judged, changes, next, because, resumed, story);
+        }
+
+        Entry resumed(final boolean again) {
+            return new Entry(group, id, kind, target, judged, changes, state, why, again, story);
         }
     }
 
@@ -297,13 +323,15 @@ final class CommandOutbox implements AutoCloseable {
      * @param target what it writes
      * @param state where it stands
      * @param why why it is refused or held, or null
+     * @param places the places of a conflict, for the owner account; empty otherwise
      */
     record Told(
             String id,
             String kind,
             String target,
             State state,
-            WorkRun.@Nullable SaveFailure why) {}
+            WorkRun.@Nullable SaveFailure why,
+            List<String> places) {}
 
     /**
      * A group not written whole, every command of it told.
@@ -312,8 +340,9 @@ final class CommandOutbox implements AutoCloseable {
      * @param id the group's id
      * @param commands its commands in order, those done included
      * @param earlier whether it is kept from another source and never run
+     * @param story the story whose run saves it, empty for a window's save
      */
-    record Group(Source source, String id, List<Told> commands, boolean earlier) {}
+    record Group(Source source, String id, List<Told> commands, boolean earlier, String story) {}
 
     private final String project;
     private final Source source;
@@ -375,12 +404,12 @@ final class CommandOutbox implements AutoCloseable {
      * Reads the file and settles every command the planner stopped in the middle of against the
      * board read now; writes the result before it answers.
      *
-     * @param board the board read from the store at open
+     * @param board reads the board from the store, called only when a command was begun
      * @return each command settled, by id, with the state it took
      * @throws WorkRefusal for a file torn, forged, of another project, of a newer form, too large
      *     or not the account's own, or one that cannot be written
      */
-    synchronized Map<String, State> open(final Board board) {
+    synchronized Map<String, State> open(final Supplier<Board> board) {
         open();
         if (opened) {
             throw new IllegalStateException("The outbox is open already.");
@@ -407,7 +436,7 @@ final class CommandOutbox implements AutoCloseable {
         if (read == null
                 ? !next.entries().isEmpty() || !next.earlier().isEmpty()
                 : !next.equals(read)) {
-            write(next, MOST);
+            write(next, MOST, () -> {});
         }
         entries = next.entries();
         earlier = next.earlier();
@@ -421,7 +450,8 @@ final class CommandOutbox implements AutoCloseable {
      * @param group the group
      * @throws IllegalArgumentException for a group or command id the outbox holds already
      * @throws WorkRefusal when the file has no room for it, kept free of a reserve, or cannot be
-     *     written: then nothing of the group is queued
+     *     written: then nothing of the group is queued; or when the file was written but its
+     *     directory not synced: then the group is queued and may run after a restart
      */
     synchronized void enqueue(final CommandGroup group) {
         running();
@@ -438,15 +468,19 @@ final class CommandOutbox implements AutoCloseable {
                 throw new IllegalArgumentException(
                         "The outbox holds the command " + command.id() + ".");
             }
-            next.add(entry(group.id(), command));
+            next.add(entry(group.id(), command, group.story()));
         }
         final Document document = new Document(FORMAT, project, source, next, earlier);
         if (bytes(worstHeld(document)).length > MOST - RESERVE) {
             throw unavailable("The outbox has no room for this save.");
         }
-        write(document, MOST);
-        entries = List.copyOf(next);
-        group.commands().forEach(command -> live.put(command.id(), command));
+        write(
+                document,
+                MOST,
+                () -> {
+                    entries = List.copyOf(next);
+                    group.commands().forEach(command -> live.put(command.id(), command));
+                });
     }
 
     /**
@@ -505,11 +539,257 @@ final class CommandOutbox implements AutoCloseable {
         final int at = inFlight(id);
         final Entry entry = entries.get(at);
         final Why why = Why.of(cause);
-        if (mayHaveWritten && board != null && shows(command(entry), board)) {
+        // A command begun before this run may stand in part, whatever refuses it now.
+        final boolean may = mayHaveWritten || entry.resumed();
+        if (may && board != null && shows(command(entry), board)) {
             replace(at, List.of(entry.to(State.DONE, Why.NONE)), true);
             return State.DONE;
         }
-        final State state = mayHaveWritten ? State.HELD : State.REFUSED;
+        return ended(at, may ? State.HELD : State.REFUSED, why);
+    }
+
+    /**
+     * Ends a command whose item moved at places it writes or read: nothing of it was written, so it
+     * is refused for the owner account with the places, and the commands after it are held. A
+     * command begun before this run may stand in part, so it is held instead.
+     *
+     * @param id the command's id
+     * @param places the places, by their fixed names
+     */
+    synchronized void conflict(final String id, final List<String> places) {
+        running();
+        final int at = inFlight(id);
+        final Entry entry = entries.get(at);
+        ended(
+                at,
+                entry.resumed() ? State.HELD : State.REFUSED,
+                new Why("Changed", subject(entry.target()), "", places));
+    }
+
+    /**
+     * Holds a group for the owner account: each command of it waiting or begun is held with the
+     * reason given, one begun as may stand in part; those done stay done.
+     *
+     * @param group the group's id
+     * @param why why it is held
+     */
+    synchronized void hold(final String group, final Throwable why) {
+        running();
+        final List<Entry> of = group(group);
+        final Why because = Why.of(why);
+        final List<Entry> held = new ArrayList<>();
+        for (final Entry entry : of) {
+            held.add(
+                    entry.state() == State.QUEUED || entry.state() == State.IN_FLIGHT
+                            ? entry.to(State.HELD, because)
+                                    .resumed(entry.resumed() || entry.state() == State.IN_FLIGHT)
+                            : entry);
+        }
+        replace(at(of.getFirst().id()), held, false);
+    }
+
+    /**
+     * The story whose run saves a group of this source.
+     *
+     * @param group the group's id
+     * @return the story's id, empty for a window's save
+     */
+    synchronized String story(final String group) {
+        return group(group).getFirst().story();
+    }
+
+    /**
+     * Puts a begun command back to wait, when its call ended before writing anything, such as when
+     * the store was busy: it is taken again, never refused.
+     *
+     * @param id the command's id
+     */
+    synchronized void requeue(final String id) {
+        running();
+        final int at = inFlight(id);
+        replace(at, List.of(entries.get(at).to(State.QUEUED, Why.NONE)), false);
+    }
+
+    /**
+     * Removes a group none of whose commands was begun, such as one refused at its judgment, which
+     * the caller is answered for and which is never run.
+     *
+     * @param group the group's id
+     */
+    synchronized void unqueue(final String group) {
+        running();
+        final List<Entry> of = group(group);
+        if (of.stream().anyMatch(e -> e.state() != State.QUEUED || e.resumed())) {
+            throw new IllegalStateException("The group " + group + " was begun.");
+        }
+        removed(group, earlier);
+    }
+
+    /**
+     * Tells whether a command was begun before this run, so it may stand already.
+     *
+     * @param id the command's id
+     * @return true when it was begun before
+     */
+    synchronized boolean resumed(final String id) {
+        return entries.get(at(id)).resumed();
+    }
+
+    /**
+     * Tells whether none of a group's commands was begun, in this run or before.
+     *
+     * @param group the group's id
+     * @return true when every command waits and none was begun before
+     */
+    synchronized boolean fresh(final String group) {
+        return group(group).stream().allMatch(e -> e.state() == State.QUEUED && !e.resumed());
+    }
+
+    /**
+     * Drops a group the owner account gives up: only one with a command refused or held, and none
+     * waiting or begun.
+     *
+     * @param group the group's id
+     */
+    synchronized void drop(final String group) {
+        running();
+        final List<Entry> of = all(group);
+        if (of.stream().noneMatch(e -> e.state() == State.REFUSED || e.state() == State.HELD)
+                || of.stream()
+                        .anyMatch(e -> e.state() == State.QUEUED || e.state() == State.IN_FLIGHT)) {
+            throw new IllegalStateException("The group " + group + " is not held.");
+        }
+        final List<Earlier> kept = new ArrayList<>();
+        for (final Earlier each : earlier) {
+            final List<Entry> left =
+                    each.entries().stream().filter(e -> !e.group().equals(group)).toList();
+            if (!left.isEmpty()) {
+                kept.add(new Earlier(each.source(), left));
+            }
+        }
+        removed(group, kept);
+        LOG.info(
+                "The owner account dropped the group {} of project {}",
+                LogText.of(group),
+                LogText.of(project));
+    }
+
+    /**
+     * Sends a held group again: its refused and held commands wait again, each with the versions it
+     * was judged on; one held may stand in part from before.
+     *
+     * @param group the group's id
+     * @throws IllegalStateException for a group not held, or one kept from another source, which is
+     *     named
+     */
+    synchronized void resend(final String group) {
+        running();
+        for (final Earlier each : earlier) {
+            if (each.entries().stream().anyMatch(e -> e.group().equals(group))) {
+                throw new IllegalStateException(
+                        "The group "
+                                + group
+                                + " was queued for "
+                                + each.source().repository()
+                                + (each.source().branch().isEmpty()
+                                        ? ""
+                                        : " on " + each.source().branch())
+                                + ", not this source.");
+            }
+        }
+        final List<Entry> of = group(group);
+        if (!of.getFirst().story().isEmpty()) {
+            throw new IllegalStateException(
+                    "The group "
+                            + group
+                            + " is saved by the run of "
+                            + of.getFirst().story()
+                            + ", which repairs it after its halt.");
+        }
+        if (of.stream().noneMatch(e -> e.state() == State.REFUSED || e.state() == State.HELD)) {
+            throw new IllegalStateException("The group " + group + " is not held.");
+        }
+        final int at = at(of.getFirst().id());
+        final List<Entry> again = new ArrayList<>();
+        for (final Entry entry : of) {
+            again.add(
+                    entry.state() == State.DONE
+                            ? entry
+                            : entry.to(State.QUEUED, Why.NONE)
+                                    .resumed(entry.resumed() || entry.state() == State.HELD));
+        }
+        replace(at, again, false);
+    }
+
+    /**
+     * The groups of this source whose next command waits, in order.
+     *
+     * @return their ids
+     */
+    synchronized List<String> waiting() {
+        final List<String> ids = new ArrayList<>();
+        String group = null;
+        for (final Entry entry : entries) {
+            if (entry.group().equals(group) || entry.state() == State.DONE) {
+                continue;
+            }
+            group = entry.group();
+            if (entry.state() == State.QUEUED) {
+                ids.add(group);
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * A group of this source with every command told.
+     *
+     * @param group the group's id
+     * @return its commands in order
+     */
+    synchronized List<Told> told(final String group) {
+        return groups(source, group(group), false).getFirst().commands();
+    }
+
+    private List<Entry> group(final String group) {
+        final List<Entry> of = entries.stream().filter(e -> e.group().equals(group)).toList();
+        if (of.isEmpty()) {
+            throw new IllegalStateException("The outbox holds no group " + group + " to run.");
+        }
+        return of;
+    }
+
+    private List<Entry> all(final String group) {
+        final List<Entry> of = new ArrayList<>();
+        entries.stream().filter(e -> e.group().equals(group)).forEach(of::add);
+        earlier.forEach(
+                each ->
+                        each.entries().stream()
+                                .filter(e -> e.group().equals(group))
+                                .forEach(of::add));
+        if (of.isEmpty()) {
+            throw new IllegalStateException("The outbox holds no group " + group + ".");
+        }
+        return of;
+    }
+
+    /** Writes the file without the group, then forgets its commands in memory. */
+    private void removed(final String group, final List<Earlier> kept) {
+        final List<Entry> left = entries.stream().filter(e -> !e.group().equals(group)).toList();
+        final List<Entry> gone = entries.stream().filter(e -> e.group().equals(group)).toList();
+        write(
+                new Document(FORMAT, project, source, left, kept),
+                MOST,
+                () -> {
+                    gone.forEach(e -> live.remove(e.id()));
+                    entries = left;
+                    earlier = kept;
+                });
+    }
+
+    /** Ends the command at the index in the state given, and holds the rest of its group. */
+    private State ended(final int at, final State state, final Why why) {
+        final Entry entry = entries.get(at);
         final List<Entry> ended = new ArrayList<>();
         ended.add(entry.to(state, why));
         for (int after = at + 1;
@@ -648,8 +928,12 @@ final class CommandOutbox implements AutoCloseable {
                 stop = null;
             }
             final Command command = command(entry);
-            if (!entry(entry.group(), command, repository)
+            if (!entry.story().isEmpty()) {
+                Ids.story(entry.story());
+            }
+            if (!entry(entry.group(), command, repository, entry.story())
                     .to(entry.state(), entry.why())
+                    .resumed(entry.resumed())
                     .equals(entry)) {
                 throw new IllegalArgumentException("changes not of their kind");
             }
@@ -679,9 +963,12 @@ final class CommandOutbox implements AutoCloseable {
 
     /** Settles each begun command against the board, and holds the rest of a held one's group. */
     private static List<Entry> settledAtOpen(
-            final List<Entry> list, final Board board, final Map<String, State> settled) {
+            final List<Entry> list,
+            final Supplier<Board> boards,
+            final Map<String, State> settled) {
         final List<Entry> next = new ArrayList<>();
         Entry heldBy = null;
+        Board board = null;
         for (final Entry entry : list) {
             if (heldBy != null && entry.group().equals(heldBy.group())) {
                 next.add(entry.to(State.HELD, heldBy.why()));
@@ -692,6 +979,10 @@ final class CommandOutbox implements AutoCloseable {
             if (entry.state() != State.IN_FLIGHT) {
                 next.add(entry);
                 continue;
+            }
+            if (board == null) {
+                // Read once, and only when a command was begun: a plain open reads nothing.
+                board = boards.get();
             }
             final Entry after = settled(entry, board);
             next.add(after);
@@ -718,7 +1009,7 @@ final class CommandOutbox implements AutoCloseable {
         final String judged = entry.judged().get(entry.target());
         final Version now = Basis.of(board).of(entry.target());
         if (judged != null && now != null && now.value().equals(judged)) {
-            return entry.to(State.QUEUED, Why.NONE);
+            return entry.to(State.QUEUED, Why.NONE).resumed(true);
         }
         return entry.to(State.HELD, new Why("Changed", subject(entry.target()), ""));
     }
@@ -787,95 +1078,26 @@ final class CommandOutbox implements AutoCloseable {
 
     // --- what the board shows
 
-    /** Whether the board can show every part the command writes. */
-    static boolean showable(final Command command) {
-        return switch (command) {
-            case Command.Write write ->
-                    write.writes().issueReasons().isEmpty()
-                            && write.writes().storyReasons().isEmpty();
-            case Command.SetFields set ->
-                    !set.fields().named().contains(Fields.Field.ESTIMATE)
-                            && !set.fields().named().contains(Fields.Field.RANK);
-            case Command.SetText set ->
-                    set.edit().labels() == null
-                            && set.edit().written().isEmpty()
-                            && set.edit().removed().isEmpty();
-            case Command.SetBlockers set -> true;
-            case Command.SetStoryIssues set -> true;
-            default -> false;
-        };
+    private static boolean showable(final Command command) {
+        return CommandShown.showable(command);
     }
 
-    /** Whether the board shows every part the command writes, as written. */
-    static boolean shows(final Command command, final Board board) {
-        if (!showable(command)) {
-            return false;
-        }
-        return switch (command) {
-            case Command.Write write -> {
-                final Writes writes = write.writes();
-                yield writes.issues().entrySet().stream()
-                                .allMatch(
-                                        e ->
-                                                board.issue(e.getKey())
-                                                        .map(i -> i.state().equals(e.getValue()))
-                                                        .orElse(false))
-                        && writes.stories().entrySet().stream()
-                                .allMatch(
-                                        e ->
-                                                board.story(e.getKey())
-                                                        .map(s -> s.state().equals(e.getValue()))
-                                                        .orElse(false))
-                        && writes.workers().entrySet().stream()
-                                .allMatch(
-                                        e ->
-                                                board.issue(e.getKey())
-                                                        .map(i -> i.worker() == e.getValue())
-                                                        .orElse(false))
-                        && writes.priorities().entrySet().stream()
-                                .allMatch(
-                                        e ->
-                                                board.story(e.getKey())
-                                                        .map(s -> s.priority().equals(e.getValue()))
-                                                        .orElse(false));
-            }
-            case Command.SetFields set -> {
-                final Issue issue = board.issue(set.issue()).orElse(null);
-                final Set<Fields.Field> named = set.fields().named();
-                yield issue != null
-                        && (!named.contains(Fields.Field.SIZE)
-                                || Objects.equals(issue.size(), set.fields().size()))
-                        && (!named.contains(Fields.Field.PRIORITY)
-                                || Objects.equals(issue.priority(), set.fields().priority()));
-            }
-            case Command.SetText set -> {
-                final String title = set.edit().title();
-                final String shown =
-                        set.edit().kind() == TextEdit.Kind.STORY
-                                ? board.story(set.item()).map(Story::title).orElse(null)
-                                : board.issue(set.item()).map(Issue::title).orElse(null);
-                yield title != null && title.equals(shown);
-            }
-            case Command.SetBlockers set ->
-                    board.issue(set.issue())
-                            .map(i -> Set.copyOf(i.blockedBy()).equals(Set.copyOf(set.blockedBy())))
-                            .orElse(false);
-            case Command.SetStoryIssues set ->
-                    board.story(set.story())
-                            .map(s -> s.issues().equals(set.issues()))
-                            .orElse(false);
-            default -> false;
-        };
+    private static boolean shows(final Command command, final Board board) {
+        return CommandShown.shows(command, board);
     }
 
     // --- commands as data and back
 
     /** The entry a queued command is kept as. */
-    private Entry entry(final String group, final Command command) {
-        return entry(group, command, source.repository());
+    private Entry entry(final String group, final Command command, final String story) {
+        return entry(group, command, source.repository(), story);
     }
 
-    private static Entry entry(final String group, final Command command, final String repository) {
+    private static Entry entry(
+            final String group,
+            final Command command,
+            final String repository,
+            final String story) {
         final Map<String, String> judged = new LinkedHashMap<>();
         command.basis().items().forEach((id, version) -> judged.put(id, version.value()));
         final Changes none = Changes.NONE;
@@ -1027,12 +1249,12 @@ final class CommandOutbox implements AutoCloseable {
             }
             case Command.CreateStory create -> {
                 kind = "createStory";
-                final StoryFromIssues story = create.story();
+                final StoryFromIssues made = create.story();
                 target = repository;
                 changes =
                         issues(
-                                story(story.title(), story.gain(), story.test(), story.priority()),
-                                story.existing(),
+                                story(made.title(), made.gain(), made.test(), made.priority()),
+                                made.existing(),
                                 List.of());
             }
             case Command.AddUnlisted add -> {
@@ -1041,7 +1263,16 @@ final class CommandOutbox implements AutoCloseable {
             }
         }
         return new Entry(
-                group, command.id(), kind, target, judged, changes, State.QUEUED, Why.NONE);
+                group,
+                command.id(),
+                kind,
+                target,
+                judged,
+                changes,
+                State.QUEUED,
+                Why.NONE,
+                false,
+                story);
     }
 
     private static Map<String, String> story(
@@ -1283,17 +1514,36 @@ final class CommandOutbox implements AutoCloseable {
             next.set(at + i, with.get(i));
         }
         final List<Entry> kept = prune ? pruned(next) : List.copyOf(next);
-        write(new Document(FORMAT, project, source, kept, earlier), MOST);
-        entries = kept;
+        write(
+                new Document(FORMAT, project, source, kept, earlier),
+                MOST,
+                () -> {
+                    final Set<String> left = new HashSet<>();
+                    kept.forEach(entry -> left.add(entry.id()));
+                    entries.stream()
+                            .filter(entry -> !left.contains(entry.id()))
+                            .forEach(entry -> live.remove(entry.id()));
+                    entries = kept;
+                });
     }
 
-    private void write(final Document document, final int most) {
+    /**
+     * Writes the file, and changes memory as told once the new file is in place: a failure before
+     * the move leaves both as they were; a failure to sync after it leaves memory following the
+     * file, and the caller is told the change may stand.
+     */
+    private void write(final Document document, final int most, final Runnable moved) {
         final byte[] bytes = bytes(document);
         if (bytes.length > most) {
             throw unavailable("The outbox has no room for this change.");
         }
         try {
-            durable.write(file, bytes);
+            durable.write(file, bytes, moved);
+        } catch (final DurableFile.NotSynced unsynced) {
+            throw unavailable(
+                    "The outbox was changed, but its directory could not be synced, so the change"
+                            + " may stand",
+                    unsynced);
         } catch (final IOException failed) {
             throw unavailable("The outbox cannot be written", failed);
         }
@@ -1345,7 +1595,9 @@ final class CommandOutbox implements AutoCloseable {
     private static List<Group> groups(
             final Source source, final List<Entry> list, final boolean earlier) {
         final Map<String, List<Told>> byGroup = new LinkedHashMap<>();
+        final Map<String, String> stories = new HashMap<>();
         for (final Entry entry : list) {
+            stories.put(entry.group(), entry.story());
             byGroup.computeIfAbsent(entry.group(), id -> new ArrayList<>())
                     .add(
                             new Told(
@@ -1353,11 +1605,19 @@ final class CommandOutbox implements AutoCloseable {
                                     entry.kind(),
                                     entry.target(),
                                     entry.state(),
-                                    entry.why().equals(Why.NONE) ? null : entry.why().failure()));
+                                    entry.why().equals(Why.NONE) ? null : entry.why().failure(),
+                                    entry.why().places()));
         }
         final List<Group> groups = new ArrayList<>();
         byGroup.forEach(
-                (id, told) -> groups.add(new Group(source, id, List.copyOf(told), earlier)));
+                (id, told) ->
+                        groups.add(
+                                new Group(
+                                        source,
+                                        id,
+                                        List.copyOf(told),
+                                        earlier,
+                                        stories.getOrDefault(id, ""))));
         return groups;
     }
 

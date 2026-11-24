@@ -77,6 +77,18 @@ public final class Touched {
         return new Ids(issues, items, numbered, databaseIds);
     }
 
+    /**
+     * Adds ids touched elsewhere, such as by the earlier writes of a group read after once.
+     *
+     * @param more the ids
+     */
+    synchronized void add(final Ids more) {
+        issues.addAll(more.issues());
+        items.addAll(more.items());
+        numbered.addAll(more.numbered());
+        databaseIds.addAll(more.databaseIds());
+    }
+
     private synchronized void issue(final String nodeId) {
         issues.add(nodeId);
     }

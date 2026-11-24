@@ -3502,6 +3502,18 @@ String planningFailureWords(Object error) {
   return safe.length > 4096 ? safe.substring(0, 4096) : safe;
 }
 
+/// The issues a partly written move moved, `id=state` comma-joined, as `id to state`; an id
+/// without a state is shown alone.
+String _planningMovedIssues(String issues) => issues
+    .split(',')
+    .map((pair) => pair.trim())
+    .where((pair) => pair.isNotEmpty)
+    .map((pair) {
+      final at = pair.indexOf('=');
+      return at < 0 ? pair : '${pair.substring(0, at)} to ${pair.substring(at + 1)}';
+    })
+    .join(', ');
+
 String _failureWords(Object error) {
   if (error is PlanningRefusal) {
     if (error.name == 'NotYetBuilt') return 'The planner does not offer ${error.parameters['method']} yet.';
@@ -3547,8 +3559,10 @@ String _failureWords(Object error) {
     if (error.name == 'PartlySaved') {
       final pushed = error.parameters['pushed'];
       final failed = error.parameters['failed'];
+      final issues = error.parameters['issues'];
       return '${error.description.trim()}${pushed is String ? ' Pushed: $pushed.' : ''}'
-          '${failed is String ? ' Not pushed: $failed.' : ''}';
+          '${failed is String ? ' Not pushed: $failed.' : ''}'
+          '${issues is String && issues.trim().isNotEmpty ? ' Moved: ${_planningMovedIssues(issues)}.' : ''}';
     }
     // The planner's refusals carry their sentence here alone.
     if (error.description.trim().isNotEmpty) return error.description;
