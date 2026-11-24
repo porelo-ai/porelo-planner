@@ -105,6 +105,9 @@ class GitHubStoreWriterFailureTest {
         /** How many reads by id fail after the next field values written. */
         private int readsFailingAfterValues;
 
+        /** The comments every issue carries, as GitHub answers its one page of them. */
+        private final List<ProjectWrites.Comment> comments = new ArrayList<>();
+
         GitHub() {
             for (int n = 1; n <= ISSUES; n++) {
                 byId.put("I_" + n, "O_idea");
@@ -297,6 +300,19 @@ class GitHubStoreWriterFailureTest {
                                                     GitHubExceptions.WITHOUT_A_WORD);
                                     case "issuesCreatedSince" ->
                                             new ProjectWrites.FoundPage(List.of(), false);
+                                    case "issueComments" -> {
+                                        github.calls.add("issueComments");
+                                        yield new ProjectWrites.CommentsPage(
+                                                github.comments, false);
+                                    }
+                                    case "updateIssue" -> {
+                                        github.calls.add("updateIssue");
+                                        yield List.of();
+                                    }
+                                    case "createIssueComment" -> {
+                                        github.calls.add("createIssueComment");
+                                        yield null;
+                                    }
                                     default -> null;
                                 });
     }
@@ -379,6 +395,60 @@ class GitHubStoreWriterFailureTest {
         assertThat(github.calls.subList(0, write))
                 .as("GitHub's calls before the write")
                 .containsExactly("issueBoard");
+    }
+
+    private static final Writes.Reason BUILT = new Writes.Reason("Finished", "Built as asked.");
+
+    /** A close of the board's first issue with its reason, whose rule walks its blockers. */
+    private static Board closeFirst(final GitHubStore store, final Board board) {
+        final String id = board.issues().getFirst().id();
+        return store.save(
+                Basis.of(board),
+                new Writes(
+                        Map.of(id, "Finished"),
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of(id, BUILT),
+                        Map.of()),
+                new Recheck(Set.of(Recheck.Need.BLOCKERS), Set.of(id), dependencies -> {}));
+    }
+
+    @Test
+    void aCloseWithAReasonReadsItsCommentsBeforeTheReadItIsJudgedBy() {
+        // Harm: an edit made directly in GitHub while the save reads the reason's comments lands
+        // after the version check and is written over.
+        final GitHub github = new GitHub();
+        final GitHubStore store = store(github);
+        final Board board = store.refresh();
+        github.calls.clear();
+
+        closeFirst(store, board);
+
+        final int write = github.calls.indexOf("updateIssue");
+        assertThat(write).as("the close written").isNotNegative();
+        assertThat(github.calls.subList(0, write))
+                .as("GitHub's calls before the first write: the targets' read is the last")
+                .containsExactly("issueComments", "issueBoard");
+        assertThat(github.calls).as("the reason kept").contains("createIssueComment");
+    }
+
+    @Test
+    void aCloseWhoseReasonStandsAlreadyWritesNoSecondComment() {
+        // Harm: a close tried again after a partial save keeps the person's reason twice.
+        final GitHub github = new GitHub();
+        final GitHubStore store = store(github);
+        final Board board = store.refresh();
+        github.comments.add(new ProjectWrites.Comment(1L, ClosingComment.write(BUILT)));
+        github.calls.clear();
+
+        closeFirst(store, board);
+
+        assertThat(github.calls).as("the close written").contains("updateIssue");
+        assertThat(github.calls)
+                .as("the reason's comments read once, and no second comment written")
+                .containsOnlyOnce("issueComments")
+                .doesNotContain("createIssueComment");
     }
 
     @Test

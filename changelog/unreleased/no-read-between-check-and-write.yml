@@ -1,0 +1,2 @@
+title: A move that keeps a closing reason reads the issue's comments before it checks the items' versions, so no read lies between that check and the first write.
+type: fixed

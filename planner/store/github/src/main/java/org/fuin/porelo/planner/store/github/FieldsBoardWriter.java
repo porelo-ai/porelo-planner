@@ -215,6 +215,19 @@ public final class FieldsBoardWriter implements BoardWriter {
         plan.write(token);
     }
 
+    @Override
+    public Map<String, Boolean> reasonsStanding(final Snapshot current, final Writes writes) {
+        if (!writes.reasons()) {
+            return Map.of();
+        }
+        final Plan plan = new Plan(current, Against.NONE);
+        writes.issueReasons()
+                .forEach((id, reason) -> plan.closing(id, issueItem(current, id), reason));
+        writes.storyReasons()
+                .forEach((id, reason) -> plan.closing(id, storyItem(current, id), reason));
+        return plan.reasonsStanding(tokens.token(current.config().forge()));
+    }
+
     /**
      * Answers the pace every save of the project takes its turns in, made anew only for another
      * token, so saves made at once never each start a burst of their own.
@@ -1490,7 +1503,8 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Set<String> written = new LinkedHashSet<>();
             final @Nullable Stage planned = stage;
             // The comments may take many calls, so they are read before the check, never between
-            // the check and the write.
+            // the check and the write; a save that read its targets before it came here read
+            // its reasons' comments before them.
             final StageComment.@Nullable Stage found =
                     planned == null ? null : stageWritten(token, planned);
             final @Nullable Stage toComment = planned == null || found != null ? null : planned;
@@ -1501,7 +1515,8 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Map<String, Writes.Reason> toClose = new LinkedHashMap<>();
             closings.forEach(
                     (id, reason) -> {
-                        if (!closingWritten(token, id, reason)) {
+                        final @Nullable Boolean standing = readBefore.reasons().get(id);
+                        if (!(standing != null ? standing : closingWritten(token, id, reason))) {
                             toClose.put(id, reason);
                         }
                     });
@@ -1969,6 +1984,13 @@ public final class FieldsBoardWriter implements BoardWriter {
                 changed.add(id);
             }
             reads.put(item.issueId(), issue);
+        }
+
+        /** Whether the comment keeping each reason stands on its item already, by the item's id. */
+        Map<String, Boolean> reasonsStanding(final String token) {
+            final Map<String, Boolean> standing = new LinkedHashMap<>();
+            closings.forEach((id, reason) -> standing.put(id, closingWritten(token, id, reason)));
+            return standing;
         }
 
         /** Whether the comment keeping a reason stands on its item already, found by its marker. */

@@ -236,21 +236,62 @@ public interface BoardWriter {
     }
 
     /**
+     * Reads, before the save's targets are read, whether the comment keeping each reason of the
+     * writes stands on its item already, so no read lies between the targets' read and the first
+     * write.
+     *
+     * @param current the snapshot the store holds
+     * @param writes what the save writes
+     * @return whether each reason's comment stands, by the item's id; empty when this writer reads
+     *     them while it writes
+     */
+    default java.util.Map<String, Boolean> reasonsStanding(
+            final Snapshot current, final Writes writes) {
+        return java.util.Map.of();
+    }
+
+    /**
      * What a save read from GitHub before its first write.
      *
      * @param snapshot the snapshot with the items read folded in
      * @param issueIds the node ids of the issues read
+     * @param reasons whether the comment keeping each reason stands, by the item's id, read before
+     *     the targets; an item it does not name is read while the save writes
      */
-    record ReadBefore(Snapshot snapshot, java.util.Set<String> issueIds) {
+    record ReadBefore(
+            Snapshot snapshot,
+            java.util.Set<String> issueIds,
+            java.util.Map<String, Boolean> reasons) {
 
         /** Nothing read yet. */
         public static ReadBefore none(final Snapshot held) {
             return new ReadBefore(held, java.util.Set.of());
         }
 
-        /** Copies the ids read. */
+        /** Copies the ids and the reasons read. */
         public ReadBefore {
             issueIds = java.util.Set.copyOf(issueIds);
+            reasons = java.util.Map.copyOf(reasons);
+        }
+
+        /**
+         * What a save read of its items, no reason's comment among it.
+         *
+         * @param snapshot the snapshot with the items read folded in
+         * @param issueIds the node ids of the issues read
+         */
+        public ReadBefore(final Snapshot snapshot, final java.util.Set<String> issueIds) {
+            this(snapshot, issueIds, java.util.Map.of());
+        }
+
+        /**
+         * The same read with whether each reason's comment stands.
+         *
+         * @param standing whether each reason's comment stands, by the item's id
+         * @return the read
+         */
+        public ReadBefore withReasons(final java.util.Map<String, Boolean> standing) {
+            return new ReadBefore(snapshot, issueIds, standing);
         }
     }
 

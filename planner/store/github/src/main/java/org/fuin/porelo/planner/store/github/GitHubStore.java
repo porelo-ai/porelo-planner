@@ -739,8 +739,13 @@ public final class GitHubStore implements PlanningStore {
                 writing(
                                 () -> {
                                     final Snapshot held = current();
+                                    // The reasons' comments are read before the targets, so the
+                                    // targets' read is the last one before the first write.
+                                    final Map<String, Boolean> reasons =
+                                            parts.writer().reasonsStanding(held, writes);
                                     final BoardWriter.ReadBefore read =
-                                            readBefore(held, recheck, targets(held, writes));
+                                            readBefore(held, recheck, targets(held, writes))
+                                                    .withReasons(reasons);
                                     CallTimes.phase(
                                             "write",
                                             () -> {

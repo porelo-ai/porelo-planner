@@ -1624,6 +1624,34 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void aStageResultReadsItsStageCommentsBeforeTheReadItIsJudgedBy() {
+        // Harm: an edit made directly in GitHub while the result's comments are read lands after
+        // the version check and is written over.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+
+        github.writer().saveResult(snapshot(one), analysis(), stage("task-1:2", "implement"));
+
+        final Set<String> writes =
+                Set.of(
+                        "updateIssue",
+                        "setFieldValues",
+                        "createIssueComment",
+                        "addProjectItems",
+                        "addSubIssue",
+                        "createIssue");
+        int first = 0;
+        while (first < github.calls.size() && !writes.contains(github.calls.get(first))) {
+            first++;
+        }
+        final List<String> before = github.calls.subList(0, first);
+        assertThat(before)
+                .as("GitHub's calls before the first write: the targets' read is the last")
+                .contains("issueComments")
+                .endsWith("issueBoard");
+    }
+
+    @Test
     void aStageResultForABodyWhoseSectionsAreUnclearSavesEverythingButTheBody() {
         // Harm: a person's sections deleted by a write into a body the planner cannot split, or
         // the stage's state, fields and comment lost along with the body.
