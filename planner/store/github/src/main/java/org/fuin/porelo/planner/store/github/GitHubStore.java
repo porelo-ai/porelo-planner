@@ -471,7 +471,7 @@ public final class GitHubStore implements PlanningStore {
     /** Whether a board's lists of the issues outside the project were read in part. */
     private static boolean listsCutShort(final Snapshot board) {
         return board.board().faults().stream()
-                .anyMatch(fault -> fault.startsWith(RepositoryIssues.BUDGET_SPENT));
+                .anyMatch(fault -> fault.startsWith(RepositoryIssues.CUT_SHORT));
     }
 
     private static long millis(final long from, final long to) {
@@ -1495,7 +1495,8 @@ public final class GitHubStore implements PlanningStore {
             }
         }
         if (!began) {
-            return awaitRead(mine);
+            // A reader waits for the read it joins as long as GitHub keeps answering it.
+            return awaitRead(mine, false);
         }
         final long started = System.nanoTime();
         final java.time.Instant since = java.time.Instant.now();
@@ -1504,7 +1505,8 @@ public final class GitHubStore implements PlanningStore {
             if (whole) {
                 parts.probe().forget();
             }
-            final Snapshot read = parts.reader().read(now);
+            // Beside the saves, so a wait for GitHub's rate limit holds none of them.
+            final Snapshot read = parts.reader().read(now, true);
             parts.probe().readWhole();
             LOG.info(
                     "Read the board whole in {} ms: {}",
@@ -1553,13 +1555,26 @@ public final class GitHubStore implements PlanningStore {
             final RuntimeException refusal = refused(e);
             mine.completeExceptionally(refusal);
             throw refusal;
+        } catch (final Error e) {
+            // Readers wait for this read without a bound, so it ends for them however it ends.
+            finishing = null;
+            synchronized (fold) {
+                if (inFlight == mine) {
+                    inFlight = null;
+                }
+            }
+            mine.completeExceptionally(e);
+            throw e;
         }
     }
 
-    /** Waits for the whole read under way, as long as a save waits for the lock. */
-    private Snapshot awaitRead(final CompletableFuture<Snapshot> read) {
+    /**
+     * Waits for the whole read under way: a save as long as it waits for the lock, a reader until
+     * the read ends, which its own silence limit bounds.
+     */
+    private Snapshot awaitRead(final CompletableFuture<Snapshot> read, final boolean save) {
         try {
-            return read.get(lockWait.toMillis(), TimeUnit.MILLISECONDS);
+            return save ? read.get(lockWait.toMillis(), TimeUnit.MILLISECONDS) : read.get();
         } catch (final TimeoutException e) {
             throw new StoreException.Busy(config.own());
         } catch (final ExecutionException e) {
@@ -1842,7 +1857,7 @@ public final class GitHubStore implements PlanningStore {
         }
         if (snapshot == null && running != null) {
             // No board to save against yet: the whole read under way gives it, not a second one.
-            awaitRead(running);
+            awaitRead(running, true);
         }
         return lockedForSave(
                 () -> {

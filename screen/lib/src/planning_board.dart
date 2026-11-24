@@ -2712,6 +2712,12 @@ class PlanningBoard extends ChangeNotifier {
   Future<void> reload({bool fetch = false}) async {
     if (_disposed || saving || fetch && (fetching || _reloading)) return;
     final generation = _generation;
+    if (fetch && _tellsReads && snapshot == null) {
+      // Before its first board the planner is still reading it: the watch opened anew joins that read and brings the
+      // board, where a refresh and a read beside it would wait for the same read and time out.
+      await _reopen();
+      return;
+    }
     if (fetch) {
       final turns = _moveTurns;
       // The planner's read of the whole board holds nothing: a change made meanwhile is saved at once, and the watch
@@ -2731,9 +2737,13 @@ class PlanningBoard extends ChangeNotifier {
       }
       if (_disposed) return;
       if (_tellsReads) {
-        // The planner answers at once and reads behind its answer: the bar stands until the watch tells that read.
+        // The planner answers at once and reads behind its answer: the bar stands until the watch tells that read, and
+        // the watch brings its board; a read beside it would only bring the board held before the read.
         _fetchWait?.cancel();
         _fetchWait = Timer(fetchTold, _endFetch);
+        if (generation == _generation && turns == _moveTurns && !saving && question == null) moveProblem = null;
+        _changed();
+        return;
       } else {
         // A provider that tells no read on its watch has read the board when it answers.
         _endFetch();

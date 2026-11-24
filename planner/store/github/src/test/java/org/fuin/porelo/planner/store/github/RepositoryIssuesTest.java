@@ -12,7 +12,6 @@ import org.fuin.porelo.forge.github.model.AuthorAssociation;
 import org.fuin.porelo.forge.github.model.Issue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class RepositoryIssuesTest {
@@ -280,10 +279,13 @@ class RepositoryIssuesTest {
         // made by hand are never shown.
         github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * 30));
         github.holds(LIB, OpenIssues.numbered(LIB, 1, 100 * 30));
-        // Each list takes 31 asks; the deadline leaves room for 41.
-        github.perAsk = RepositoryIssues.DEADLINE.dividedBy(40);
+        // The first list is read whole; GitHub then leaves the second's first page silent.
+        github.slower.put(LIB + "#1", RepositoryIssues.DEADLINE.plusSeconds(1));
         final RepositoryIssues.Read first = read(OWN, LIB);
         assertThat(numbers(first)).as("the lists of the first read").hasSize(3000);
+        github.slower.clear();
+        // The second read: the first list's last page comes late now.
+        github.slower.put(OWN + "#31", RepositoryIssues.DEADLINE.plusSeconds(1));
 
         final RepositoryIssues.Read second = read(OWN, LIB);
 
@@ -340,47 +342,36 @@ class RepositoryIssuesTest {
                 .isInstanceOf(GitHubException.class);
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {1, 10})
-    void upToTenRepositoriesTheBudgetIsTheDeadline(final int repositories) {
-        // Harm: a board of a few repositories given more time than it needs, so a slow GitHub
-        // holds the board longer.
-        assertThat(issues.budget(repositories))
-                .as("the budget of up to ten repositories")
-                .isEqualTo(RepositoryIssues.DEADLINE);
-    }
+    @Test
+    void listsWhosePagesEachComeWithinTheSilenceAreReadToTheirEndHoweverLongTheyTake() {
+        // Harm: the issues outside the project of a large organization are never all shown,
+        // while GitHub keeps answering.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 100 * 30));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 100 * 30));
+        // 62 asks of a little less than the limit each: the read takes about 60 limits.
+        github.perAsk = RepositoryIssues.DEADLINE.minusSeconds(1);
 
-    @ParameterizedTest
-    @CsvSource({"11,22", "20,40", "35,70"})
-    void beyondTenRepositoriesTheBudgetGrowsByAShareOfTheDeadlineForEach(
-            final int repositories, final int seconds) {
-        // Harm: the lists of a board with many repositories are cut short at every load, since
-        // they are asked one after another and take longer than one deadline.
-        assertThat(issues.budget(repositories))
-                .as("the budget of " + repositories + " repositories")
-                .isEqualTo(Duration.ofSeconds(seconds));
+        final RepositoryIssues.Read read = read(OWN, LIB);
+
+        assertThat(numbers(read)).as("every issue of both lists").hasSize(6000);
+        assertThat(read.faults()).as("the read's faults").isEmpty();
     }
 
     @Test
-    void aSpentBudgetOfManyRepositoriesNamesTheScaledBudgetNotTheDeadline() {
-        // Harm: a person told the lists were cut at 20 s on a board that was given 40 s, so the
-        // fault misleads what to change.
-        final String[] names = new String[20];
-        for (int n = 0; n < names.length; n++) {
-            names[n] = "example-repository-" + n;
-            github.holds(names[n], OpenIssues.numbered(names[n], 1, 2));
-        }
-        // The first ask leaves 25 s of the 40 s, the second 50 s: past the scaled budget, and
-        // past the deadline already after the first.
-        github.perAsk = Duration.ofSeconds(25);
+    void aPageLeftWithoutAnAnswerPastTheSilenceNamesTheLimit() {
+        // Harm: a person told the lists were cut at a time the planner did not keep.
+        github.holds(OWN, OpenIssues.numbered(OWN, 1, 300));
+        github.holds(LIB, OpenIssues.numbered(LIB, 1, 2));
+        github.slower.put(OWN + "#2", RepositoryIssues.DEADLINE.plusSeconds(1));
 
-        final RepositoryIssues.Read read = read(names);
+        final RepositoryIssues.Read read = read(OWN, LIB);
 
-        assertThat(github.asks).as("the pages asked within the scaled budget").hasSize(2);
+        assertThat(github.asks).as("no page asked after the late one").hasSize(2);
         assertThat(read.faults())
-                .as("one fault naming the scaled budget")
+                .as("one fault naming the silence limit and the repositories not read")
                 .singleElement()
                 .asString()
-                .contains(RepositoryIssues.BUDGET_SPENT, "within 40 s");
+                .startsWith(RepositoryIssues.CUT_SHORT + ": GitHub gave no answer within 20 s; ")
+                .contains(OWN, LIB);
     }
 }

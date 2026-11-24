@@ -1138,6 +1138,47 @@ void main() {
     expect(refusal.name, 'PartlySaved', reason: 'the planner\'s answer, not a wait that ran out');
   });
 
+  // Harm: a large project's first read is shown as "the planner sent no board" while it is still being read.
+  test('a first read that keeps telling is waited for past the time a board is waited for', () async {
+    final (planner, source) = await _started(timeout: const Duration(milliseconds: 300));
+    final streams = _Streams(planner, first: false);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    final revisions = <String>[];
+    Object? failed;
+    final watching = watch.listen((reply) => revisions.add(reply.revision), onError: (Object e) => failed = e);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the stream opened');
+
+    for (var told = 0; told < 6; told++) {
+      streams.opened.last.add(_load({'state': 'reading', 'since': '2026-11-21T15:00:00Z', 'read': told, 'total': 6}));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    streams.send(planner.storiesRevision);
+
+    await _until(() => revisions.isNotEmpty, 'the first board after a read longer than the wait');
+    expect(failed, isNull, reason: 'no failure while the read kept telling');
+  });
+
+  // Harm: a planner whose read stopped telling but keeps its line open holds the screen waiting for a board forever.
+  test('before its first board a planner that told a read and then only keeps the line open is timed out', () async {
+    final (planner, source) = await _started(timeout: const Duration(milliseconds: 300));
+    final streams = _Streams(planner, first: false);
+    final watch = source.watchStories('demo') as PlanningWatch;
+    Object? failed;
+    final watching = watch.listen((_) {}, onError: (Object e) => failed = e);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the stream opened');
+    streams.opened.last.add(_load({'state': 'reading', 'since': '2026-11-21T15:00:00Z', 'read': 1, 'total': 6}));
+
+    for (var beat = 0; beat < 8 && failed == null; beat++) {
+      streams.opened.last.add(utf8.encode(': keep-alive\n\n'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+
+    await _until(() => failed != null, 'the watch timed out');
+    expect((failed! as PlanningRefusal).name, 'TimedOut', reason: 'a keep-alive is no board and no read');
+  });
+
   // Harm: a read that ended without a word holds its bar, and Reload planning stays off until the window restarts.
   test('a read the planner tells no more ends after a while', () async {
     final (planner, source) = await _started(backoff: Duration.zero, loadStale: const Duration(milliseconds: 300));

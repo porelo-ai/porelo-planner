@@ -478,7 +478,7 @@ class GitHubStoreCopyTest {
         final List<String> faults = new ArrayList<>(board.faults());
         if (cut) {
             faults.add(
-                    RepositoryIssues.BUDGET_SPENT
+                    RepositoryIssues.CUT_SHORT
                             + " within 20 s; the list last read is shown for example-project");
         }
         copies().write(

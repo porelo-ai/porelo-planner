@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.store.github;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Proxy;
 import java.net.URI;
@@ -14,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -781,6 +783,83 @@ class GitHubStoreLookTest {
                 .as("what it waits for while the second save runs")
                 .isEqualTo("save");
         assertThat(store.reading()).as("after the look").isEmpty();
+    }
+
+    @Test
+    void aReaderJoiningAWholeReadLongerThanASavesWaitGetsItsBoard() throws Exception {
+        // Harm: a second window opened during a long first read is refused as busy and its
+        // stream ends, while the read goes on.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        final CountDownLatch reading = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicBoolean first =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        github.onItems =
+                () -> {
+                    if (first.getAndSet(false)) {
+                        reading.countDown();
+                        try {
+                            // Longer than the store's two seconds a save waits for a read.
+                            Thread.sleep(3000);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                };
+        final CompletableFuture<Board> firstRead = CompletableFuture.supplyAsync(store::refresh);
+        assertThat(reading.await(5, TimeUnit.SECONDS)).as("the first read under way").isTrue();
+
+        final Board joined = store.board();
+
+        assertThat(joined.revision())
+                .as("the joining reader's board, the first read's")
+                .isEqualTo(firstRead.get(5, TimeUnit.SECONDS).revision());
+    }
+
+    @Test
+    void aReaderJoiningAWholeReadThatDiesWithAnErrorIsAnsweredAndTheNextReadStartsAnew()
+            throws Exception {
+        // Harm: a read that dies with an error leaves every window joining it waiting forever.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        final CountDownLatch reading = new CountDownLatch(1);
+        final CountDownLatch joined = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicBoolean first =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        github.onItems =
+                () -> {
+                    if (first.getAndSet(false)) {
+                        reading.countDown();
+                        try {
+                            joined.await(5, TimeUnit.SECONDS);
+                            // The joiner is waiting on the read when it dies.
+                            Thread.sleep(200);
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        throw new StackOverflowError("the read died");
+                    }
+                };
+        final CompletableFuture<Board> dying = CompletableFuture.supplyAsync(store::refresh);
+        assertThat(reading.await(5, TimeUnit.SECONDS)).as("the first read under way").isTrue();
+        final CompletableFuture<Board> joiner =
+                CompletableFuture.supplyAsync(
+                        () -> {
+                            joined.countDown();
+                            return store.board();
+                        });
+
+        assertThatThrownBy(() -> joiner.get(5, TimeUnit.SECONDS))
+                .as("the joining reader answered with the read's end")
+                .isInstanceOf(java.util.concurrent.ExecutionException.class);
+        assertThatThrownBy(() -> dying.get(5, TimeUnit.SECONDS))
+                .as("the dying read")
+                .isInstanceOf(java.util.concurrent.ExecutionException.class);
+        assertThat(store.refresh().revision())
+                .as("the next read starts anew and gives a board")
+                .isNotNull();
     }
 
     @Test

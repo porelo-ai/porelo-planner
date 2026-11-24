@@ -88,7 +88,7 @@ class GitHubStoreTest {
     }
 
     @Test
-    void aSecondCallWaitingTooLongOnTheProjectIsRefusedAsBusy() throws Exception {
+    void aSaveWaitingTooLongForTheFirstReadIsRefusedAsBusy() throws Exception {
         // Harm: two saves on one project interleaving and overwriting each other's fields.
         final CountDownLatch inside = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
@@ -110,8 +110,10 @@ class GitHubStoreTest {
         final Thread first = Thread.ofVirtual().start(store::refresh);
         inside.await();
         try {
-            assertThatThrownBy(store::refresh)
-                    .as("the second refresh while the first holds the project")
+            // A reader joins the read and waits for it; a save waits only as long as for the lock.
+            assertThatThrownBy(
+                            () -> store.save(new Revision("one"), new Writes(Map.of(), Map.of())))
+                    .as("the save while the first read holds the project")
                     .isInstanceOf(StoreException.Busy.class);
         } finally {
             release.countDown();

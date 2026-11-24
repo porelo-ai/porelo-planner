@@ -97,6 +97,23 @@ class ChangesRegistryTest {
     }
 
     @Test
+    void aRefreshBeforeTheFirstBoardOfAStoreThatReadsAloneAnswersAtOnce() throws Exception {
+        // Harm: a large project's first read outlasts the window's 30 s, so its Reload shows "the
+        // planner did not answer" while the read goes on.
+        projects.put("alpha", "alone", null);
+        try {
+            final CompletableFuture<@Nullable String> answered =
+                    CompletableFuture.supplyAsync(() -> registry.refresh("alpha"));
+            assertThat(answered.get(5, TimeUnit.SECONDS))
+                    .as("the revision held, none before the first board")
+                    .isNull();
+        } finally {
+            slowRead.countDown();
+        }
+        assertThat(registry.followedProjects()).as("nothing followed").isZero();
+    }
+
+    @Test
     void closingTheRegistryEndsEveryStream() throws Exception {
         // Streams left waiting would hold the planner's stop.
         projects.put("alpha", "one", null);
@@ -233,11 +250,24 @@ class ChangesRegistryTest {
             }
 
             @Override
+            public boolean reloadsAlone() {
+                return repository.equals("alone");
+            }
+
+            @Override
+            public java.util.Optional<Revision> held() {
+                return java.util.Optional.empty();
+            }
+
+            @Override
             public Board refresh() {
                 refreshes.incrementAndGet();
                 final RuntimeException refused = refreshRefused;
                 if (refused != null) {
                     throw refused;
+                }
+                if (repository.equals("alone")) {
+                    awaitSlowRead();
                 }
                 board = boardAt(remote.getOrDefault(repository, repository));
                 return board();

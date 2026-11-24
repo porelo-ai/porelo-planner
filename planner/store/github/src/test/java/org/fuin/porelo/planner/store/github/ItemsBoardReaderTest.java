@@ -2266,6 +2266,96 @@ class ItemsBoardReaderTest {
                 .hasMessageContaining("90 s");
     }
 
+    /** A reader whose pause moves its clock on by the wait, with the silence limit given. */
+    private static ItemsBoardReader waiting(
+            final GitHub github,
+            final java.util.concurrent.atomic.AtomicReference<Instant> now,
+            final List<Duration> waits) {
+        return new ItemsBoardReader(
+                github.queries(),
+                origin -> TOKEN,
+                AccessRefusals.DEFAULT,
+                FIRST_OPEN,
+                now::get,
+                Duration.ofSeconds(30),
+                length -> {
+                    waits.add(length);
+                    now.set(now.get().plus(length));
+                });
+    }
+
+    @Test
+    void aShortRateLimitInAReadBesideTheSavesIsWaitedOutAndTheReadGoesOn() {
+        // Harm: a large board's read ends at GitHub's short rate limit, though GitHub would go on
+        // answering after the wait it named.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                GitHubExceptions.rateLimited(
+                                        403, "secondary rate limit", Duration.ofSeconds(50)))
+                        .itemsPage(null, story("High"));
+        final java.util.concurrent.atomic.AtomicReference<Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
+        final List<Duration> waits = new ArrayList<>();
+
+        // The wait is longer than the read's 30 s silence limit.
+        final Snapshot snapshot = waiting(github, now, waits).read(CONFIG, true);
+
+        assertThat(waits).as("the waits taken").containsExactly(Duration.ofSeconds(50));
+        assertThat(snapshot.board().stories()).as("the board read after the wait").hasSize(1);
+    }
+
+    @Test
+    void aRateLimitLongerThanAReadWaitsFailsTheReadNamingTheWait() {
+        // Harm: a read that sleeps for many minutes behind a spent rate limit, while the person
+        // sees it progress.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                GitHubExceptions.rateLimited(
+                                        403, "API rate limit exceeded", Duration.ofSeconds(90)));
+        final List<Duration> waits = new ArrayList<>();
+
+        assertThatThrownBy(
+                        () ->
+                                waiting(
+                                                github,
+                                                new java.util.concurrent.atomic.AtomicReference<>(
+                                                        Instant.EPOCH),
+                                                waits)
+                                        .read(CONFIG, true))
+                .as("the read GitHub asks to wait 90 s")
+                .isInstanceOf(StoreException.Unreachable.class)
+                .hasMessageContaining("90 s");
+        assertThat(waits).as("no wait taken").isEmpty();
+    }
+
+    @Test
+    void aReadUnderASavesLockDoesNotWaitForTheRateLimit() {
+        // Harm: saves stand behind a read that sleeps for GitHub's rate limit.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsFailure(
+                                GitHubExceptions.rateLimited(
+                                        403, "secondary rate limit", Duration.ofSeconds(5)));
+        final List<Duration> waits = new ArrayList<>();
+
+        assertThatThrownBy(
+                        () ->
+                                waiting(
+                                                github,
+                                                new java.util.concurrent.atomic.AtomicReference<>(
+                                                        Instant.EPOCH),
+                                                waits)
+                                        .read(CONFIG))
+                .as("the read GitHub asks to wait 5 s")
+                .isInstanceOf(StoreException.Unreachable.class);
+        assertThat(waits).as("no wait taken").isEmpty();
+    }
+
     @Test
     void aTokenInAFailuresWordsIsScrubbedWithTheTokenTheReadUsed() {
         // Harm: the person's token shown in the window or written to the log, or asked for a

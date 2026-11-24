@@ -16,6 +16,18 @@ public interface BoardReader {
     Snapshot read(ProjectConfig config);
 
     /**
+     * Reads the project as {@link #read(ProjectConfig)} does; a read that holds no lock a save
+     * waits for may also wait out a short rate limit GitHub names, so it is not cut off by it.
+     *
+     * @param config what to read with
+     * @param rateWaits whether the read may wait for GitHub's rate limit
+     * @return the snapshot
+     */
+    default Snapshot read(final ProjectConfig config, final boolean rateWaits) {
+        return read(config);
+    }
+
+    /**
      * Answers how far a whole read under way has come.
      *
      * @return the progress, or empty while none runs

@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
 /**
  * The open issues of the project's repositories, read page by page from each repository's issue
  * list, every page sent with the tag of its last answer so an unchanged page costs no rate limit,
- * and held per repository: a repository whose list cannot be read, or is not reached within the
- * read's budget, keeps the list last read of it.
+ * and held per repository: a repository whose list cannot be read, or is cut short by GitHub
+ * leaving a page without an answer for the silence limit, keeps the list last read of it.
  */
 public final class RepositoryIssues {
 
@@ -37,13 +37,11 @@ public final class RepositoryIssues {
     static final int PAGE_SIZE = 100;
 
     /**
-     * How long one read of every repository's list may take, apart from the project's read, before
-     * the factor {@code services}.
+     * How long GitHub may leave a page of a repository's list without an answer, apart from the
+     * project's read, before the factor {@code services}; each answer starts it again, so lists
+     * that keep coming are read to their end.
      */
     static final Duration DEADLINE = Duration.ofSeconds(20);
-
-    /** How many repositories one deadline covers. */
-    static final int REPOSITORIES_IN_DEADLINE = 10;
 
     /** One page of a repository's open issues as GitHub answers it. */
     @FunctionalInterface
@@ -135,11 +133,11 @@ public final class RepositoryIssues {
     private @Nullable String nextFirst;
 
     /**
-     * The first words of the fault of a read that spent its budget, before its deadline and the
-     * repositories it names; the board's revision takes them alone, so a slow GitHub or another
-     * factor changes no revision.
+     * The first words of the fault of a read GitHub left without an answer for its silence limit,
+     * before the limit and the repositories it names; the board's revision takes them alone, so a
+     * slow GitHub or another factor changes no revision.
      */
-    static final String BUDGET_SPENT = "The issues outside the project were not all read";
+    static final String CUT_SHORT = "The issues outside the project were not all read";
 
     /**
      * The first words of the fault of a list whose next page GitHub answered with none but entries
@@ -147,7 +145,7 @@ public final class RepositoryIssues {
      */
     static final String SAME_PAGE = "GitHub answered the same page again for the issues of ";
 
-    /** The deadline of the read met while a page was asked, after one failed on the way. */
+    /** The silence limit met while a page was asked, after one failed on the way. */
     static final class OutOfTime extends RuntimeException {
 
         private static final long serialVersionUID = 1L;
@@ -155,11 +153,11 @@ public final class RepositoryIssues {
         /**
          * Makes the failure.
          *
-         * @param deadline the deadline met
+         * @param deadline the silence limit met
          */
         OutOfTime(final Duration deadline) {
             super(
-                    "GitHub did not give the open issues' lists within "
+                    "GitHub gave no answer to a page of the open issues' lists within "
                             + Seconds.of(deadline)
                             + " s");
         }
@@ -189,21 +187,6 @@ public final class RepositoryIssues {
     }
 
     /**
-     * The time one read of the given number of repositories may take: the deadline for up to
-     * {@value #REPOSITORIES_IN_DEADLINE} repositories, and a share of it for each beyond, since the
-     * lists are asked one after another and GitHub takes almost a second for each page, even one it
-     * answers unchanged.
-     *
-     * @param repositories how many repositories are read
-     * @return the time
-     */
-    Duration budget(final int repositories) {
-        return repositories <= REPOSITORIES_IN_DEADLINE
-                ? deadline
-                : deadline.multipliedBy(repositories).dividedBy(REPOSITORIES_IN_DEADLINE);
-    }
-
-    /**
      * Holds a copy's lists for the repositories that hold none yet, so a repository the next read
      * cannot list keeps them; their pages are read anew, since no tag was kept.
      *
@@ -222,11 +205,12 @@ public final class RepositoryIssues {
 
     /**
      * Reads every repository's list, page after page, until a page carries fewer entries than a
-     * page asks for; no count of pages ends a list GitHub still continues. Once the time is spent,
-     * the repository being read and those after it keep what was held of them, named in one fault.
-     * A full page that carries no entry this repository's read has not seen, by the entries' node
-     * ids, is GitHub answering a page it gave already, which would never end: that repository keeps
-     * what was held of it, named in a fault of its own.
+     * page asks for; no count of pages ends a list GitHub still continues. Once GitHub leaves a
+     * page without an answer for the silence limit, which each answer starts again, the repository
+     * being read and those after it keep what was held of them, named in one fault. A full page
+     * that carries no entry this repository's read has not seen, by the entries' node ids, is
+     * GitHub answering a page it gave already, which would never end: that repository keeps what
+     * was held of it, named in a fault of its own.
      *
      * <p>A read starts at the repository the last one did not reach, so a large repository never
      * keeps those after it unread.
@@ -242,8 +226,8 @@ public final class RepositoryIssues {
             final Fetch fetch,
             final InstantSource clock,
             final String token) {
-        final Duration budget = budget(repositories.size());
-        final Instant until = clock.instant().plus(budget);
+        final Duration silence = deadline;
+        Instant until = clock.instant().plus(silence);
         final List<String> faults = new ArrayList<>();
         final List<String> notRead = new ArrayList<>();
         int requests = 0;
@@ -275,6 +259,12 @@ public final class RepositoryIssues {
                 final Conditional<Page<Issue>> answer;
                 try {
                     answer = fetch.page(repository, page, old == null ? null : old.etag());
+                    if (clock.instant().isAfter(until)) {
+                        // An answer after the silence limit is not taken, as for the project.
+                        notRead.add(repository);
+                        break;
+                    }
+                    until = clock.instant().plus(silence);
                 } catch (final OutOfTime e) {
                     // A read sent once more after a failure on the way met the deadline.
                     notRead.add(repository);
@@ -333,9 +323,9 @@ public final class RepositoryIssues {
         nextFirst = notRead.isEmpty() ? null : notRead.get(0);
         if (!notRead.isEmpty()) {
             faults.add(
-                    BUDGET_SPENT
-                            + " within "
-                            + Seconds.of(budget)
+                    CUT_SHORT
+                            + ": GitHub gave no answer within "
+                            + Seconds.of(silence)
                             + " s; the list last read is shown for "
                             + String.join(", ", notRead));
         }

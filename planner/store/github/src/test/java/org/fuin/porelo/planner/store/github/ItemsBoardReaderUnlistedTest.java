@@ -467,7 +467,8 @@ class ItemsBoardReaderUnlistedTest {
         // unreadable.
         pages.holds(OWN, List.of(open(OWN, 5)));
         pages.holds(LIB, List.of(open(LIB, 6)));
-        pages.perAsk = ItemsBoardReader.DEADLINE.plusSeconds(5);
+        // The second list's page comes past the project's own deadline.
+        pages.slower.put(LIB + "#1", ItemsBoardReader.DEADLINE.plusSeconds(5));
 
         final Board board = reader().read(CONFIG).board();
 
@@ -510,7 +511,7 @@ class ItemsBoardReaderUnlistedTest {
                 .as("the one fault of the budget")
                 .singleElement()
                 .asString()
-                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 40 s; ")
+                .startsWith(RepositoryIssues.CUT_SHORT + ": GitHub gave no answer within 40 s; ")
                 .contains(LIB);
     }
 
@@ -527,7 +528,7 @@ class ItemsBoardReaderUnlistedTest {
                 .as("the one fault of the budget")
                 .singleElement()
                 .asString()
-                .startsWith(RepositoryIssues.BUDGET_SPENT + " within 2.2 s; ");
+                .startsWith(RepositoryIssues.CUT_SHORT + ": GitHub gave no answer within 2.2 s; ");
     }
 
     @Test
@@ -557,9 +558,11 @@ class ItemsBoardReaderUnlistedTest {
         pages.holds(LIB, List.of(open(LIB, 6)));
         final ItemsBoardReader reader = reader();
         reader.read(CONFIG);
-        pages.perAsk = RepositoryIssues.DEADLINE.plusSeconds(5);
-
+        // GitHub leaves one list silent at the first read and the other at the second.
+        pages.slower.put(LIB + "#1", RepositoryIssues.DEADLINE.plusSeconds(5));
         final Board first = reader.read(CONFIG).board();
+        pages.slower.clear();
+        pages.slower.put(OWN + "#1", RepositoryIssues.DEADLINE.plusSeconds(5));
         final Board second = reader.read(CONFIG).board();
 
         assertThat(first.faults())

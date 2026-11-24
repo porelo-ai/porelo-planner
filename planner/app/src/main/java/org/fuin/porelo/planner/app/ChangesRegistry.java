@@ -186,10 +186,35 @@ public final class ChangesRegistry implements AutoCloseable {
         synchronized (this) {
             known = followed.get(project);
         }
-        if (known == null) {
-            return projects.store(project).refresh().revision().value();
-        }
         final PlanningStore store = projects.store(project);
+        if (known == null) {
+            if (!store.reloadsAlone()) {
+                return store.refresh().revision().value();
+            }
+            // Before any window follows the project its first read may outlast the window's wait
+            // too; a stream opened meanwhile joins that read and tells its board.
+            final @Nullable String held =
+                    store.held().map(org.fuin.porelo.planner.store.Revision::value).orElse(null);
+            Thread.ofVirtual()
+                    .name("planner-refresh")
+                    .start(
+                            () -> {
+                                store.reloadAsked();
+                                try {
+                                    store.refresh();
+                                    readEnded(project, null);
+                                } catch (final RuntimeException e) {
+                                    readEnded(project, e);
+                                    LOG.warn(
+                                            "Refreshing project {} failed: {}",
+                                            LogText.of(project),
+                                            LogText.of(String.valueOf(e.getMessage())));
+                                } finally {
+                                    store.reloadEnded();
+                                }
+                            });
+            return held;
+        }
         if (!store.reloadsAlone()) {
             return known.changes().poll().revision().value();
         }

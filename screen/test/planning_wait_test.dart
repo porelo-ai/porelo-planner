@@ -55,6 +55,30 @@ class _RefusedReload extends MockPlanningSource {
       PlanningWatch(super.watchStories(project), ValueNotifier(false), loading: load, tellsReads: true);
 }
 
+/// A planning whose watch tells reads and is opened anew on each call, and whose story read the test can hold, as a
+/// planner's stays held behind its first whole read.
+class _ReadingFirst extends MockPlanningSource {
+  final load = ValueNotifier<PlanningLoad?>(null);
+  final watches = <StreamController<PlanningSnapshot>>[];
+  var storyReads = 0;
+  var holdStories = false;
+
+  Future<PlanningSnapshot> whole(String project) => super.stories(project);
+
+  @override
+  Stream<PlanningSnapshot> watchStories(String project) {
+    final watch = StreamController<PlanningSnapshot>();
+    watches.add(watch);
+    return PlanningWatch(watch.stream, ValueNotifier(false), loading: load, tellsReads: true);
+  }
+
+  @override
+  Future<PlanningSnapshot> stories(String project) {
+    storyReads++;
+    return holdStories ? Completer<PlanningSnapshot>().future : super.stories(project);
+  }
+}
+
 void main() {
   // Harm: a busy planner leaves an empty story page even though its board already contains the story and issues.
   testWidgets('a story shows its board row until its latest details arrive during a save', (tester) async {
@@ -387,5 +411,75 @@ void main() {
 
     expect(board.refusal?.name, 'NoSuchProject');
     expect(board.moveProblem, isNotNull);
+  });
+
+  // Harm: a Reload pressed while the planner still reads a large project's first board fails as "the planner did
+  // not answer", though the read goes on and its board would come over the watch.
+  testWidgets('a Reload before the first board opens the watch anew and shows the board it brings', (tester) async {
+    final backend = _ReadingFirst()..holdStories = true;
+    final client = MockPlanningClient.of(backend, projects: ['demo']);
+    final boards = PlanningBoards(client);
+    addTearDown(() async {
+      boards.dispose();
+      client.dispose();
+      await backend.end();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: planningView(boards: boards)),
+      ),
+    );
+    await tester.pump();
+    final board = boards.sources.single;
+    backend.watches.single.addError(const PlanningRefusal('TimedOut', {}, 'the planner sent no board within 30 s'));
+    await tester.pump();
+    expect(board.snapshot, isNull, reason: 'no board yet');
+
+    unawaited(board.reload(fetch: true));
+    await tester.pump();
+    expect(backend.watches, hasLength(2), reason: 'the watch opened anew');
+    backend.watches.last.add(await backend.whole('demo'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 31));
+
+    expect(board.snapshot, isNotNull, reason: 'the board the watch brought');
+    expect(board.problem, isNull, reason: 'no failure shown for a read that went on');
+    expect(board.moveProblem, isNull, reason: 'no failure shown for a read that went on');
+  });
+
+  // Harm: a Reload on a planner that reads behind its answer waits for a second read of the board it held, and shows
+  // "the planner did not answer" when that read is held behind the whole read.
+  testWidgets('a Reload after the first board leaves the board to the watch and reads it no second time', (
+    tester,
+  ) async {
+    final backend = _ReadingFirst();
+    final client = MockPlanningClient.of(backend, projects: ['demo']);
+    final boards = PlanningBoards(client);
+    addTearDown(() async {
+      boards.dispose();
+      client.dispose();
+      await backend.end();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: planningView(boards: boards)),
+      ),
+    );
+    await tester.pump();
+    backend.watches.single.add(await backend.whole('demo'));
+    await settle(tester);
+    final board = boards.sources.single;
+    expect(board.snapshot, isNotNull, reason: 'the first board');
+    backend.holdStories = true;
+    final read = backend.storyReads;
+    final refreshed = backend.refreshes.length;
+
+    unawaited(board.reload(fetch: true));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 31));
+
+    expect(backend.refreshes.length, refreshed + 1, reason: 'the planner asked to read the board anew');
+    expect(backend.storyReads, read, reason: 'no read of the board held before the read');
+    expect(board.moveProblem, isNull, reason: 'no failure shown for a read that goes on');
   });
 }

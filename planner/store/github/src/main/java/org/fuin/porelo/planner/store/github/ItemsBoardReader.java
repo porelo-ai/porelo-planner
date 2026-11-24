@@ -69,6 +69,15 @@ public final class ItemsBoardReader implements BoardReader {
     /** How often a read that failed on GitHub's side or on the way is sent, before its factor. */
     static final int READ_TRIES = 2;
 
+    /**
+     * The longest wait for GitHub's rate limit a whole read takes, before the factor {@code
+     * retryPause}; a longer one fails the read with the time GitHub named.
+     */
+    static final Duration RATE_WAIT_MOST = Duration.ofSeconds(60);
+
+    /** The most time a whole read spends waiting for GitHub's rate limit, before its factor. */
+    static final Duration RATE_WAITS_MOST = Duration.ofMinutes(2);
+
     /** The most items a page carries, as the forge client asks for them. */
     static final int PAGE_SIZE = 100;
 
@@ -131,6 +140,13 @@ public final class ItemsBoardReader implements BoardReader {
     private final Duration deadline;
 
     private final Pause pause;
+
+    private final Duration rateWaitMost;
+
+    private final Duration rateWaitsMost;
+
+    /** How long the whole read under way has waited for GitHub's rate limit, over all its calls. */
+    private volatile Duration waitedForRate = Duration.ZERO;
 
     /** How often the item list is read again while it lacks an issue that names the project. */
     private final int mostRereads;
@@ -404,6 +420,8 @@ public final class ItemsBoardReader implements BoardReader {
         this.mostRereads = limits.tries(MOST_REREADS);
         this.rereadPause = limits.retryPause(REREAD_PAUSE);
         this.readTries = limits.tries(READ_TRIES);
+        this.rateWaitMost = limits.retryPause(RATE_WAIT_MOST);
+        this.rateWaitsMost = limits.retryPause(RATE_WAITS_MOST);
         this.queries = queries;
         this.tokens = tokens;
         this.refusals = refusals;
@@ -420,11 +438,18 @@ public final class ItemsBoardReader implements BoardReader {
 
     @Override
     public Snapshot read(final ProjectConfig config) {
+        return read(config, false);
+    }
+
+    @Override
+    public Snapshot read(final ProjectConfig config, final boolean rateWaits) {
+        // Only one read that may wait runs at a time: the store's whole read beside the saves.
+        waitedForRate = Duration.ZERO;
         progress =
                 new org.fuin.porelo.planner.store.ReadProgress(
                         clock.instant(), 0, lastTotal, null, FROM);
         try {
-            final Snapshot read = readWhole(config);
+            final Snapshot read = readWhole(config, rateWaits);
             lastTotal = read.raw().size();
             return read;
         } finally {
@@ -432,13 +457,15 @@ public final class ItemsBoardReader implements BoardReader {
         }
     }
 
-    private Snapshot readWhole(final ProjectConfig config) {
+    private Snapshot readWhole(final ProjectConfig config, final boolean rateWaits) {
         final String token = tokens.token(config.forge());
         final List<String> faults = new ArrayList<>();
         // Read before the project's items, so an issue added to the project meanwhile is an item
-        // of this read and never shown as outside it; its own budget leaves the project's whole.
-        final List<Snapshot.Unlisted> repositoryIssues = readUnlisted(config, token, faults);
-        final Call call = new Call(config, token, clock.instant().plus(deadline));
+        // of this read and never shown as outside it; its own silence limit leaves the project's
+        // whole.
+        final List<Snapshot.Unlisted> repositoryIssues =
+                readUnlisted(config, token, faults, rateWaits);
+        final Call call = new Call(config, token, clock.instant().plus(deadline), false, rateWaits);
 
         final Map<String, String> fieldIds = new LinkedHashMap<>();
         final Map<String, Map<String, String>> optionIds = new LinkedHashMap<>();
@@ -563,22 +590,22 @@ public final class ItemsBoardReader implements BoardReader {
     private static final int NOT_FOUND = 404;
 
     /**
-     * Reads the open issues of the project's repositories within their own budget, adding to the
-     * faults each repository whose list could not be read; a reader without their pages reads none.
+     * Reads the open issues of the project's repositories within their own silence limit, adding to
+     * the faults each repository whose list could not be read; a reader without their pages reads
+     * none.
      */
     private List<Snapshot.Unlisted> readUnlisted(
-            final ProjectConfig config, final String token, final List<String> faults) {
+            final ProjectConfig config,
+            final String token,
+            final List<String> faults,
+            final boolean rateWaits) {
         final RepositoryIssues.Pages pages = issuePages;
         if (pages == null) {
             return List.of();
         }
         // The lists' own deadline: a read sent again never runs into the project's.
         final Call call =
-                new Call(
-                        config,
-                        token,
-                        clock.instant().plus(unlisted.budget(config.names().size())),
-                        true);
+                new Call(config, token, clock.instant().plus(unlisted.deadline()), true, rateWaits);
         final String owner = config.project().owner();
         final RepositoryIssues.Read read =
                 unlisted.read(
@@ -1395,33 +1422,73 @@ public final class ItemsBoardReader implements BoardReader {
         private final String token;
 
         /**
-         * When the read is refused: for the issue lists a fixed end, for the project the moment
-         * GitHub has left it without an answer for the deadline, moved on by each answer.
+         * When the read is refused: the moment GitHub has left it without an answer for its silence
+         * limit, moved on by each answer.
          */
         private Instant until;
 
-        /** Whether it reads the repositories' issue lists, whose deadline ends only their read. */
+        /** Whether it reads the repositories' issue lists, whose silence ends only their read. */
         private final boolean lists;
 
+        /** Whether it waits out a short rate limit GitHub names; only a read beside the saves. */
+        private final boolean rateWaits;
+
         Call(final ProjectConfig config, final String token, final Instant until) {
-            this(config, token, until, false);
+            this(config, token, until, false, false);
         }
 
         Call(
                 final ProjectConfig config,
                 final String token,
                 final Instant until,
-                final boolean lists) {
+                final boolean lists,
+                final boolean rateWaits) {
             this.config = config;
             this.token = token;
             this.until = until;
             this.lists = lists;
+            this.rateWaits = rateWaits;
+        }
+
+        /**
+         * Waits out a rate limit GitHub named, when the read may and the wait is short and within
+         * the read's whole share; the silence limit starts again after it, so the wait counts as no
+         * silence.
+         *
+         * @return whether it waited, so the read is sent again
+         */
+        private boolean waitedForRate(final String what, final GitHubException e) {
+            final @Nullable Duration delay = e.delay();
+            if (!rateWaits
+                    || delay == null
+                    || !delay.isPositive()
+                    || delay.compareTo(rateWaitMost) > 0
+                    || waitedForRate.plus(delay).compareTo(rateWaitsMost) > 0) {
+                return false;
+            }
+            LOG.warn(
+                    "GitHub's rate limit holds the read of {} (HTTP {}); it waits {} s as GitHub"
+                            + " asked and goes on",
+                    what,
+                    e.status(),
+                    Seconds.of(delay));
+            try {
+                pause.take(delay);
+            } catch (final InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+                throw new StoreException.Unreachable(
+                        config.own(),
+                        "the read was stopped while it waited for GitHub's rate limit");
+            }
+            waitedForRate = waitedForRate.plus(delay);
+            until = clock.instant().plus(lists ? unlisted.deadline() : deadline);
+            return true;
         }
 
         /** Refuses the read once its deadline has passed. */
         void inTime() {
             if (lists && clock.instant().isAfter(until)) {
-                throw new RepositoryIssues.OutOfTime(unlisted.budget(config.names().size()));
+                throw new RepositoryIssues.OutOfTime(unlisted.deadline());
             }
             if (clock.instant().isAfter(until)) {
                 throw new StoreException.Unreachable(
@@ -1433,15 +1500,13 @@ public final class ItemsBoardReader implements BoardReader {
         }
 
         /**
-         * Takes an answer. For the project, one that came after the deadline is refused, and
-         * otherwise the deadline starts again from it, so a large project whose pages keep coming
-         * is read to its end; the issue lists keep their fixed end.
+         * Takes an answer: one that came after the silence limit is refused, and otherwise the
+         * limit starts again from it, so a large project or list whose pages keep coming is read to
+         * its end.
          */
         private <T> T answered(final T answer) {
-            if (!lists) {
-                inTime();
-                until = clock.instant().plus(deadline);
-            }
+            inTime();
+            until = clock.instant().plus(lists ? unlisted.deadline() : deadline);
             return answer;
         }
 
@@ -1465,6 +1530,11 @@ public final class ItemsBoardReader implements BoardReader {
                     try {
                         return answered(read.get());
                     } catch (final GitHubException e) {
+                        if (e.rateLimited() && waitedForRate(what, e)) {
+                            // A wait GitHub asked for is no failed try.
+                            attempt--;
+                            continue;
+                        }
                         if (attempt >= readTries
                                 || e.rateLimited()
                                 || (e.status() != 0 && e.status() < 500)) {
@@ -1792,8 +1862,8 @@ public final class ItemsBoardReader implements BoardReader {
                 faults.stream()
                         .map(
                                 fault ->
-                                        fault.startsWith(RepositoryIssues.BUDGET_SPENT)
-                                                ? RepositoryIssues.BUDGET_SPENT
+                                        fault.startsWith(RepositoryIssues.CUT_SHORT)
+                                                ? RepositoryIssues.CUT_SHORT
                                                 : fault)
                         .sorted()
                         .toList());

@@ -52,6 +52,9 @@ final class OpenIssues implements RepositoryIssues.Pages {
     /** How far the clock moves at each ask; nothing unless a test says so. */
     Duration perAsk = Duration.ZERO;
 
+    /** How much longer one page takes to answer, by repository and page as {@code name#page}. */
+    final java.util.Map<String, Duration> slower = new java.util.HashMap<>();
+
     /** The clock the asks move. */
     Instant now = Instant.parse("2026-11-21T12:00:00Z");
 
@@ -119,7 +122,7 @@ final class OpenIssues implements RepositoryIssues.Pages {
         if (asks.size() > 1000) {
             throw new AssertionError("a list read without end");
         }
-        now = now.plus(perAsk);
+        now = now.plus(perAsk).plus(slower.getOrDefault(repository + "#" + page, Duration.ZERO));
         final Function<Integer, RuntimeException> failure = failures.get(repository);
         if (failure != null) {
             throw failure.apply(page);

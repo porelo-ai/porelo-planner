@@ -1833,8 +1833,20 @@ class _Watch {
       );
     }
 
-    // The planner's word on its read of the board. While it reads, the wait for the first board is no longer counted:
-    // the stream's silence alone ends a planner that stopped telling. A read that failed ends the watch with its words.
+    // Waits for the first board: each word that the read goes on starts the wait again, a keep-alive does not, so a
+    // read that keeps telling is waited for to its end and a planner that only keeps the line open is not.
+    void armFirst() {
+      first?.cancel();
+      first = Timer(
+        source.timeout,
+        () => lose(
+          PlanningRefusal('TimedOut', const {}, 'the planner sent no board within ${source.timeout.inSeconds} s'),
+        ),
+      );
+    }
+
+    // The planner's word on its read of the board. Before the first board, each word restarts the wait for it. A read
+    // that failed ends the watch with its words.
     void told(String text) {
       final Object? json;
       try {
@@ -1880,7 +1892,7 @@ class _Watch {
       }
       final load = PlanningLoad.from(json);
       if (load == null) return;
-      first?.cancel();
+      if (boards == 0) armFirst();
       _setLoad(load);
     }
 
@@ -1999,11 +2011,7 @@ class _Watch {
       }
     }
 
-    first = Timer(
-      source.timeout,
-      () =>
-          lose(PlanningRefusal('TimedOut', const {}, 'the planner sent no board within ${source.timeout.inSeconds} s')),
-    );
+    armFirst();
     heard();
     _stop = () => lose(_cancelled);
     _reading = response.listen(
