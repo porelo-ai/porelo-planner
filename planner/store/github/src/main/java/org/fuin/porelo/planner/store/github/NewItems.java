@@ -22,7 +22,6 @@ import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Worker;
-import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -37,8 +36,8 @@ import org.jspecify.annotations.Nullable;
  * only where an earlier try leaves it: under the story it is planned under, off the project under
  * no story, or on the project under no story holding no planned value but an automatic first
  * Status. A taken item gets its place, its requested Status and the values it lacks, keeping its
- * other values; several alike stop the write, naming them. The calls go at the pace of a {@link
- * WritePace}.
+ * other values; several alike stop the write, naming them. The calls take their turns in the {@link
+ * WritePace} every save of the project shares.
  */
 final class NewItems {
 
@@ -70,13 +69,12 @@ final class NewItems {
 
     private final InstantSource clock;
 
-    private final WritePace.Sleeper sleeper;
+    /** Gives the pace the project's writes with a token share. */
+    private final Function<String, WritePace> paces;
 
     private final Snapshot current;
 
-    private final LimitFactors limits;
-
-    /** The pace of this write's calls, started when it writes with the person's token. */
+    /** The pace this write's calls take their turns in, given when it writes with the token. */
     private @Nullable WritePace pace;
 
     private @Nullable IssueField priorityField;
@@ -107,23 +105,20 @@ final class NewItems {
      * @param github the calls the write is made of
      * @param refusals turns a failure into the store's refusal, scrubbed of the token
      * @param clock tells the time a call is sent at
-     * @param sleeper waits between calls and before a call is made again
      * @param current the snapshot the store holds
-     * @param limits the factors a call's tries and their waits follow
+     * @param paces gives the pace the project's writes with a token share
      */
     NewItems(
             final ProjectWrites github,
             final AccessRefusals refusals,
             final InstantSource clock,
-            final WritePace.Sleeper sleeper,
             final Snapshot current,
-            final LimitFactors limits) {
+            final Function<String, WritePace> paces) {
         this.github = github;
         this.refusals = refusals;
         this.clock = clock;
-        this.sleeper = sleeper;
         this.current = current;
-        this.limits = limits;
+        this.paces = paces;
     }
 
     /**
@@ -461,7 +456,7 @@ final class NewItems {
         return "";
     }
 
-    /** Checks the project's id and starts the pace of this write's calls. */
+    /** Checks the project's id and takes the pace of the project's writes with the token. */
     private String begin(final String token) {
         final String projectId = current.config().projectId();
         if (projectId.isBlank()) {
@@ -484,7 +479,7 @@ final class NewItems {
                     priority ->
                             IssuePriority.accepts("", field, IssuePriority.option("", priority)));
         }
-        pace = new WritePace(clock, sleeper, token, limits);
+        pace = paces.apply(token);
         return projectId;
     }
 

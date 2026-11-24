@@ -13,22 +13,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Keeps one save's writes under GitHub's limits on writes made in a burst: the first {@link #BURST}
- * go at once, so a move is written without a wait, and each later one stands {@link #SPACING} after
- * the last, as GitHub asks of many writes. A call that writes the same however often it is made is
- * made again after a failure on GitHub's side, a lost answer or a refusal as rate limited, after
- * the wait GitHub asked for or a backoff, at most {@link #TRIES} times in all; the tries, the
- * backoff and the longest wait follow the factor {@code retries}. Every failure is logged with
- * GitHub's status and words, scrubbed of the token. One pace serves one save, from one thread.
+ * Keeps the writes of every save of one project with one token under GitHub's limits on writes made
+ * in a burst: the first {@link #BURST} go at once, so a move is written without a wait, and each
+ * later one stands {@link #SPACING} after the last, whichever save makes it, the burst filling
+ * again by one for each {@link #SPACING} the pace stands idle. A call that writes the same however
+ * often it is made is made again after a failure on GitHub's side, a lost answer or a refusal as
+ * rate limited, after the wait GitHub asked for or a backoff, at most {@link #TRIES} times in all;
+ * the tries, the backoff and the longest wait follow the factor {@code retries}. A wait GitHub asks
+ * for holds every save's next write. Every failure is logged with GitHub's status and words,
+ * scrubbed of the token. Saves on many threads share the pace: each takes its turn in memory and
+ * waits for it outside, so no save waits for another save's call to GitHub.
  */
 final class WritePace {
 
     private static final Logger LOG = LoggerFactory.getLogger(WritePace.class);
 
-    /** The writes of one save that go at once. */
+    /** The writes that go at once after the pace stood idle. */
     static final int BURST = 5;
 
-    /** The least time between two later writes of one save. */
+    /** The least time between two later writes, whichever save makes them. */
     static final Duration SPACING = Duration.ofSeconds(1);
 
     /** How often a call that may be made again is made in all, before its factor. */
@@ -74,12 +77,17 @@ final class WritePace {
     /** The waits before each try after the first, the last standing for every later one. */
     private final List<Duration> backoff;
 
-    private int made;
+    /**
+     * The turn the next write would take once the burst is spent, or null before the first; a turn
+     * up to {@link #BURST} less one spacings before it is taken at once.
+     */
+    private @Nullable Instant next;
 
-    private @Nullable Instant last;
+    /** Until when GitHub asked every write to wait, or null when it asked for no wait. */
+    private @Nullable Instant held;
 
     /**
-     * Makes the pace of one save.
+     * Makes the pace of a project's saves with one token.
      *
      * @param clock tells the time
      * @param sleeper waits
@@ -100,6 +108,16 @@ final class WritePace {
     }
 
     /**
+     * Answers whether the pace serves the writes made with a token.
+     *
+     * @param other the token
+     * @return whether it is the pace's own
+     */
+    boolean serves(final String other) {
+        return token.equals(other);
+    }
+
+    /**
      * Makes a write at the pace, once.
      *
      * @param what the call, by its kind and the issue or project it writes
@@ -108,10 +126,11 @@ final class WritePace {
      * @return its answer
      */
     <T> T once(final String what, final Supplier<T> call) {
-        spaced();
+        spaced(null);
         try {
             return call.get();
         } catch (final GitHubException e) {
+            heard(e);
             logged(what, e, 1, false);
             throw e;
         }
@@ -127,19 +146,49 @@ final class WritePace {
      * @return its answer
      */
     <T> T again(final String what, final Supplier<T> call) {
+        @Nullable GitHubException failed = null;
         for (int attempt = 1; ; attempt++) {
-            spaced();
+            spaced(failed);
             try {
                 return call.get();
             } catch (final GitHubException e) {
+                final boolean asked = heard(e);
                 final @Nullable Duration wait = attempt < tries ? waitBefore(e, attempt) : null;
                 logged(what, e, attempt, wait != null);
                 if (wait == null) {
                     throw e;
                 }
-                sleep(wait, e);
+                if (!asked) {
+                    sleep(wait, e);
+                }
+                failed = e;
             }
         }
+    }
+
+    /**
+     * Holds every save's next write for the wait GitHub asked for with a refusal as rate limited,
+     * when that wait is one a write is made again after.
+     *
+     * @return whether the pace now holds for it, so the next write waits it out in its turn
+     */
+    private boolean heard(final GitHubException e) {
+        final Duration asked = e.delay();
+        if (!e.rateLimited()
+                || e.delivery() != Delivery.ANSWERED
+                || asked == null
+                || !asked.isPositive()
+                || asked.compareTo(mostWait) > 0) {
+            return false;
+        }
+        synchronized (this) {
+            final Instant until = clock.instant().plus(asked);
+            final Instant before = held;
+            if (before == null || until.isAfter(before)) {
+                held = until;
+            }
+        }
+        return true;
     }
 
     /** The wait before the next try, or null when the failure does not pass. */
@@ -174,17 +223,33 @@ final class WritePace {
                 Scrubbed.text(String.valueOf(e.getMessage()), List.of(token)));
     }
 
-    private void spaced() {
-        made++;
-        final Instant now = clock.instant();
-        final Instant previous = last;
-        if (made > BURST && previous != null) {
-            final Duration since = Duration.between(previous, now);
-            if (since.compareTo(SPACING) < 0) {
-                sleep(SPACING.minus(since), null);
-            }
+    /** Takes the next write's turn and waits for it, outside the pace's own bookkeeping. */
+    private void spaced(final @Nullable GitHubException failed) {
+        final Duration wait = turn();
+        if (wait.isPositive()) {
+            sleep(wait, failed);
         }
-        last = clock.instant();
+    }
+
+    /**
+     * Takes the next turn: at once while the burst lasts, else a spacing after the turn before, and
+     * never before a wait GitHub asked for ends.
+     *
+     * @return how long the write waits for its turn
+     */
+    private synchronized Duration turn() {
+        final Instant now = clock.instant();
+        final Instant due = next == null || next.isBefore(now) ? now : next;
+        Instant at = due.minus(SPACING.multipliedBy(BURST - 1L));
+        if (at.isBefore(now)) {
+            at = now;
+        }
+        final Instant until = held;
+        if (until != null && until.isAfter(at)) {
+            at = until;
+        }
+        next = (at.isAfter(due) ? at : due).plus(SPACING);
+        return Duration.between(now, at);
     }
 
     private void sleep(final Duration wait, final @Nullable GitHubException failure) {

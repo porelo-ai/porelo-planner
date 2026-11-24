@@ -334,6 +334,9 @@ class FieldsBoardWriterTest {
         /** The waits of the writes, in order; a test waits nothing. */
         private final List<java.time.Duration> waits = new ArrayList<>();
 
+        /** The writer's time, moved on by each wait as a real wait moves it. */
+        private Instant now = NOW;
+
         /** Whether the update's failure happens only once, as a passing one of GitHub's. */
         private boolean failsOnce;
 
@@ -394,8 +397,11 @@ class FieldsBoardWriterTest {
                     writes,
                     origin -> TOKEN,
                     new ForgeAccessRefusals(URI.create("https://github.com")),
-                    () -> NOW,
-                    waits::add,
+                    () -> now,
+                    wait -> {
+                        waits.add(wait);
+                        now = now.plus(wait);
+                    },
                     limits);
         }
 
@@ -1423,6 +1429,95 @@ class FieldsBoardWriterTest {
 
         assertThat(github.updates).as("the issue closed").hasSize(1);
         assertThat(github.waits).as("the waits").containsExactly(Duration.ofSeconds(3));
+    }
+
+    @Test
+    void theSixthWriteOfTwoSavesMadeAtOnceWaitsItsSecond() {
+        // Harm: saves made side by side each starting a burst of five writes of its own, which
+        // draws GitHub's limit on writes in a burst.
+        final List<ItemView> items = new ArrayList<>();
+        for (int n = 1; n <= 6; n++) {
+            items.add(item("PL" + n, "example-project", n, true, "", state("Backlog")));
+        }
+        final GitHub github = new GitHub().holding(items.toArray(ItemView[]::new));
+        final FieldsBoardWriter writer = github.writer();
+        final Snapshot board = snapshot(items.toArray(ItemView[]::new));
+
+        writer.save(
+                board,
+                SHOWN,
+                new Writes(
+                        ordered("PL1", "Finished", "PL2", "Finished", "PL3", "Finished"),
+                        Map.of()));
+        writer.save(
+                board,
+                SHOWN,
+                new Writes(
+                        ordered("PL4", "Finished", "PL5", "Finished", "PL6", "Finished"),
+                        Map.of()));
+
+        assertThat(github.updates).as("the issues closed by both saves").hasSize(6);
+        assertThat(github.waits)
+                .as("the waits: the sixth write of both saves together waits its spacing")
+                .containsExactly(WritePace.SPACING);
+    }
+
+    @Test
+    void aNewIssueMadeRightAfterAMoveTakesItsTurnsInTheSameBurst() {
+        // Harm: an issue made beside a move starting a burst of writes of its own, which draws
+        // GitHub's limit on writes in a burst.
+        final List<ItemView> items = new ArrayList<>();
+        final Map<String, String> moves = new LinkedHashMap<>();
+        for (int n = 1; n <= WritePace.BURST; n++) {
+            items.add(item("PL" + n, "example-project", n, true, "", state("Backlog")));
+            moves.put("PL" + n, "Finished");
+        }
+        final GitHub github = new GitHub().holding(items.toArray(ItemView[]::new));
+        final FieldsBoardWriter writer = github.writer();
+        final Snapshot board = snapshot(items.toArray(ItemView[]::new));
+
+        writer.save(board, SHOWN, new Writes(moves, Map.of()));
+        writer.createIssue(board, SHOWN, newIssue("example-lib", "A new thing"));
+
+        assertThat(github.updates).as("the issues the move closed").hasSize(WritePace.BURST);
+        assertThat(github.waits)
+                .as(
+                        "the new issue's writes, each a spacing after the last once the move spent the burst")
+                .isNotEmpty()
+                .containsOnly(WritePace.SPACING);
+    }
+
+    @Test
+    void aWaitGitHubAskedOfOneSaveHoldsTheNextSave() {
+        // Harm: another save writing at once while GitHub asked the token to wait, so it is
+        // refused as rate limited too and the window is told the move was not saved.
+        final ItemView first = item("PL1", "example-project", 1, true, "", state("Backlog"));
+        final ItemView second = item("PL2", "example-project", 2, true, "", state("Backlog"));
+        final GitHub github = new GitHub().holding(first, second);
+        final FieldsBoardWriter writer = github.writer();
+        final Snapshot board = snapshot(first, second);
+        final Duration asked = Duration.ofSeconds(3);
+        github.updateFailure = GitHubExceptions.rateLimited(403, "secondary rate limit", asked);
+
+        assertThatThrownBy(
+                        () ->
+                                writer.save(
+                                        board,
+                                        SHOWN,
+                                        new Writes(ordered("PL1", "Finished"), Map.of())))
+                .as("a save GitHub refuses as rate limited at every try")
+                .isInstanceOf(StoreException.class);
+        final List<Duration> before = List.copyOf(github.waits);
+        github.updateFailure = null;
+        writer.save(board, SHOWN, new Writes(ordered("PL2", "Finished"), Map.of()));
+
+        assertThat(before)
+                .as("the first save's waits between its tries")
+                .containsExactly(asked, asked);
+        assertThat(github.waits.subList(before.size(), github.waits.size()))
+                .as("the next save's first write waits out the wait GitHub asked for")
+                .containsExactly(asked);
+        assertThat(github.updates).as("the second save's close").hasSize(1);
     }
 
     @Test

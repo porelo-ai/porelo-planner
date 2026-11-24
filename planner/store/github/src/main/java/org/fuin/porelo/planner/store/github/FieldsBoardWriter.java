@@ -82,6 +82,9 @@ public final class FieldsBoardWriter implements BoardWriter {
     /** The factors a write's tries and their waits follow. */
     private final LimitFactors limits;
 
+    /** The pace every save of the project shares with the person's token, made by the first. */
+    private @Nullable WritePace shared;
+
     /**
      * Makes the writer.
      *
@@ -213,6 +216,20 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /**
+     * Answers the pace every save of the project takes its turns in, made anew only for another
+     * token, so saves made at once never each start a burst of their own.
+     */
+    private synchronized WritePace paceOf(final String token) {
+        final WritePace held = shared;
+        if (held != null && held.serves(token)) {
+            return held;
+        }
+        final WritePace made = new WritePace(clock, sleeper, token, limits);
+        shared = made;
+        return made;
+    }
+
+    /**
      * Makes the issue in its repository, adds it to the project, makes it its story's last
      * sub-issue and sets its fields; a call GitHub took without answering is never sent again
      * blindly, and an issue an earlier try of the same creation left half made is taken, not made
@@ -234,7 +251,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         fresh(current, against);
         final String storyId = issue.story();
         final @Nullable ItemView story = storyId == null ? null : storyItem(current, storyId);
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
+        final NewItems adding = new NewItems(github, refusals, clock, current, this::paceOf);
         // Without a priority of its own an issue takes the Medium a new issue has in Git.
         final NewItems.Planned planned =
                 adding.issue(issue, Objects.requireNonNullElse(issue.priority(), "Medium"));
@@ -282,7 +299,7 @@ public final class FieldsBoardWriter implements BoardWriter {
                         "", "the idea names " + issue.repository() + " twice");
             }
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
+        final NewItems adding = new NewItems(github, refusals, clock, current, this::paceOf);
         final NewItems.Planned story = adding.story(idea);
         final List<NewItems.Planned> issues = new ArrayList<>();
         idea.issues().forEach(issue -> issues.add(adding.issue(issue, idea.priority())));
@@ -382,7 +399,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         if (story) {
             checkBlocksNoIssue(current, issue, offered.nodeId());
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
+        final NewItems adding = new NewItems(github, refusals, clock, current, this::paceOf);
         adding.list(
                 token,
                 adding.existing(
@@ -672,7 +689,7 @@ public final class FieldsBoardWriter implements BoardWriter {
             plan.read(id, item);
             existing.add(new NewItems.Over(id, item));
         }
-        final NewItems adding = new NewItems(github, refusals, clock, sleeper, current, limits);
+        final NewItems adding = new NewItems(github, refusals, clock, current, this::paceOf);
         final NewItems.Planned planned =
                 adding.story(
                         new NewIdea(
@@ -1108,7 +1125,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** What GitHub held of each item right before the write, by the issue's node id. */
         private final Map<String, GitHubGraphQl.BoardIssue> reads = new LinkedHashMap<>();
 
-        /** The pace of this save's writes, made when it writes. */
+        /** The pace of the project's writes this save takes its turns in, given when it writes. */
         private WritePace pace =
                 new WritePace(InstantSource.system(), Thread::sleep, "", LimitFactors.DEFAULT);
 
@@ -1465,7 +1482,7 @@ public final class FieldsBoardWriter implements BoardWriter {
          * to a field that still stands there; and a reason is kept only with an item closed.
          */
         void write(final String token) {
-            pace = new WritePace(clock, sleeper, token, limits);
+            pace = paceOf(token);
             final String own = current.config().own();
             if (current.config().projectId().isBlank()) {
                 throw new StoreException.Unreadable(own, "the GitHub project's id was not read");
