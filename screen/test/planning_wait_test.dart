@@ -108,10 +108,8 @@ void main() {
         reason: 'every issue in the board row is readable while details wait',
       );
     }
-    final stateMenu = tester.widget<PopupMenuButton<(String, String, bool, String)>>(
-      find.byKey(Key('planning-move $moved')),
-    );
-    expect(stateMenu.enabled, isFalse, reason: 'a board row alone cannot authorize a detail-page issue move');
+    final stateMenu = tester.widget<InkWell>(find.byKey(Key('planning-move $moved')));
+    expect(stateMenu.onTap, isNull, reason: 'a board row alone cannot authorize a detail-page issue move');
 
     backend.moveHeld = saved;
     final saving = board.moveIssue(moved, 'Review');

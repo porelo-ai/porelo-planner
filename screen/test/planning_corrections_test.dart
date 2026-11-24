@@ -152,12 +152,22 @@ Map<String, dynamic> _parked() => _issue(
   ],
 );
 
-Future<void> _pick(WidgetTester tester, String id, String choice) async {
+/// Opens [id]'s correction menu and picks [choice], from the group of [kind] for a move's.
+Future<void> _pick(WidgetTester tester, String id, String choice, {String? kind}) async {
   await tester.tap(find.byKey(Key('planning-correct $id')));
   await settle(tester);
+  if (kind != null) {
+    await tester.tap(find.widgetWithText(SubmenuButton, kind));
+    await settle(tester);
+  }
   await tester.tap(find.byKey(Key('planning-correct-to $id $choice')).last);
   await _answered(tester);
 }
+
+/// The labels of the groups the open menu shows, in order.
+List<String?> _groups(WidgetTester tester) => [
+  for (final group in tester.widgetList<SubmenuButton>(find.byType(SubmenuButton))) (group.child! as Text).data,
+];
 
 void main() {
   // Harm: an issue's state set without the person seeing what changes, or saved over a version the person never saw.
@@ -169,7 +179,7 @@ void main() {
     await tester.tap(find.byKey(const Key('planning-no-story-expand Parked')));
     await settle(tester);
 
-    await _pick(tester, 'I9', 'Ready');
+    await _pick(tester, 'I9', 'Ready', kind: 'Waiting');
 
     expect(backend.previewCalls, hasLength(1), reason: 'the correction is previewed');
     expect(backend.moveCalls, isEmpty, reason: 'nothing is saved before the person confirms');
@@ -188,6 +198,64 @@ void main() {
     expect(saved['seen'], asked.preview.targets, reason: 'the save sends back the versions its preview showed');
     expect(saved['seen'], contains('I9'));
     expect(saved['digest'], asked.preview.digest, reason: 'the save is bound to the preview the person saw');
+  });
+
+  // Harm: a move correction offers its states in one long list, or one the workflow lacks, or picks another state.
+  testWidgets('a Move correction groups its states by their kind and moves into the state picked', (tester) async {
+    final backend = MockPlanningSource();
+    await _show(
+      tester,
+      backend,
+      const [],
+      issues: [
+        _issue(
+          'I9',
+          'Parked',
+          warnings: [
+            _warning(
+              'StateOutsideWorkflow',
+              _outside,
+              holds: true,
+              correction: _move(['Finished', 'Nowhere', 'Building', 'Ready']),
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.tap(find.byKey(const Key('planning-no-story-expand Parked')));
+    await settle(tester);
+
+    await tester.tap(find.byKey(const Key('planning-correct I9')));
+    await settle(tester);
+    expect(_groups(tester), ['Waiting', 'Working', 'Closed'], reason: 'one group per kind; Nowhere is in none');
+    expect(find.byKey(const Key('planning-correct-to I9 Ready')), findsNothing, reason: 'the states wait in groups');
+
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Working'));
+    await settle(tester);
+    expect(find.byKey(const Key('planning-correct-to I9 Building')), findsOneWidget, reason: 'Working holds Building');
+    expect(find.byKey(const Key('planning-correct-to I9 Ready')), findsNothing, reason: 'and not a waiting state');
+    expect(find.byKey(const Key('planning-correct-to I9 Nowhere')), findsNothing, reason: 'the workflow lacks it');
+
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Waiting'));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('planning-correct-to I9 Ready')));
+    await _answered(tester);
+
+    expect(backend.previewCalls.single['moves'], [
+      {'issue': 'I9', 'to': 'Ready'},
+    ], reason: 'the state picked is previewed for that issue');
+  });
+
+  // Harm: a priority correction's few choices hidden behind a group.
+  testWidgets('a Priority correction lists its choices without a group', (tester) async {
+    final backend = MockPlanningSource();
+    await _show(tester, backend, [_unprioritized()]);
+
+    await tester.tap(find.byKey(const Key('planning-correct S1')));
+    await settle(tester);
+
+    expect(_groups(tester), isEmpty, reason: 'no group');
+    expect(find.byKey(const Key('planning-correct-to S1 High')), findsOneWidget, reason: 'the choices are listed');
   });
 
   // Harm: a story's priority set without the person seeing what changes, or saved over a version never seen.
@@ -300,7 +368,7 @@ void main() {
     final (boards, _) = await _show(tester, backend, const [], issues: [_parked()]);
     await tester.tap(find.byKey(const Key('planning-no-story-expand Parked')));
     await settle(tester);
-    await _pick(tester, 'I9', 'Ready');
+    await _pick(tester, 'I9', 'Ready', kind: 'Waiting');
     backend.moveFailure = mockRefusal('MoveNotAllowed', {
       'item': 'I9',
       'from': 'Parked',

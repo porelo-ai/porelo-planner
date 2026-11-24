@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import 'actions.dart';
+import 'planning_menu.dart';
 import 'style.dart';
 
 /// What the board offers beside a warning's mark to set the warning right: the correction a warning names, as a menu
@@ -83,38 +84,55 @@ class _CorrectionMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final unavailable = board.correctionUnavailable;
     final shown = planningShown(id, multiline: false);
-    return PopupMenuButton<(String, String?, int)>(
-      key: Key('planning-correct $id'),
-      tooltip: unavailable == null ? 'Set $shown right' : 'Set $shown right: $unavailable',
-      enabled: unavailable == null,
-      iconSize: PlanningStyle.rowIcon,
-      icon: const Icon(Icons.build_outlined),
-      itemBuilder: (_) => [
-        for (final choice in correction.choices)
-          // A state the board's workflow lacks is refused by the move, so it is not offered.
-          if (correction.kind != PlanCorrection.move || board.state(choice) != null)
-            PopupMenuItem(
-              key: Key('planning-correct-to $id $choice'),
-              value: (choice, board.snapshot?.revision, board.generation),
-              child: Text(
-                planningShown(
-                  correction.kind == PlanCorrection.move ? 'Move to $choice' : 'Priority $choice',
-                  multiline: false,
-                ),
-              ),
-            ),
-      ],
-      onSelected: (picked) {
-        final (choice, revision, generation) = picked;
-        if (board.disposed || board.generation != generation) return;
-        unawaited(
-          story
-              ? board.correctStory(id, warning.kind, choice, revision: revision)
-              : board.correctIssue(id, warning.kind, choice, shown: state, revision: revision),
-        );
-      },
+    return PlanningMenu(
+      entries: (_) => _entries(),
+      builder: (_, toggle) => IconButton(
+        key: Key('planning-correct $id'),
+        tooltip: unavailable == null ? 'Set $shown right' : 'Set $shown right: $unavailable',
+        iconSize: PlanningStyle.rowIcon,
+        icon: const Icon(Icons.build_outlined),
+        onPressed: unavailable == null ? toggle : null,
+      ),
     );
   }
+
+  /// The choices, against the board as it stands when the menu opens; a move's in a group for each kind of state.
+  List<Widget> _entries() {
+    final revision = board.snapshot?.revision;
+    final generation = board.generation;
+    Widget entry(String choice, String words) => MenuItemButton(
+      key: Key('planning-correct-to $id $choice'),
+      onPressed: () => _choose(choice, revision, generation),
+      child: Text(planningShown(words, multiline: false)),
+    );
+    if (correction.kind != PlanCorrection.move) {
+      return [for (final choice in correction.choices) entry(choice, 'Priority $choice')];
+    }
+    final groups = <String, List<Widget>>{for (final label in _kinds.values) label: [], _otherKind: []};
+    // Taken from the workflow, so a state it lacks is not offered: the move would refuse it.
+    for (final target in board.states.where((target) => correction.choices.contains(target.name))) {
+      groups[_kinds[target.kind] ?? _otherKind]!.add(entry(target.name, 'Move to ${target.name}'));
+    }
+    return [
+      for (final MapEntry(key: label, value: entries) in groups.entries)
+        if (entries.isNotEmpty) SubmenuButton(menuChildren: entries, child: Text(label)),
+    ];
+  }
+
+  void _choose(String choice, String? revision, int generation) {
+    if (board.disposed || board.generation != generation) return;
+    unawaited(
+      story
+          ? board.correctStory(id, warning.kind, choice, revision: revision)
+          : board.correctIssue(id, warning.kind, choice, shown: state, revision: revision),
+    );
+  }
+
+  /// The group of a state of each kind the workflow names, in this order.
+  static const _kinds = {'WAITING': 'Waiting', 'WORKING': 'Working', 'CLOSED': 'Closed'};
+
+  /// The group of a state of a kind the window does not know, which the move still takes.
+  static const _otherKind = 'Other';
 }
 
 /// What the last whole board found wrong in the project's repositories themselves, in the planning header, each with

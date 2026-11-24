@@ -171,12 +171,7 @@ void main() {
     await _showDetail(tester, board);
     await _search(tester, 'PL2');
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(DataTable),
-        matching: find.byType(PopupMenuButton<(String, String, bool, String)>),
-      ),
-    );
+    await tester.tap(find.descendant(of: find.byType(DataTable), matching: find.byKey(const Key('planning-move PL2'))));
     await settle(tester);
     await tester.tap(find.text('Finished').last);
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));

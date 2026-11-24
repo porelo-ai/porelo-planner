@@ -85,6 +85,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('planning-menu S2')));
     await settle(tester);
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Priority'));
+    await settle(tester);
     await tester.tap(find.byKey(const ValueKey<String>('planning-priority S2 Highest')));
     await settle(tester);
 
@@ -99,6 +101,45 @@ void main() {
     expect(board.pendingPriorities, isEmpty, reason: 'the board carries the priority now');
     expect(find.byKey(const Key('planning-priority-pending S2')), findsNothing, reason: 'nothing is pending');
     expect(_ids(board.cards('Backlog')), ['S2', 'S1'], reason: 'the board sorts the story by its new priority');
+  });
+
+  // Harm: the card's menu runs past the window with a line for each priority, or its own priority can be chosen.
+  testWidgets('a card menu holds the five priorities in one Priority group beside starting and stopping work', (
+    tester,
+  ) async {
+    final source = _Source(_oneColumn());
+    await _show(tester, source);
+
+    await tester.tap(find.byKey(const Key('planning-menu S2')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey<String>('planning-start S2')), findsOneWidget, reason: 'Start work… stands alone');
+    expect(find.byKey(const ValueKey<String>('planning-stop S2')), findsOneWidget, reason: 'Stop work stands alone');
+    expect(find.widgetWithText(SubmenuButton, 'Priority'), findsOneWidget, reason: 'one entry holds the priorities');
+    expect(
+      find.byKey(const ValueKey<String>('planning-priority S2 Highest')),
+      findsNothing,
+      reason: 'the priorities wait in their group',
+    );
+
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Priority'));
+    await settle(tester);
+    for (final priority in planningPriorities) {
+      expect(
+        find.byKey(ValueKey<String>('planning-priority S2 $priority')),
+        findsOneWidget,
+        reason: 'the group lists $priority',
+      );
+    }
+    expect(
+      tester.widget<MenuItemButton>(find.byKey(const ValueKey<String>('planning-priority S2 Medium'))).enabled,
+      isFalse,
+      reason: 'the story\'s own priority cannot be chosen',
+    );
+    expect(find.text('Unavailable: it is the story\'s priority'), findsOneWidget, reason: 'its reason is said');
+
+    await tester.tap(find.byKey(const ValueKey<String>('planning-priority S2 Medium')), warnIfMissed: false);
+    await settle(tester);
+    expect(source.priorities, isEmpty, reason: 'nothing is sent for the priority it has');
   });
 
   // Harm: a refused priority left pending shows a priority the store refused as if it were coming.

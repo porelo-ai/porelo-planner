@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../hooks.dart';
 import '../models.dart';
 import '../planning_board.dart';
+import 'planning_menu.dart';
 import 'style.dart';
 
 /// One planning action: what it is called, what it does, and why it cannot run now.
@@ -19,6 +20,7 @@ class PlanningAction {
     this.unavailable,
     this.danger = false,
     this.wayOn,
+    this.group,
   });
 
   /// Stable identifier.
@@ -38,6 +40,9 @@ class PlanningAction {
 
   /// Where the person goes to settle what holds it, offered only while it cannot run; never runs the action.
   final PlanningWayOn? wayOn;
+
+  /// The group a menu lists it in, as one entry that opens the group's actions beside it; null for an entry of its own.
+  final String? group;
 
   /// Whether it can be run now.
   bool get available => unavailable == null;
@@ -99,6 +104,7 @@ PlanningAction _movePlanningIssueAction(PlanningBoard board, PlanIssue issue, St
 PlanningAction setPriorityAction(PlanningBoard board, PlanStory story, String priority) => PlanningAction(
   id: 'planning-priority ${story.id} $priority',
   label: 'Priority $priority',
+  group: 'Priority',
   unavailable:
       board.priorityUnavailable(story.id) ??
       ((board.pendingPriorities[story.id] ?? story.priority) == priority ? 'it is the story\'s priority' : null),
@@ -172,7 +178,8 @@ PlanningAction planningWebAction(
   );
 }
 
-/// The actions one story offers, as one menu; what cannot run stays in it, grayed, with its reason.
+/// The actions one story offers, as one menu; what cannot run stays in it, grayed, with its reason. Actions of one
+/// group are one entry, where the group's first action stands, that opens them beside it.
 class PlanningActionMenu extends StatelessWidget {
   /// Takes what to offer and what to say it is for.
   const PlanningActionMenu({required this.actions, required this.tooltip, this.dense = false, this.current, super.key});
@@ -194,53 +201,75 @@ class PlanningActionMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (actions.isEmpty) return const SizedBox.shrink();
-    return PopupMenuButton<String>(
-      tooltip: tooltip,
-      icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
-      padding: dense ? EdgeInsets.zero : const EdgeInsets.all(8),
-      style: dense
-          ? IconButton.styleFrom(
-              minimumSize: const Size.square(PlanningStyle.denseButton),
-              fixedSize: const Size.square(PlanningStyle.denseButton),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            )
-          : null,
-      onSelected: (id) {
-        for (final action in current?.call() ?? actions) {
-          if (action.id == id && action.available) action.run();
-          if ('${action.id}$_wayOn' == id && !action.available) action.wayOn?.run();
-        }
-      },
-      itemBuilder: (context) => <PopupMenuEntry<String>>[
-        for (final action in current?.call() ?? actions) ...[
-          PopupMenuItem<String>(
-            key: ValueKey<String>(action.id),
-            value: action.id,
-            enabled: action.available,
-            child: ListTile(
-              dense: true,
-              enabled: action.available,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                action.label,
-                style: action.danger && action.available ? TextStyle(color: Theme.of(context).colorScheme.error) : null,
-              ),
-              subtitle: action.available ? null : Text('Unavailable: ${action.unavailable}'),
-            ),
-          ),
-          if (action.wayOn case final wayOn? when !action.available)
-            PopupMenuItem<String>(
-              key: ValueKey<String>('${action.id}$_wayOn'),
-              value: '${action.id}$_wayOn',
-              child: ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.only(left: Space.normal),
-                leading: const Icon(Icons.arrow_forward, size: PlanningStyle.rowIcon),
-                title: Text(wayOn.label),
-              ),
-            ),
-        ],
-      ],
+    return PlanningMenu(
+      // Each entry runs the action this menu holds when it is chosen, not the one it held when it opened.
+      live: true,
+      entries: _entries,
+      builder: (_, toggle) => IconButton(
+        tooltip: tooltip,
+        icon: const Icon(Icons.more_vert, size: PlanningStyle.rowIcon),
+        padding: dense ? EdgeInsets.zero : const EdgeInsets.all(8),
+        style: dense
+            ? IconButton.styleFrom(
+                minimumSize: const Size.square(PlanningStyle.denseButton),
+                fixedSize: const Size.square(PlanningStyle.denseButton),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              )
+            : null,
+        onPressed: toggle,
+      ),
     );
   }
+
+  /// Runs the entry [id] names as the actions stand when it is chosen.
+  void _choose(String id) {
+    for (final action in current?.call() ?? actions) {
+      if (action.id == id && action.available) action.run();
+      if ('${action.id}$_wayOn' == id && !action.available) action.wayOn?.run();
+    }
+  }
+
+  List<Widget> _entries(BuildContext context) {
+    final shown = current?.call() ?? actions;
+    final grouped = <String, List<Widget>>{};
+    for (final action in shown) {
+      if (action.group case final group?) (grouped[group] ??= []).addAll(_items(context, action));
+    }
+    final entries = <Widget>[];
+    for (final action in shown) {
+      final group = action.group;
+      if (group == null) {
+        entries.addAll(_items(context, action));
+      } else if (grouped.remove(group) case final members?) {
+        // Taken out at the group's first action, so the group is listed once, where that action stands.
+        entries.add(SubmenuButton(menuChildren: members, child: Text(group)));
+      }
+    }
+    return entries;
+  }
+
+  List<Widget> _items(BuildContext context, PlanningAction action) => [
+    MenuItemButton(
+      key: ValueKey<String>(action.id),
+      onPressed: action.available ? () => _choose(action.id) : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            action.label,
+            style: action.danger && action.available ? TextStyle(color: Theme.of(context).colorScheme.error) : null,
+          ),
+          if (!action.available) Text('Unavailable: ${action.unavailable}'),
+        ],
+      ),
+    ),
+    if (action.wayOn case final wayOn? when !action.available)
+      MenuItemButton(
+        key: ValueKey<String>('${action.id}$_wayOn'),
+        leadingIcon: const Icon(Icons.arrow_forward, size: PlanningStyle.rowIcon),
+        onPressed: () => _choose('${action.id}$_wayOn'),
+        child: Text(wayOn.label),
+      ),
+  ];
 }

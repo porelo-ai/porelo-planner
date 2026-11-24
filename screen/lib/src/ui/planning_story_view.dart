@@ -15,6 +15,7 @@ import 'actions.dart';
 import 'open_work_figures.dart';
 import 'planning_correction.dart';
 import 'planning_detail_widgets.dart';
+import 'planning_menu.dart';
 import 'planning_text.dart';
 import 'planning_move_warning.dart';
 import 'story_work_attention.dart';
@@ -652,36 +653,22 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      PopupMenuButton<(String, String, bool, String)>(
-        key: Key('planning-move ${issue.id}'),
-        tooltip: _moveUnavailable(issue) ?? 'Change the state of ${issue.id}',
-        enabled: _moveUnavailable(issue) == null,
-        // Each item carries the state and the board's revision shown when the menu opened; a rebuild while it stands
-        // open changes no item.
-        onSelected: (choice) => choice.$3
-            ? onStartIssue?.call(issue.id, choice.$2)
-            : unawaited(detail.board.moveIssue(issue.id, choice.$2, shown: choice.$1, revision: choice.$4)),
-        itemBuilder: (_) => [
-          for (final state in detail.moveStatesOf(issue))
-            PopupMenuItem(
-              value: (issue.state, state.name, false, detail.board.snapshot?.revision ?? ''),
-              key: Key('planning-move-to ${issue.id} ${state.name}'),
-              child: Text(state.name),
+      PlanningMenu(
+        entries: (_) => _issueStateEntries(issue),
+        builder: (_, toggle) => Tooltip(
+          message: _moveUnavailable(issue) ?? 'Change the state of ${issue.id}',
+          child: InkWell(
+            key: Key('planning-move ${issue.id}'),
+            onTap: _moveUnavailable(issue) == null ? toggle : null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // A long state name wraps inside its column's width.
+                Flexible(child: Text(planningValue(issue.state))),
+                const Icon(Icons.expand_more, size: PlanningStyle.rowIcon),
+              ],
             ),
-          for (final state in _startStatesOf(issue))
-            PopupMenuItem(
-              value: (issue.state, state.name, true, detail.board.snapshot?.revision ?? ''),
-              key: Key('planning-start-issue ${issue.id} ${state.name}'),
-              child: Text('Start ${state.name}…'),
-            ),
-        ],
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // A long state name wraps inside its column's width.
-            Flexible(child: Text(planningValue(issue.state))),
-            const Icon(Icons.expand_more, size: PlanningStyle.rowIcon),
-          ],
+          ),
         ),
       ),
       if (_moveUnavailable(issue) case final reason?) Text(reason),
@@ -694,4 +681,32 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
         Text(words, key: Key('planning-move-refused ${issue.id}')),
     ],
   );
+
+  /// The moves and starts [issue] is offered, in a group each, or one group's alone without it. Each entry carries the
+  /// state and the board's revision shown when the menu opened; a rebuild while it stands open changes no entry.
+  List<Widget> _issueStateEntries(PlanIssue issue) {
+    final shown = issue.state;
+    final revision = detail.board.snapshot?.revision ?? '';
+    final moves = <Widget>[
+      for (final state in detail.moveStatesOf(issue))
+        MenuItemButton(
+          key: Key('planning-move-to ${issue.id} ${state.name}'),
+          onPressed: () => unawaited(detail.board.moveIssue(issue.id, state.name, shown: shown, revision: revision)),
+          child: Text(state.name),
+        ),
+    ];
+    final starts = <Widget>[
+      for (final state in _startStatesOf(issue))
+        MenuItemButton(
+          key: Key('planning-start-issue ${issue.id} ${state.name}'),
+          onPressed: () => onStartIssue?.call(issue.id, state.name),
+          child: Text('Start ${state.name}…'),
+        ),
+    ];
+    if (moves.isEmpty || starts.isEmpty) return [...moves, ...starts];
+    return [
+      SubmenuButton(menuChildren: moves, child: const Text('Move to')),
+      SubmenuButton(menuChildren: starts, child: const Text('Start')),
+    ];
+  }
 }

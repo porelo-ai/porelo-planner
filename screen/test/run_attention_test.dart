@@ -241,11 +241,11 @@ void main() {
       await settle(tester);
       await tester.tap(find.byKey(const Key('planning-menu Held')));
       await settle(tester);
-      final start = tester.widget<PopupMenuItem<String>>(find.byKey(const ValueKey<String>('planning-start Held')));
+      final start = tester.widget<MenuItemButton>(find.byKey(const ValueKey<String>('planning-start Held')));
       expect(start.enabled, isFalse, reason: 'a held start stays disabled');
       final wayOn = find.byKey(const ValueKey<String>('planning-start Held way-on'));
       expect(wayOn, findsOneWidget, reason: 'the held start offers its way on');
-      expect(tester.widget<PopupMenuItem<String>>(wayOn).enabled, isTrue, reason: 'the way on can be tapped');
+      expect(tester.widget<MenuItemButton>(wayOn).enabled, isTrue, reason: 'the way on can be tapped');
       await tester.tap(wayOn);
       await settle(tester);
       expect(host.place.story, 'Held', reason: 'the way on opens the story page');
@@ -317,9 +317,10 @@ void main() {
         isNull,
         reason: 'the board took the settled run before the way on is tapped',
       );
-      await tester.tap(find.byKey(const ValueKey<String>('planning-start Held way-on')), warnIfMissed: false);
-      await settle(tester);
-      expect(host.history, isEmpty, reason: 'the way on is checked again when tapped and leads nowhere stale');
+      final wayOn = find.byKey(const ValueKey<String>('planning-start Held way-on'));
+      // The open menu shows the board as it stands: the settled attention offers no way on to tap.
+      expect(wayOn, findsNothing, reason: 'the open menu no longer offers the stale way on');
+      expect(host.history, isEmpty, reason: 'nothing led anywhere stale');
     });
 
     // Harm: the way on is offered where no attention holds the start.

@@ -154,11 +154,54 @@ void main() {
 
     await tester.tap(find.byKey(const Key('planning-move PL1')));
     await settle(tester);
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Start'));
+    await settle(tester);
     await tester.tap(find.byKey(const Key('planning-start-issue PL1 Implementing')));
     await settle(tester);
     expect(started, [('PL1', 'Implementing')], reason: 'the start opens for that issue alone');
     expect(board.pendingIssues, isEmpty, reason: 'a start stages no move');
     expect(source.work.calls, isEmpty, reason: 'nothing starts before the dialog confirms');
+  });
+
+  // Harm: a move offered beside starts runs as a start, or an issue with moves alone hides them behind a group.
+  testWidgets('an issue offered moves and starts lists each in its own group, and one offered moves alone lists them', (
+    tester,
+  ) async {
+    final (source, board) = await _open(tester, _board());
+    final started = <(String, String)>[];
+    await _show(tester, board, onStartIssue: (issue, to) => started.add((issue, to)));
+
+    await tester.tap(find.byKey(const Key('planning-move PL2')));
+    await settle(tester);
+    expect(find.byType(SubmenuButton), findsNothing, reason: 'a person\'s issue is offered moves alone, so no group');
+    expect(find.byKey(const Key('planning-move-to PL2 Review')), findsOneWidget, reason: 'its moves are listed');
+    await tester.tapAt(Offset.zero);
+    await settle(tester);
+
+    await tester.tap(find.byKey(const Key('planning-move PL1')));
+    await settle(tester);
+    expect(
+      [for (final group in tester.widgetList<SubmenuButton>(find.byType(SubmenuButton))) (group.child! as Text).data],
+      ['Move to', 'Start'],
+      reason: 'an agent\'s issue is offered both, each in its group',
+    );
+    expect(
+      find.byKey(const Key('planning-move-to PL1 Backlog')),
+      findsNothing,
+      reason: 'the moves wait in their group',
+    );
+    await tester.tap(find.widgetWithText(SubmenuButton, 'Move to'));
+    await settle(tester);
+    expect(
+      find.byKey(const Key('planning-start-issue PL1 Implementing')),
+      findsNothing,
+      reason: 'the Move to group holds no start',
+    );
+    await tester.tap(find.byKey(const Key('planning-move-to PL1 Backlog')));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await settle(tester);
+    expect(_stateOf(source, 'PL1'), 'Backlog', reason: 'the move is saved for that issue');
+    expect(started, isEmpty, reason: 'a move opens no start');
   });
 
   // Harm: work begun outside this planner kept off the board, or a hand move offered beside a run of its story.
