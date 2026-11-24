@@ -328,11 +328,59 @@ public final class WorkRecord implements AutoCloseable {
         }
     }
 
-    private final class Entry implements WorkRun.Record, WorkRun.Session {
+    /**
+     * A save's mark on a record, between the step that marks and the step that records its outcome;
+     * made only by its own record and ended at most once.
+     */
+    public static final class Mark {
+        private final Object owner;
+        private final String id;
+
+        /** Whether the mark still stands; read and changed only under its record's mutex. */
+        private boolean open = true;
+
+        private Mark(final Object owner, final String id) {
+            this.owner = owner;
+            this.id = id;
+        }
+
+        /**
+         * Answers the id the save gave its mark.
+         *
+         * @return the id
+         */
+        public String id() {
+            return id;
+        }
+    }
+
+    /**
+     * One project's record. Two locks guard it, always taken in this order: {@code writers} keeps a
+     * caller of {@link #locked} alone across its whole work, and {@code mutex} is held only while
+     * the record in memory changes and its file is written and synced. The short steps ({@link
+     * #mark}, {@link #outcome}, {@link #abandon}) take the mutex alone, so they are answered while
+     * a caller of {@code locked} works.
+     */
+    final class Entry implements WorkRun.Record, WorkRun.Session {
         private final String project;
         private final String repository;
         private final @Nullable String branch;
+        private final ReentrantLock writers = new ReentrantLock();
         private final ReentrantLock mutex = new ReentrantLock();
+
+        /** Signalled under the mutex whenever a mark ends, for a close waiting on the marks. */
+        private final java.util.concurrent.locks.Condition marksEnded = mutex.newCondition();
+
+        /** The marks of the saves in flight, by their ids; guarded by the mutex. */
+        private final Map<String, Mark> marks = new java.util.HashMap<>();
+
+        /**
+         * The generation the caller holding {@code writers} last saw written, set when it enters
+         * and on each of its writes; a write after a step changed the record is refused. Guarded by
+         * {@code writers}.
+         */
+        private WorkRun.@Nullable Snapshot expected;
+
         private @Nullable FileChannel lockChannel;
         private @Nullable FileLock fileLock;
         private @Nullable Path directory;
@@ -363,7 +411,10 @@ public final class WorkRecord implements AutoCloseable {
             this.branch = branch;
         }
 
-        /** Holds the same writer lock across reading, saving and finalizing a generation. */
+        /**
+         * Keeps the caller alone among the callers of this method across its whole work; the record
+         * itself is locked only while its {@link #write} changes it.
+         */
         @Override
         public <T extends @Nullable Object> T locked(final WorkRun.Action<T> action) {
             final long started = System.nanoTime();
@@ -380,7 +431,7 @@ public final class WorkRecord implements AutoCloseable {
                 // A call within a save takes the lock it holds; any other is refused once closing
                 // begins, and a caller already waiting looks again every step, so none waits for a
                 // save that closing gave up on.
-                final boolean within = mutex.isHeldByCurrentThread();
+                final boolean within = writers.isHeldByCurrentThread();
                 if (!enter(within)) {
                     toldWait(caller, started, false);
                     throw closedRefusal();
@@ -393,13 +444,19 @@ public final class WorkRecord implements AutoCloseable {
                     taken = true;
                     toldWait(caller, started, true);
                     CallTimes.waited("the work record", System.nanoTime() - started);
+                    if (!within) {
+                        expected = stored;
+                    }
                     return action.apply(this);
                 } finally {
                     if (!taken) {
                         // A wait that ends refused is the one a person most needs explained.
                         toldWait(caller, started, false);
                     }
-                    mutex.unlock();
+                    if (!within) {
+                        expected = null;
+                    }
+                    writers.unlock();
                 }
             } finally {
                 told(times);
@@ -409,12 +466,12 @@ public final class WorkRecord implements AutoCloseable {
         /** Takes the writer lock, or answers false once the record is closing. */
         private boolean enter(final boolean within) {
             if (within) {
-                mutex.lock();
+                writers.lock();
                 return true;
             }
             while (!closing && !closed) {
                 try {
-                    if (mutex.tryLock(WAIT_STEP, TimeUnit.NANOSECONDS)) {
+                    if (writers.tryLock(WAIT_STEP, TimeUnit.NANOSECONDS)) {
                         return true;
                     }
                 } catch (final InterruptedException interrupted) {
@@ -432,32 +489,154 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         /**
-         * Refuses new saves, waits at most {@code bound} for the save in flight to end and be
-         * recorded, and only then lets go of the file guard.
+         * Refuses new saves, waits at most {@code bound} in all for the caller of {@link #locked}
+         * and every mark in flight to end and be recorded, and only then lets go of the file guard;
+         * the locks are taken in their one order, {@code writers} then {@code mutex}.
          */
         private void drain(final Duration bound) {
             closing = true;
-            final boolean taken;
+            final long deadline = System.nanoTime() + bound.toNanos();
             try {
-                taken = mutex.tryLock(bound.toNanos(), TimeUnit.NANOSECONDS);
+                if (!writers.tryLock(bound.toNanos(), TimeUnit.NANOSECONDS)) {
+                    throw notEnded(bound);
+                }
+                try {
+                    if (!mutex.tryLock(deadline - System.nanoTime(), TimeUnit.NANOSECONDS)) {
+                        throw notEnded(bound);
+                    }
+                    try {
+                        while (!marks.isEmpty()) {
+                            final long left = deadline - System.nanoTime();
+                            if (left <= 0) {
+                                throw notEnded(bound);
+                            }
+                            marksEnded.awaitNanos(left);
+                        }
+                        release();
+                    } finally {
+                        mutex.unlock();
+                    }
+                } finally {
+                    writers.unlock();
+                }
             } catch (final InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw unavailable(project, "The wait for a save of " + project + " was stopped.");
             }
-            if (!taken) {
-                throw unavailable(
-                        project,
-                        "A save of "
-                                + project
-                                + " did not end within "
-                                + Seconds.of(bound)
-                                + " s; the project was not given anew.");
+        }
+
+        private WorkRefusal notEnded(final Duration bound) {
+            return unavailable(
+                    project,
+                    "A save of "
+                            + project
+                            + " did not end within "
+                            + Seconds.of(bound)
+                            + " s; the project was not given anew.");
+        }
+
+        /**
+         * Marks a save in flight: applies {@code change} to the record as it now stands, under the
+         * mutex alone, and writes and syncs the result as the next generation.
+         *
+         * @param id the save's own id, not blank and not the id of another mark in flight
+         * @param change what the mark changes; it reads only the record it is given, touches only
+         *     its own run or result, and refuses with {@code RunChanged} when that run changed
+         *     since the save judged it
+         * @return the mark, for its outcome
+         */
+        Mark mark(
+                final String id, final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            if (id.isBlank()) {
+                throw new IllegalArgumentException("A mark needs an id");
             }
+            mutex.lock();
             try {
-                release();
+                if (closing || closed) {
+                    throw closedRefusal();
+                }
+                if (marks.containsKey(id)) {
+                    throw new IllegalArgumentException("A mark with this id is in flight");
+                }
+                writeNext(change);
+                final Mark mark = new Mark(this, id);
+                marks.put(id, mark);
+                return mark;
             } finally {
                 mutex.unlock();
             }
+        }
+
+        /**
+         * Records a save's outcome: applies {@code change} to the record as it now stands, under
+         * the mutex alone, writes and syncs the result as the next generation, and ends the mark. A
+         * mark already ended changes nothing; a write that fails leaves the mark standing and the
+         * record as it was, for the repair at the next open.
+         *
+         * @param mark the save's mark
+         * @param change what the outcome changes, as for {@link #mark}
+         * @return the record as it now stands
+         */
+        WorkRun.Snapshot outcome(
+                final Mark mark, final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            ownMark(mark);
+            mutex.lock();
+            try {
+                if (!mark.open) {
+                    return stored;
+                }
+                writeNext(change);
+                end(mark);
+                return stored;
+            } finally {
+                mutex.unlock();
+            }
+        }
+
+        /**
+         * Ends a mark with nothing written, for a save refused before it reached the store; its
+         * pending mark stays in the record for the repair at the next open. A mark already ended
+         * changes nothing.
+         *
+         * @param mark the save's mark
+         */
+        void abandon(final Mark mark) {
+            ownMark(mark);
+            mutex.lock();
+            try {
+                if (mark.open) {
+                    end(mark);
+                }
+            } finally {
+                mutex.unlock();
+            }
+        }
+
+        private void ownMark(final Mark mark) {
+            if (mark.owner != this) {
+                throw new IllegalArgumentException("The mark is another record's");
+            }
+        }
+
+        /** Ends an open mark; under the mutex. */
+        private void end(final Mark mark) {
+            mark.open = false;
+            marks.remove(mark.id);
+            marksEnded.signalAll();
+        }
+
+        /** Writes the next generation of the record as it stands, changed; under the mutex. */
+        private void writeNext(final java.util.function.UnaryOperator<WorkRun.Snapshot> change) {
+            final WorkRun.Snapshot now = stored;
+            final WorkRun.Snapshot changed = change.apply(now);
+            final WorkRun.Snapshot next =
+                    new WorkRun.Snapshot(
+                            Math.addExact(now.generation(), 1),
+                            changed.runs(),
+                            changed.ideas(),
+                            changed.results());
+            preflight(next);
+            store(next);
         }
 
         /** Says where a call that wrote or reached GitHub spent its time, once it ended. */
@@ -857,10 +1036,60 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         /**
-         * Flushes a new private sibling, atomically replaces the record and syncs its directory.
+         * Flushes a new private sibling, atomically replaces the record and syncs its directory,
+         * under the mutex; refused with {@code RunChanged} when a step changed the record since
+         * this caller of {@link #locked} entered or last wrote.
          */
         @Override
         public void write(final WorkRun.Snapshot snapshot) {
+            final boolean writer = writers.isHeldByCurrentThread();
+            mutex.lock();
+            try {
+                final WorkRun.Snapshot seen = expected;
+                if (writer && seen != null && seen != stored) {
+                    throw changedSince(seen, snapshot);
+                }
+                store(snapshot);
+                if (writer) {
+                    expected = snapshot;
+                }
+            } finally {
+                mutex.unlock();
+            }
+        }
+
+        /** Names the story whose run a step changed under a writer, else one the writer changes. */
+        private WorkRefusal changedSince(
+                final WorkRun.Snapshot seen, final WorkRun.Snapshot written) {
+            final WorkRun.Snapshot now = stored;
+            final java.util.TreeSet<String> stories = new java.util.TreeSet<>();
+            stories.addAll(seen.runs().keySet());
+            stories.addAll(now.runs().keySet());
+            String story = null;
+            for (final String each : stories) {
+                if (!java.util.Objects.equals(seen.runs().get(each), now.runs().get(each))) {
+                    story = each;
+                    break;
+                }
+            }
+            if (story == null) {
+                story =
+                        written.runs().keySet().stream()
+                                .filter(
+                                        each ->
+                                                !java.util.Objects.equals(
+                                                        written.runs().get(each),
+                                                        now.runs().get(each)))
+                                .sorted()
+                                .findFirst()
+                                .orElse(project);
+            }
+            return WorkRefusal.runChanged(
+                    story, "The work record changed while this change was judged.");
+        }
+
+        /** Writes the record and holds it; under the mutex. */
+        private void store(final WorkRun.Snapshot snapshot) {
             final byte[] bytes = bytes(snapshot);
             if (memory) {
                 stored = snapshot;

@@ -1659,6 +1659,365 @@ class WorkRecordTest {
                 });
     }
 
+    @Test
+    void aStepIsAnsweredWhileAWriterWorksBetweenItsWrites() throws Exception {
+        // Prevents every record step waiting behind one caller's long work, such as a store save.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(environment, false);
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            final var working =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                session.write(new WorkRun.Snapshot(1, Map.of()));
+                                                entered.countDown();
+                                                await(release);
+                                                return true;
+                                            }));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                final long generation =
+                        executor.submit(
+                                        () -> {
+                                            final WorkRecord.Mark mark =
+                                                    record.mark("save-1", with(run("ST1", true)));
+                                            record.outcome(mark, with(run("ST1", false)));
+                                            return record.latest().generation();
+                                        })
+                                .get(2, TimeUnit.SECONDS);
+                assertThat(generation)
+                        .as("a mark and its outcome are written while the writer works")
+                        .isEqualTo(3);
+            } finally {
+                release.countDown();
+            }
+            assertThat(
+                            catchThrowableOfType(
+                                    java.util.concurrent.ExecutionException.class,
+                                    () -> working.get(5, TimeUnit.SECONDS)))
+                    .as("the writer ends; it wrote before the steps and not after")
+                    .isNull();
+        }
+    }
+
+    @Test
+    void aStepChangesTheRecordAsItNowStandsAndMovesItsGenerationOn() {
+        // Prevents an outcome overwriting a write made between its mark and itself, a judgment
+        // made from a generation that lags a pending run, and a step writing a generation that
+        // does not move on.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofMillis(200))) {
+            final WorkRecord.Entry record = entry(records);
+            final WorkRecord.Mark first = record.mark("save-1", with(run("ST1", true)));
+            final WorkRecord.Mark second = record.mark("save-2", with(run("ST2", true)));
+            final WorkRun.Snapshot after =
+                    record.outcome(
+                            first,
+                            snapshot ->
+                                    new WorkRun.Snapshot(
+                                            0,
+                                            withRun(snapshot, run("ST1", false)).runs(),
+                                            snapshot.ideas(),
+                                            snapshot.results()));
+            assertThat(after.runs())
+                    .as("the other save's mark, written after this one's, stands")
+                    .containsKeys("ST1", "ST2");
+            assertThat(after.runs().get("ST1").pending()).isFalse();
+            assertThat(after.generation())
+                    .as("each step writes the next generation, whatever its change says")
+                    .isEqualTo(3);
+            record.abandon(second);
+        }
+        try (WorkRecord again = new WorkRecord(environment, false)) {
+            assertThat(heldGeneration(again.open("project", "https://example.org/store.git", null)))
+                    .as("the next generation is the one on the disk")
+                    .isEqualTo(3);
+        }
+    }
+
+    @Test
+    void aWriterIsRefusedOnlyWhenAStepWroteSinceItEnteredOrWrote() throws Exception {
+        // Prevents a writer overwriting a step made while it worked, without refusing a writer
+        // that writes the same or a lower generation, as a rollback does.
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            record.locked(
+                    session -> {
+                        session.write(new WorkRun.Snapshot(5, Map.of()));
+                        session.write(new WorkRun.Snapshot(5, Map.of()));
+                        session.write(new WorkRun.Snapshot(4, Map.of()));
+                        return null;
+                    });
+            assertThat(record.latest().generation())
+                    .as("a writer's own same and lower generations are taken")
+                    .isEqualTo(4);
+            final var working =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                final WorkRun.Snapshot read = session.read();
+                                                entered.countDown();
+                                                await(release);
+                                                session.write(withRun(read, run("ST9", false)));
+                                                return null;
+                                            }));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            record.mark("save-1", with(run("ST1", true)));
+            release.countDown();
+            final Throwable refused =
+                    catchThrowableOfType(
+                                    java.util.concurrent.ExecutionException.class,
+                                    () -> working.get(5, TimeUnit.SECONDS))
+                            .getCause();
+            assertThat(refused).isInstanceOf(WorkRefusal.class);
+            assertThat(((WorkRefusal) refused).name()).isEqualTo("RunChanged");
+            assertThat(((WorkRefusal) refused).parameters())
+                    .as("the refusal names the run the step changed")
+                    .containsEntry("story", "ST1");
+            assertThat(record.latest().runs()).as("the step's mark stands").containsOnlyKeys("ST1");
+        }
+    }
+
+    @Test
+    void aCloseWaitsForOpenMarksAndRefusesNewOnes() throws Exception {
+        // Prevents a save between its steps being cut off by the close, its outcome lost.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofSeconds(10));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            final WorkRecord.Mark mark = record.mark("save-1", with(run("ST1", true)));
+            final var forgetting = executor.submit(() -> records.forget("project"));
+            assertThat(
+                            catchThrowableOfType(
+                                    TimeoutException.class,
+                                    () -> forgetting.get(300, TimeUnit.MILLISECONDS)))
+                    .as("the close waits for the open mark")
+                    .isNotNull();
+            assertThat(
+                            catchThrowableOfType(
+                                    WorkRefusal.class,
+                                    () -> record.mark("save-2", with(run("ST2", true)))))
+                    .as("no new mark while closing")
+                    .isNotNull();
+            record.outcome(mark, with(run("ST1", false)));
+            forgetting.get(5, TimeUnit.SECONDS);
+        }
+        try (WorkRecord again = new WorkRecord(environment, false)) {
+            final Map<String, WorkRun.Run> runs =
+                    again.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs());
+            assertThat(runs.get("ST1").pending())
+                    .as("the outcome recorded before the guard was let go")
+                    .isFalse();
+        }
+    }
+
+    @Test
+    void anEndedMarkEndsNothingMoreAndAFailedOutcomeLeavesItStanding() throws Exception {
+        // Prevents an outcome written twice, a close counting a mark ended twice, and an outcome
+        // lost on the disk but taken as ended.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final AtomicInteger moves = new AtomicInteger();
+        final WorkRecord.Replace failsThird =
+                (written, target) -> {
+                    if (moves.incrementAndGet() == 3) {
+                        throw new java.io.IOException("the disk is full");
+                    }
+                    Files.move(
+                            written,
+                            target,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                };
+        try (WorkRecord records =
+                new WorkRecord(
+                        environment,
+                        false,
+                        PrivateFiles.of(environment),
+                        failsThird,
+                        org.fuin.porelo.wire.LimitFactors.DEFAULT,
+                        Duration.ofMillis(200))) {
+            final WorkRecord.Entry record = entry(records);
+            final WorkRecord.Mark abandoned = record.mark("save-1", with(run("ST1", true)));
+            record.abandon(abandoned);
+            record.abandon(abandoned);
+            assertThat(record.outcome(abandoned, with(run("ST1", false))).generation())
+                    .as("an ended mark writes no outcome")
+                    .isEqualTo(1);
+            final WorkRecord.Mark failing = record.mark("save-2", with(run("ST2", true)));
+            assertThat(
+                            catchThrowableOfType(
+                                    WorkRefusal.class,
+                                    () -> record.outcome(failing, with(run("ST2", false)))))
+                    .as("the outcome's write fails")
+                    .isNotNull();
+            assertThat(heldGeneration(record))
+                    .as("memory stays at the generation on the disk")
+                    .isEqualTo(2);
+            assertThat(catchThrowableOfType(WorkRefusal.class, () -> records.forget("project")))
+                    .as("the failed outcome's mark still stands, so the close waits for it")
+                    .isNotNull();
+        }
+    }
+
+    @Test
+    void aCloseWaitsForTheWriterAndTheMarksWithinOneBound() throws Exception {
+        // Prevents a close waiting its bound once for the writer and again for each mark.
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(500));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            record.mark("save-1", with(run("ST1", true)));
+            final var working =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                entered.countDown();
+                                                await(release);
+                                                return null;
+                                            }));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                executor.submit(
+                        () -> {
+                            try {
+                                Thread.sleep(400);
+                            } catch (final InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                            }
+                            release.countDown();
+                        });
+                final long started = System.nanoTime();
+                assertThat(catchThrowableOfType(WorkRefusal.class, () -> records.forget("project")))
+                        .isNotNull();
+                assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+                        .as("one bound in all, not one per wait")
+                        .isLessThan(800);
+            } finally {
+                release.countDown();
+            }
+            working.get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void aMarkNeedsItsOwnIdAndAnOutcomeItsOwnRecord() {
+        // Prevents two saves sharing one mark, and a save ending another project's mark.
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200))) {
+            final WorkRecord.Entry record = entry(records);
+            final WorkRecord.Entry other =
+                    (WorkRecord.Entry) records.open("other", "https://example.org/store.git", null);
+            assertThatThrownBy(() -> record.mark(" ", with(run("ST1", true))))
+                    .isInstanceOf(IllegalArgumentException.class);
+            final WorkRecord.Mark mark = record.mark("save-1", with(run("ST1", true)));
+            assertThatThrownBy(() -> record.mark("save-1", with(run("ST2", true))))
+                    .as("a second mark with an id in flight")
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> other.outcome(mark, with(run("ST1", false))))
+                    .as("another record's mark")
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(other.latest().generation()).isZero();
+        }
+    }
+
+    @Test
+    void aCrashBetweenMarkAndOutcomeLeavesAWholePendingRunThatTheNextOpenRepairs()
+            throws Exception {
+        // Prevents a record half-written by a crash, and a pending run lost and never repaired.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final FileAttribute<?> own =
+                PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"));
+        final Path crashed = Files.createDirectory(directory.resolve("crashed"), own);
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofMillis(200))) {
+            entry(records).mark("save-1", with(run("ST1", true)));
+            // What a crash leaves: the record on the disk, with no outcome after the mark.
+            Files.createDirectories(crashed.resolve("porelo-planner/project"), own);
+            Files.copy(
+                    directory.resolve("porelo-planner/project/work.json"),
+                    crashed.resolve("porelo-planner/project/work.json"));
+        }
+        final Map<String, String> after = Map.of("XDG_STATE_HOME", crashed.toString());
+        try (WorkRecord records = new WorkRecord(after, false)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final boolean pending =
+                    record.locked(session -> session.read().runs().get("ST1").pending());
+            assertThat(pending).as("the pending run is in the record whole").isTrue();
+            new WorkRun(
+                            new org.fuin.porelo.planner.store.PlanningStore() {
+                                @Override
+                                public org.fuin.porelo.planner.store.Board board() {
+                                    throw new UnsupportedOperationException();
+                                }
+
+                                @Override
+                                public org.fuin.porelo.planner.store.Board refresh() {
+                                    throw new UnsupportedOperationException();
+                                }
+                            },
+                            record,
+                            java.time.Clock.systemUTC(),
+                            why -> {})
+                    .repair();
+            final WorkRun.Run repaired = record.locked(session -> session.read().runs().get("ST1"));
+            assertThat(repaired.pending()).isFalse();
+            assertThat(repaired.halted()).as("the open halts the save cut off").isTrue();
+        }
+    }
+
+    private static WorkRecord.Entry entry(final WorkRecord records) {
+        return (WorkRecord.Entry) records.open("project", "https://example.org/store.git", null);
+    }
+
+    private static WorkRun.Run run(final String story, final boolean pending) {
+        return new WorkRun.Run(
+                "00000000-0000-0000-0000-000000000001",
+                story,
+                "Building",
+                "AGENT",
+                "",
+                "START",
+                2,
+                List.of(),
+                List.of(),
+                "2026-01-01T00:00:00Z",
+                List.of(),
+                Map.of(),
+                false,
+                false,
+                pending);
+    }
+
+    private static WorkRun.Snapshot withRun(
+            final WorkRun.Snapshot snapshot, final WorkRun.Run run) {
+        final Map<String, WorkRun.Run> runs = new java.util.HashMap<>(snapshot.runs());
+        runs.put(run.story(), run);
+        return new WorkRun.Snapshot(
+                snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
+    }
+
+    private static java.util.function.UnaryOperator<WorkRun.Snapshot> with(final WorkRun.Run run) {
+        return snapshot -> withRun(snapshot, run);
+    }
+
+    private static void await(final CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (final InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static long heldGeneration(final WorkRun.Record record) {
         return record.locked(session -> session.read().generation());
     }
