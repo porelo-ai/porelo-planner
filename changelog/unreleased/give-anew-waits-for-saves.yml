@@ -1,0 +1,2 @@
+title: Giving a project anew waits a bounded time for its save in flight to end and be recorded, without holding up any other project, and is refused naming the project when the save does not end.
+type: changed

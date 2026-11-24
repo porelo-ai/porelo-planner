@@ -11,13 +11,14 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
@@ -36,6 +37,7 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
+import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -78,7 +80,22 @@ public final class WorkRecord implements AutoCloseable {
     private final Replace replace;
     private final LimitFactors limits;
     private final LocalPaths paths;
-    private final Map<String, Entry> entries = new HashMap<>();
+    private final Duration drain;
+
+    /** Each project's record entry; changed only under the project's gate. */
+    private final Map<String, Entry> entries = new ConcurrentHashMap<>();
+
+    /** One gate per project, so its opens and forgets come one at a time and never another's. */
+    private final Map<String, Object> gates = new ConcurrentHashMap<>();
+
+    /** How long a caller waiting for the writer lock sleeps before it looks again for a close. */
+    private static final long WAIT_STEP = TimeUnit.MILLISECONDS.toNanos(50);
+
+    /**
+     * How long closing a record waits for its save in flight, before the factor {@code services}:
+     * the store's own wait for its lock and one answer of GitHub.
+     */
+    static final Duration DRAIN = Duration.ofMinutes(3);
 
     /** Puts a written record in place of the one before. */
     interface Replace {
@@ -113,17 +130,26 @@ public final class WorkRecord implements AutoCloseable {
             final boolean memory,
             final PrivateFiles files,
             final LimitFactors limits) {
+        this(environment, memory, files, WorkRecord::moved, limits);
+    }
+
+    /** Keeps records with the platform's private files, a close waiting at most {@code drain}. */
+    WorkRecord(final Map<String, String> environment, final boolean memory, final Duration drain) {
         this(
                 environment,
                 memory,
-                files,
-                (written, target) ->
-                        Files.move(
-                                written,
-                                target,
-                                StandardCopyOption.ATOMIC_MOVE,
-                                StandardCopyOption.REPLACE_EXISTING),
-                limits);
+                PrivateFiles.of(environment),
+                WorkRecord::moved,
+                LimitFactors.DEFAULT,
+                drain);
+    }
+
+    private static void moved(final Path written, final Path target) throws IOException {
+        Files.move(
+                written,
+                target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING);
     }
 
     /** Keeps records with the given private files, replacing a record as told. */
@@ -142,6 +168,18 @@ public final class WorkRecord implements AutoCloseable {
             final PrivateFiles files,
             final Replace replace,
             final LimitFactors limits) {
+        this(environment, memory, files, replace, limits, limits.services(DRAIN));
+    }
+
+    /** Keeps records with the given private files and factors, a close waiting at most drain. */
+    WorkRecord(
+            final Map<String, String> environment,
+            final boolean memory,
+            final PrivateFiles files,
+            final Replace replace,
+            final LimitFactors limits,
+            final Duration drain) {
+        this.drain = drain;
         this.environment = Map.copyOf(environment);
         this.memory = memory;
         this.files = files;
@@ -168,45 +206,74 @@ public final class WorkRecord implements AutoCloseable {
 
     /**
      * Opens a project's one writer, clearing a record from a different repository or branch; a
-     * durable record takes its file guard here and is refused while another planner holds it.
+     * durable record takes its file guard here and is refused while another planner holds it. An
+     * entry being closed is never answered: its save is waited for as {@link #forget} waits. Only
+     * the project's own gate is held, so a slow save of one project holds up no other.
      */
-    public synchronized WorkRun.Record open(
+    public WorkRun.Record open(
             final String project, final String repository, final @Nullable String branch) {
         Ids.name(project);
-        final Entry existing = entries.get(project);
-        if (existing != null
-                && existing.repository.equals(repository)
-                && java.util.Objects.equals(existing.branch, branch)) {
-            return existing;
-        }
-        if (existing != null) {
-            entries.remove(project);
-            existing.close();
-        }
-        final Entry entry = new Entry(project, repository, branch);
-        if (!memory) {
-            // The file guard is taken here and held until the record closes, so a second
-            // planner on the same state directory is refused before it answers anything.
-            entry.acquire();
-            entry.load();
-        }
-        entries.put(project, entry);
-        return entry;
-    }
-
-    /** Releases an old project's writer; mock reset also removes every in-memory run. */
-    public synchronized void forget(final String project) {
-        final Entry entry = entries.remove(project);
-        if (entry != null) {
-            entry.close();
+        synchronized (gate(project)) {
+            final Entry existing = entries.get(project);
+            if (existing != null
+                    && !existing.closing
+                    && existing.repository.equals(repository)
+                    && java.util.Objects.equals(existing.branch, branch)) {
+                return existing;
+            }
+            if (existing != null) {
+                existing.drain(drain);
+                entries.remove(project, existing);
+            }
+            final Entry entry = new Entry(project, repository, branch);
+            if (!memory) {
+                // The file guard is taken here and held until the record closes, so a second
+                // planner on the same state directory is refused before it answers anything.
+                entry.acquire();
+                entry.load();
+            }
+            entries.put(project, entry);
+            return entry;
         }
     }
 
-    /** Releases only this service's own project locks. */
+    /**
+     * Closes a project's writer: refuses its new saves, waits a bounded time for the save in flight
+     * to end and be recorded, and only then lets go of its file guard; mock reset also removes
+     * every in-memory run. Only the project's own gate is held while it waits.
+     *
+     * @param project the project
+     * @throws WorkRefusal {@code WorkRecordUnavailable} naming the project when its save did not
+     *     end in time; the entry then stays, refusing new saves, and the next open or forget waits
+     *     for it again
+     */
+    public void forget(final String project) {
+        synchronized (gate(project)) {
+            final Entry entry = entries.get(project);
+            if (entry != null) {
+                entry.drain(drain);
+                entries.remove(project, entry);
+            }
+        }
+    }
+
+    /** Closes this service's own records, each as {@link #forget} does; one left is logged. */
     @Override
-    public synchronized void close() {
-        entries.values().forEach(Entry::close);
-        entries.clear();
+    public void close() {
+        for (final String project : List.copyOf(entries.keySet())) {
+            try {
+                forget(project);
+            } catch (final WorkRefusal refused) {
+                LOG.warn(
+                        "The work record of project {} is left to the planner's end: {}",
+                        LogText.of(project),
+                        LogText.of(String.valueOf(refused.getMessage())));
+            }
+        }
+    }
+
+    private Object gate(final String project) {
+        return gates.computeIfAbsent(project, any -> new Object());
     }
 
     private Path directory(final String project) throws IOException {
@@ -283,7 +350,11 @@ public final class WorkRecord implements AutoCloseable {
          */
         private volatile WorkRun.@Nullable Snapshot settled;
 
+        /** Set once the record's file guard is let go: nothing is answered any more. */
         private volatile boolean closed;
+
+        /** Set when closing begins: new saves are refused, readers still answered. */
+        private volatile boolean closing;
 
         private Entry(
                 final String project, final String repository, final @Nullable String branch) {
@@ -306,12 +377,18 @@ public final class WorkRecord implements AutoCloseable {
                                                     .orElse("unknown"));
             final CallTimes times = CallTimes.open(caller);
             try {
-                mutex.lock();
+                // A call within a save takes the lock it holds; any other is refused once closing
+                // begins, and a caller already waiting looks again every step, so none waits for a
+                // save that closing gave up on.
+                final boolean within = mutex.isHeldByCurrentThread();
+                if (!enter(within)) {
+                    toldWait(caller, started, false);
+                    throw closedRefusal();
+                }
                 boolean taken = false;
                 try {
-                    if (closed) {
-                        throw unavailable(
-                                project, "The work record of " + project + " was closed.");
+                    if (closed || !within && closing) {
+                        throw closedRefusal();
                     }
                     taken = true;
                     toldWait(caller, started, true);
@@ -326,6 +403,60 @@ public final class WorkRecord implements AutoCloseable {
                 }
             } finally {
                 told(times);
+            }
+        }
+
+        /** Takes the writer lock, or answers false once the record is closing. */
+        private boolean enter(final boolean within) {
+            if (within) {
+                mutex.lock();
+                return true;
+            }
+            while (!closing && !closed) {
+                try {
+                    if (mutex.tryLock(WAIT_STEP, TimeUnit.NANOSECONDS)) {
+                        return true;
+                    }
+                } catch (final InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw unavailable(
+                            project,
+                            "The wait for the work record of " + project + " was stopped.");
+                }
+            }
+            return false;
+        }
+
+        private WorkRefusal closedRefusal() {
+            return unavailable(project, "The work record of " + project + " was closed.");
+        }
+
+        /**
+         * Refuses new saves, waits at most {@code bound} for the save in flight to end and be
+         * recorded, and only then lets go of the file guard.
+         */
+        private void drain(final Duration bound) {
+            closing = true;
+            final boolean taken;
+            try {
+                taken = mutex.tryLock(bound.toNanos(), TimeUnit.NANOSECONDS);
+            } catch (final InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw unavailable(project, "The wait for a save of " + project + " was stopped.");
+            }
+            if (!taken) {
+                throw unavailable(
+                        project,
+                        "A save of "
+                                + project
+                                + " did not end within "
+                                + Seconds.of(bound)
+                                + " s; the project was not given anew.");
+            }
+            try {
+                release();
+            } finally {
+                mutex.unlock();
             }
         }
 
@@ -384,7 +515,7 @@ public final class WorkRecord implements AutoCloseable {
                 settle(stored);
             } catch (final RuntimeException | Error failed) {
                 try {
-                    close();
+                    release();
                 } catch (final RuntimeException released) {
                     failed.addSuppressed(released);
                 }
@@ -938,10 +1069,11 @@ public final class WorkRecord implements AutoCloseable {
                             });
         }
 
-        private void close() {
-            mutex.lock();
+        /** Lets go of the file guard; called with no save that can still run. */
+        private void release() {
+            closing = true;
+            closed = true;
             try {
-                closed = true;
                 final FileLock held = fileLock;
                 final FileChannel channel = lockChannel;
                 if (held != null) {
@@ -952,8 +1084,6 @@ public final class WorkRecord implements AutoCloseable {
                 }
             } catch (final IOException failed) {
                 throw unavailable(project, "The work record's lock cannot be released", failed);
-            } finally {
-                mutex.unlock();
             }
         }
     }

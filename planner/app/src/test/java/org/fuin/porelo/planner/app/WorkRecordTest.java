@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -1428,6 +1429,234 @@ class WorkRecordTest {
                             .locked(s -> s.read().runs());
             assertThat(runs).as("the guard is let go when the first record closes").isEmpty();
         }
+    }
+
+    @Test
+    void aSaveInFlightIsRecordedBeforeTheGuardIsLetGo() throws Exception {
+        // Prevents a save cut off by the close, its run lost, and a guard let go while the old
+        // record still writes.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofSeconds(10));
+                var executor = Executors.newFixedThreadPool(3)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final var saving = executor.submit(() -> heldSave(record, entered, release, 4));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            final var forgetting = ThreadPoints.run(() -> records.forget("project"));
+            forgetting.reaches("drain");
+            try (WorkRecord second = new WorkRecord(environment, false)) {
+                assertThat(
+                                catchThrowableOfType(
+                                        WorkRefusal.class,
+                                        () ->
+                                                second.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)))
+                        .as("the guard is held while the save is in flight")
+                        .isNotNull();
+            }
+            assertThat(forgetting.task().isDone()).as("the close waits for the save").isFalse();
+            release.countDown();
+            assertThat(saving.get(5, TimeUnit.SECONDS)).as("the save was recorded").isTrue();
+            forgetting.task().get(5, TimeUnit.SECONDS);
+        }
+        try (WorkRecord after = new WorkRecord(environment, false)) {
+            assertThat(heldGeneration(after.open("project", "https://example.org/store.git", null)))
+                    .as("the save's generation is on the disk once the guard is let go")
+                    .isEqualTo(4);
+        }
+    }
+
+    @Test
+    void anotherProjectOpensWhileOneWaitsForItsSave() throws Exception {
+        // Prevents one project's slow save stopping every other project's opening.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofSeconds(10));
+                var executor = Executors.newFixedThreadPool(3)) {
+            final WorkRun.Record record =
+                    records.open("slow", "https://example.org/store.git", null);
+            final var saving = executor.submit(() -> heldSave(record, entered, release, 2));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            final var forgetting = ThreadPoints.run(() -> records.forget("slow"));
+            forgetting.reaches("drain");
+            try {
+                final long other =
+                        executor.submit(
+                                        () -> {
+                                            final WorkRun.Record opened =
+                                                    records.open(
+                                                            "other",
+                                                            "https://example.org/store.git",
+                                                            null);
+                                            opened.locked(
+                                                    session -> {
+                                                        session.write(
+                                                                new WorkRun.Snapshot(3, Map.of()));
+                                                        return null;
+                                                    });
+                                            return heldGeneration(opened);
+                                        })
+                                .get(2, TimeUnit.SECONDS);
+                assertThat(other)
+                        .as("the other project opened and answered meanwhile")
+                        .isEqualTo(3);
+                assertThat(forgetting.task().isDone()).as("the slow one still waits").isFalse();
+            } finally {
+                release.countDown();
+            }
+            saving.get(5, TimeUnit.SECONDS);
+            forgetting.task().get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void aSaveThatDoesNotEndRefusesTheCloseNamingTheProjectAndKeepsTheGuard() throws Exception {
+        // Prevents a hung save making the close let go of the guard while the save still writes,
+        // an entry being closed handed out again, and a refusal that does not say which project.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofMillis(200));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final var saving = executor.submit(() -> heldSave(record, entered, release, 4));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                final WorkRefusal refused =
+                        catchThrowableOfType(WorkRefusal.class, () -> records.forget("project"));
+                assertThat(refused).as("the close gives up after its bound").isNotNull();
+                assertThat(refused.parameters()).containsEntry("project", "project");
+                assertThat(reason(refused))
+                        .as("the refusal says the save did not end in time")
+                        .contains("A save of project did not end within 0.2 s");
+                assertThat(
+                                catchThrowableOfType(
+                                        WorkRefusal.class,
+                                        () ->
+                                                records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)))
+                        .as("the entry being closed is not handed out again")
+                        .isNotNull();
+                try (WorkRecord second = new WorkRecord(environment, false)) {
+                    assertThat(
+                                    catchThrowableOfType(
+                                            WorkRefusal.class,
+                                            () ->
+                                                    second.open(
+                                                            "project",
+                                                            "https://example.org/store.git",
+                                                            null)))
+                            .as("the guard is kept while the save may still write")
+                            .isNotNull();
+                }
+            } finally {
+                release.countDown();
+            }
+            assertThat(saving.get(5, TimeUnit.SECONDS))
+                    .as("the save given up on still ends and is recorded")
+                    .isTrue();
+            records.forget("project");
+        }
+        try (WorkRecord after = new WorkRecord(environment, false)) {
+            assertThat(heldGeneration(after.open("project", "https://example.org/store.git", null)))
+                    .isEqualTo(4);
+        }
+    }
+
+    @Test
+    void aCallerWaitingForTheLockIsRefusedOnceClosingBegins() throws Exception {
+        // Prevents a caller that waits for the lock, holding monitors of its own, from waiting
+        // for a save the close gave up on, and a new caller from queueing behind it.
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
+                var executor = Executors.newFixedThreadPool(3)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final var saving = executor.submit(() -> heldSave(record, entered, release, 4));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                final var waiting = ThreadPoints.start(() -> heldGeneration(record));
+                waiting.reaches("enter");
+                assertThat(catchThrowableOfType(WorkRefusal.class, () -> records.forget("project")))
+                        .isNotNull();
+                assertThat(
+                                catchThrowableOfType(
+                                        java.util.concurrent.ExecutionException.class,
+                                        () -> waiting.task().get(2, TimeUnit.SECONDS)))
+                        .as("the waiting caller is refused, not left waiting")
+                        .hasCauseInstanceOf(WorkRefusal.class);
+                assertThat(catchThrowableOfType(WorkRefusal.class, () -> heldGeneration(record)))
+                        .as("a new caller is refused at once")
+                        .isNotNull();
+            } finally {
+                release.countDown();
+            }
+            saving.get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void anOpenDuringACloseWaitsForItAndAnswersANewEntry() throws Exception {
+        // Prevents an open slipping past a close under way and serving the project beside the
+        // old entry, or failing on the guard the old one still holds.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(environment, false, Duration.ofSeconds(10));
+                var executor = Executors.newFixedThreadPool(3)) {
+            final WorkRun.Record record =
+                    records.open("project", "https://example.org/store.git", null);
+            final var saving = executor.submit(() -> heldSave(record, entered, release, 4));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            final var forgetting = ThreadPoints.run(() -> records.forget("project"));
+            forgetting.reaches("drain");
+            final var opening =
+                    ThreadPoints.start(
+                            () -> records.open("project", "https://example.org/store.git", null));
+            try {
+                opening.reaches("open");
+                assertThat(opening.task().isDone())
+                        .as("the open waits for the close under way")
+                        .isFalse();
+            } finally {
+                release.countDown();
+            }
+            saving.get(5, TimeUnit.SECONDS);
+            forgetting.task().get(5, TimeUnit.SECONDS);
+            final WorkRun.Record reopened = opening.task().get(5, TimeUnit.SECONDS);
+            assertThat(reopened).as("a new entry, never the closed one").isNotSameAs(record);
+            assertThat(heldGeneration(reopened))
+                    .as("the new entry reads what the save recorded")
+                    .isEqualTo(4);
+        }
+    }
+
+    /** A save that writes its generation once released, answering whether it was recorded. */
+    private static boolean heldSave(
+            final WorkRun.Record record,
+            final CountDownLatch entered,
+            final CountDownLatch release,
+            final long generation) {
+        return record.locked(
+                session -> {
+                    entered.countDown();
+                    try {
+                        release.await(10, TimeUnit.SECONDS);
+                    } catch (final InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    session.write(new WorkRun.Snapshot(generation, Map.of()));
+                    return true;
+                });
     }
 
     private static long heldGeneration(final WorkRun.Record record) {

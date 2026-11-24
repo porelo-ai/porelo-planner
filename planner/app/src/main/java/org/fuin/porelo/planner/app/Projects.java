@@ -66,8 +66,8 @@ public final class Projects {
 
     /**
      * Gives the planner a project; the same source again changes nothing, another replaces it,
-     * retiring the old one first, so a failure leaves the project unknown. Projects are given one
-     * at a time each, never waiting on another.
+     * retiring the old one first once its save in flight ended, so a failure leaves the project
+     * unknown. Projects are given one at a time each, never waiting on another.
      *
      * @param project the project's name, already checked
      * @param repository its own repository's clone URL
@@ -107,14 +107,22 @@ public final class Projects {
         }
     }
 
-    /** Retires the project's store, if any, and opens it from the source; held under its lock. */
+    /**
+     * Closes the project's work record, retires its store, if any, and opens it from the source;
+     * held under the project's lock alone. The record is closed first, while the project is still
+     * given, since a save holding it reaches its store through this registry; and always, so a
+     * record left by a save that outlasted an earlier try is waited for before the source's clones
+     * are touched.
+     *
+     * @throws org.fuin.porelo.planner.core.WorkRefusal {@code WorkRecordUnavailable} when the
+     *     record's save did not end in time; the project is then unknown, as after any failure
+     */
     private void replace(final String project, final Source source, final @Nullable Entry known) {
-        synchronized (this) {
+        try {
+            records.forget(project);
+        } finally {
             if (known != null) {
-                projects.remove(project);
-                known.store().retire();
-                records.forget(project);
-                retired.forEach(listener -> listener.accept(project));
+                retire(project, known);
             }
         }
         final PlanningStore store =
@@ -147,13 +155,36 @@ public final class Projects {
         projects.put(project, new Entry(source, store, work));
     }
 
-    /** Forgets every project, retiring its store; the mock mode's reset. */
-    public synchronized void forgetAll() {
-        final List<String> names = List.copyOf(projects.keySet());
-        projects.values().forEach(entry -> entry.store().retire());
-        projects.clear();
-        names.forEach(records::forget);
-        names.forEach(name -> retired.forEach(listener -> listener.accept(name)));
+    /** Makes a given project unknown, retires its store and tells the listeners. */
+    private void retire(final String project, final Entry known) {
+        projects.remove(project, known);
+        known.store().retire();
+        retired.forEach(listener -> listener.accept(project));
+    }
+
+    /**
+     * Forgets every project, retiring its store, each under its own lock as a project given anew
+     * is; the mock mode's reset. A project whose save does not end in time is forgotten all the
+     * same and logged, its record left to that save.
+     */
+    public void forgetAll() {
+        for (final String project : List.copyOf(projects.keySet())) {
+            synchronized (locks.computeIfAbsent(project, any -> new Object())) {
+                final Entry known = projects.get(project);
+                if (known == null) {
+                    continue;
+                }
+                try {
+                    records.forget(project);
+                } catch (final org.fuin.porelo.planner.core.WorkRefusal refused) {
+                    LOG.warn(
+                            "Project {} is forgotten while a save of it goes on: {}",
+                            LogText.of(project),
+                            LogText.of(String.valueOf(refused.getMessage())));
+                }
+                retire(project, known);
+            }
+        }
     }
 
     /**
