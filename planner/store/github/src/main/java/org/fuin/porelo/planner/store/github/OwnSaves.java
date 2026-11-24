@@ -162,18 +162,21 @@ final class OwnSaves {
     /**
      * Takes a whole read's list: releases each entry whose item the list shows at any version but
      * one it may still show while it lags. An empty list is taken as any other: the project holds
-     * no items yet, or none the list shows yet.
+     * no items yet, or none the list shows yet. An item a save in flight has written stays: that
+     * save's read after its write is newer than any list, and lands on the entry.
      *
      * @param list the board as GitHub's whole list gave it, before any read by id was laid on
      * @param began when the read of the list began, from {@link #begin()}
+     * @param inFlight what the saves still in flight have written so far
      */
-    synchronized void listed(final Snapshot list, final long began) {
+    synchronized void listed(final Snapshot list, final long began, final Touched.Ids inFlight) {
         final Set<String> now = new HashSet<>();
         final Iterator<Map.Entry<String, Entry>> each = entries.entrySet().iterator();
         while (each.hasNext()) {
             final Map.Entry<String, Entry> held = each.next();
             final Entry entry = held.getValue();
-            if (entry.earlier().contains(version(list.raw().get(held.getKey()), list))) {
+            if (entry.earlier().contains(version(list.raw().get(held.getKey()), list))
+                    || matches(entry.item(), inFlight)) {
                 continue;
             }
             final GitHubGraphQl.BoardIssue issue = entry.item().issue();

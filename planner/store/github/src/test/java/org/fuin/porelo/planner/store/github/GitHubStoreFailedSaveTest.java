@@ -104,6 +104,9 @@ class GitHubStoreFailedSaveTest {
         @Nullable RuntimeException byIdFailure;
         @Nullable RuntimeException wholeFailure;
 
+        /** The commit a read by id finds the project's files at. */
+        String commit = CONFIG.commit();
+
         @Override
         public Snapshot read(final ProjectConfig config) {
             final int count = whole.incrementAndGet();
@@ -120,7 +123,21 @@ class GitHubStoreFailedSaveTest {
             if (byIdFailure != null) {
                 throw byIdFailure;
             }
-            return board(held.board().revision().value() + "+");
+            final Snapshot read = board(held.board().revision().value() + "+");
+            return commit.equals(CONFIG.commit())
+                    ? read
+                    : new Snapshot(
+                            read.board(),
+                            read.items(),
+                            new ProjectConfig(
+                                    CONFIG.forge(),
+                                    CONFIG.project(),
+                                    commit,
+                                    CONFIG.workflow(),
+                                    CONFIG.work(),
+                                    CONFIG.repositories(),
+                                    Map.of(),
+                                    Map.of()));
         }
     }
 
@@ -268,6 +285,48 @@ class GitHubStoreFailedSaveTest {
         assertThat(store.board().faults())
                 .as("the board's faults once the items were read again")
                 .noneSatisfy(fault -> assertThat(fault).startsWith(GitHubStore.UNREAD_SAVED));
+    }
+
+    @Test
+    void whatASaveLeftUnreadStaysNamedWhenItsReadAgainMeetsTheFilesAtAnotherCommit() {
+        // Harm: the items a save wrote and GitHub was never asked for again are forgotten once a
+        // read again finds the project's files at another commit, so the board shows them as
+        // current with no fault until the next whole read.
+        final Reads reads = new Reads();
+        final java.util.concurrent.atomic.AtomicReference<Save> saving =
+                new java.util.concurrent.atomic.AtomicReference<>(
+                        (current, writes) -> writes.issueTaken("I_one"));
+        final GitHubStore store =
+                store(reads, (current, writes) -> saving.get().run(current, writes));
+        store.board();
+        reads.byIdFailure = new IllegalStateException("HTTP 502");
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("a save written whose read after it failed")
+                .isInstanceOf(StoreException.class);
+        reads.byIdFailure = null;
+        reads.commit = "c0ffee1";
+        // A save that writes nothing and is refused as changed, after it read again what was left
+        // unread.
+        saving.set(
+                (current, writes) -> {
+                    throw new StoreException.Changed(List.of("PL1"));
+                });
+
+        assertThatThrownBy(() -> store.save(new Revision("r1"), nothing()))
+                .as("the next save, refused")
+                .isInstanceOf(StoreException.Changed.class);
+
+        assertThat(reads.byId)
+                .as("what was left unread, read again")
+                .last()
+                .satisfies(ids -> assertThat(ids.issues()).containsExactly("I_one"));
+        assertThat(store.board().faults())
+                .as("the board's fault naming what was written and not read again")
+                .anySatisfy(
+                        fault ->
+                                assertThat(fault)
+                                        .startsWith(GitHubStore.UNREAD_SAVED)
+                                        .contains("PL1"));
     }
 
     @Test

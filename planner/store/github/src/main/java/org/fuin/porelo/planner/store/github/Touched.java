@@ -14,8 +14,9 @@ import org.fuin.porelo.forge.github.model.IssuesUpdateRequestIssueFieldValuesInn
 import org.jspecify.annotations.Nullable;
 
 /**
- * What the writes of one save touched on GitHub, so the store reads again only those issues and not
- * the whole project. The store's lock covers every write, so one save records at a time.
+ * What the writes of each save touched on GitHub, so the store reads again only those issues and
+ * not the whole project. Each save records in its own scope on its own thread, so saves made at
+ * once never take or miss each other's items.
  */
 public final class Touched {
 
@@ -52,57 +53,156 @@ public final class Touched {
         }
     }
 
-    private final Set<String> issues = new LinkedHashSet<>();
+    /** What one save touched; written by its own thread, read by any. */
+    static final class Scope implements AutoCloseable {
 
-    private final Set<String> items = new LinkedHashSet<>();
+        private final Touched owner;
 
-    private final Set<String> numbered = new LinkedHashSet<>();
+        private final Set<String> issues = new LinkedHashSet<>();
 
-    private final Set<Long> databaseIds = new LinkedHashSet<>();
+        private final Set<String> items = new LinkedHashSet<>();
 
-    /** Forgets what an earlier save touched. */
-    synchronized void clear() {
-        issues.clear();
-        items.clear();
-        numbered.clear();
-        databaseIds.clear();
+        private final Set<String> numbered = new LinkedHashSet<>();
+
+        private final Set<Long> databaseIds = new LinkedHashSet<>();
+
+        /** Whether this handle opened the scope, so only it ends the scope. */
+        private final boolean opener;
+
+        private Scope(final Touched owner) {
+            this.owner = owner;
+            this.opener = true;
+        }
+
+        private Scope(final Scope outer) {
+            this.owner = outer.owner;
+            this.opener = false;
+        }
+
+        private synchronized void clear() {
+            issues.clear();
+            items.clear();
+            numbered.clear();
+            databaseIds.clear();
+        }
+
+        private synchronized Ids ids() {
+            return new Ids(issues, items, numbered, databaseIds);
+        }
+
+        private synchronized void add(final Ids more) {
+            issues.addAll(more.issues());
+            items.addAll(more.items());
+            numbered.addAll(more.numbered());
+            databaseIds.addAll(more.databaseIds());
+        }
+
+        /** Ends the save's scope: what its thread writes later is kept by no save. */
+        @Override
+        public void close() {
+            if (opener) {
+                owner.current.remove();
+                owner.open.remove(this);
+            }
+        }
+    }
+
+    /** The scope of the save the calling thread runs, if any. */
+    private final ThreadLocal<@Nullable Scope> current = new ThreadLocal<>();
+
+    /** Every save's scope still open, so a read can tell what saves in flight have sent. */
+    private final Set<Scope> open = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** What a write outside any save touched, such as a writer used on its own. */
+    private final Scope alone = new Scope(this);
+
+    /**
+     * Opens a save's own scope on the calling thread, so saves at once never mix what they touched;
+     * a save run inside another shares the outer one.
+     *
+     * @return the scope, to close when the save ends
+     */
+    Scope open() {
+        final Scope outer = current.get();
+        if (outer != null) {
+            return new Scope(outer);
+        }
+        final Scope made = new Scope(this);
+        current.set(made);
+        open.add(made);
+        return made;
+    }
+
+    /** The scope of the calling thread's save, or the one of writes outside any save. */
+    private Scope here() {
+        final Scope scope = current.get();
+        return scope != null ? scope : alone;
+    }
+
+    /** Forgets what the calling thread's save touched so far. */
+    void clear() {
+        here().clear();
     }
 
     /**
-     * Answers what was touched since the last clear.
+     * Answers what the calling thread's save touched since it began.
      *
      * @return the ids
      */
-    synchronized Ids ids() {
+    Ids ids() {
+        return here().ids();
+    }
+
+    /**
+     * Answers what every save still in flight has touched so far: a write is named before it is
+     * sent, so an item GitHub may already show a save's change of is among them.
+     *
+     * @return the ids, joined
+     */
+    Ids inFlight() {
+        final Set<String> issues = new LinkedHashSet<>();
+        final Set<String> items = new LinkedHashSet<>();
+        final Set<String> numbered = new LinkedHashSet<>();
+        final Set<Long> databaseIds = new LinkedHashSet<>();
+        for (final Scope scope : open) {
+            final Ids one = scope.ids();
+            issues.addAll(one.issues());
+            items.addAll(one.items());
+            numbered.addAll(one.numbered());
+            databaseIds.addAll(one.databaseIds());
+        }
         return new Ids(issues, items, numbered, databaseIds);
     }
 
     /**
-     * Adds ids touched elsewhere, such as by the earlier writes of a group read after once.
+     * Adds ids touched elsewhere to the calling thread's save, such as by the earlier writes of a
+     * group read after once.
      *
      * @param more the ids
      */
-    synchronized void add(final Ids more) {
-        issues.addAll(more.issues());
-        items.addAll(more.items());
-        numbered.addAll(more.numbered());
-        databaseIds.addAll(more.databaseIds());
+    void add(final Ids more) {
+        here().add(more);
     }
 
-    private synchronized void issue(final String nodeId) {
-        issues.add(nodeId);
+    private void issue(final String nodeId) {
+        add(new Ids(Set.of(nodeId), Set.of(), Set.of(), Set.of()));
     }
 
-    private synchronized void item(final String itemId) {
-        items.add(itemId);
+    private void item(final String itemId) {
+        add(new Ids(Set.of(), Set.of(itemId), Set.of(), Set.of()));
     }
 
-    private synchronized void numbered(final String repository, final int number) {
-        numbered.add(repository.toLowerCase(Locale.ROOT) + "#" + number);
+    private void numbered(final String repository, final int number) {
+        add(
+                new Ids(
+                        Set.of(),
+                        Set.of(),
+                        Set.of(repository.toLowerCase(Locale.ROOT) + "#" + number),
+                        Set.of()));
     }
 
-    private synchronized void databaseId(final long id) {
-        databaseIds.add(id);
+    private void databaseId(final long id) {
+        add(new Ids(Set.of(), Set.of(), Set.of(), Set.of(id)));
     }
 
     /**

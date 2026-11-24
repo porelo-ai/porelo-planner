@@ -3192,6 +3192,46 @@ class ItemsBoardReaderTest {
                 .containsExactly("Idea", "Idea");
     }
 
+    @Test
+    void aReadByIdLaidOntoABoardReadSinceKeepsThatBoardsProjectSettings() {
+        // Harm: a save's read after it, begun before a Reload read the project's priorities anew,
+        // lays the older settings back onto the board, so a correction offers stale priorities.
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(null, story("High", LIB_3), libIssue(3, refs(false)))
+                        .boardItems(inIdea(libIssue(3, refs(false))));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+        final Reread delta =
+                reader.fetch(
+                        CONFIG,
+                        held,
+                        new Touched.Ids(Set.of(LIB_3), Set.of(), Set.of(), Set.of()),
+                        Map.of());
+        final ProjectConfig reloaded = held.config().withPriorities(List.of("High", "Medium"));
+        final Snapshot newest =
+                new Snapshot(
+                        held.board(),
+                        held.items(),
+                        reloaded,
+                        held.raw(),
+                        held.fieldFaults(),
+                        held.fieldNames(),
+                        held.restFieldIds(),
+                        held.waits(),
+                        held.unlisted());
+
+        final Snapshot after = reader.apply(newest, delta);
+
+        assertThat(after.config())
+                .as("the project's settings after the read by id is laid on")
+                .isEqualTo(reloaded);
+        assertThat(after.board().issue("example-lib#3").orElseThrow().state())
+                .as("the issue the read by id gave")
+                .isEqualTo("Idea");
+    }
+
     /** The item moved to Idea, its other values kept. */
     private static ProjectItem inIdea(final ProjectItem item) {
         final List<ItemValue> values = new java.util.ArrayList<>(item.values());

@@ -16,7 +16,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
@@ -292,8 +291,6 @@ public final class GitHubStore implements PlanningStore {
 
     private final TokenSource tokens;
 
-    private final ReentrantLock lock = new ReentrantLock();
-
     private final Touched touched;
 
     private final Executor looks;
@@ -318,6 +315,12 @@ public final class GitHubStore implements PlanningStore {
      * every other item and names these unread until the next look or save reads them by id.
      */
     private volatile Touched.@Nullable Ids unread;
+
+    /**
+     * When the last save named its writes unread, from {@link OwnSaves#begin()}: a whole read whose
+     * list began later read them; one begun earlier did not. Changed under {@code holding}.
+     */
+    private long unreadFailed;
 
     /**
      * Held while the board held is replaced, its copy offered with it; nothing under it asks GitHub
@@ -358,17 +361,15 @@ public final class GitHubStore implements PlanningStore {
     /** A whole read whose items are read, while it waits to take them in; null otherwise. */
     private volatile @Nullable ReadProgress finishing;
 
-    /** Whether a save or a comment holds the project's lock, which a read then waits for. */
-    private final java.util.concurrent.atomic.AtomicInteger savesHolding =
-            new java.util.concurrent.atomic.AtomicInteger();
+    /**
+     * Held shared by every save and alone by a stage result's save, the one save that reaches the
+     * store past the runner's claim on its issues, so no other save writes beside it.
+     */
+    private final java.util.concurrent.locks.ReentrantReadWriteLock apart =
+            new java.util.concurrent.locks.ReentrantReadWriteLock();
 
-    /** The whole reads waiting for the project's lock to take their items in. */
-    private final java.util.concurrent.atomic.AtomicInteger wholeWaiting =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /** The looks waiting for the project's lock to fold their answer in. */
-    private final java.util.concurrent.atomic.AtomicInteger lookWaiting =
-            new java.util.concurrent.atomic.AtomicInteger();
+    /** Held while the board's copy is looked for, so only the first board asked for loads it. */
+    private final Object copyLoad = new Object();
 
     /** Guards the Reloads asked for. */
     private final Object reloads = new Object();
@@ -385,7 +386,7 @@ public final class GitHubStore implements PlanningStore {
     /** Guards the whole read under way and what saves touched while it ran. */
     private final Object fold = new Object();
 
-    /** The whole read under way outside the save lock; null while none runs. */
+    /** The whole read under way beside the saves; null while none runs. */
     private @Nullable CompletableFuture<Snapshot> inFlight;
 
     /** What the saves since the whole read under way began touched, read again on its result. */
@@ -399,7 +400,8 @@ public final class GitHubStore implements PlanningStore {
      *     read of the board
      * @param parts its parts
      * @param tokens the person's token, asked for only to scrub it from a refusal's words
-     * @param lockWait how long a call waits for another save or read before it is refused as busy
+     * @param lockWait how long a save waits for the first board, or beside a stage result's save,
+     *     before it is refused as busy
      */
     public GitHubStore(
             final ProjectConfig config,
@@ -417,7 +419,8 @@ public final class GitHubStore implements PlanningStore {
      * @param again gives what the project is read with as its files name it now
      * @param parts its parts
      * @param tokens the person's token, asked for only to scrub it from a refusal's words
-     * @param lockWait how long a call waits for another save or read before it is refused as busy
+     * @param lockWait how long a save waits for the first board, or beside a stage result's save,
+     *     before it is refused as busy
      * @param touched what the writer's calls record they touched
      */
     public GitHubStore(
@@ -438,7 +441,8 @@ public final class GitHubStore implements PlanningStore {
      * @param again gives what the project is read with as its files name it now
      * @param parts its parts
      * @param tokens the person's token, asked for only to scrub it from a refusal's words
-     * @param lockWait how long a call waits for another save or read before it is refused as busy
+     * @param lockWait how long a save waits for the first board, or beside a stage result's save,
+     *     before it is refused as busy
      * @param touched what the writer's calls record they touched
      * @param looks runs the change probe's look right after a read or save
      */
@@ -476,8 +480,8 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Takes the board from its copy on disk, once per store and under the lock, so a start shows
-     * the board before GitHub is read; the next poll then reads GitHub whole.
+     * Takes the board from its copy on disk, once per store and under its own monitor, so a start
+     * shows the board before GitHub is read; the next poll then reads GitHub whole.
      *
      * @return the board held now, or null when there is none and the copy gave none
      */
@@ -487,15 +491,13 @@ public final class GitHubStore implements PlanningStore {
             return null;
         }
         refuseRetired();
-        try {
-            if (!lock.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS)) {
-                // Another call holds the project; the whole read answers as it always did.
-                return null;
-            }
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new StoreException.Busy(config.own());
+        synchronized (copyLoad) {
+            return copied(copies);
         }
+    }
+
+    /** Loads the board's copy, once, while no other first board is asked for. */
+    private @Nullable Snapshot copied(final BoardCopies copies) {
         try {
             if (copyLooked) {
                 return snapshot;
@@ -518,21 +520,29 @@ public final class GitHubStore implements PlanningStore {
                 LOG.info("The board's copy is not of the project as its files name it now");
                 return null;
             }
-            // Before the board is held, so a copy whose entries are refused leaves nothing behind.
-            saves.load(copy.held());
-            snapshot = loaded;
-            fromCopy = true;
+            synchronized (holding) {
+                final Snapshot held = snapshot;
+                if (held != null) {
+                    // A save's first read held a board meanwhile, newer than the copy.
+                    return held;
+                }
+                // Before the board is held, so a copy whose entries are refused leaves nothing
+                // behind.
+                saves.load(copy.held());
+                snapshot = loaded;
+                fromCopy = true;
+                cursor = copy.cursor();
+                listedAt.clear();
+                for (final TrackedItem item : copy.items()) {
+                    final Instant at = item.updatedAt();
+                    if (at != null) {
+                        listedAt.put(item.id(), at);
+                    }
+                }
+            }
             // The probe knows nothing from before the copy: its first look takes what it sees as
             // this board, while the item look tells what changed on it since.
             parts.probe().adoptNext();
-            cursor = copy.cursor();
-            listedAt.clear();
-            for (final TrackedItem item : copy.items()) {
-                final Instant at = item.updatedAt();
-                if (at != null) {
-                    listedAt.put(item.id(), at);
-                }
-            }
             LOG.info(
                     "Took the board from its copy of {} items held at {} in {} ms ({} ms the"
                             + " project's files, {} ms the copy); GitHub is read next",
@@ -548,8 +558,6 @@ public final class GitHubStore implements PlanningStore {
                     "The board's copy could not be taken: {}; GitHub is read whole",
                     e.getClass().getSimpleName());
             return null;
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -885,15 +893,15 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Judges a group under the lock, as a save does: one read afresh of what every command's rule
+     * Judges a group beside the saves, as a save does: one read afresh of what every command's rule
      * needs, every rule run on it; each item a command was judged on is kept as it stands, for a
      * merge should it move before the command is written.
      */
     @Override
     public void judge(final CommandGroup group) {
-        lockedForSave(
+        apart(
+                apart.readLock(),
                 () -> {
-                    touched.clear();
                     final Snapshot held = current();
                     group.commands().forEach(command -> judgedViews.remember(held, command));
                     readBefore(held, CommandWrites.union(group), Set.of());
@@ -1112,7 +1120,7 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Runs a write's rules, under the lock, on the dependencies they need read afresh from GitHub,
+     * Runs a write's rules, within the save, on the dependencies they need read afresh from GitHub,
      * and answers the board held, which the write is planned on; a rule that refuses ends the write
      * before anything is written.
      */
@@ -1163,12 +1171,12 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Writes a comment under the lock; the board shows no comment, so it is not read again and the
-     * board kept stays.
+     * Writes a comment beside every other save; the board shows no comment, so it is not read again
+     * and the board kept stays.
      */
     @Override
     public void comment(final String issue, final String text) {
-        lockedForSave(
+        writing(
                 () -> {
                     final Snapshot now = current();
                     parts.writer().comment(now, issue, text);
@@ -1189,8 +1197,11 @@ public final class GitHubStore implements PlanningStore {
 
     @Override
     public Board saveResult(final StageResult result) {
+        // A run hands its result to the store itself, past the runner's claim on the issues, so
+        // no other save writes beside it.
         return served(
                 writing(
+                                apart.writeLock(),
                                 () -> {
                                     // A stage runs for minutes, so its issues are read as they
                                     // stand now before the result is written into them.
@@ -1243,7 +1254,7 @@ public final class GitHubStore implements PlanningStore {
         }
         final ReadProgress done = finishing;
         if (done != null) {
-            return java.util.Optional.of(waiting(done, wholeWaiting));
+            return java.util.Optional.of(done);
         }
         final java.time.Instant asked = reloadAskedAt;
         if (asked != null) {
@@ -1252,17 +1263,7 @@ public final class GitHubStore implements PlanningStore {
             return java.util.Optional.of(new ReadProgress(asked, 0, null, null, "GitHub"));
         }
         final ReadProgress look = looking;
-        return look == null
-                ? java.util.Optional.empty()
-                : java.util.Optional.of(waiting(look, lookWaiting));
-    }
-
-    /** A read's progress, told as waiting for a save while it waits for the lock a save holds. */
-    private ReadProgress waiting(
-            final ReadProgress progress, final java.util.concurrent.atomic.AtomicInteger waits) {
-        return waits.get() > 0 && savesHolding.get() > 0
-                ? progress.waiting(ReadProgress.SAVE)
-                : progress;
+        return look == null ? java.util.Optional.empty() : java.util.Optional.of(look);
     }
 
     @Override
@@ -1366,7 +1367,7 @@ public final class GitHubStore implements PlanningStore {
         } catch (final RuntimeException e) {
             throw refused(e);
         }
-        // GitHub is asked before the lock, so no save waits for its answer.
+        // GitHub is asked before the fold, which only lays the answer on the board in memory.
         final long began = saves.begin();
         final Reread delta;
         try {
@@ -1376,19 +1377,21 @@ public final class GitHubStore implements PlanningStore {
         }
         final boolean[] reread = new boolean[1];
         final Snapshot read =
-                locked(
+                guarded(
                         () -> {
-                            final Snapshot base = snapshot;
-                            if (base == null || base != board) {
-                                // A save or a read replaced the board meanwhile: the change the
-                                // probe saw stays unread until a look reads the waits again.
-                                return base == null ? board : base;
-                            }
-                            reread[0] = true;
-                            if (delta == null) {
-                                return base;
-                            }
+                            // Checked and laid on in one step, so no save lands in between.
                             synchronized (holding) {
+                                final Snapshot base = snapshot;
+                                if (base == null || base != board) {
+                                    // A save or a read replaced the board meanwhile: the change
+                                    // the probe saw stays unread until a look reads the waits
+                                    // again.
+                                    return base == null ? board : base;
+                                }
+                                reread[0] = true;
+                                if (delta == null) {
+                                    return base;
+                                }
                                 final Snapshot fresh = laidOn(base, delta, began);
                                 holdNow(fresh, false);
                                 return fresh;
@@ -1495,15 +1498,15 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Folds what changed since the last look into the board held now, under the lock: the gone
+     * Folds what changed since the last look into the board held now, under the reads: the gone
      * items dropped, the changed ones read again by id, the new ones by their issues, the saves
      * made during the look that touched any of them read again too, and the sub-issues a parent
      * gained or lost read again, so their parent is right. A board a failed save dropped meanwhile
      * drops the look, and the board is read whole.
      *
      * @param added the new items' issues' node ids by the items' ids
-     * @param during what the saves since the look began touched, taken under the lock, so no save
-     *     falls between them and the fold
+     * @param during what the saves since the look began touched; taken with what the saves still in
+     *     flight sent, so no save falls between them and the fold
      */
     private @Nullable Snapshot folded(
             final ProjectConfig now,
@@ -1520,7 +1523,7 @@ public final class GitHubStore implements PlanningStore {
                 changed.changed().isEmpty()
                         && changed.added().isEmpty()
                         && changed.gone().isEmpty();
-        // GitHub is asked for what changed before the lock, so no save waits for its answer.
+        // GitHub is asked for what changed before the fold, which only works in memory.
         final long began = saves.begin();
         final Reread first;
         final @Nullable Reread second;
@@ -1576,19 +1579,25 @@ public final class GitHubStore implements PlanningStore {
             }
         }
         final @Nullable Snapshot result =
-                this.<@Nullable Snapshot>lockedForRead(
-                        lookWaiting,
+                this.<@Nullable Snapshot>guarded(
                         () -> {
-                            // A save holds the lock until it has noted what it touched, so every
-                            // save before this point is in the list, and every later one is made
-                            // against the board folded here.
+                            // The saves that ended during the look. One still in flight reads its
+                            // items after its write; the reads' order decides whose answer stands,
+                            // as between any two reads by id.
                             final List<Touched.Ids> saved;
                             synchronized (fold) {
                                 lookSaves = null;
                                 saved = List.copyOf(during);
                             }
+                            // The look's answer is computed on this board, GitHub asked outside the
+                            // swap, and laid onto the newest board held only at the end.
                             final Snapshot base = snapshot;
                             if (base == null) {
+                                return null;
+                            }
+                            if (!base.config().commit().equals(start.config().commit())) {
+                                // GitHub was asked under other project files: never laid on, the
+                                // board is read whole instead.
                                 return null;
                             }
                             if (first == null) {
@@ -1598,10 +1607,7 @@ public final class GitHubStore implements PlanningStore {
                                 cursor = changed.next();
                                 moves |= tookTimes(base, listed);
                                 final Snapshot read = readUnshown(now, base, saved, began);
-                                if (moves || read != base) {
-                                    hold(read, false);
-                                }
-                                return read;
+                                return laidOver(base, read, moves);
                             }
                             // An item a save wrote during the look keeps the board's value: the
                             // save read it after its own write, as did any read by id begun later.
@@ -1641,7 +1647,7 @@ public final class GitHubStore implements PlanningStore {
                                 tookTimes(folded, listed);
                             }
                             folded = readUnshown(now, folded, saved, began);
-                            hold(folded, false);
+                            final @Nullable Snapshot laid = laidOver(base, folded, true);
                             LOG.info(
                                     "Took {} changed, {} new and {} gone items since the last look into"
                                             + " the board, beside {} saves made during it",
@@ -1649,13 +1655,85 @@ public final class GitHubStore implements PlanningStore {
                                     added.size(),
                                     changed.gone().size(),
                                     saved.size());
-                            return folded;
+                            return laid;
                         });
         if (result == null) {
-            // A failed save dropped the board while the look ran; its answer is not laid on.
-            LOG.info("The look's answer is dropped, since a failed save dropped the board");
+            // A failed save dropped the board, or the project's files moved, while the look ran.
+            LOG.info(
+                    "The look's answer is dropped, since the board was dropped or read under other"
+                            + " files meanwhile");
         }
         return result;
+    }
+
+    /**
+     * Lays a look's board onto the newest board held, in one step with holding it: an item a save
+     * or a read laid on since the look's board was taken keeps that value, every other item the
+     * look read takes the look's.
+     *
+     * @param base the board the look's answer was computed on
+     * @param looked that board with the look's answer
+     * @param moved whether the look moved its cursor or its times, which the copy then takes
+     * @return the board held now, or null when a failed save dropped the board meanwhile
+     */
+    private @Nullable Snapshot laidOver(
+            final Snapshot base, final Snapshot looked, final boolean moved) {
+        synchronized (holding) {
+            final Snapshot newest = snapshot;
+            if (newest == null) {
+                return null;
+            }
+            if (newest == base) {
+                if (moved || looked != base) {
+                    holdNow(looked, false);
+                }
+                return looked;
+            }
+            if (!newest.config().commit().equals(base.config().commit())) {
+                // Read with other project files meanwhile: the look's answer describes another
+                // board.
+                return newest;
+            }
+            final Map<String, GitHubGraphQl.ProjectItem> put = new LinkedHashMap<>();
+            final Map<String, Boolean> archived = new LinkedHashMap<>();
+            looked.raw()
+                    .forEach(
+                            (id, item) -> {
+                                final GitHubGraphQl.ProjectItem was = base.raw().get(id);
+                                if (!item.equals(was)
+                                        && Objects.equals(was, newest.raw().get(id))) {
+                                    put.put(id, item);
+                                    archived.put(id, item.archived());
+                                }
+                            });
+            final Set<String> gone = new LinkedHashSet<>();
+            base.raw()
+                    .forEach(
+                            (id, item) -> {
+                                final GitHubGraphQl.BoardIssue issue = item.issue();
+                                if (issue != null
+                                        && !looked.raw().containsKey(id)
+                                        && item.equals(newest.raw().get(id))) {
+                                    gone.add(issue.id());
+                                }
+                            });
+            final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>(looked.waits());
+            waits.entrySet()
+                    .removeIf(wait -> wait.getValue().equals(base.waits().get(wait.getKey())));
+            if (put.isEmpty() && gone.isEmpty() && waits.isEmpty()) {
+                if (moved) {
+                    holdNow(newest, false);
+                }
+                return newest;
+            }
+            final Snapshot fresh =
+                    parts.reader()
+                            .apply(
+                                    newest,
+                                    new Reread(newest.config(), null, put, gone, archived, waits));
+            holdNow(fresh, false);
+            return fresh;
+        }
     }
 
     /** The board without the items gone, as the look's list says. */
@@ -1766,7 +1844,7 @@ public final class GitHubStore implements PlanningStore {
     /**
      * Reads again by id the items held over GitHub's lists that no page of a look's list carries
      * yet, such as one just made, so the board takes GitHub's later changes to them at the look
-     * instead of at the next whole read; runs under the lock.
+     * instead of at the next whole read; runs under the reads.
      */
     private Snapshot readUnshown(
             final ProjectConfig now,
@@ -1870,7 +1948,7 @@ public final class GitHubStore implements PlanningStore {
             // Not read from GitHub's project, as the copy also tells: no item to lay over it.
             saves.clear();
         } else {
-            saves.listed(list, listBegan);
+            saves.listed(list, listBegan, touched.inFlight());
         }
         final int kept = saves.size();
         for (final Round round : rounds) {
@@ -1919,6 +1997,10 @@ public final class GitHubStore implements PlanningStore {
         synchronized (holding) {
             final Snapshot fresh = overList(list, result, rounds, snapshot, listBegan);
             holdNow(fresh, true);
+            if (unreadFailed < listBegan) {
+                // Every save that named its writes unread failed before the list was read.
+                unread = null;
+            }
             return fresh;
         }
     }
@@ -1937,9 +2019,9 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Reads the whole project outside the save lock, so a save goes to GitHub at once against the
-     * board held; what the saves meanwhile touched is read again on top of the result before it
-     * becomes the board. A second whole read asked for meanwhile waits for this one.
+     * Reads the whole project beside the saves, so a save goes to GitHub at once against the board
+     * held; what the saves meanwhile touched is read again on top of the result before it becomes
+     * the board. A second whole read asked for meanwhile waits for this one.
      *
      * @param now what the project is read with
      * @param whole whether the probe forgets what it learned and takes this read's board after it,
@@ -1954,17 +2036,35 @@ public final class GitHubStore implements PlanningStore {
         }
         if (running != null && !reads.isHeldByCurrentThread()) {
             // The read under way holds the reads, so joining it never waits for the lock.
-            return awaitRead(running, false);
+            return awaitRead(running, saving());
         }
         return readAlone(() -> wholeLeading(now, whole, why));
     }
 
     /**
-     * Runs one read of the board while no other read runs for this project; a save never waits for
-     * it.
+     * Runs one read of the board while no other read runs for this project; a save waits for the
+     * read under way only as long as the store allows, and is then refused as busy.
      */
     private Snapshot readAlone(final java.util.function.Supplier<Snapshot> read) {
-        reads.lock();
+        if (saving()) {
+            final boolean taken;
+            try {
+                taken = reads.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new StoreException.Busy(config.own());
+            }
+            if (!taken) {
+                throw new StoreException.Busy(config.own());
+            }
+        } else {
+            try {
+                reads.lockInterruptibly();
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new StoreException.Busy(config.own());
+            }
+        }
         try {
             return read.get();
         } finally {
@@ -1990,7 +2090,7 @@ public final class GitHubStore implements PlanningStore {
         }
         if (!began) {
             // A reader waits for the read it joins as long as GitHub keeps answering it.
-            return awaitRead(mine, false);
+            return awaitRead(mine, saving());
         }
         final long started = System.nanoTime();
         final java.time.Instant since = java.time.Instant.now();
@@ -2009,8 +2109,8 @@ public final class GitHubStore implements PlanningStore {
                     why.words);
             finishing =
                     new ReadProgress(since, read.raw().size(), read.raw().size(), null, "GitHub");
-            // The saves made during the read are read again by id before the lock, round after
-            // round while more come; only those made after the last round are read under it.
+            // The saves made during the read are read again by id before the fold, round after
+            // round while more come; only those made after the last round are read in it.
             Snapshot outside = read;
             final List<Round> rounds = new ArrayList<>();
             int fetched = 0;
@@ -2038,8 +2138,7 @@ public final class GitHubStore implements PlanningStore {
             final Snapshot before = outside;
             final int readBefore = fetched;
             final Snapshot fresh =
-                    lockedForRead(
-                            wholeWaiting,
+                    guarded(
                             () -> {
                                 final List<Touched.Ids> saved;
                                 synchronized (fold) {
@@ -2071,7 +2170,7 @@ public final class GitHubStore implements PlanningStore {
                                 if (!saved.isEmpty()) {
                                     LOG.info(
                                             "Took {} saves made during the whole read into its"
-                                                    + " board, {} of them read before the lock",
+                                                    + " board, {} of them read before the fold",
                                             saved.size(),
                                             readBefore);
                                 }
@@ -2082,7 +2181,7 @@ public final class GitHubStore implements PlanningStore {
                                 return result;
                             });
             if (whole) {
-                // The change check asks GitHub, so it runs after the lock is let go.
+                // The change check asks GitHub, so it runs after the fold.
                 settle(fresh, false);
             }
             finishing = null;
@@ -2112,7 +2211,7 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Waits for the whole read under way: a save as long as it waits for the lock, a reader until
+     * Waits for the whole read under way: a save as long as it waits for the store, a reader until
      * the read ends, which its own silence limit bounds.
      */
     private Snapshot awaitRead(final CompletableFuture<Snapshot> read, final boolean save) {
@@ -2145,41 +2244,13 @@ public final class GitHubStore implements PlanningStore {
         return new Touched.Ids(issues, items, numbered, databaseIds);
     }
 
-    private Snapshot read() {
-        final ProjectConfig now = configNow();
-        final Snapshot current = snapshot;
-        if (current == null || !current.config().commit().equals(now.commit())) {
-            return readWhole(now, current == null ? WholeRead.FIRST : WholeRead.CONFIG);
-        }
-        if (parts.probe().unchanged(current)) {
-            return current;
-        }
-        // The probe saw the change and keeps its tags for the board this read gives.
-        final long listBegan = saves.begin();
-        final Snapshot read = timedRead(now, WholeRead.PROBED);
-        return heldWhole(read, read, List.of(), listBegan);
-    }
-
     /**
      * Reads the whole project outside the probe, which forgets what it learned, so its next look
      * never takes tags from before this read for the board it gives.
      */
     private Snapshot readWhole(final ProjectConfig now, final WholeRead why) {
-        parts.probe().forget();
-        final long listBegan = saves.begin();
-        final Snapshot read = timedRead(now, why);
-        final Snapshot fresh = heldWhole(read, read, List.of(), listBegan);
-        settle(fresh, false);
-        return fresh;
-    }
-
-    private Snapshot timedRead(final ProjectConfig now, final WholeRead why) {
-        final long started = System.nanoTime();
-        LOG.info("Reading the board whole: {}", why.words);
-        final Snapshot read = parts.reader().read(now);
-        LOG.info(
-                "Read the board whole in {} ms: {}", millis(started, System.nanoTime()), why.words);
-        return read;
+        // On the read path, after any read under way, so its list begins after this call's writes.
+        return readAlone(() -> wholeLeading(now, true, why));
     }
 
     /**
@@ -2278,8 +2349,8 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Makes a correction's calls on one repository's labels under the lock, with the person's token
-     * for GitHub alone; the board held is not read again, since no item changed.
+     * Makes a correction's calls on one repository's labels beside the saves, with the person's
+     * token for GitHub alone; the board held is not read again, since no item changed.
      */
     @Override
     public Board correctLabels(final String repository, final List<RepositoryWarning.Call> calls) {
@@ -2289,7 +2360,8 @@ public final class GitHubStore implements PlanningStore {
         final Snapshot now;
         try {
             now =
-                    lockedForSave(
+                    apart(
+                            apart.readLock(),
                             () -> {
                                 final Snapshot held = current();
                                 parts.labels()
@@ -2421,11 +2493,24 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Runs a write under the lock. A write that fails or comes back stale keeps the board held:
-     * what it touched, and the item a stale refusal names, is read again by id onto it, so no call
-     * waits behind a whole read; only a board that cannot be read again so is forgotten.
+     * Runs a write beside the other saves, which write other items: the runner's claim keeps two
+     * saves of one item apart. A write that fails or comes back stale keeps the board held: what it
+     * touched, and the item a stale refusal names, is read again by id onto it, so no call waits
+     * behind a whole read; only a board that cannot be read again so is forgotten.
      */
     private Snapshot writing(final Supplier<Snapshot> work) {
+        return writing(apart.readLock(), work);
+    }
+
+    /**
+     * Runs a write as {@link #writing(Supplier)} does, holding the lock given while it runs.
+     *
+     * @param hold the shared hold of every save, or the sole one of a save that no claim covers
+     * @param work the write
+     * @return the board after it
+     */
+    private Snapshot writing(
+            final java.util.concurrent.locks.Lock hold, final Supplier<Snapshot> work) {
         final CompletableFuture<Snapshot> running;
         synchronized (fold) {
             running = inFlight;
@@ -2434,11 +2519,17 @@ public final class GitHubStore implements PlanningStore {
             // No board to save against yet: the whole read under way gives it, not a second one.
             awaitRead(running, true);
         }
-        return lockedForSave(
+        return apart(
+                hold,
                 () -> {
-                    readUnread();
-                    touched.clear();
+                    final Touched.Scope scope;
+                    synchronized (fold) {
+                        // Opened under the fold, so a read taking the saves ended meanwhile and
+                        // those in flight never misses one in between.
+                        scope = touched.open();
+                    }
                     try {
+                        readUnread();
                         return work.get();
                     } catch (final StoreException.StaleRevision e) {
                         final Touched.Ids written = touched.ids();
@@ -2474,6 +2565,7 @@ public final class GitHubStore implements PlanningStore {
                         } else if (snapshot != null) {
                             synchronized (holding) {
                                 unread = joined(unread, written);
+                                unreadFailed = saves.begin();
                             }
                         }
                         throw e;
@@ -2482,13 +2574,15 @@ public final class GitHubStore implements PlanningStore {
                         throw e;
                     } finally {
                         synchronized (fold) {
+                            final Touched.Ids wrote = touched.ids();
                             if (inFlight != null) {
-                                pending.add(touched.ids());
+                                pending.add(wrote);
                             }
                             final List<Touched.Ids> during = lookSaves;
                             if (during != null) {
-                                during.add(touched.ids());
+                                during.add(wrote);
                             }
+                            scope.close();
                         }
                     }
                 });
@@ -2505,12 +2599,15 @@ public final class GitHubStore implements PlanningStore {
 
     /** Reads by id what earlier saves wrote and GitHub was not asked for again after them. */
     private void readUnread() {
-        final Touched.Ids pending = unread;
-        if (pending == null) {
-            return;
+        final Touched.Ids pending;
+        synchronized (holding) {
+            // Taken in one step, so two saves at once never both read it, nor lose a later one.
+            pending = unread;
+            unread = null;
         }
-        unread = null;
-        readAgainById(pending, List.of());
+        if (pending != null) {
+            readAgainById(pending, List.of());
+        }
     }
 
     private static Touched.Ids joined(final Touched.@Nullable Ids one, final Touched.Ids two) {
@@ -2559,7 +2656,7 @@ public final class GitHubStore implements PlanningStore {
      */
     private StoreException.StaleRevision staleNamingTheBoardNow(final String changed) {
         try {
-            return new StoreException.StaleRevision(read().board().revision().value(), changed);
+            return new StoreException.StaleRevision(current().board().revision().value(), changed);
         } catch (final RuntimeException e) {
             // The board read next tells the window; the refusal names no board to save against.
             return new StoreException.StaleRevision(UNREAD, changed);
@@ -2597,22 +2694,23 @@ public final class GitHubStore implements PlanningStore {
                 && written.databaseIds().isEmpty()) {
             return held;
         }
+        final Touched.Ids asked =
+                new Touched.Ids(issues, items, written.numbered(), written.databaseIds());
         try {
             final boolean wrote = !written.none();
             // What the read finds is held over GitHub's lists until they show it, as after a save
             // that ended.
             final long began = saves.begin();
-            final Snapshot fresh =
-                    merged(
-                            fetchWithChildren(
-                                    held,
-                                    new Touched.Ids(
-                                            issues,
-                                            items,
-                                            written.numbered(),
-                                            written.databaseIds())),
-                            began);
+            final Snapshot fresh = merged(fetchWithChildren(held, asked), began);
             if (fresh == null) {
+                // Not laid on, as read under other project files: what it asked for stays unread
+                // until a read that covers it is held.
+                synchronized (holding) {
+                    if (snapshot != null) {
+                        unread = joined(unread, asked);
+                        unreadFailed = saves.begin();
+                    }
+                }
                 return null;
             }
             if (wrote) {
@@ -2638,71 +2736,51 @@ public final class GitHubStore implements PlanningStore {
 
     private Snapshot current() {
         final Snapshot current = snapshot;
-        return current != null ? current : read();
+        // The first board comes from the read path, so it never runs beside another read.
+        return current != null ? current : wholeBesideSaves(configNow(), true, WholeRead.FIRST);
     }
 
     /**
-     * Runs a read's part under the lock, counted as waiting until it holds the lock, so its
-     * progress tells that it waits while a save holds the project.
+     * Runs a save's or a read's part beside every other: the board is swapped under {@code holding}
+     * alone, and GitHub's write pace spaces the writes.
      */
-    private <T extends @Nullable Object> T lockedForRead(
-            final java.util.concurrent.atomic.AtomicInteger waits, final Supplier<T> work) {
-        final java.util.concurrent.atomic.AtomicBoolean waiting =
-                new java.util.concurrent.atomic.AtomicBoolean(true);
-        waits.incrementAndGet();
+    private <T extends @Nullable Object> T guarded(final Supplier<T> work) {
+        refuseRetired();
         try {
-            return locked(
-                    () -> {
-                        if (waiting.getAndSet(false)) {
-                            waits.decrementAndGet();
-                        }
-                        return work.get();
-                    });
-        } finally {
-            if (waiting.getAndSet(false)) {
-                waits.decrementAndGet();
-            }
+            return work.get();
+        } catch (final RuntimeException e) {
+            throw refused(e);
         }
     }
 
     /**
-     * Runs a save's or a comment's part under the lock, counted as holding it while it runs, so a
-     * read waiting meanwhile tells that it waits for a save.
+     * Runs a save's part holding the lock given, which a save waits for only as long as allowed.
      */
-    private <T extends @Nullable Object> T lockedForSave(final Supplier<T> work) {
-        return locked(
-                () -> {
-                    savesHolding.incrementAndGet();
-                    try {
-                        return work.get();
-                    } finally {
-                        savesHolding.decrementAndGet();
-                    }
-                });
-    }
-
-    private <T extends @Nullable Object> T locked(final Supplier<T> work) {
+    private <T extends @Nullable Object> T apart(
+            final java.util.concurrent.locks.Lock held, final Supplier<T> work) {
         refuseRetired();
-        final boolean held;
+        final boolean taken;
         final long waiting = System.nanoTime();
         try {
-            held = lock.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS);
+            taken = held.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new StoreException.Busy(config.own());
         }
         CallTimes.waited("the project", System.nanoTime() - waiting);
-        if (!held) {
+        if (!taken) {
             throw new StoreException.Busy(config.own());
         }
         try {
-            refuseRetired();
-            return work.get();
-        } catch (final RuntimeException e) {
-            throw refused(e);
+            return guarded(work);
         } finally {
-            lock.unlock();
+            held.unlock();
         }
+    }
+
+    /** Whether this thread runs a save, which waits for a read only as long as allowed. */
+    private boolean saving() {
+        return apart.getReadHoldCount() > 0 || apart.isWriteLockedByCurrentThread();
     }
 
     /** A failure as the store refuses it, GitHub's words scrubbed of the token. */
@@ -2720,18 +2798,6 @@ public final class GitHubStore implements PlanningStore {
             drop();
         }
         return refusal;
-    }
-
-    /**
-     * Holds a board read or saved, and writes its copy at once, so the next start shows it.
-     *
-     * @param fresh the board
-     * @param whole whether GitHub was read whole for it, which ends a board taken from the copy
-     */
-    private void hold(final Snapshot fresh, final boolean whole) {
-        synchronized (holding) {
-            holdNow(fresh, whole);
-        }
     }
 
     /**
@@ -2761,7 +2827,6 @@ public final class GitHubStore implements PlanningStore {
         // Only the items held keep their times; one gone and back is compared anew.
         listedAt.keySet().retainAll(fresh.raw().keySet());
         if (whole) {
-            unread = null;
             // A look's cursor from before a whole read does not describe its board.
             fromCopy = false;
             cursor = ChangeCursor.NONE;
@@ -2802,13 +2867,15 @@ public final class GitHubStore implements PlanningStore {
 
     /** Forgets the board held and removes its copy, so neither comes back at the next read. */
     private void drop() {
-        snapshot = null;
-        unread = null;
-        // GitHub is read whole next: nothing read before is laid over it.
-        saves.clear();
-        listedAt.clear();
-        fromCopy = false;
-        cursor = ChangeCursor.NONE;
+        synchronized (holding) {
+            snapshot = null;
+            unread = null;
+            // GitHub is read whole next: nothing read before is laid over it.
+            saves.clear();
+            listedAt.clear();
+            fromCopy = false;
+            cursor = ChangeCursor.NONE;
+        }
         removeCopy();
     }
 

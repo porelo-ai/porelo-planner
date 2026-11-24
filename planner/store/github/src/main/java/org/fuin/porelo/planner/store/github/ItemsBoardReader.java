@@ -834,7 +834,8 @@ public final class ItemsBoardReader implements BoardReader {
         if (whole != null) {
             return whole;
         }
-        final ProjectConfig read = delta.read();
+        // A delta lays items and waits only: the board keeps the settings it was read with.
+        final ProjectConfig read = newest.config();
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>(newest.raw());
         items.values()
                 .removeIf(

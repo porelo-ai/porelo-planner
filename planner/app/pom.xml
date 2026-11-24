@@ -86,6 +86,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Checks that every save of a project reaches its store through the project's queue. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.fuin.porelo</groupId>
             <artifactId>porelo-planner-store-git</artifactId>

@@ -310,8 +310,45 @@ class GitHubStoreWaitsTest {
 
         store.poll();
 
-        // The waits are read before the lock, so they may be read; they are not laid onto the board
+        // The waits are read before the fold, so they may be read; they are not laid onto the board
         // that replaced the one they were read against, and the probe is not told.
         assertThat(probe.waitsRead.get()).as("the probe not told they were read").isZero();
+    }
+
+    @Test
+    void aSaveThatLandsWhileALookLaysTheWaitsOnStaysTheBoard() throws Exception {
+        // Harm: a look lays the waits it read onto the board it began from after a save replaced
+        // that board, so the save's board is gone until the next whole read.
+        final Reader reader = new Reader();
+        final Probe probe = new Probe();
+        final GitHubStore store = store(reader, probe);
+        store.refresh();
+        store.poll();
+        probe.waitsChanged.set(true);
+
+        final java.util.concurrent.atomic.AtomicReference<RuntimeException> failed =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final Thread poller =
+                new Thread(
+                        () -> {
+                            try {
+                                store.poll();
+                            } catch (final RuntimeException e) {
+                                failed.set(e);
+                            }
+                        },
+                        "poller");
+        synchronized (GitHubStoreLookTest.holding(store)) {
+            poller.start();
+            // The look read the waits and waits to lay them on; the save's read lands first.
+            GitHubStoreLookTest.awaitWaitingIn(poller, "waitsBesideSaves");
+            store.readAfter(Set.of());
+        }
+        poller.join(5000);
+
+        assertThat(failed.get()).as("a failure of the look").isNull();
+        assertThat(store.board().revision().value())
+                .as("the board the save read after its write")
+                .isEqualTo("whole-2");
     }
 }
