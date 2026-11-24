@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.CallTimes;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
@@ -738,7 +739,12 @@ public final class GitHubStore implements PlanningStore {
                 writing(
                                 () -> {
                                     final Snapshot now = rechecked(recheck);
-                                    parts.writer().save(now, basis, writes);
+                                    CallTimes.phase(
+                                            "write",
+                                            () -> {
+                                                parts.writer().save(now, basis, writes);
+                                                return now;
+                                            });
                                     return readAfterWriting();
                                 })
                         .board());
@@ -849,7 +855,9 @@ public final class GitHubStore implements PlanningStore {
                 writing(
                                 () -> {
                                     final Snapshot now = rechecked(recheck);
-                                    return edit.test(now) ? readAfterWriting() : now;
+                                    final boolean wrote =
+                                            CallTimes.phase("write", () -> edit.test(now));
+                                    return wrote ? readAfterWriting() : now;
                                 })
                         .board());
     }
@@ -861,14 +869,19 @@ public final class GitHubStore implements PlanningStore {
      */
     private Snapshot rechecked(final Recheck recheck) {
         final Snapshot now = current();
-        recheck.rule()
-                .accept(
-                        new FreshDependencies(
-                                now,
-                                recheck,
-                                (base, ids) -> parts.reader().reread(configNow(), base, ids),
-                                parts.writer()));
-        return now;
+        return CallTimes.phase(
+                "recheck",
+                () -> {
+                    recheck.rule()
+                            .accept(
+                                    new FreshDependencies(
+                                            now,
+                                            recheck,
+                                            (base, ids) ->
+                                                    parts.reader().reread(configNow(), base, ids),
+                                            parts.writer()));
+                    return now;
+                });
     }
 
     /**
@@ -1738,6 +1751,10 @@ public final class GitHubStore implements PlanningStore {
      * window is never told nothing was and a stage result is never handed in and saved twice.
      */
     private Snapshot readAfterWriting() {
+        return CallTimes.phase("reread", this::readAfterWritingTimed);
+    }
+
+    private Snapshot readAfterWritingTimed() {
         try {
             final Snapshot held = snapshot;
             if (held == null) {
@@ -1977,12 +1994,14 @@ public final class GitHubStore implements PlanningStore {
     private <T extends @Nullable Object> T locked(final Supplier<T> work) {
         refuseRetired();
         final boolean held;
+        final long waiting = System.nanoTime();
         try {
             held = lock.tryLock(lockWait.toMillis(), TimeUnit.MILLISECONDS);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new StoreException.Busy(config.own());
         }
+        CallTimes.waited("the project", System.nanoTime() - waiting);
         if (!held) {
             throw new StoreException.Busy(config.own());
         }

@@ -136,10 +136,11 @@ public class StoreConfiguration {
         final ForgeTokens tokens = ForgeTokens.of(environment, limits);
         // GitHub's answers are never followed elsewhere, so the token goes to GitHub's API alone.
         final HttpClient http =
-                HttpClient.newBuilder()
-                        .followRedirects(HttpClient.Redirect.NEVER)
-                        .connectTimeout(limits.services(Duration.ofSeconds(10)))
-                        .build();
+                new TimedHttpClient(
+                        HttpClient.newBuilder()
+                                .followRedirects(HttpClient.Redirect.NEVER)
+                                .connectTimeout(limits.services(Duration.ofSeconds(10)))
+                                .build());
         final GitHubGraphQl graphQl = new GitHubGraphQl(GITHUB_API, http);
         final GitHubClient rest = new GitHubClient(GITHUB_API, http);
         final TrackedStores github =

@@ -31,6 +31,7 @@ import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.CallTimes;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -280,24 +281,42 @@ public final class WorkRecord implements AutoCloseable {
                                                     .findFirst()
                                                     .map(StackWalker.StackFrame::getMethodName)
                                                     .orElse("unknown"));
-            mutex.lock();
-            boolean taken = false;
+            final CallTimes times = CallTimes.open(caller);
             try {
-                if (closed) {
-                    throw unavailable(project, "The work record of " + project + " was closed.");
+                mutex.lock();
+                boolean taken = false;
+                try {
+                    if (closed) {
+                        throw unavailable(
+                                project, "The work record of " + project + " was closed.");
+                    }
+                    if (!memory) {
+                        acquire();
+                    }
+                    taken = true;
+                    toldWait(caller, started, true);
+                    CallTimes.waited("the work record", System.nanoTime() - started);
+                    return action.apply(this);
+                } finally {
+                    if (!taken) {
+                        // A wait that ends refused is the one a person most needs explained.
+                        toldWait(caller, started, false);
+                    }
+                    mutex.unlock();
                 }
-                if (!memory) {
-                    acquire();
-                }
-                taken = true;
-                toldWait(caller, started, true);
-                return action.apply(this);
             } finally {
-                if (!taken) {
-                    // A wait that ends refused is the one a person most needs explained.
-                    toldWait(caller, started, false);
-                }
-                mutex.unlock();
+                told(times);
+            }
+        }
+
+        /** Says where a call that wrote or reached GitHub spent its time, once it ended. */
+        private void told(final @Nullable CallTimes times) {
+            if (times == null) {
+                return;
+            }
+            final String line = times.end();
+            if (line != null) {
+                LOG.info("Work record call {} of project {}", line, LogText.of(project));
             }
         }
 
