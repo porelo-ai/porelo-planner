@@ -35,6 +35,7 @@ import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
@@ -102,7 +103,8 @@ final class BoundTypes {
                     ChangeCursor.class,
                     ChangeCursor.Page.class,
                     TrackedWait.class,
-                    TrackedUnlisted.class);
+                    TrackedUnlisted.class,
+                    OverlaidItem.class);
 
     /** The work record on disk, and the answers the window's events carry, as JSON. */
     static final List<Class<?>> OWN =

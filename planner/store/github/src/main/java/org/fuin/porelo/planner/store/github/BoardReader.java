@@ -169,13 +169,13 @@ public interface BoardReader {
      *
      * @param held the snapshot
      * @param cursor where the tracker's look for changes stands
-     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @param heldItems the items held over the tracker's last whole list until it shows them
      * @return the copy, or null for a snapshot this reader cannot give again from one
      */
     default org.fuin.porelo.planner.store.cache.@Nullable BoardCopy toCopy(
             final Snapshot held,
             final org.fuin.porelo.planner.store.cache.ChangeCursor cursor,
-            final java.util.List<org.fuin.porelo.planner.store.cache.TrackedItem> heldItems) {
+            final java.util.List<org.fuin.porelo.planner.store.cache.OverlaidItem> heldItems) {
         return null;
     }
 
@@ -185,14 +185,14 @@ public interface BoardReader {
      *
      * @param held the snapshot
      * @param cursor where the tracker's look for changes stands
-     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @param heldItems the items held over the tracker's last whole list until it shows them
      * @param listedAt each item's own last change as the list showed it, by the items' ids
      * @return the copy, or null for a snapshot this reader cannot give again from one
      */
     default org.fuin.porelo.planner.store.cache.@Nullable BoardCopy toCopy(
             final Snapshot held,
             final org.fuin.porelo.planner.store.cache.ChangeCursor cursor,
-            final java.util.List<org.fuin.porelo.planner.store.cache.TrackedItem> heldItems,
+            final java.util.List<org.fuin.porelo.planner.store.cache.OverlaidItem> heldItems,
             final java.util.Map<String, java.time.Instant> listedAt) {
         return toCopy(held, cursor, heldItems);
     }

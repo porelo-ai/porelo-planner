@@ -89,6 +89,18 @@ class BoardCopiesTest {
                         new TrackedItem.Links(List.of(), false, null, 0),
                         "Story",
                         List.of(new TrackedItem.Choice("Priority", "Urgent")));
+        final TrackedItem one =
+                new TrackedItem(
+                        "PVTI_one",
+                        false,
+                        issue,
+                        List.of(
+                                new TrackedItem.Value(
+                                        "PVTSSF_status", "opt-1", "Backlog", null, null),
+                                new TrackedItem.Value("PVTF_estimate", null, null, null, 82.0)),
+                        Instant.parse("2026-11-21T10:01:00Z"),
+                        true,
+                        2);
         return new BoardCopy(
                 project,
                 commit,
@@ -102,27 +114,21 @@ class BoardCopiesTest {
                         List.of("The field Size is missing"),
                         Map.of("PVTSSF_status", 11L, "PVTF_estimate", 12L),
                         List.of("High", "Medium", "Low")),
-                List.of(
-                        new TrackedItem(
-                                "PVTI_one",
-                                false,
-                                issue,
-                                List.of(
-                                        new TrackedItem.Value(
-                                                "PVTSSF_status", "opt-1", "Backlog", null, null),
-                                        new TrackedItem.Value(
-                                                "PVTF_estimate", null, null, null, 82.0)),
-                                Instant.parse("2026-11-21T10:01:00Z"),
-                                true,
-                                2),
-                        new TrackedItem("PVTI_draft", true, null, List.of(), null, false, 0)),
+                List.of(one, new TrackedItem("PVTI_draft", true, null, List.of(), null, false, 0)),
                 new ChangeCursor(
                         Instant.parse("2026-11-21T10:04:00Z"),
                         List.of(
                                 new ChangeCursor.Page(
                                         null, "W/\"etag-1\"", true, List.of("PVTI_one")),
                                 new ChangeCursor.Page("c1", null, false, List.of()))),
-                List.of(new TrackedItem("PVTI_held", false, null, List.of(), null, false, 0)),
+                List.of(
+                        // An item held over the list is one of the board's, read by id.
+                        new OverlaidItem(
+                                "PVTI_one",
+                                one,
+                                false,
+                                "version-2",
+                                List.of("version-1", "absent"))),
                 List.of(
                         new TrackedWait("I_far", "other-org/elsewhere", 7, false),
                         new TrackedWait("I_hidden", "other-org/private", 8, null)),

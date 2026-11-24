@@ -335,8 +335,11 @@ public final class GitHubStore implements PlanningStore {
     /** Where the tracker's look for changes stands, kept with the copy. */
     private volatile ChangeCursor cursor = ChangeCursor.NONE;
 
-    /** The planner's own saves the tracker's list may not show yet, kept with the copy. */
-    private final HeldSaves saves = new HeldSaves();
+    /**
+     * The items saved or read by id that the board holds over GitHub's last whole list until a list
+     * shows them, kept with the copy.
+     */
+    private final OwnSaves saves = new OwnSaves();
 
     /**
      * Each item's own last change as the tracker's list showed it at the last look that took it,
@@ -510,13 +513,14 @@ public final class GitHubStore implements PlanningStore {
                 LOG.info("The board's copy is not of the project as its files name it now");
                 return null;
             }
+            // Before the board is held, so a copy whose entries are refused leaves nothing behind.
+            saves.load(copy.held());
             snapshot = loaded;
             fromCopy = true;
             // The probe knows nothing from before the copy: its first look takes what it sees as
             // this board, while the item look tells what changed on it since.
             parts.probe().adoptNext();
             cursor = copy.cursor();
-            saves.load(copy.held(), copy.cursor());
             listedAt.clear();
             for (final TrackedItem item : copy.items()) {
                 final Instant at = item.updatedAt();
@@ -1171,8 +1175,9 @@ public final class GitHubStore implements PlanningStore {
             // Read by id before any lock, laid onto the newest board; a failed read forgets the
             // board, which this poll then reads whole.
             try {
+                final long began = saves.begin();
                 final Reread delta = parts.reader().fetch(configNow(), before, wrote, Map.of());
-                if (merged(delta, null) != null) {
+                if (merged(delta, began) != null) {
                     clearUnread(wrote);
                 }
             } catch (final RuntimeException e) {
@@ -1242,6 +1247,7 @@ public final class GitHubStore implements PlanningStore {
             throw refused(e);
         }
         // GitHub is asked before the lock, so no save waits for its answer.
+        final long began = saves.begin();
         final Reread delta;
         try {
             delta = parts.reader().fetchWaits(now, board);
@@ -1262,9 +1268,11 @@ public final class GitHubStore implements PlanningStore {
                             if (delta == null) {
                                 return base;
                             }
-                            final Snapshot fresh = parts.reader().apply(base, delta);
-                            hold(fresh, false);
-                            return fresh;
+                            synchronized (holding) {
+                                final Snapshot fresh = laidOn(base, delta, began);
+                                holdNow(fresh, false);
+                                return fresh;
+                            }
                         });
         if (reread[0]) {
             parts.probe().waitsRead();
@@ -1272,14 +1280,17 @@ public final class GitHubStore implements PlanningStore {
         return read;
     }
 
-    /** The items of a board, as the copy holds them, by their ids, the saves held laid over. */
+    /**
+     * The items of a board, as the copy holds them, by their ids; the items held over GitHub's list
+     * are on the board already.
+     */
     private Map<String, TrackedItem> known(final Snapshot current) {
         final Map<String, TrackedItem> known = new LinkedHashMap<>();
         current.raw()
                 .forEach(
                         (id, item) ->
                                 known.put(id, BoardCopyMapping.tracked(item, listedAt.get(id))));
-        return saves.overlaid(known);
+        return known;
     }
 
     /**
@@ -1390,6 +1401,7 @@ public final class GitHubStore implements PlanningStore {
                         && changed.added().isEmpty()
                         && changed.gone().isEmpty();
         // GitHub is asked for what changed before the lock, so no save waits for its answer.
+        final long began = saves.begin();
         final Reread first;
         final @Nullable Reread second;
         if (nothing) {
@@ -1399,7 +1411,7 @@ public final class GitHubStore implements PlanningStore {
             final Snapshot without = without(start, changed.gone());
             final Set<String> items = new LinkedHashSet<>(changed.changed());
             final Set<String> issues = new LinkedHashSet<>(added.values());
-            issues.addAll(HeldSaves.issuesOf(start, items));
+            issues.addAll(issuesOf(start, items));
             // A read by id does not tell whether an item is archived; the list does.
             final Map<String, Boolean> archived = new LinkedHashMap<>();
             final Set<String> named = new LinkedHashSet<>(changed.changed());
@@ -1462,26 +1474,36 @@ public final class GitHubStore implements PlanningStore {
                             if (first == null) {
                                 // Nothing changed: the board stays, and its copy is written only
                                 // for a look that moved.
-                                boolean moves = !changed.next().equals(cursor) || saves.any();
+                                boolean moves = !changed.next().equals(cursor);
                                 cursor = changed.next();
-                                saves.looked(changed, base, saved, listed);
                                 moves |= tookTimes(base, listed);
-                                final Snapshot read = readUnshown(now, base, saved);
+                                final Snapshot read = readUnshown(now, base, saved, began);
                                 if (moves || read != base) {
                                     hold(read, false);
                                 }
                                 return read;
                             }
                             // An item a save wrote during the look keeps the board's value: the
-                            // save read it after its own write.
+                            // save read it after its own write, as did any read by id begun later.
                             final Set<String> kept = touchedIssues(base, saved);
-                            Snapshot folded =
-                                    parts.reader()
-                                            .apply(
-                                                    without(base, changed.gone()),
-                                                    withoutIssues(first, kept));
+                            kept.addAll(saves.readSince(began));
+                            final Set<String> gone = new LinkedHashSet<>(changed.gone());
+                            gone.removeIf(
+                                    id ->
+                                            issuesOf(base, List.of(id)).stream()
+                                                    .anyMatch(kept::contains));
+                            final Reread firstKept = withoutIssues(first, kept);
+                            Snapshot folded = parts.reader().apply(without(base, gone), firstKept);
+                            // The look's reads by id are current: they update the items held
+                            // over GitHub's lists and release none.
+                            final Set<String> readIds = affected(base, firstKept);
+                            readIds.addAll(gone);
+                            saves.readById(base, folded, readIds, began);
                             if (second != null) {
-                                folded = parts.reader().apply(folded, withoutIssues(second, kept));
+                                final Reread secondKept = withoutIssues(second, kept);
+                                final Snapshot next = parts.reader().apply(folded, secondKept);
+                                saves.readById(folded, next, affected(folded, secondKept), began);
+                                folded = next;
                             }
                             final boolean keptAny =
                                     first.issues().stream().anyMatch(kept::contains)
@@ -1496,10 +1518,9 @@ public final class GitHubStore implements PlanningStore {
                                                 + " covers the same range again");
                             } else {
                                 cursor = changed.next();
-                                saves.looked(changed, folded, saved, listed);
                                 tookTimes(folded, listed);
                             }
-                            folded = readUnshown(now, folded, saved);
+                            folded = readUnshown(now, folded, saved, began);
                             hold(folded, false);
                             LOG.info(
                                     "Took {} changed, {} new and {} gone items since the last look into"
@@ -1623,65 +1644,176 @@ public final class GitHubStore implements PlanningStore {
     }
 
     /**
-     * Reads again by id the saves held of items a look's list does not carry yet, so the board
-     * takes GitHub's answer for them at the look instead of at the next whole read; runs under the
-     * lock.
+     * Reads again by id the items held over GitHub's lists that no page of a look's list carries
+     * yet, such as one just made, so the board takes GitHub's later changes to them at the look
+     * instead of at the next whole read; runs under the lock.
      */
     private Snapshot readUnshown(
-            final ProjectConfig now, final Snapshot board, final List<Touched.Ids> during) {
-        final Map<String, String> unshown = saves.unshown(cursor, during);
+            final ProjectConfig now,
+            final Snapshot board,
+            final List<Touched.Ids> during,
+            final long looked) {
+        final Map<String, String> unshown = saves.unlisted(cursor, during, looked);
         if (unshown.isEmpty()) {
             return board;
         }
-        final Snapshot read;
+        final long began = saves.begin();
+        final Reread delta;
         try {
-            read =
+            delta =
                     parts.reader()
-                            .reread(
+                            .fetch(
                                     now,
                                     board,
                                     new Touched.Ids(
                                             new LinkedHashSet<>(unshown.keySet()),
                                             Set.of(),
                                             Set.of(),
-                                            Set.of()));
+                                            Set.of()),
+                                    Map.of());
         } catch (final RuntimeException e) {
-            // The look's own changes are folded and its cursor taken; only these saves wait.
+            // The look's own changes are folded and its cursor taken; only these items wait.
             LOG.warn(
-                    "Could not read {} own saves again by id; they stay held: {}",
+                    "Could not read {} items held over GitHub's list again by id: {}",
                     unshown.size(),
                     refused(e).getMessage());
             return board;
         }
-        saves.refreshed(read, unshown.values(), cursor);
+        final Snapshot read = laidOn(board, delta, began);
         LOG.info(
-                "Read {} own saves again by id that GitHub's list does not carry yet",
+                "Read {} items held over GitHub's list again by id, which its pages do not carry"
+                        + " yet",
                 unshown.size());
         return read;
     }
 
     /**
-     * Keeps the saves held that a whole read of GitHub's list does not show yet: each is read again
-     * by its issue, which GitHub answers as it stands, the save included; the others are released.
+     * One read by id a whole read laid onto its board: the board before and after it, the items it
+     * put on or took off, and when it began.
      */
-    private Snapshot keptHeld(final ProjectConfig now, final Snapshot read) {
-        final Map<String, String> lagging = saves.lagging(read);
-        if (lagging.isEmpty()) {
-            return read;
+    private record Round(Snapshot before, Snapshot after, Set<String> items, long began) {}
+
+    /** The items a read by id puts onto a board or takes off it, by their ids. */
+    private static Set<String> affected(final Snapshot base, final Reread delta) {
+        final Set<String> items = new LinkedHashSet<>(delta.put().keySet());
+        base.raw()
+                .forEach(
+                        (id, item) -> {
+                            final GitHubGraphQl.BoardIssue issue = item.issue();
+                            if (issue != null && delta.issues().contains(issue.id())) {
+                                items.add(id);
+                            }
+                        });
+        return items;
+    }
+
+    /**
+     * Lays a read by id onto a board and takes it into the items held over GitHub's lists; an item
+     * a read begun later answered already keeps that answer. A read that fell back to a whole read
+     * is taken as a whole read's list.
+     *
+     * @param base the board to lay it onto
+     * @param delta what was read
+     * @param began when the read began, from {@link OwnSaves#begin()}
+     * @return the board with it
+     */
+    private Snapshot laidOn(final Snapshot base, final Reread delta, final long began) {
+        final Snapshot whole = delta.whole();
+        if (whole != null) {
+            return overList(whole, whole, List.of(), base, began);
         }
-        final Snapshot kept =
-                parts.reader()
-                        .reread(
-                                now,
-                                read,
-                                new Touched.Ids(
-                                        new LinkedHashSet<>(lagging.keySet()),
-                                        Set.of(),
-                                        Set.of(),
-                                        Set.of()));
-        saves.refreshed(kept, lagging.values(), cursor);
-        LOG.info("Read {} own saves again that GitHub's list did not show yet", lagging.size());
-        return kept;
+        final Reread kept = withoutIssues(delta, saves.readSince(began));
+        final Snapshot fresh = parts.reader().apply(base, kept);
+        saves.readById(base, fresh, affected(base, kept), began);
+        return fresh;
+    }
+
+    /**
+     * Takes a whole read: its list releases the items held over it that it shows caught up or
+     * changed since, its reads by id update them, and those still held are laid over it.
+     *
+     * @param list the board as GitHub's whole list gave it
+     * @param result the board with the whole read's reads by id laid on
+     * @param rounds those reads by id, in the order they were laid on
+     * @param previous the board held before, whose waits an item laid over keeps
+     * @param listBegan when the read of the list began, from {@link OwnSaves#begin()}
+     * @return the board
+     */
+    private Snapshot overList(
+            final Snapshot list,
+            final Snapshot result,
+            final List<Round> rounds,
+            final @Nullable Snapshot previous,
+            final long listBegan) {
+        final int had = saves.size();
+        if (list.config().projectId().isEmpty()) {
+            // Not read from GitHub's project, as the copy also tells: no item to lay over it.
+            saves.clear();
+        } else {
+            saves.listed(list, listBegan);
+        }
+        final int kept = saves.size();
+        for (final Round round : rounds) {
+            saves.readById(round.before(), round.after(), round.items(), round.began());
+        }
+        if (had > 0) {
+            // A list that never catches up shows here as entries kept read after read.
+            LOG.info(
+                    "The whole read's list showed {} of {} items held over it; {} stay while it"
+                            + " lags",
+                    had - kept,
+                    had,
+                    kept);
+        }
+        final Reread over = saves.over(result);
+        if (over == null) {
+            return result;
+        }
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>();
+        if (previous != null) {
+            // An item laid over keeps the waits it was read with, which the lagging list lacks.
+            previous.waits().forEach(waits::put);
+            waits.keySet().removeAll(result.waits().keySet());
+        }
+        return parts.reader()
+                .apply(
+                        result,
+                        new Reread(
+                                over.read(),
+                                null,
+                                over.put(),
+                                over.issues(),
+                                over.archived(),
+                                waits));
+    }
+
+    /**
+     * Takes a whole read and holds the board it gives, in one step with the items held over it and
+     * the copy offered.
+     */
+    private Snapshot heldWhole(
+            final Snapshot list,
+            final Snapshot result,
+            final List<Round> rounds,
+            final long listBegan) {
+        synchronized (holding) {
+            final Snapshot fresh = overList(list, result, rounds, snapshot, listBegan);
+            holdNow(fresh, true);
+            return fresh;
+        }
+    }
+
+    /** The issues' node ids of items a board holds, for a read of them by id. */
+    private static Set<String> issuesOf(final Snapshot board, final Iterable<String> itemIds) {
+        final Set<String> issues = new LinkedHashSet<>();
+        for (final String id : itemIds) {
+            final GitHubGraphQl.ProjectItem item = board.raw().get(id);
+            final GitHubGraphQl.BoardIssue issue = item == null ? null : item.issue();
+            if (issue != null) {
+                issues.add(issue.id());
+            }
+        }
+        return issues;
     }
 
     /**
@@ -1748,6 +1880,7 @@ public final class GitHubStore implements PlanningStore {
                 parts.probe().forget();
             }
             // Beside the saves, so a wait for GitHub's rate limit holds none of them.
+            final long listBegan = saves.begin();
             final Snapshot read = parts.reader().read(now, true);
             parts.probe().readWhole();
             LOG.info(
@@ -1759,6 +1892,7 @@ public final class GitHubStore implements PlanningStore {
             // The saves made during the read are read again by id before the lock, round after
             // round while more come; only those made after the last round are read under it.
             Snapshot outside = read;
+            final List<Round> rounds = new ArrayList<>();
             int fetched = 0;
             for (int round = 0; round < SAVE_ROUNDS; round++) {
                 final List<Touched.Ids> saved;
@@ -1768,18 +1902,17 @@ public final class GitHubStore implements PlanningStore {
                 if (saved.size() == fetched) {
                     break;
                 }
-                outside =
+                final long readBegan = saves.begin();
+                final Reread delta =
                         parts.reader()
-                                .apply(
+                                .fetch(
+                                        configNow(),
                                         outside,
-                                        parts.reader()
-                                                .fetch(
-                                                        configNow(),
-                                                        outside,
-                                                        merged(
-                                                                saved.subList(
-                                                                        fetched, saved.size())),
-                                                        Map.of()));
+                                        merged(saved.subList(fetched, saved.size())),
+                                        Map.of());
+                final Snapshot next = parts.reader().apply(outside, delta);
+                rounds.add(new Round(outside, next, affected(outside, delta), readBegan));
+                outside = next;
                 fetched = saved.size();
             }
             final Snapshot before = outside;
@@ -1795,15 +1928,25 @@ public final class GitHubStore implements PlanningStore {
                                 }
                                 Snapshot result = before;
                                 if (saved.size() > readBefore) {
-                                    result =
+                                    final long readBegan = saves.begin();
+                                    final Reread delta =
                                             parts.reader()
-                                                    .reread(
+                                                    .fetch(
                                                             configNow(),
                                                             result,
                                                             merged(
                                                                     saved.subList(
                                                                             readBefore,
-                                                                            saved.size())));
+                                                                            saved.size())),
+                                                            Map.of());
+                                    final Snapshot next = parts.reader().apply(result, delta);
+                                    rounds.add(
+                                            new Round(
+                                                    result,
+                                                    next,
+                                                    affected(result, delta),
+                                                    readBegan));
+                                    result = next;
                                 }
                                 if (!saved.isEmpty()) {
                                     LOG.info(
@@ -1812,8 +1955,7 @@ public final class GitHubStore implements PlanningStore {
                                             saved.size(),
                                             readBefore);
                                 }
-                                result = keptHeld(configNow(), result);
-                                hold(result, true);
+                                result = heldWhole(read, result, rounds, listBegan);
                                 synchronized (fold) {
                                     inFlight = null;
                                 }
@@ -1893,9 +2035,9 @@ public final class GitHubStore implements PlanningStore {
             return current;
         }
         // The probe saw the change and keeps its tags for the board this read gives.
-        final Snapshot fresh = keptHeld(now, timedRead(now, WholeRead.PROBED));
-        hold(fresh, true);
-        return fresh;
+        final long listBegan = saves.begin();
+        final Snapshot read = timedRead(now, WholeRead.PROBED);
+        return heldWhole(read, read, List.of(), listBegan);
     }
 
     /**
@@ -1904,8 +2046,9 @@ public final class GitHubStore implements PlanningStore {
      */
     private Snapshot readWhole(final ProjectConfig now, final WholeRead why) {
         parts.probe().forget();
-        final Snapshot fresh = keptHeld(now, timedRead(now, why));
-        hold(fresh, true);
+        final long listBegan = saves.begin();
+        final Snapshot read = timedRead(now, why);
+        final Snapshot fresh = heldWhole(read, read, List.of(), listBegan);
         settle(fresh, false);
         return fresh;
     }
@@ -2063,6 +2206,7 @@ public final class GitHubStore implements PlanningStore {
             }
             issues.add(item.issueId());
         }
+        final long began = saves.begin();
         final Snapshot fresh =
                 merged(
                         parts.reader()
@@ -2071,7 +2215,7 @@ public final class GitHubStore implements PlanningStore {
                                         held,
                                         new Touched.Ids(issues, Set.of(), Set.of(), Set.of()),
                                         Map.of()),
-                        null);
+                        began);
         return fresh != null ? fresh : readWhole(configNow(), WholeRead.RESULT);
     }
 
@@ -2116,8 +2260,9 @@ public final class GitHubStore implements PlanningStore {
                 return readWhole(configNow(), WholeRead.WRITTEN);
             }
             final Touched.Ids written = touched.ids();
-            // GitHub's lists show the save a moment after it; until then it is held.
-            final Snapshot fresh = merged(fetchWithChildren(held, written), written);
+            // GitHub's lists show the save a moment after it; until then it is held over them.
+            final long began = saves.begin();
+            final Snapshot fresh = merged(fetchWithChildren(held, written), began);
             if (fresh == null) {
                 return readWhole(configNow(), WholeRead.WRITTEN);
             }
@@ -2334,8 +2479,9 @@ public final class GitHubStore implements PlanningStore {
         }
         try {
             final boolean wrote = !written.none();
-            // A part a save wrote is held until GitHub's list shows it, as after a save that ended;
-            // an earlier save of the same items stays held until this one replaces it.
+            // What the read finds is held over GitHub's lists until they show it, as after a save
+            // that ended.
+            final long began = saves.begin();
             final Snapshot fresh =
                     merged(
                             fetchWithChildren(
@@ -2345,7 +2491,7 @@ public final class GitHubStore implements PlanningStore {
                                             items,
                                             written.numbered(),
                                             written.databaseIds())),
-                            wrote ? written : null);
+                            began);
             if (fresh == null) {
                 return null;
             }
@@ -2451,7 +2597,6 @@ public final class GitHubStore implements PlanningStore {
                         : parts.refusals().refusal(config.own(), e, tokenToScrub());
         if (refusal instanceof StoreException.NoForgeAccess) {
             // Read again next time, so the window is told the refusal, not the board kept.
-            saves.clear();
             drop();
         }
         return refusal;
@@ -2471,23 +2616,21 @@ public final class GitHubStore implements PlanningStore {
 
     /**
      * Lays what a read by id found onto the newest board held, in one step with holding it, the
-     * saves held and the copy offered, so neither a merge of other items nor a copy is lost.
+     * items held over GitHub's lists and the copy offered, so neither a merge of other items nor a
+     * copy is lost.
      *
      * @param delta what was read
-     * @param written what a save wrote, held until GitHub's list shows it; null for no save
+     * @param began when the read began, from {@link OwnSaves#begin()}
      * @return the board held now, or null when the board was forgotten or read with other project
      *     files meanwhile, which the caller then reads whole
      */
-    private @Nullable Snapshot merged(final Reread delta, final Touched.@Nullable Ids written) {
+    private @Nullable Snapshot merged(final Reread delta, final long began) {
         synchronized (holding) {
             final Snapshot newest = snapshot;
             if (newest == null || !newest.config().commit().equals(delta.read().commit())) {
                 return null;
             }
-            final Snapshot fresh = parts.reader().apply(newest, delta);
-            if (written != null) {
-                saves.hold(fresh, written, cursor, newest);
-            }
+            final Snapshot fresh = laidOn(newest, delta, began);
             holdNow(fresh, false);
             return fresh;
         }
@@ -2509,7 +2652,7 @@ public final class GitHubStore implements PlanningStore {
         }
         // Taken now, so the copy describes this board even when it is written after the next.
         final ChangeCursor at = cursor;
-        final List<TrackedItem> held = saves.items();
+        final List<org.fuin.porelo.planner.store.cache.OverlaidItem> held = saves.copied();
         final Map<String, Instant> listed = Map.copyOf(listedAt);
         final boolean taken =
                 copyWriter.offer(
@@ -2541,6 +2684,8 @@ public final class GitHubStore implements PlanningStore {
     private void drop() {
         snapshot = null;
         unread = null;
+        // GitHub is read whole next: nothing read before is laid over it.
+        saves.clear();
         listedAt.clear();
         fromCopy = false;
         cursor = ChangeCursor.NONE;

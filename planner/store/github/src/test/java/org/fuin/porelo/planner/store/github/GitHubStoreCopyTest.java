@@ -27,6 +27,7 @@ import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
 import org.jspecify.annotations.Nullable;
@@ -636,5 +637,41 @@ class GitHubStoreCopyTest {
         assertThat(github.calls)
                 .as("only the item the look named is read at the first poll")
                 .containsExactly("issueBoard of [I_1]");
+    }
+
+    @Test
+    void aCopyWhoseHeldItemsAreRefusedServesNoBoardWhileGitHubRefusesTheRead() {
+        // Harm: a copy refused for a tampered item over the list is still served once GitHub
+        // refuses the whole read that should replace it, with none of its held items.
+        heldBefore();
+        final BoardCopy copy = copies().read(PROJECT, CONFIG.commit()).orElseThrow();
+        final TrackedItem story =
+                copy.items().stream()
+                        .filter(item -> item.id().equals("PVTI_1"))
+                        .findFirst()
+                        .orElseThrow();
+        copies().write(
+                        new BoardCopy(
+                                copy.project(),
+                                copy.filesCommit(),
+                                copy.repositories(),
+                                copy.takenAt(),
+                                copy.board(),
+                                copy.items(),
+                                copy.cursor(),
+                                // A blank version names no version an item can have.
+                                List.of(new OverlaidItem("PVTI_1", story, false, " ", List.of())),
+                                copy.waits(),
+                                copy.unlisted()));
+        final GitHub github = new GitHub();
+        github.failure = new IllegalStateException("502 Bad gateway");
+        final GitHubStore store = store(github);
+
+        assertThatThrownBy(store::board)
+                .as("the board at start, its copy refused and GitHub refusing")
+                .isInstanceOf(StoreException.class);
+        assertThatThrownBy(store::board)
+                .as("the board asked again while GitHub refuses")
+                .isInstanceOf(StoreException.class);
     }
 }

@@ -15,7 +15,7 @@ import java.util.Objects;
  * @param items the board's items, in the tracker's order
  * @param cursor where the tracker's look for changes stood when the board was held; {@link
  *     ChangeCursor#NONE} when no look was made
- * @param held the planner's own saves that the tracker's list may not show yet
+ * @param held the items held over the tracker's last whole list until it shows them
  * @param waits the issues the board's issues wait on that are no items of it, with their state
  * @param unlisted the open issues of the project's repositories that were no items of it, as each
  *     repository's list last gave them, so a repository the next read cannot list keeps them
@@ -28,7 +28,7 @@ public record BoardCopy(
         TrackerBoard board,
         List<TrackedItem> items,
         ChangeCursor cursor,
-        List<TrackedItem> held,
+        List<OverlaidItem> held,
         List<TrackedWait> waits,
         List<TrackedUnlisted> unlisted) {
 
@@ -56,7 +56,7 @@ public record BoardCopy(
      * @param board what the board is written with
      * @param items the board's items, in the tracker's order
      * @param cursor where the tracker's look for changes stood when the board was held
-     * @param held the planner's own saves that the tracker's list may not show yet
+     * @param held the items held over the tracker's last whole list until it shows them
      * @param waits the issues the board's issues wait on that are no items of it, with their state
      */
     public BoardCopy(
@@ -67,7 +67,7 @@ public record BoardCopy(
             final TrackerBoard board,
             final List<TrackedItem> items,
             final ChangeCursor cursor,
-            final List<TrackedItem> held,
+            final List<OverlaidItem> held,
             final List<TrackedWait> waits) {
         this(
                 project,
@@ -92,7 +92,7 @@ public record BoardCopy(
      * @param board what the board is written with
      * @param items the board's items, in the tracker's order
      * @param cursor where the tracker's look for changes stood when the board was held
-     * @param held the planner's own saves that the tracker's list may not show yet
+     * @param held the items held over the tracker's last whole list until it shows them
      */
     public BoardCopy(
             final Project project,
@@ -102,7 +102,7 @@ public record BoardCopy(
             final TrackerBoard board,
             final List<TrackedItem> items,
             final ChangeCursor cursor,
-            final List<TrackedItem> held) {
+            final List<OverlaidItem> held) {
         this(project, filesCommit, repositories, takenAt, board, items, cursor, held, List.of());
     }
 

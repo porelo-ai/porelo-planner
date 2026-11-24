@@ -34,6 +34,7 @@ import org.fuin.porelo.planner.store.TokenSource;
 import org.fuin.porelo.planner.store.UnlistedIssue;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
 import org.fuin.porelo.planner.store.cache.TrackerBoard;
@@ -654,8 +655,9 @@ public final class ItemsBoardReader implements BoardReader {
 
     /**
      * Reads the issues named from GitHub, and the blockers they name that the board held lacks,
-     * without laying them onto a board; a snapshot without GitHub's items, or one read with other
-     * project files, is read whole.
+     * without laying them onto a board; a snapshot not read from GitHub's project, or one read with
+     * other project files, is read whole. A project without items is read by id as any other, so an
+     * issue made in it is held over a list that lags it.
      */
     @Override
     public Reread fetch(
@@ -664,7 +666,7 @@ public final class ItemsBoardReader implements BoardReader {
             final Touched.Ids touched,
             final Map<String, Boolean> archivedNow) {
         final ProjectConfig read = held.config();
-        if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
+        if (read.projectId().isEmpty() || !read.commit().equals(config.commit())) {
             return Reread.whole(read(config));
         }
         final Set<String> nodes = new LinkedHashSet<>(touched.issues());
@@ -1019,12 +1021,12 @@ public final class ItemsBoardReader implements BoardReader {
      *
      * @param held the snapshot
      * @param cursor where the tracker's look for changes stands
-     * @param heldItems the planner's own saves the tracker's list may not show yet
+     * @param heldItems the items held over GitHub's last whole list until it shows them
      * @return the copy, or null for a snapshot not read from GitHub's item list
      */
     @Override
     public @Nullable BoardCopy toCopy(
-            final Snapshot held, final ChangeCursor cursor, final List<TrackedItem> heldItems) {
+            final Snapshot held, final ChangeCursor cursor, final List<OverlaidItem> heldItems) {
         return toCopy(held, cursor, heldItems, Map.of());
     }
 
@@ -1033,7 +1035,7 @@ public final class ItemsBoardReader implements BoardReader {
     public @Nullable BoardCopy toCopy(
             final Snapshot held,
             final ChangeCursor cursor,
-            final List<TrackedItem> heldItems,
+            final List<OverlaidItem> heldItems,
             final Map<String, Instant> listedAt) {
         if (held.config().projectId().isEmpty()) {
             // Not read from GitHub: its board could not be mapped again from its items.
@@ -1754,7 +1756,7 @@ public final class ItemsBoardReader implements BoardReader {
      * labels or values run past one page is mapped and named among the overflowing, so the board
      * shows it warned.
      */
-    private static @Nullable ItemView view(
+    static @Nullable ItemView view(
             final GitHubGraphQl.ProjectItem item,
             final ProjectConfig config,
             final Map<String, String> fieldNames,

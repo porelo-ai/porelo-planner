@@ -17,13 +17,14 @@ import org.jspecify.annotations.Nullable;
  * A copy in Apache Fory's Java format: only the copy's own records and the JDK's types are read,
  * each record through its own constructor, so a part it requires that is missing refuses the copy.
  *
- * <p>The native image initializes this class when it is built ({@code --initialize-at-build-time}),
- * so Fory's serializers are compiled then and the executable compiles none at run time.
+ * <p>Fory generates no serializer code: each record is read and written by Fory's own serializer,
+ * so no file makes it compile one while it reads. The native image initializes this class when it
+ * is built ({@code --initialize-at-build-time}), so Fory's serializers are made then.
  */
 public final class ForyEncoding implements CopyEncoding {
 
     /**
-     * The deepest nesting Fory reads: a copy nests its records and lists eight deep, and a tampered
+     * The deepest nesting Fory reads: a copy nests its records and lists nine deep, and a tampered
      * file that nests deeper is refused rather than run into the stack's end.
      */
     static final int MOST_DEPTH = 16;
@@ -60,7 +61,8 @@ public final class ForyEncoding implements CopyEncoding {
                     ChangeCursor.class,
                     ChangeCursor.Page.class,
                     TrackedWait.class,
-                    TrackedUnlisted.class);
+                    TrackedUnlisted.class,
+                    OverlaidItem.class);
 
     /** The one Fory of the planner, made when the class is initialized. */
     private static final Fory FORY = make();
@@ -76,7 +78,10 @@ public final class ForyEncoding implements CopyEncoding {
                         .withLanguage(Language.JAVA)
                         .requireClassRegistration(true)
                         .withRefTracking(false)
-                        .withCodegen(true)
+                        // No serializer is compiled, at build or run time: a tampered byte that
+                        // names a type none of the records is would have Fory compile one for it
+                        // while it reads, allocating megabytes before it refuses the copy.
+                        .withCodegen(false)
                         .withStringCompressed(true)
                         // The nesting and the fields a file names are held to these bounds. The
                         // memory Fory may reserve is held per read to the file's own size, by

@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import org.fuin.porelo.forge.github.Batch;
 import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
@@ -32,6 +31,7 @@ import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -110,6 +110,9 @@ class GitHubStoreHeldTest {
 
         private Instant listedAt = BEFORE;
 
+        /** Whether the project holds the story, or no item at all. */
+        private boolean storyOnProject = true;
+
         /** Whether GitHub holds a second issue, and whether its list shows it yet. */
         private boolean second;
 
@@ -169,7 +172,9 @@ class GitHubStoreHeldTest {
                 final String token, final String owner, final int number, final String after) {
             calls.add("projectItems");
             final List<GitHubGraphQl.ProjectItem> items = new ArrayList<>();
-            items.add(story(listedTitle, listedAt));
+            if (storyOnProject) {
+                items.add(story(listedTitle, listedAt));
+            }
             if (second && secondListed) {
                 items.add(issue2());
             }
@@ -189,7 +194,7 @@ class GitHubStoreHeldTest {
             for (final String id : issueIds) {
                 final GitHubGraphQl.ProjectItem item =
                         "I_1".equals(id)
-                                ? story(title, updatedAt)
+                                ? storyOnProject ? story(title, updatedAt) : null
                                 : "I_3".equals(id)
                                         ? item("PVTI_3", "I_3", 3, "Recent three", BEFORE, null)
                                         : "I_4".equals(id)
@@ -384,7 +389,7 @@ class GitHubStoreHeldTest {
 
     private List<String> heldInCopy() {
         return copies().read(PROJECT, CONFIG.commit()).orElseThrow().held().stream()
-                .map(TrackedItem::id)
+                .map(OverlaidItem::id)
                 .toList();
     }
 
@@ -438,9 +443,10 @@ class GitHubStoreHeldTest {
                 .extracting(org.fuin.porelo.planner.store.Issue::id)
                 .containsExactlyInAnyOrder(
                         "example-project#2", "example-project#3", "example-project#4");
+        // The story's version did not move, so only the new issue is held.
         assertThat(heldInCopy())
-                .as("only this save held while GitHub's list lags")
-                .containsExactlyInAnyOrder("PVTI_1", "PVTI_2");
+                .as("only the new issue held while GitHub's list lags")
+                .containsExactly("PVTI_2");
     }
 
     @Test
@@ -476,23 +482,50 @@ class GitHubStoreHeldTest {
                         null,
                         null,
                         null));
-        github.calls.clear();
         final Board read = store.refresh();
 
         assertThat(read.issues()).as("the issues after a whole read").hasSize(1);
-        assertThat(github.calls).contains("issueBoard of [I_2]");
-        assertThat(heldInCopy()).contains("PVTI_2");
+        assertThat(heldInCopy())
+                .as("the new issue held while the list lacks it")
+                .contains("PVTI_2");
     }
 
     @Test
-    void aHeldSaveIsReleasedOnlyOnceTheListShowsItAtItsTime() {
-        // Harm: a save released at a changed page while GitHub's list still shows the item from
-        // before it, so a whole read puts that back; or a save held for ever, its later change on
-        // GitHub hidden behind it.
+    void anIssueMadeInAProjectWithoutItemsStaysWhileTheListLacksIt() {
+        // Harm: an issue just made in a project that holds no items yet drops off the board at the
+        // next whole read, as an empty list is taken for a board never read from GitHub.
+        final GitHub github = new GitHub();
+        github.storyOnProject = false;
+        final GitHubStore store = store(github, TrackerChanges.NONE);
+        final Board board = store.refresh();
+
+        store.createIssue(
+                board.revision(),
+                new NewIssue(
+                        "example-project",
+                        "Two",
+                        "- it works",
+                        "S",
+                        Worker.AGENT,
+                        null,
+                        null,
+                        null));
+        final Board read = store.refresh();
+
+        assertThat(read.issues()).as("the issues after a whole read of an empty list").hasSize(1);
+        assertThat(heldInCopy())
+                .as("the new issue held while the list lacks it")
+                .containsExactly("PVTI_2");
+    }
+
+    @Test
+    void aHeldSaveIsReleasedOnlyByAWholeListThatShowsIt() {
+        // Harm: a save released by a look while GitHub's list still shows the item from before
+        // it, so a whole read puts that back; or a save held for ever, its later change on GitHub
+        // hidden behind it.
         final GitHub github = new GitHub();
         final List<ChangeCursor> next =
                 new ArrayList<>(List.of(cursor("t1"), cursor("t2"), cursor("t3")));
-        final AtomicReference<@Nullable Instant> shown = new AtomicReference<>(BEFORE);
         final class Look implements TrackerChanges, ItemIssues {
             @Override
             public Optional<Changed> since(
@@ -510,8 +543,7 @@ class GitHubStoreHeldTest {
 
             @Override
             public @Nullable Listed listed(final String itemId) {
-                final Instant at = shown.get();
-                return at == null ? null : new Listed(false, at, at);
+                return new Listed(false, SAVED, SAVED);
             }
         }
         final GitHubStore store = store(github, new Look());
@@ -521,12 +553,14 @@ class GitHubStoreHeldTest {
         store.save(board.revision(), new Writes(Map.of(), Map.of()));
         store.poll();
         assertThat(heldInCopy())
-                .as("held while its page, answered anew, shows the item from before it")
+                .as("held after a look whose list shows the save's time")
                 .containsExactly("PVTI_1");
 
-        shown.set(SAVED);
-        store.poll();
-        assertThat(heldInCopy()).as("held once the list shows the save's time").isEmpty();
+        github.listedTitle = "Saved";
+        github.listedAt = SAVED;
+        final Board read = store.refresh();
+        assertThat(storyTitle(read)).as("the title after the list shows it").isEqualTo("Saved");
+        assertThat(heldInCopy()).as("held once the whole list shows the save").isEmpty();
     }
 
     @Test

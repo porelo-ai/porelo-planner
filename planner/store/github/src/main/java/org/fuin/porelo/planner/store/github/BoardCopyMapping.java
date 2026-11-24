@@ -6,6 +6,7 @@ import java.util.Map;
 import org.fuin.porelo.forge.github.GitHubGraphQl;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.fuin.porelo.planner.store.cache.TrackedUnlisted;
 import org.fuin.porelo.planner.store.cache.TrackedWait;
@@ -42,7 +43,7 @@ final class BoardCopyMapping {
      *
      * @param snapshot the snapshot
      * @param cursor where the tracker's look for changes stands
-     * @param held the planner's own saves the tracker's list may not show yet
+     * @param held the items held over GitHub's last whole list until it shows them
      * @param listedAt each item's own last change as the tracker's list last showed it, by the
      *     items' ids
      * @param takenAt when the board was held
@@ -53,7 +54,7 @@ final class BoardCopyMapping {
     static BoardCopy toCopy(
             final Snapshot snapshot,
             final ChangeCursor cursor,
-            final List<TrackedItem> held,
+            final List<OverlaidItem> held,
             final Map<String, Instant> listedAt,
             final Instant takenAt) {
         final ProjectConfig read = snapshot.config();

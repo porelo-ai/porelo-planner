@@ -31,13 +31,16 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.cache.BoardCopies;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.CopyFiles;
+import org.fuin.porelo.planner.store.cache.OverlaidItem;
 import org.fuin.porelo.planner.store.cache.TrackedItem;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -439,7 +442,7 @@ class GitHubStoreLookTest {
     }
 
     private List<String> heldInCopy() {
-        return copy().held().stream().map(TrackedItem::id).toList();
+        return copy().held().stream().map(OverlaidItem::id).toList();
     }
 
     private BoardCopy copy() {
@@ -646,11 +649,11 @@ class GitHubStoreLookTest {
                 .as("the issue the look named")
                 .isEqualTo("Finished");
         assertThat(story(polled).title()).as("the title after the look").isEqualTo("Saved");
-        assertThat(heldInCopy()).as("the save after the look").containsExactly("PVTI_1");
+        assertThat(heldInCopy()).as("the save after the look").contains("PVTI_1");
 
         final Board again = store.poll();
         assertThat(story(again).title()).as("the title after the next poll").isEqualTo("Saved");
-        assertThat(heldInCopy()).as("the save after the next poll").containsExactly("PVTI_1");
+        assertThat(heldInCopy()).as("the save after the next poll").contains("PVTI_1");
         assertThat(story(store.refresh()).title())
                 .as("the title after a whole read whose list lags")
                 .isEqualTo("Saved");
@@ -704,9 +707,9 @@ class GitHubStoreLookTest {
         poller.join(5000);
 
         assertThat(failed.get()).as("a failure of the save or the poll").isNull();
-        assertThat(heldInCopy()).as("the save after the look").containsExactly("PVTI_1");
+        assertThat(heldInCopy()).as("the save after the look").contains("PVTI_1");
         store.poll();
-        assertThat(heldInCopy()).as("the save after the next poll").containsExactly("PVTI_1");
+        assertThat(heldInCopy()).as("the save after the next poll").contains("PVTI_1");
         assertThat(story(store.refresh()).title())
                 .as("the title after a whole read whose list lags")
                 .isEqualTo("Saved");
@@ -1340,9 +1343,9 @@ class GitHubStoreLookTest {
     }
 
     @Test
-    void aSaveOfOnlyLinksIsHeldUntilAWholeReadReadsItById() {
+    void aSaveOfOnlyLinksIsHeldUntilAWholeListShowsIt() {
         // Harm: sub-issues put in another order show their old order again, as a changed page
-        // releases the save although the list's counts and times cannot show the order.
+        // or a whole list that lags releases the save although it does not show the order.
         final GitHub github = new GitHub();
         final Held parent = github.add(1, true, "Story");
         final Held first = github.add(2, false, "First");
@@ -1372,13 +1375,20 @@ class GitHubStoreLookTest {
         assertThat(story(polled).issues())
                 .as("the order after the look")
                 .containsExactly("example-project#3", "example-project#2");
-        assertThat(heldInCopy()).as("the save after a changed page").containsExactly("PVTI_1");
+        assertThat(heldInCopy()).as("the save after a changed page").contains("PVTI_1");
 
         final Board read = store.refresh();
         assertThat(story(read).issues())
                 .as("the order after a whole read whose list lags")
                 .containsExactly("example-project#3", "example-project#2");
-        assertThat(heldInCopy()).as("the save after the whole read").isEmpty();
+        assertThat(heldInCopy()).as("the save after a whole read that lags").contains("PVTI_1");
+
+        github.lateRead = null;
+        final Board caughtUp = store.refresh();
+        assertThat(story(caughtUp).issues())
+                .as("the order after a whole read whose list shows the save")
+                .containsExactly("example-project#3", "example-project#2");
+        assertThat(heldInCopy()).as("the save after a whole read that shows it").isEmpty();
     }
 
     @Test
@@ -1459,5 +1469,344 @@ class GitHubStoreLookTest {
                 .as("the change the look named")
                 .isEqualTo("Finished");
         assertThat(heldInCopy()).as("the save whose read by id failed").contains("PVTI_2");
+    }
+
+    /** A save that retitles the story #1 on GitHub to the title given, at the time given. */
+    private static Consumer<ProjectWrites> retitleTo(
+            final GitHub github, final String title, final Instant at) {
+        return writes -> {
+            writes.updateIssue(TOKEN, OWNER, "example-project", 1, title, null, null);
+            final Held story = Objects.requireNonNull(github.issues.get("I_1"));
+            story.title = title;
+            story.at = at;
+        };
+    }
+
+    /** Another's change of the story #1 on GitHub, which no list shows yet if it lags. */
+    private static void retitledOutside(final GitHub github, final String title) {
+        final Held story = Objects.requireNonNull(github.issues.get("I_1"));
+        story.title = title;
+        story.at = LATER;
+    }
+
+    @Test
+    void aLookWhoseReadByIdLandsWhileBothListsLagDoesNotLetALaggingWholeReadUndoTheSave() {
+        // Harm: a read undoes an own write: the look reads the save by id and releases it, and a
+        // whole read whose list still lags then shows the story from before the save.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        github.add(2, false, "Two");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        github.lagList();
+        github.lagRead();
+
+        save(store);
+        github.calls.clear();
+        // The first look after a whole read asks each page whole, so it compares the story.
+        final Board looked = store.poll();
+
+        assertThat(github.calls)
+                .as("the look's read by id of the saved story")
+                .contains("issueBoard of [I_1]");
+        assertThat(story(looked).title()).as("the title after the look").isEqualTo("Saved");
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read whose list still lags")
+                .isEqualTo("Saved");
+    }
+
+    @Test
+    void aWholeReadWhoseListShowsTheVersionTheSaveWasJudgedOnKeepsTheSave() {
+        // Harm: a read undoes an own write: a whole read right after a save shows the story from
+        // before it, as GitHub's list lags the save.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        github.lagRead();
+
+        save(store);
+        final Board read = store.refresh();
+
+        assertThat(story(read).title())
+                .as("the title after a lagging whole read")
+                .isEqualTo("Saved");
+        assertThat(heldInCopy()).as("the save held while the list lags").containsExactly("PVTI_1");
+    }
+
+    @Test
+    void aWholeReadWhoseListShowsAnOutsideChangeAfterTheSaveShowsThatChange() {
+        // Harm: a stale own value hides someone's change: the save stays over a list that shows
+        // what another wrote after it.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+
+        save(store);
+        retitledOutside(github, "Theirs");
+        final Board read = store.refresh();
+
+        assertThat(story(read).title()).as("the title after the whole read").isEqualTo("Theirs");
+        assertThat(heldInCopy()).as("the save after a list that moved past it").isEmpty();
+    }
+
+    @Test
+    void aWholeReadShowingTheSaveReleasesItSoALaterListIsTakenAsItIs() {
+        // Harm: an entry never leaves: once the list showed the save, another's later return to
+        // the old title is hidden behind it for ever.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+
+        save(store);
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read showing the save")
+                .isEqualTo("Saved");
+        assertThat(heldInCopy()).as("the save after the list showed it").isEmpty();
+        retitledOutside(github, "One");
+
+        assertThat(story(store.refresh()).title())
+                .as("the title after another set it back")
+                .isEqualTo("One");
+    }
+
+    @Test
+    void aLooksReadByIdOfAnOutsideChangeAfterASaveIsKeptOverAListThatShowsTheSave() {
+        // Harm: a stale own value hides someone's change: a whole list that shows the save, but
+        // not yet the change a look read by id after it, puts the save back.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        github.lagList();
+
+        save(store);
+        github.lagRead();
+        retitledOutside(github, "Theirs");
+        // The first look after a whole read asks each page whole, so it compares the story.
+        final Board looked = store.poll();
+        assertThat(story(looked).title()).as("the title after the look").isEqualTo("Theirs");
+
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read whose list shows only the save")
+                .isEqualTo("Theirs");
+    }
+
+    @Test
+    void aSaveThatMovesNoVersionOfTheItemHoldsNothing() {
+        // Harm: a stale entry later hides a change: a save that changed nothing of the item, such
+        // as a comment, would be held over the list for nothing.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store =
+                store(github, new AtomicReference<>(retitleTo(github, "One", SAVED)));
+        store.refresh();
+
+        save(store);
+
+        assertThat(heldInCopy()).as("what a save that changed nothing holds").isEmpty();
+    }
+
+    @Test
+    void aRestartFromTheCopyKeepsASaveTheListStillLagsAndLetsItGoOnceTheListShowsIt() {
+        // Harm: a restart loses an entry, so a lagging whole read undoes the save; or keeps one
+        // the list caught up with.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        store(github, new AtomicReference<>(retitle(github))).refresh();
+        github.lagRead();
+        final GitHubStore before = store(github, new AtomicReference<>(retitle(github)));
+        before.board();
+        save(before);
+
+        final GitHubStore after = store(github, new AtomicReference<>(writes -> {}));
+        assertThat(story(after.board()).title()).as("the title from the copy").isEqualTo("Saved");
+        assertThat(story(after.refresh()).title())
+                .as("the title after a whole read that lags, after the restart")
+                .isEqualTo("Saved");
+
+        github.lateRead = null;
+        assertThat(story(after.refresh()).title())
+                .as("the title after a whole read that shows the save")
+                .isEqualTo("Saved");
+        assertThat(heldInCopy()).as("the save after the list showed it").isEmpty();
+    }
+
+    @Test
+    void threeSavesInARowStayOverAListThatShowsTheFirstOrTheSecond() {
+        // Harm: a read undoes an own write: after saves A, B and C a list still at A, or at B,
+        // puts an older title back.
+        final GitHub github = new GitHub();
+        github.add(1, true, "A");
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(retitleTo(github, "B", SAVED));
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        github.lagRead();
+
+        save(store);
+        final List<GitHubGraphQl.ProjectItem> atB = github.items();
+        saving.set(retitleTo(github, "C", LATER));
+        save(store);
+
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read whose list is at A")
+                .isEqualTo("C");
+        github.lateRead = atB;
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read whose list is at B")
+                .isEqualTo("C");
+    }
+
+    @Test
+    void anItemALookFoundGoneStaysGoneAfterAWholeReadThatLags() {
+        // Harm: a read undoes what a look saw: an item another took off the project comes back
+        // with a whole read whose list still holds it.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final Held two = github.add(2, false, "Two");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        store.refresh();
+        store.poll();
+        github.lagRead();
+
+        two.onProject = false;
+        assertThat(issue(store.poll(), 2)).as("the issue after the look").isNull();
+
+        assertThat(issue(store.refresh(), 2))
+                .as("the issue after a whole read whose list still holds it")
+                .isNull();
+    }
+
+    @Test
+    void aLooksReadByIdBegunBeforeAWholeReadThatReleasedItsItemDoesNotPutTheOlderValueBack()
+            throws Exception {
+        // Harm: a stale value stays for good: a look's read by id, begun before a whole read whose
+        // list released the item and landing after it, holds its older answer over every list that
+        // shows the item as it is.
+        final GitHub github = new GitHub();
+        final Held story = github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(retitle(github)));
+        store.refresh();
+        store.poll();
+        github.lagRead();
+        save(store);
+        retitledOutside(github, "Theirs");
+        final CountDownLatch looking = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final AtomicBoolean first = new AtomicBoolean(true);
+        github.onBoard =
+                ids -> {
+                    if (ids.contains("I_1") && first.getAndSet(false)) {
+                        looking.countDown();
+                        await(release);
+                        // The look's answer as GitHub gave it when the look asked, before the
+                        // change.
+                        story.title = "Saved";
+                        story.at = SAVED;
+                    }
+                };
+
+        final AtomicReference<@Nullable Throwable> failed = new AtomicReference<>();
+        final Thread poller = new Thread(() -> run(store::poll, failed), "poller");
+        poller.start();
+        assertThat(looking.await(5, TimeUnit.SECONDS)).as("the look's read by id asked").isTrue();
+        github.lateRead = null;
+        // A stage result for an issue the board lacks reads the board whole within the save.
+        assertThatThrownBy(() -> store.saveResult(resultFor("example-project#9"))) // not-a-citation
+                .as("the result for an issue on no board")
+                .isInstanceOf(org.fuin.porelo.planner.store.StoreException.NoSuchIssue.class);
+        assertThat(heldInCopy()).as("held after the whole read showed the change").isEmpty();
+        release.countDown();
+        poller.join(5000);
+        retitledOutside(github, "Theirs");
+
+        assertThat(failed.get()).as("a failure of the look").isNull();
+        assertThat(story(store.board()).title())
+                .as("the title after the look landed")
+                .isEqualTo("Theirs");
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read showing the change")
+                .isEqualTo("Theirs");
+    }
+
+    /** A stage result of an analysis of the issue named. */
+    private static StageResult resultFor(final String issue) {
+        return new StageResult(
+                WorkRule.Result.ANALYSIS,
+                List.of(
+                        new StageResult.ForIssue(
+                                issue,
+                                "Analysis",
+                                "Backlog",
+                                "- a step",
+                                "S",
+                                "small",
+                                null,
+                                List.of(),
+                                List.of())));
+    }
+
+    @Test
+    void anItemTheLooksNoLongerReadByIdLeavesTheBoardOnceTakenOffOnGitHub() {
+        // Harm: a ghost stays: an item new on the board while the whole list lags is read by id
+        // only a few times, so once someone takes it off no look tells, and the list keeps it.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final GitHubStore store = store(github, new AtomicReference<>(writes -> {}));
+        store.refresh();
+        store.poll();
+        github.lagRead();
+        final Held made = github.add(2, false, "Two");
+        assertThat(issue(store.poll(), 2)).as("the new issue after the look").isNotNull();
+        github.unlisted.add("PVTI_2");
+        for (int look = 0; look < OwnSaves.MOST_READS_BY_ID; look++) {
+            store.poll();
+        }
+        github.calls.clear();
+        store.poll();
+        assertThat(github.calls)
+                .as("the reads by id of the issue once the looks stopped reading it again")
+                .containsOnlyOnce("issueBoard of [I_2]");
+
+        made.onProject = false;
+        assertThat(issue(store.poll(), 2)).as("the issue after it was taken off").isNull();
+
+        assertThat(issue(store.refresh(), 2))
+                .as("the issue after a whole read whose list lacks it")
+                .isNull();
+    }
+
+    @Test
+    void anOutsideChangeAChangedRefusalReadsAgainIsNotHiddenByAnEarlierSave() {
+        // Harm: a stale own value hides someone's change: the save held from before keeps its
+        // title over the change a refused save read by id, once a lagging list shows the save.
+        final GitHub github = new GitHub();
+        github.add(1, true, "One");
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(retitle(github));
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        save(store);
+        github.lagRead();
+        retitledOutside(github, "Theirs");
+        final String story = story(store.board()).id();
+        saving.set(
+                writes -> {
+                    throw new org.fuin.porelo.planner.store.StoreException.Changed(List.of(story));
+                });
+
+        assertThatThrownBy(() -> save(store))
+                .as("the save refused as changed")
+                .isInstanceOf(org.fuin.porelo.planner.store.StoreException.Changed.class);
+        assertThat(story(store.board()).title())
+                .as("the title after the refusal")
+                .isEqualTo("Theirs");
+
+        assertThat(story(store.refresh()).title())
+                .as("the title after a whole read whose list shows the earlier save")
+                .isEqualTo("Theirs");
     }
 }
