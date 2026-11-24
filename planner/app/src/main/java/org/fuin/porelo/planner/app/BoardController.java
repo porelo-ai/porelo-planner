@@ -296,6 +296,11 @@ public class BoardController {
                                     Boolean.TRUE.equals(body.confirm()),
                                     given.repository(),
                                     given.branch(),
+                                    (board, runs) ->
+                                            new Moved(
+                                                    board.revision().value(),
+                                                    Moves.check(board, moves, runs).moved(),
+                                                    List.of()),
                                     runs ->
                                             saveMoves(
                                                     name, given.store(), body, basis, moves, runs));

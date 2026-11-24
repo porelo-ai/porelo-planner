@@ -4757,6 +4757,112 @@ class WorkRunTest {
     }
 
     @Test
+    void aMoveToTheStateItHasWaitsForNoOtherSave() {
+        // Harm: a move that changes nothing waits seconds behind every other save of the project.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
+        final int before = f.record.locks;
+
+        final MovePreview preview = f.run.preview(moves);
+        final String answered =
+                f.run.moves(
+                                moves,
+                                preview.basis(),
+                                preview.digest("https://example.org/own.git", null),
+                                false,
+                                "https://example.org/own.git",
+                                null,
+                                (board, held) -> "answered",
+                                runs -> {
+                                    throw new AssertionError(
+                                            "a save reached by a move to the same state");
+                                })
+                        .saved();
+
+        assertThat(answered).as("the move is answered").isEqualTo("answered");
+        assertThat(f.record.locks).as("neither preview nor save took the lock").isEqualTo(before);
+        assertThat(f.record.writes).as("nothing written to the record").isZero();
+    }
+
+    @Test
+    void aMoveToTheStateItHasOverAnItemChangedSinceItWasSeenIsRefused() {
+        // Harm: a stale window's move answered as done, hiding that the item changed.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
+        final MovePreview preview = f.run.preview(moves);
+        final var saved = new java.util.concurrent.atomic.AtomicBoolean();
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        Basis.none().with("AA1", Version.of("older")),
+                                        preview.digest("https://example.org/own.git", null),
+                                        false,
+                                        "https://example.org/own.git",
+                                        null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
+                                        runs -> saved.getAndSet(true)))
+                .as("a version the item no longer has")
+                .isInstanceOf(StoreException.Changed.class);
+        assertThat(saved).as("nothing reaches the store").isFalse();
+    }
+
+    @Test
+    void aMoveToTheStateItHasUnderAnotherDigestIsRefused() {
+        // Harm: a move confirmed for another repository answered as done.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Backlog"));
+        final MovePreview preview = f.run.preview(moves);
+
+        final Throwable refused =
+                catchThrowable(
+                        () ->
+                                f.run.moves(
+                                        moves,
+                                        preview.basis(),
+                                        preview.digest("https://example.org/old.git", null),
+                                        false,
+                                        "https://example.org/new.git",
+                                        null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
+                                        runs -> true));
+
+        assertThat(conflictOf(refused)).as("refused").isEqualTo("PreviewChanged");
+    }
+
+    @Test
+    void aMoveThatChangesAStateStillWaitsForTheLock() {
+        // Harm: two saves of one project written at once over each other.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final List<Moves.Move> moves = List.of(new Moves.Move(false, "AA1", "Review"));
+        final int before = f.record.locks;
+
+        final MovePreview preview = f.run.preview(moves);
+        f.run.moves(
+                moves,
+                preview.basis(),
+                preview.digest("https://example.org/own.git", null),
+                false,
+                "https://example.org/own.git",
+                null,
+                (board, held) -> {
+                    throw new AssertionError("a move that changes nothing");
+                },
+                runs -> "saved");
+
+        assertThat(f.record.locks).as("preview and save each under the lock").isEqualTo(before + 2);
+    }
+
+    @Test
     void aSaveConfirmedForAnotherRepositoryIsRefusedAndWritesNothing() {
         // Harm: a move written to a repository it was never shown for, after a rebind.
         final Fixture f = new Fixture();
@@ -4774,6 +4880,9 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/new.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
@@ -4811,6 +4920,9 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
@@ -4846,6 +4958,9 @@ class WorkRunTest {
                                         true,
                                         "https://example.org/own.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
@@ -4878,6 +4993,9 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
         assertThat(conflictOf(unconfirmed)).as("unconfirmed").isEqualTo("WorkRunning");
         assertThat(java.util.Objects.requireNonNull(f.run.work("ST1")).stopped())
@@ -4892,6 +5010,9 @@ class WorkRunTest {
                         true,
                         "https://example.org/own.git",
                         null,
+                        (board, held) -> {
+                            throw new AssertionError("a move that changes nothing");
+                        },
                         runs -> saved.getAndSet(true));
 
         assertThat(saved).as("the move is saved").isTrue();
@@ -5081,6 +5202,9 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
 
         assertThat(refused).as("refused").isInstanceOf(WorkRefusal.class);
@@ -5255,6 +5379,9 @@ class WorkRunTest {
                                         false,
                                         "https://example.org/own.git",
                                         null,
+                                        (board, held) -> {
+                                            throw new AssertionError("a move that changes nothing");
+                                        },
                                         runs -> saved.getAndSet(true)));
 
         assertThat(refused).isInstanceOf(StoreException.Changed.class);
@@ -5274,6 +5401,9 @@ class WorkRunTest {
                         false,
                         "https://example.org/own.git",
                         null,
+                        (board, held) -> {
+                            throw new AssertionError("a move that changes nothing");
+                        },
                         runs -> save.get())
                 .saved();
     }
@@ -5461,6 +5591,9 @@ class WorkRunTest {
         boolean held;
         int writes;
 
+        /** How often the writer lock was taken. */
+        int locks;
+
         /** Runs once when the lock is next taken, as another call's change right before it. */
         @Nullable Runnable onLock;
 
@@ -5478,6 +5611,7 @@ class WorkRunTest {
         /** Serializes actions as a disk record must. */
         @Override
         public synchronized <T extends @Nullable Object> T locked(final WorkRun.Action<T> action) {
+            locks++;
             final Runnable hook = onLock;
             if (hook != null) {
                 onLock = null;

@@ -1939,12 +1939,39 @@ public final class WorkRun {
      * @throws Moves.Refused when the save would refuse the batch itself
      */
     public MovePreview preview(final List<Moves.Move> moves) {
+        final MovePreview quick = unchanging(moves);
+        if (quick != null) {
+            return quick;
+        }
         return record.locked(
                 session -> {
                     final Board board = store.board();
                     final Snapshot snapshot = read(session);
                     return Moves.preview(board, moves, owners(snapshot), held(snapshot));
                 });
+    }
+
+    /** The preview of moves that change nothing, read without the lock, or null for any other. */
+    private @Nullable MovePreview unchanging(final List<Moves.Move> moves) {
+        return unchanging(store.board(), moves, record.latest());
+    }
+
+    /**
+     * The preview of a batch whose every item stands in its target already, with no reason to write
+     * and no run at work over it, judged on the board held and the last generation written; any
+     * other batch, or one these refuse, is answered null and judged under the lock as before.
+     */
+    private @Nullable MovePreview unchanging(
+            final Board board, final List<Moves.Move> moves, final Snapshot snapshot) {
+        try {
+            final Moves.Runs runs = held(snapshot);
+            final MovePreview preview = Moves.preview(board, moves, owners(snapshot), runs);
+            return preview.warnings().isEmpty() && Moves.check(board, moves, runs).none()
+                    ? preview
+                    : null;
+        } catch (final RuntimeException e) {
+            return null;
+        }
     }
 
     /**
@@ -2001,6 +2028,8 @@ public final class WorkRun {
      * @param confirm whether the person confirmed the preview's warnings
      * @param repository the project's own repository, which the digest covers
      * @param branch its branch, or null
+     * @param unchanged the answer to a batch that changes nothing, given the board it was judged on
+     *     and the runs last written; it never reaches the store, since it runs outside the lock
      * @param save the save, given the runs the record holds under the lock
      * @param <T> what the save answers
      * @return what the save answered and the runs it stopped
@@ -2016,7 +2045,21 @@ public final class WorkRun {
             final boolean confirm,
             final String repository,
             final @Nullable String branch,
+            final BiFunction<Board, Moves.Runs, T> unchanged,
             final Function<Moves.Runs, T> save) {
+        final Snapshot latest = record.latest();
+        final Board kept = store.board();
+        final MovePreview quick = unchanging(kept, moves, latest);
+        if (quick != null) {
+            // Nothing is written, so no other save is waited for; what the person saw still holds.
+            Edits.unchanged(kept, basis, quick.targets().keySet());
+            if (!MessageDigest.isEqual(
+                    quick.digest(repository, branch).getBytes(StandardCharsets.UTF_8),
+                    digest.getBytes(StandardCharsets.UTF_8))) {
+                throw WorkRefusal.previewChanged();
+            }
+            return new MoveSaved<>(unchanged.apply(kept, held(latest)), List.of());
+        }
         return record.locked(
                 session -> {
                     final Snapshot snapshot = read(session);
