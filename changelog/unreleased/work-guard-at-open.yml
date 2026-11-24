@@ -1,0 +1,2 @@
+title: A second planner on the same project's state directory is refused when it opens the project's work record, before it answers anything, not at its first write.
+type: changed

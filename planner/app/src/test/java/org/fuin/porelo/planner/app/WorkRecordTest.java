@@ -64,10 +64,8 @@ class WorkRecordTest {
                 };
         try (WorkRecord records =
                         new WorkRecord(environment, false, PrivateFiles.of(environment), paused);
-                WorkRecord observer = new WorkRecord(environment, false);
                 var executor = Executors.newFixedThreadPool(2)) {
             final var record = records.open("project", "https://example.org/store.git", null);
-            final var reader = observer.open("project", "https://example.org/store.git", null);
             final var before = new WorkRun.Snapshot(7, Map.of());
             final var after = new WorkRun.Snapshot(8, Map.of());
             record.locked(
@@ -91,9 +89,6 @@ class WorkRecordTest {
                         .isTrue();
                 assertThat(executor.submit(record::latest).get(1, TimeUnit.SECONDS))
                         .as("the complete previous generation answers while replacement waits")
-                        .isEqualTo(before);
-                assertThat(executor.submit(reader::latest).get(1, TimeUnit.SECONDS))
-                        .as("an entry without a writer session reads despite the held file lock")
                         .isEqualTo(before);
                 replace.complete(null);
                 assertThat(published.await(5, TimeUnit.SECONDS))
@@ -1367,6 +1362,34 @@ class WorkRecordTest {
             assertThat(refused.getMessage())
                     .as("the refusal's own words carry no absolute path either")
                     .doesNotContain(directory.toString());
+        }
+    }
+
+    @Test
+    void aSecondRecordOnTheSameStateDirectoryIsRefusedWhenItOpens() {
+        // Prevents two planners serving one project from both writing work.json and losing runs.
+        final Map<String, String> environment = Map.of("XDG_STATE_HOME", directory.toString());
+        try (WorkRecord first = new WorkRecord(environment, false);
+                WorkRecord second = new WorkRecord(environment, false)) {
+            first.open("project", "https://example.org/store.git", null);
+            final WorkRefusal refused =
+                    catchThrowableOfType(
+                            WorkRefusal.class,
+                            () -> second.open("project", "https://example.org/store.git", null));
+            assertThat(refused)
+                    .as("the second record is refused at open, before it answers anything")
+                    .isNotNull();
+            assertThat(reason(refused))
+                    .as("the refusal names the planner holding the record")
+                    .contains("Another planner holds the work record of project");
+            assertThat(directory.resolve("porelo-planner/project/work.json"))
+                    .as("the refused record wrote nothing")
+                    .doesNotExist();
+            first.forget("project");
+            final Map<String, WorkRun.Run> runs =
+                    second.open("project", "https://example.org/store.git", null)
+                            .locked(s -> s.read().runs());
+            assertThat(runs).as("the guard is let go when the first record closes").isEmpty();
         }
     }
 

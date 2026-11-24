@@ -166,7 +166,10 @@ public final class WorkRecord implements AutoCloseable {
             Map<String, HandedIdeas.Handed> ideas,
             Map<String, HandedResults.Handed> results) {}
 
-    /** Opens a project's one writer, clearing a record from a different repository or branch. */
+    /**
+     * Opens a project's one writer, clearing a record from a different repository or branch; a
+     * durable record takes its file guard here and is refused while another planner holds it.
+     */
     public synchronized WorkRun.Record open(
             final String project, final String repository, final @Nullable String branch) {
         Ids.name(project);
@@ -177,9 +180,15 @@ public final class WorkRecord implements AutoCloseable {
             return existing;
         }
         if (existing != null) {
+            entries.remove(project);
             existing.close();
         }
         final Entry entry = new Entry(project, repository, branch);
+        if (!memory) {
+            // The file guard is taken here and held until the record closes, so a second
+            // planner on the same state directory is refused before it answers anything.
+            entry.acquire();
+        }
         entries.put(project, entry);
         return entry;
     }
@@ -297,9 +306,6 @@ public final class WorkRecord implements AutoCloseable {
                         throw unavailable(
                                 project, "The work record of " + project + " was closed.");
                     }
-                    if (!memory) {
-                        acquire();
-                    }
                     taken = true;
                     toldWait(caller, started, true);
                     CallTimes.waited("the work record", System.nanoTime() - started);
@@ -366,12 +372,9 @@ public final class WorkRecord implements AutoCloseable {
             return doc == null || !matches(doc) ? new WorkRun.Snapshot(0, Map.of()) : snapshot(doc);
         }
 
+        /** Takes the record's file guard once, at open; refused while another planner holds it. */
         private void acquire() {
             try {
-                final FileLock held = fileLock;
-                if (held != null && held.isValid() && directory != null) {
-                    return;
-                }
                 final Path dir;
                 try {
                     dir = WorkRecord.this.directory(project);
