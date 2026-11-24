@@ -37,6 +37,25 @@ public abstract sealed class StoreException extends RuntimeException
     }
 
     /**
+     * The kinds a store gives before it writes anything of the write refused: a write refused with
+     * one of them wrote nothing, every other failure may have written part of it.
+     */
+    public static final java.util.Set<String> BEFORE_WRITING =
+            java.util.Set.of(
+                    "Changed", "BasisIncomplete", "StaleRevision", "NotSavable", "NoForgeAccess");
+
+    /**
+     * Tells whether a write's failure is a refusal given before anything was written.
+     *
+     * @param cause what the write threw
+     * @return true only for a refusal of a kind in {@link #BEFORE_WRITING}
+     */
+    public static boolean refusedBeforeWriting(final Throwable cause) {
+        return cause instanceof StoreException refusal
+                && BEFORE_WRITING.contains(refusal.getClass().getSimpleName());
+    }
+
+    /**
      * Answers what the refusal is about.
      *
      * @return the story's or the issue's id, or the repository's name

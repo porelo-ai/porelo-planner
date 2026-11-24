@@ -879,8 +879,7 @@ public final class WorkRun {
     }
 
     /** The store's refusals that come before it writes anything. */
-    private static final Set<String> BEFORE_WRITING =
-            Set.of("Changed", "BasisIncomplete", "StaleRevision", "NotSavable", "NoForgeAccess");
+    private static final Set<String> BEFORE_WRITING = StoreException.BEFORE_WRITING;
 
     /**
      * Whether an offer's event stands recorded with a refusal the store gave before it wrote
