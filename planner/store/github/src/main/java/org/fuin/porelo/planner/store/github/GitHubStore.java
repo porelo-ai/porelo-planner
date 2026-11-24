@@ -312,6 +312,12 @@ public final class GitHubStore implements PlanningStore {
      */
     private volatile Touched.@Nullable Ids unread;
 
+    /**
+     * Held while the board held is replaced, its copy offered with it; nothing under it asks GitHub
+     * or writes to disk.
+     */
+    private final Object holding = new Object();
+
     /** Writes the board's copy behind the saves, the newest board waiting the one written. */
     private final CopyWriter copyWriter;
 
@@ -1901,13 +1907,15 @@ public final class GitHubStore implements PlanningStore {
             issues.add(item.issueId());
         }
         final Snapshot fresh =
-                parts.reader()
-                        .reread(
-                                configNow(),
-                                held,
-                                new Touched.Ids(issues, Set.of(), Set.of(), Set.of()));
-        hold(fresh, false);
-        return fresh;
+                merged(
+                        parts.reader()
+                                .fetch(
+                                        configNow(),
+                                        held,
+                                        new Touched.Ids(issues, Set.of(), Set.of(), Set.of()),
+                                        Map.of()),
+                        null);
+        return fresh != null ? fresh : readWhole(configNow(), WholeRead.RESULT);
     }
 
     /**
@@ -1926,10 +1934,12 @@ public final class GitHubStore implements PlanningStore {
                 return readWhole(configNow(), WholeRead.WRITTEN);
             }
             final Touched.Ids written = touched.ids();
-            final Snapshot fresh = parts.reader().reread(configNow(), held, written);
             // GitHub's lists show the save a moment after it; until then it is held.
-            saves.hold(fresh, written, cursor, held);
-            hold(fresh, false);
+            final Snapshot fresh =
+                    merged(parts.reader().fetch(configNow(), held, written, Map.of()), written);
+            if (fresh == null) {
+                return readWhole(configNow(), WholeRead.WRITTEN);
+            }
             settle(fresh, true);
             return fresh;
         } catch (final RuntimeException e) {
@@ -2131,23 +2141,25 @@ public final class GitHubStore implements PlanningStore {
             return held;
         }
         try {
-            final Snapshot fresh =
-                    parts.reader()
-                            .reread(
-                                    configNow(),
-                                    held,
-                                    new Touched.Ids(
-                                            issues,
-                                            items,
-                                            written.numbered(),
-                                            written.databaseIds()));
             final boolean wrote = !written.none();
-            if (wrote) {
-                // A part a save wrote is held until GitHub's list shows it, as after a save that
-                // ended; an earlier save of the same items stays held until this one replaces it.
-                saves.hold(fresh, written, cursor, held);
+            // A part a save wrote is held until GitHub's list shows it, as after a save that ended;
+            // an earlier save of the same items stays held until this one replaces it.
+            final Snapshot fresh =
+                    merged(
+                            parts.reader()
+                                    .fetch(
+                                            configNow(),
+                                            held,
+                                            new Touched.Ids(
+                                                    issues,
+                                                    items,
+                                                    written.numbered(),
+                                                    written.databaseIds()),
+                                            Map.of()),
+                            wrote ? written : null);
+            if (fresh == null) {
+                return null;
             }
-            hold(fresh, false);
             if (wrote) {
                 settle(fresh, true);
             }
@@ -2263,6 +2275,36 @@ public final class GitHubStore implements PlanningStore {
      * @param whole whether GitHub was read whole for it, which ends a board taken from the copy
      */
     private void hold(final Snapshot fresh, final boolean whole) {
+        synchronized (holding) {
+            holdNow(fresh, whole);
+        }
+    }
+
+    /**
+     * Lays what a read by id found onto the newest board held, in one step with holding it, the
+     * saves held and the copy offered, so neither a merge of other items nor a copy is lost.
+     *
+     * @param delta what was read
+     * @param written what a save wrote, held until GitHub's list shows it; null for no save
+     * @return the board held now, or null when the board was forgotten or read with other project
+     *     files meanwhile, which the caller then reads whole
+     */
+    private @Nullable Snapshot merged(final Reread delta, final Touched.@Nullable Ids written) {
+        synchronized (holding) {
+            final Snapshot newest = snapshot;
+            if (newest == null || !newest.config().commit().equals(delta.read().commit())) {
+                return null;
+            }
+            final Snapshot fresh = parts.reader().apply(newest, delta);
+            if (written != null) {
+                saves.hold(fresh, written, cursor, newest);
+            }
+            holdNow(fresh, false);
+            return fresh;
+        }
+    }
+
+    private void holdNow(final Snapshot fresh, final boolean whole) {
         snapshot = fresh;
         // Only the items held keep their times; one gone and back is compared anew.
         listedAt.keySet().retainAll(fresh.raw().keySet());

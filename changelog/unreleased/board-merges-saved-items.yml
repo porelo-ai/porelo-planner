@@ -1,0 +1,2 @@
+title: A save's read after it replaces only the items it touched on the newest board held, so saves made one after the other never undo each other.
+type: changed

@@ -649,9 +649,23 @@ public final class ItemsBoardReader implements BoardReader {
             final Snapshot held,
             final Touched.Ids touched,
             final Map<String, Boolean> archivedNow) {
+        return apply(held, fetch(config, held, touched, archivedNow));
+    }
+
+    /**
+     * Reads the issues named from GitHub, and the blockers they name that the board held lacks,
+     * without laying them onto a board; a snapshot without GitHub's items, or one read with other
+     * project files, is read whole.
+     */
+    @Override
+    public Reread fetch(
+            final ProjectConfig config,
+            final Snapshot held,
+            final Touched.Ids touched,
+            final Map<String, Boolean> archivedNow) {
         final ProjectConfig read = held.config();
         if (held.raw().isEmpty() || !read.commit().equals(config.commit())) {
-            return read(config);
+            return Reread.whole(read(config));
         }
         final Set<String> nodes = new LinkedHashSet<>(touched.issues());
         for (final GitHubGraphQl.ProjectItem item : held.raw().values()) {
@@ -671,6 +685,7 @@ public final class ItemsBoardReader implements BoardReader {
         final String token = tokens.token(config.forge());
         final Call call = new Call(config, token, clock.instant().plus(deadline));
         final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>(held.raw());
+        final Map<String, GitHubGraphQl.ProjectItem> put = new LinkedHashMap<>();
         final List<String> all = List.copyOf(nodes);
         for (int from = 0; from < all.size(); from += GitHubGraphQl.MAX_ISSUES) {
             final List<String> chunk =
@@ -705,15 +720,16 @@ public final class ItemsBoardReader implements BoardReader {
                 if (kept != null && !kept.id().equals(itemId)) {
                     items.remove(kept.id());
                 }
-                items.put(
-                        itemId,
+                final GitHubGraphQl.ProjectItem fresh =
                         new GitHubGraphQl.ProjectItem(
                                 itemId,
                                 archived,
                                 on.issue(),
                                 on.values(),
                                 on.valuesPage(),
-                                on.valueCount()));
+                                on.valueCount());
+                items.put(itemId, fresh);
+                put.put(itemId, fresh);
             }
         }
         LOG.info("Read {} issues again after a save, in place of the whole project", all.size());
@@ -736,14 +752,55 @@ public final class ItemsBoardReader implements BoardReader {
                 waits.put(blocker.getKey(), kept);
             }
         }
-        waits.putAll(readWaits(call, read, unread));
+        return new Reread(read, null, put, nodes, archivedNow, readWaits(call, read, unread));
+    }
+
+    /**
+     * Lays the issues a fetch read onto the newest board held: each item of an issue read is
+     * replaced, or gone when GitHub no longer lists it on the project, matched by its issue as well
+     * as its item; an item keeps the archived flag the newest board gives it unless a look's list
+     * named it; the board is mapped anew from every item, so a story's state never lags its issues.
+     */
+    @Override
+    public Snapshot apply(final Snapshot newest, final Reread delta) {
+        final Snapshot whole = delta.whole();
+        if (whole != null) {
+            return whole;
+        }
+        final ProjectConfig read = delta.read();
+        final Map<String, GitHubGraphQl.ProjectItem> items = new LinkedHashMap<>(newest.raw());
+        items.values()
+                .removeIf(
+                        item -> {
+                            final GitHubGraphQl.BoardIssue issue = item.issue();
+                            return issue != null
+                                    && delta.issues().contains(issue.id())
+                                    && !delta.put().containsKey(item.id());
+                        });
+        for (final GitHubGraphQl.ProjectItem fresh : delta.put().values()) {
+            final GitHubGraphQl.ProjectItem kept = newest.raw().get(fresh.id());
+            final Boolean listed = delta.archived().get(fresh.id());
+            final boolean archived =
+                    listed != null ? listed : kept != null ? kept.archived() : fresh.archived();
+            items.put(
+                    fresh.id(),
+                    new GitHubGraphQl.ProjectItem(
+                            fresh.id(),
+                            archived,
+                            fresh.issue(),
+                            fresh.values(),
+                            fresh.valuesPage(),
+                            fresh.valueCount()));
+        }
+        final Map<String, Snapshot.Waited> waits = new LinkedHashMap<>(newest.waits());
+        waits.putAll(delta.waits());
         return snapshot(
                 read,
-                held.fieldFaults(),
-                mapped(items, read, held.fieldNames(), ordered(blockers, waits)),
-                held.fieldNames(),
-                held.restFieldIds(),
-                held.unlisted());
+                newest.fieldFaults(),
+                mapped(items, read, newest.fieldNames(), ordered(offBoard(items, read), waits)),
+                newest.fieldNames(),
+                newest.restFieldIds(),
+                newest.unlisted());
     }
 
     @Override

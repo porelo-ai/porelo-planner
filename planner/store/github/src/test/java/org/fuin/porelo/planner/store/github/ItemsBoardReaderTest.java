@@ -3032,6 +3032,54 @@ class ItemsBoardReaderTest {
     }
 
     @Test
+    void twoReadsAfterSavesFetchedAgainstOneBoardBothStandWhenLaidOntoTheNewest() {
+        // Harm: once saves run at once, the second save's read after it lays the board it was
+        // made against over the first save's items, and the first save's moves are lost.
+        final String lib4 = node(OWNER + "/example-lib", 4);
+        final GitHub github =
+                new GitHub()
+                        .fieldsPage(FIELDS, null)
+                        .itemsPage(
+                                null,
+                                story("High", LIB_3, lib4),
+                                libIssue(3, refs(false)),
+                                libIssue(4, refs(false)))
+                        .boardItems(inIdea(libIssue(3, refs(false))))
+                        .boardItems(inIdea(libIssue(4, refs(false))));
+        final ItemsBoardReader reader = github.reader(AccessRefusals.DEFAULT);
+        final Snapshot held = reader.read(CONFIG);
+        final Reread first =
+                reader.fetch(
+                        CONFIG,
+                        held,
+                        new Touched.Ids(Set.of(LIB_3), Set.of(), Set.of(), Set.of()),
+                        Map.of());
+        final Reread second =
+                reader.fetch(
+                        CONFIG,
+                        held,
+                        new Touched.Ids(Set.of(lib4), Set.of(), Set.of(), Set.of()),
+                        Map.of());
+
+        final Snapshot after = reader.apply(reader.apply(held, first), second);
+
+        assertThat(
+                        java.util.stream.Stream.of("example-lib#3", "example-lib#4")
+                                .map(id -> after.board().issue(id).orElseThrow().state()))
+                .as("both issues as their own saves read them")
+                .containsExactly("Idea", "Idea");
+    }
+
+    /** The item moved to Idea, its other values kept. */
+    private static ProjectItem inIdea(final ProjectItem item) {
+        final List<ItemValue> values = new java.util.ArrayList<>(item.values());
+        values.replaceAll(
+                value -> value.fieldId().equals("F_status") ? option("F_status", "Idea") : value);
+        return new ProjectItem(
+                item.id(), item.archived(), item.issue(), values, item.valuesPage(), 0);
+    }
+
+    @Test
     void theWaitNotReadableClearsOnceGitHubCountsNoMoreBlockersThanItNames() {
         // Harm: an issue stays held on a blocker GitHub no longer counts, so work never starts on
         // it after the person lost or regained sight of that blocker.

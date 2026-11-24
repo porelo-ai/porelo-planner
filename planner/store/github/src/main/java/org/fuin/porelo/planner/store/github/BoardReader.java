@@ -69,6 +69,36 @@ public interface BoardReader {
     }
 
     /**
+     * Reads from GitHub what {@link #reread(ProjectConfig, Snapshot, Touched.Ids, java.util.Map)}
+     * would, without laying it onto a board, so it can be laid onto the newest board held.
+     *
+     * @param config what to read with, as the project's files name it now
+     * @param held the snapshot the read is made against
+     * @param touched what to read again
+     * @param archived whether each item a look's list showed is archived, by the items' ids
+     * @return what was read; a reader that cannot read by id answers the board read again whole
+     */
+    default Reread fetch(
+            final ProjectConfig config,
+            final Snapshot held,
+            final Touched.Ids touched,
+            final java.util.Map<String, Boolean> archived) {
+        return Reread.whole(reread(config, held, touched, archived));
+    }
+
+    /**
+     * Lays what a fetch read onto a board, without asking GitHub.
+     *
+     * @param newest the board to lay it onto, the newest held
+     * @param delta what was read
+     * @return the board with it
+     */
+    default Snapshot apply(final Snapshot newest, final Reread delta) {
+        return java.util.Objects.requireNonNull(
+                delta.whole(), "a reader that fetches by id applies");
+    }
+
+    /**
      * Reads again the state of the issues the board's issues wait on that are no items of it, and
      * maps the board anew from the snapshot held; a reader that cannot reads the whole project.
      *
