@@ -45,7 +45,9 @@ public final class Changes {
     }
 
     /**
-     * One board and local work generation observed under the record lock.
+     * One board and the work generation last written, read without waiting for a save in flight:
+     * the two may come from either side of a save, which is display only, and the save's own tell
+     * follows.
      *
      * @param board the board
      * @param work the local work generation
@@ -60,8 +62,7 @@ public final class Changes {
                         store.board(),
                         new WorkRun.Snapshot(0, java.util.Map.of()),
                         store.keepsReasons())
-                : run.lockedView(
-                        (board, snapshot) -> new Frame(board, snapshot, store.keepsReasons()));
+                : run.view((board, snapshot) -> new Frame(board, snapshot, store.keepsReasons()));
     }
 
     /**

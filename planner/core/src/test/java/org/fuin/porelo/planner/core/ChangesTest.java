@@ -166,6 +166,77 @@ class ChangesTest {
     }
 
     @Test
+    void aSubscriptionAndAPollAreToldAtOnceWhileARunsSaveIsAtGitHub() throws Exception {
+        // Harm: a window's event stream, and every poll, stand still behind a task's save to
+        // GitHub while the changes' own monitor is held, so no window opens or hears of a change.
+        final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final Changes held = new Changes(f.store, idle::incrementAndGet, f.run);
+        final Changes.Subscription early = held.subscribe();
+        final Board before = f.store.current;
+        final java.util.concurrent.CountDownLatch saving =
+                new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        f.store.onSave =
+                () -> {
+                    f.store.onSave = null;
+                    saving.countDown();
+                    try {
+                        release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    // The change found outside by the poll is gone again by the time GitHub
+                    // answers, so the save is checked against the board it was judged on.
+                    f.store.current = before;
+                };
+        final Thread save = Thread.ofVirtual().start(() -> f.start(offer));
+        try {
+            assertThat(saving.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .as("the task's save is at GitHub")
+                    .isTrue();
+            final WorkRun.Snapshot recorded = f.run.snapshot();
+            f.store.current =
+                    new Board(
+                            new Revision("outside"),
+                            before.workflow(),
+                            before.stories(),
+                            before.issues(),
+                            before.work(),
+                            before.repositories());
+
+            final var told =
+                    java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> {
+                                final Changes.Subscription late = held.subscribe();
+                                held.poll();
+                                held.saved();
+                                return late.firstFrame();
+                            });
+
+            final Changes.Frame first = told.get(2, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(first.board().revision().value())
+                    .as("a new subscription's first board, while the save is at GitHub")
+                    .isEqualTo("outside");
+            assertThat(first.work())
+                    .as("the run as the record holds it while its save is in flight")
+                    .isEqualTo(recorded);
+            assertThat(revision(early.next(NOW)))
+                    .as("the poll's board, told while the save is at GitHub")
+                    .isEqualTo("outside");
+        } finally {
+            release.countDown();
+            save.join(Duration.ofSeconds(5));
+        }
+        assertThat(save.isAlive()).as("the save ended").isFalse();
+        held.saved();
+        assertThat(early.nextFrame(NOW).map(frame -> frame.work().generation()))
+                .as("the save's own tell, with the work it wrote")
+                .contains(f.run.snapshot().generation());
+    }
+
+    @Test
     void aReloadIsNotedWhileItWaitsBehindAFetchUnderWayAndEndedAfterIt() throws Exception {
         // Harm: a Reload queued behind the planner's own poll is told as that poll's look, so the
         // window offers Reload again when the look ends, before the read asked for began.

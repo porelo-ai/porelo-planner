@@ -1210,19 +1210,6 @@ public final class WorkRun {
         return answer.apply(store.board(), snapshot);
     }
 
-    /**
-     * Reads and repairs work with its board under the writer lock, for a change event that must
-     * never pair a board with an unfinished save's work; an answer to a request reads {@link #view}
-     * instead and waits for no save.
-     */
-    public <T> T lockedView(final java.util.function.BiFunction<Board, Snapshot, T> answer) {
-        return record.locked(
-                session -> {
-                    final Snapshot snapshot = read(session);
-                    return answer.apply(store.board(), snapshot);
-                });
-    }
-
     /** Reads the last complete written generation for board decoration, without waiting. */
     public Snapshot snapshot() {
         return record.latest();

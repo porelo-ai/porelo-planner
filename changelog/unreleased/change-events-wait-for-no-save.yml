@@ -1,0 +1,2 @@
+title: A window's change events and a poll's tell no longer wait for a save of the project to GitHub, and telling them never repairs or writes the work record.
+type: changed

@@ -15,7 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
@@ -130,56 +129,6 @@ class WorkRunTest {
             assertThat(saving.get(5, TimeUnit.SECONDS))
                     .as("the held save finishes after the reader has answered")
                     .isTrue();
-        }
-    }
-
-    @Test
-    void aConsistentViewWaitsForTheWritersFinalGeneration() throws Exception {
-        // Prevents change events from publishing a board paired with an unfinished save's work.
-        final Fixture f = new Fixture();
-        f.order();
-        final WorkRun.Snapshot before = f.record.value;
-        final WorkRun.Snapshot after = new WorkRun.Snapshot(before.generation() + 1, before.runs());
-        final CountDownLatch held = new CountDownLatch(1);
-        final CountDownLatch calling = new CountDownLatch(1);
-        final CompletableFuture<Void> release = new CompletableFuture<>();
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            final var saving =
-                    executor.submit(
-                            () ->
-                                    f.record.locked(
-                                            session -> {
-                                                held.countDown();
-                                                release.join();
-                                                session.write(after);
-                                                return true;
-                                            }));
-            final java.util.concurrent.Future<WorkRun.Snapshot> reading;
-            try {
-                assertThat(held.await(5, TimeUnit.SECONDS))
-                        .as("the save owns the record before the consistent read begins")
-                        .isTrue();
-                reading =
-                        executor.submit(
-                                () -> {
-                                    calling.countDown();
-                                    return f.run.lockedView((board, snapshot) -> snapshot);
-                                });
-                assertThat(calling.await(5, TimeUnit.SECONDS))
-                        .as("the consistent read is attempted before the writer finishes")
-                        .isTrue();
-                assertThatThrownBy(() -> reading.get(100, TimeUnit.MILLISECONDS))
-                        .as("a consistency-sensitive view waits for the save to finish")
-                        .isInstanceOf(TimeoutException.class);
-            } finally {
-                release.complete(null);
-            }
-            assertThat(saving.get(5, TimeUnit.SECONDS))
-                    .as("the writer publishes its final generation")
-                    .isTrue();
-            assertThat(reading.get(1, TimeUnit.SECONDS))
-                    .as("the consistent view observes the completed save")
-                    .isEqualTo(after);
         }
     }
 
@@ -6426,9 +6375,16 @@ class WorkRunTest {
                     held.repositories());
         }
 
+        /** Runs at the start of each save, as a GitHub call that takes its time. */
+        @Nullable Runnable onSave;
+
         /** Makes store writes observable and can refuse before changing them. */
         @Override
         public Board save(final Revision revision, final Writes writes) {
+            final Runnable hook = onSave;
+            if (hook != null) {
+                hook.run();
+            }
             if (failure != null) {
                 throw failure;
             }
