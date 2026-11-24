@@ -22,13 +22,19 @@ final class RunCommands {
      * checks its own item, which the commands before it never change.
      *
      * @param id the group's id, which the run's pending mark names too
+     * @param story the story whose run saves the group, so the outbox keeps it as the run's and
+     *     never sends it again for the owner account; empty for a save that is no run's
      * @param writes the writes, not none
      * @param basis the versions the save was judged on
      * @param recheck the rule read again with the first command
      * @return the group
      */
     static CommandGroup group(
-            final String id, final Writes writes, final Basis basis, final Recheck recheck) {
+            final String id,
+            final String story,
+            final Writes writes,
+            final Basis basis,
+            final Recheck recheck) {
         final Set<String> order = new LinkedHashSet<>();
         order.addAll(writes.issues().keySet());
         order.addAll(writes.workers().keySet());
@@ -46,6 +52,6 @@ final class RunCommands {
                             basis,
                             commands.isEmpty() ? recheck : Recheck.none()));
         }
-        return new CommandGroup(id, commands);
+        return new CommandGroup(id, commands, story);
     }
 }

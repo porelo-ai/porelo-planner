@@ -3317,6 +3317,22 @@ class WorkRunTest {
     }
 
     @Test
+    void aRunsSaveReachesTheQueueWithItsStory() {
+        // Harm: a run's save kept in the outbox as a window's, so the owner account resends a
+        // halted run's save behind its halt, or a refused task end around its run, which then never
+        // clears the refusal, and the outbox never drops the group once the end is saved again.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        keptEnd(f, offer);
+
+        assertThat(f.queue.groups).as("the run's saves").isNotEmpty();
+        assertThat(f.queue.groups)
+                .as("each with the story whose run saves it")
+                .extracting(CommandGroup::story)
+                .containsOnly("ST1");
+    }
+
+    @Test
     void aKeptEndIsSavedAgainOnceByTheOwnerAccountAndLeavesNeedsYou() {
         // Harm: a task's end the store refused before writing stays under Needs you for good,
         // since only the task could send it again, or a second resave writes the end twice.
@@ -3483,6 +3499,41 @@ class WorkRunTest {
                 .isEqualTo("SAVE_REFUSED");
         assertThat(f.run.resavable("ST1", group)).as("the old group").isFalse();
         assertThat(f.run.resavable("ST1", refusal.group())).as("the new group").isTrue();
+    }
+
+    @Test
+    void aResaveRefusedBeforeWritingWhoseGroupTheOutboxDoesNotKeepNamesTheOldGroupAgain() {
+        // Harm: a resave refused at a moment the outbox could not keep its group names a group
+        // that stands nowhere, so the end stays under Needs you with nothing left to send it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String group = keptEnd(f, offer);
+        final StoreException.Busy busy = new StoreException.Busy("alpha");
+        f.store.failure = busy;
+        final List<String> asked = new java.util.ArrayList<>();
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.resave(
+                                        "ST1",
+                                        group,
+                                        id -> {
+                                            asked.add(id);
+                                            return false;
+                                        }))
+                .as("the store's refusal as it gave it")
+                .isSameAs(busy);
+        f.store.failure = null;
+
+        assertThat(asked).as("asked about the resave's own group").hasSize(1).doesNotContain(group);
+        assertThat(endOf(f, offer).refusal()).as("the refusal kept").isNotNull();
+        assertThat(endOf(f, offer).refusal().group())
+                .as("named under the group that stands")
+                .isEqualTo(group);
+        assertThat(f.run.work("ST1").halted()).as("not halted").isFalse();
+        assertThat(f.run.resavable("ST1", group)).as("the old group").isTrue();
+        assertThat(f.run.resave("ST1", group)).as("saved from the old group").isNotNull();
+        assertThat(endOf(f, offer).refusal()).as("the refusal cleared").isNull();
     }
 
     @Test
@@ -3932,6 +3983,19 @@ class WorkRunTest {
         assertThat(run.issues().get("AA1").reason())
                 .as("the issue under Needs you")
                 .isEqualTo("SAVE_REFUSED");
+    }
+
+    @Test
+    void aGroupHeldWithNothingDoneThatMayHaveWrittenHaltsTheRun() {
+        // Harm: a save that may stand, or that the outbox sends at the next open, settled as
+        // unwritten, so the run goes on unhalted behind it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.queue.answer = new CommandOutcome.Held(List.of(), List.of(), "not kept", true);
+        assertThatThrownBy(() -> f.start(offer)).isInstanceOf(StoreException.PartlySaved.class);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.halted()).as("halted, as after a save that pushed only part").isTrue();
+        assertThat(run.pending()).as("no mark left").isNull();
     }
 
     @Test

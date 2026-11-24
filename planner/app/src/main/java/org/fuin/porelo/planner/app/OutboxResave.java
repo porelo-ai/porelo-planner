@@ -37,10 +37,17 @@ final class OutboxResave implements RefusedEventResave {
 
     @Override
     public Board resave(final String story, final String group) {
+        boolean saved = false;
         try {
-            return runs.resave(story, group);
+            final Board board = runs.resave(story, group, id -> outbox.refusedUnwritten(id, story));
+            saved = true;
+            return board;
         } finally {
-            if (!runs.resavable(story, group) && outbox.refusedUnwritten(group, story)) {
+            // The old group goes once the event is saved, or once the group its refusal names now
+            // stands in the file, so the file keeps exactly one group for a kept event.
+            if (!runs.resavable(story, group)
+                    && outbox.refusedUnwritten(group, story)
+                    && (saved || keptElsewhere(story, group))) {
                 try {
                     outbox.drop(group);
                     LOG.info(
@@ -58,5 +65,14 @@ final class OutboxResave implements RefusedEventResave {
                 }
             }
         }
+    }
+
+    /** Whether the event's refusal names another group of the story that stands in the file. */
+    private boolean keptElsewhere(final String story, final String group) {
+        return outbox.pending().stream()
+                .filter(each -> !each.earlier() && story.equals(each.story()))
+                .map(CommandOutbox.Group::id)
+                .filter(id -> !id.equals(group))
+                .anyMatch(id -> outbox.refusedUnwritten(id, story) && runs.resavable(story, id));
     }
 }

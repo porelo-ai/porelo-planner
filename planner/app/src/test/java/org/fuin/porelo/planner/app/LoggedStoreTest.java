@@ -146,4 +146,112 @@ class LoggedStoreTest {
                         "reread porelo-lib",
                         "labels porelo-lib");
     }
+
+    @Test
+    void aReloadsNoteAndItsEndReachTheWrappedStore() {
+        // Harm: a Reload's whole read never told by the GitHub store, since its note of the
+        // Reload fell to the wrapper's default and went nowhere.
+        final List<String> reached = new ArrayList<>();
+        final PlanningStore wrapped =
+                new PlanningStore() {
+                    @Override
+                    public Board board() {
+                        return BOARD;
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        return BOARD;
+                    }
+
+                    @Override
+                    public void reloadAsked() {
+                        reached.add("asked");
+                    }
+
+                    @Override
+                    public void reloadEnded() {
+                        reached.add("ended");
+                    }
+                };
+        final LoggedStore store = new LoggedStore("alpha", wrapped);
+
+        store.reloadAsked();
+        store.reloadEnded();
+
+        assertThat(reached).containsExactly("asked", "ended");
+    }
+
+    @Test
+    void theWrapperDeclaresEveryMethodOfTheStore() {
+        // Harm: a store's own answer replaced by the interface's default behind the wrapper, so a
+        // new default a store overrides is silently skipped for every project.
+        final List<String> missing = new ArrayList<>();
+        for (final java.lang.reflect.Method method : PlanningStore.class.getMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                continue;
+            }
+            try {
+                LoggedStore.class.getDeclaredMethod(method.getName(), method.getParameterTypes());
+            } catch (final NoSuchMethodException absent) {
+                missing.add(method.getName() + List.of(method.getParameterTypes()));
+            }
+        }
+
+        assertThat(missing).as("the store's methods the wrapper does not hand on").isEmpty();
+    }
+
+    @Test
+    void theCommandQueuesCallsReachTheWrappedStore() {
+        // Harm: a group judged on the wrapper's default, on the board it last read, instead of by
+        // the store's own read afresh, so a refusal before writing is never given and a write
+        // goes through against a moved board; or a write and the read after it not the store's.
+        final List<String> reached = new ArrayList<>();
+        final org.fuin.porelo.planner.store.Command.Write command =
+                new org.fuin.porelo.planner.store.Command.Write(
+                        "g1/0",
+                        "ST1",
+                        new org.fuin.porelo.planner.store.Writes(Map.of(), Map.of("ST1", "Idea")),
+                        org.fuin.porelo.planner.store.Basis.of(BOARD),
+                        org.fuin.porelo.planner.store.Recheck.none());
+        final PlanningStore wrapped =
+                new PlanningStore() {
+                    @Override
+                    public Board board() {
+                        return BOARD;
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        return BOARD;
+                    }
+
+                    @Override
+                    public void judge(final org.fuin.porelo.planner.store.CommandGroup group) {
+                        reached.add("judge " + group.id());
+                    }
+
+                    @Override
+                    public org.fuin.porelo.planner.store.Written writeAlone(
+                            final org.fuin.porelo.planner.store.Command written) {
+                        reached.add("write " + written.id());
+                        return new org.fuin.porelo.planner.store.Written.Done(null, null);
+                    }
+
+                    @Override
+                    public Board readAfter(final Set<String> written) {
+                        reached.add("read after " + written);
+                        return BOARD;
+                    }
+                };
+        final LoggedStore store = new LoggedStore("alpha", wrapped);
+
+        store.judge(new org.fuin.porelo.planner.store.CommandGroup("g1", List.of(command)));
+        store.writeAlone(command);
+        store.readAfter(Set.of("ST1"));
+
+        assertThat(reached)
+                .as("the queue's calls the wrapped store was given")
+                .containsExactly("judge g1", "write g1/0", "read after [ST1]");
+    }
 }

@@ -106,9 +106,15 @@ final class BoundTypes {
                     TrackedUnlisted.class,
                     OverlaidItem.class);
 
-    /** The work record on disk, and the answers the window's events carry, as JSON. */
+    /**
+     * The work record and the outbox on disk, and the answers the window's events carry, as JSON.
+     */
     static final List<Class<?>> OWN =
-            List.of(WorkRecord.Document.class, TaskEventReply.class, ReadingReply.class);
+            List.of(
+                    WorkRecord.Document.class,
+                    CommandOutbox.Document.class,
+                    TaskEventReply.class,
+                    ReadingReply.class);
 
     /** The forge client's JSON, whose mapper the executable's check reads with. */
     static final String FORGE_JSON = "org.fuin.porelo.forge.github.GitHubJson";

@@ -112,13 +112,79 @@ final class SerializationCheck {
 
     /** Writes a filled instance of the planner's own as the work record does, and reads it back. */
     private static int own(final Class<?> type) {
-        final Object sample = Objects.requireNonNull(fill(type, 0), type.getName());
+        final Object sample =
+                type == CommandOutbox.Document.class
+                        ? outbox()
+                        : Objects.requireNonNull(fill(type, 0), type.getName());
         final String written = WorkRecord.JSON.writerFor(type).writeValueAsString(sample);
         final Object read = WorkRecord.JSON.readerFor(type).readValue(written);
         if (!sample.equals(read)) {
             throw new IllegalStateException("written " + written + ", read back differently");
         }
         return WorkRecord.JSON.readTree(written).size();
+    }
+
+    /**
+     * An outbox as the planner writes it: a command held for every refusal kind it keeps, one in
+     * every other state, and a group kept from another source.
+     *
+     * @return the outbox
+     */
+    static CommandOutbox.Document outbox() {
+        final CommandOutbox.Changes changes =
+                (CommandOutbox.Changes)
+                        Objects.requireNonNull(fill(CommandOutbox.Changes.class, 1), "changes");
+        final List<CommandOutbox.Entry> entries = new ArrayList<>();
+        for (final String kind : new java.util.TreeSet<>(CommandOutbox.REASONS)) {
+            entries.add(
+                    entry(
+                            entries.size(),
+                            changes,
+                            entries.size() % 2 == 0
+                                    ? CommandOutbox.State.HELD
+                                    : CommandOutbox.State.REFUSED,
+                            new CommandOutbox.Why(kind, "AA1", "")));
+        }
+        for (final CommandOutbox.State state :
+                List.of(
+                        CommandOutbox.State.QUEUED,
+                        CommandOutbox.State.IN_FLIGHT,
+                        CommandOutbox.State.DONE)) {
+            entries.add(entry(entries.size(), changes, state, CommandOutbox.Why.NONE));
+        }
+        return new CommandOutbox.Document(
+                CommandOutbox.FORMAT,
+                "project",
+                new CommandOutbox.Source("https://example.org/store.git", ""),
+                entries,
+                List.of(
+                        new CommandOutbox.Earlier(
+                                new CommandOutbox.Source("https://example.org/store.git", "old"),
+                                List.of(
+                                        entry(
+                                                entries.size(),
+                                                changes,
+                                                CommandOutbox.State.HELD,
+                                                new CommandOutbox.Why("Changed", "AA1", ""))))));
+    }
+
+    private static CommandOutbox.Entry entry(
+            final int number,
+            final CommandOutbox.Changes changes,
+            final CommandOutbox.State state,
+            final CommandOutbox.Why why) {
+        final String group = "00000000-0000-0000-0000-" + String.format("%012d", number);
+        return new CommandOutbox.Entry(
+                group,
+                group + "/0",
+                "Write",
+                "AA1",
+                Map.of("AA1", "v1"),
+                changes,
+                state,
+                why,
+                number % 2 == 0,
+                number % 2 == 0 ? "ST1" : "");
     }
 
     /** Writes a filled instance as JSON, reads it back and answers how many values it held. */

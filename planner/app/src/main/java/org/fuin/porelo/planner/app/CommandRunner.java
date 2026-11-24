@@ -81,13 +81,23 @@ final class CommandRunner implements CommandQueue {
         }
     }
 
-    /** Runs the groups left waiting at open, one after another, until the runner drains. */
-    void resume() {
+    /**
+     * Runs the groups left waiting at open, one after another, until the runner drains. A group
+     * queued since, by a submit or a resend whose thread handed it back, is its submitter's alone
+     * and is never run here.
+     *
+     * @param atOpen the groups waiting when the outbox opened, taken before the project was given
+     * @return false when the runner began to drain before every group was run
+     */
+    boolean resume(final java.util.Collection<String> atOpen) {
         enter();
         try {
             for (final String group : outbox.waiting()) {
                 if (closing()) {
-                    return;
+                    return false;
+                }
+                if (!atOpen.contains(group)) {
+                    continue;
                 }
                 if (!take(group)) {
                     // Resent or submitted meanwhile: the thread that took it runs it alone.
@@ -105,30 +115,10 @@ final class CommandRunner implements CommandQueue {
                     hand(group);
                 }
             }
+            return true;
         } finally {
             leave();
         }
-    }
-
-    /**
-     * Runs the groups left waiting at open on one thread of their own.
-     *
-     * @return the thread
-     */
-    Thread resumeAside() {
-        return Thread.ofPlatform()
-                .name("planner-command-resume")
-                .daemon(true)
-                .start(
-                        () -> {
-                            try {
-                                resume();
-                            } catch (final RuntimeException closed) {
-                                // Draining before it began, or the outbox closed: the next open
-                                // runs what waits.
-                                LOG.warn("The recovered groups were not run: {}", cause(closed));
-                            }
-                        });
     }
 
     /**
@@ -296,8 +286,10 @@ final class CommandRunner implements CommandQueue {
             final Command first = left.getFirst();
             final List<Command> rest = left.subList(1, left.size());
             try {
-                if (answered && outbox.fresh(group)) {
-                    // Refused before anything began, and the caller is answered: nothing stays.
+                if (answered && outbox.fresh(group) && outbox.story(group).isEmpty()) {
+                    // A window's save refused before anything began, and the caller is answered:
+                    // nothing stays. A run's stays refused, since the run keeps its event under
+                    // Needs you under this group, which the owner account saves again.
                     outbox.unqueue(group);
                 } else {
                     // A group recovered or sent again: kept for the owner account, never dropped.
@@ -313,7 +305,8 @@ final class CommandRunner implements CommandQueue {
                 return new CommandOutcome.Held(
                         done,
                         left,
-                        "The save was refused, but the outbox kept it; it may still be sent.");
+                        "The save was refused, but the outbox kept it; it may still be sent.",
+                        true);
             }
             return new CommandOutcome.Refused(first, refused, false, done, rest);
         }
@@ -442,6 +435,7 @@ final class CommandRunner implements CommandQueue {
             final List<Command> unsent,
             final Set<String> written,
             final String words) {
+        boolean waits = false;
         try {
             outbox.hold(group, why);
         } catch (final RuntimeException unheld) {
@@ -450,9 +444,10 @@ final class CommandRunner implements CommandQueue {
                     "Group {} could not be held for the owner account: {}",
                     LogText.of(group),
                     cause(unheld));
+            waits = true;
         }
         readAfter(written);
-        return new CommandOutcome.Held(done, unsent, words);
+        return new CommandOutcome.Held(done, unsent, words, waits || !done.isEmpty());
     }
 
     /** The outbox could not keep how a command ended: the group may still stand or be sent. */
@@ -462,6 +457,7 @@ final class CommandRunner implements CommandQueue {
             final List<Command> done,
             final List<Command> unsent,
             final Set<String> written) {
+        // Not kept: the command may stand, or the next open sends what the file still holds.
         LOG.warn(
                 "The outbox could not keep how group {} went, so it may still stand or be sent: {}",
                 LogText.of(group),
@@ -470,7 +466,8 @@ final class CommandRunner implements CommandQueue {
         return new CommandOutcome.Held(
                 done,
                 unsent,
-                "The outbox could not be written; the save may still stand or be sent.");
+                "The outbox could not be written; the save may still stand or be sent.",
+                true);
     }
 
     private static String cause(final Throwable cause) {

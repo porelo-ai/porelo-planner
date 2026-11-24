@@ -46,6 +46,28 @@ class SerializationCheckTest {
     }
 
     @Test
+    void theOutboxReadBackHoldsEveryRefusalKindAndEveryState() {
+        // Harm: a native image that cannot read back an outbox holding a kind the check never
+        // wrote, so a planner after a restart cannot open its saves.
+        final CommandOutbox.Document outbox = SerializationCheck.outbox();
+
+        assertThat(
+                        java.util.stream.Stream.concat(
+                                        outbox.entries().stream(),
+                                        outbox.earlier().stream()
+                                                .flatMap(kept -> kept.entries().stream()))
+                                .map(entry -> entry.why().name())
+                                .filter(name -> !name.isEmpty()))
+                .as("every refusal kind the outbox keeps")
+                .containsAll(CommandOutbox.REASONS);
+        assertThat(outbox.entries().stream().map(CommandOutbox.Entry::state))
+                .as("every state")
+                .contains(CommandOutbox.State.values());
+        assertThat(outbox.earlier()).as("a group kept from another source").isNotEmpty();
+        assertThat(BoundTypes.OWN).contains(CommandOutbox.Document.class);
+    }
+
+    @Test
     void theExecutableRunsTheCheckBeforeAnythingElse() {
         // Harm: a check that starts the server, so the native test waits on a planner instead.
         final ByteArrayOutputStream out = new ByteArrayOutputStream();

@@ -350,6 +350,7 @@ final class CommandOutbox implements AutoCloseable {
     private final DurableFile durable;
     private final LocalPaths paths;
     private List<Entry> entries = List.of();
+
     private List<Earlier> earlier = List.of();
     private final Map<String, Command> live = new HashMap<>();
     private boolean opened;
@@ -656,7 +657,8 @@ final class CommandOutbox implements AutoCloseable {
 
     /**
      * Tells whether this source holds a run's group the store refused before it wrote anything:
-     * none of its commands done, its first refused and the rest held unbegun behind it.
+     * none of its commands done or begun, its first refused, or held for a refusal given before
+     * writing such as a busy store, and the rest held unbegun behind it.
      *
      * @param group the group's id
      * @param story the story whose run saved it
@@ -667,7 +669,12 @@ final class CommandOutbox implements AutoCloseable {
         if (of.isEmpty() || !of.getFirst().story().equals(story)) {
             return false;
         }
-        if (of.getFirst().state() != State.REFUSED || of.getFirst().resumed()) {
+        final Entry first = of.getFirst();
+        final boolean unwritten =
+                first.state() == State.REFUSED
+                        || first.state() == State.HELD
+                                && StoreException.BEFORE_WRITING.contains(first.why().name());
+        if (!unwritten || first.resumed()) {
             return false;
         }
         return of.stream().skip(1).allMatch(e -> e.state() == State.HELD && !e.resumed());

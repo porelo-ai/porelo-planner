@@ -153,6 +153,7 @@ public final class ChangesRegistry implements AutoCloseable {
         this.longestWait = longestWait;
         this.held = held;
         projects.onRetired(this::drop);
+        projects.onSaved(this::saved);
     }
 
     /**

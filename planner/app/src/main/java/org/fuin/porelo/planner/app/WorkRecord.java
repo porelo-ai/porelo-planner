@@ -88,6 +88,9 @@ public final class WorkRecord implements AutoCloseable {
     /** One gate per project, so its opens and forgets come one at a time and never another's. */
     private final Map<String, Object> gates = new ConcurrentHashMap<>();
 
+    /** The projects whose guard stays held until the planner ends, as a queue of them writes. */
+    private final java.util.Set<String> kept = ConcurrentHashMap.newKeySet();
+
     /** How long a caller waiting for the writer lock sleeps before it looks again for a close. */
     private static final long WAIT_STEP = TimeUnit.MILLISECONDS.toNanos(50);
 
@@ -254,6 +257,60 @@ public final class WorkRecord implements AutoCloseable {
                 entry.drain(drain);
                 entries.remove(project, entry);
             }
+            kept.remove(project);
+        }
+    }
+
+    /**
+     * Keeps the project's record, and with it its file guard, until the planner ends: a command of
+     * its queue may still be at the store, so no second planner may open its outbox.
+     *
+     * @param project the project
+     */
+    void keep(final String project) {
+        kept.add(project);
+    }
+
+    /**
+     * Whether the records are files on disk, each guarded against a second planner.
+     *
+     * @return false for the mock mode's records in memory
+     */
+    boolean durable() {
+        return !memory;
+    }
+
+    /**
+     * How long a close waits for a save in flight.
+     *
+     * @return the bound
+     */
+    Duration drainBound() {
+        return drain;
+    }
+
+    /**
+     * Where an open durable record's project keeps its outbox: its state directory, with the
+     * record's files and factors.
+     *
+     * @param project the project, whose record is open
+     * @return the place
+     * @throws IllegalStateException for records in memory or a record not open
+     */
+    ProjectQueues.Place place(final String project) {
+        synchronized (gate(project)) {
+            final Entry entry = entries.get(project);
+            if (memory || entry == null || entry.closing) {
+                throw new IllegalStateException("The work record of the project is not open.");
+            }
+            return new ProjectQueues.Place(
+                    environment,
+                    entry.opened(),
+                    project,
+                    entry.repository,
+                    entry.branch,
+                    files,
+                    limits);
         }
     }
 
@@ -261,6 +318,13 @@ public final class WorkRecord implements AutoCloseable {
     @Override
     public void close() {
         for (final String project : List.copyOf(entries.keySet())) {
+            if (kept.contains(project)) {
+                LOG.warn(
+                        "The work record of project {} keeps its guard until the planner ends,"
+                                + " since a save of its queue did not end",
+                        LogText.of(project));
+                continue;
+            }
             try {
                 forget(project);
             } catch (final WorkRefusal refused) {

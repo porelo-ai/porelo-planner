@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.core;
 
+import java.util.function.Predicate;
 import org.fuin.porelo.planner.store.Board;
 
 /**
@@ -35,4 +36,18 @@ public interface RefusedEventResave {
      *     given before writing keeps the event under Needs you, under the new save's group
      */
     Board resave(String story, String group);
+
+    /**
+     * Saves the kept event again as {@link #resave(String, String)} does; when the new save is
+     * refused before writing and the outbox keeps no group of it, the refusal names the group named
+     * again, which still stands for it.
+     *
+     * @param story the story's id
+     * @param group the id of the refused save's command group
+     * @param stands tells whether the outbox keeps a group, by its id, refused before writing
+     * @return the board after the save
+     */
+    default Board resave(final String story, final String group, final Predicate<String> stands) {
+        return resave(story, group);
+    }
 }

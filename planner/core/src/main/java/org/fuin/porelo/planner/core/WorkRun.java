@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Basis;
@@ -1075,6 +1076,11 @@ public final class WorkRun implements RefusedEventResave {
 
     @Override
     public Board resave(final String story, final String group) {
+        return resave(story, group, id -> true);
+    }
+
+    @Override
+    public Board resave(final String story, final String group, final Predicate<String> stands) {
         Ids.story(story);
         @Nullable String waited = null;
         while (true) {
@@ -1109,11 +1115,81 @@ public final class WorkRun implements RefusedEventResave {
                     waited = wait.id();
                 }
                 case Flying flying -> {
-                    land(flying.flight());
+                    try {
+                        land(flying.flight());
+                    } catch (final RuntimeException refused) {
+                        throw settledAfter(
+                                refused,
+                                () ->
+                                        keptUnder(
+                                                story,
+                                                flying.flight().group().id(),
+                                                group,
+                                                stands));
+                    }
                     return store.board();
                 }
             }
         }
+    }
+
+    /**
+     * Names a kept event's refusal under the group it was resaved from again, when its resave's
+     * group was refused before writing but the outbox keeps no such group, so the owner account can
+     * send it again from the group that still stands.
+     */
+    private void keptUnder(
+            final String story,
+            final String resaved,
+            final String group,
+            final Predicate<String> stands) {
+        if (stands.test(resaved)) {
+            return;
+        }
+        record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Run run = snapshot.runs().get(story);
+                    if (run == null || run.pending() != null) {
+                        return false;
+                    }
+                    final Draft draft = new Draft(run);
+                    boolean named = false;
+                    for (final Offer offer : run.offers()) {
+                        final SaveFailure refusal = offer.refusal();
+                        if (refusal != null
+                                && resaved.equals(refusal.group())
+                                && unsaved(run, offer)) {
+                            draft.set(refused(offer, refusal.naming(group)));
+                            named = true;
+                        }
+                    }
+                    if (named) {
+                        session.write(replace(snapshot, draft.freeze()));
+                    }
+                    return named;
+                });
+    }
+
+    /** An offer with its kept refusal replaced. */
+    private static Offer refused(final Offer o, final SaveFailure refusal) {
+        return new Offer(
+                o.id(),
+                o.arguments(),
+                o.binding(),
+                o.status(),
+                o.task(),
+                o.containerId(),
+                o.machine(),
+                o.since(),
+                o.ended(),
+                o.fingerprint(),
+                o.following(),
+                o.deferred(),
+                refusal,
+                o.reviewAnyway(),
+                o.reworkComment(),
+                o.rework());
     }
 
     /**
@@ -2748,6 +2824,8 @@ public final class WorkRun implements RefusedEventResave {
                     return written(
                             RunCommands.group(
                                     UUID.randomUUID().toString(),
+                                    // A correction is the owner account's, no run's.
+                                    "",
                                     preview.writes(),
                                     basis,
                                     Recheck.none()));
@@ -2766,8 +2844,10 @@ public final class WorkRun implements RefusedEventResave {
                 yield board != null ? board : store.board();
             }
             case CommandOutcome.Refused refused -> throw passedOn(refused.cause());
-            // Only the stand-in queue answers here: it holds a group nothing of which was sent.
-            case CommandOutcome.Held held -> throw new StoreException.Busy("");
+            // Held with a part written, the group stands in part for the owner account; held with
+            // nothing written, it is refused before writing.
+            case CommandOutcome.Held held ->
+                    throw held.mayHaveWritten() ? heldInPart(held) : new StoreException.Busy("");
         };
     }
 
@@ -3191,7 +3271,7 @@ public final class WorkRun implements RefusedEventResave {
             return new Written(saved);
         }
         final CommandGroup group =
-                RunCommands.group(UUID.randomUUID().toString(), writes, seen, recheck);
+                RunCommands.group(UUID.randomUUID().toString(), draft.story, writes, seen, recheck);
         final PendingSave pending = PendingSave.of(group.id(), writes);
         draft.pending = pending;
         final Run marked = draft.freeze();
@@ -3260,11 +3340,34 @@ public final class WorkRun implements RefusedEventResave {
                 throw settledAfter(cause, () -> settle(flight, haltedBy(flight, cause)));
             }
             case CommandOutcome.Held held -> {
-                // Only the stand-in queue answers here: it holds a group nothing of which was sent.
+                if (held.mayHaveWritten()) {
+                    // Written in part, or perhaps, and held for the owner account: the run halts,
+                    // as after a save that pushed only part.
+                    final StoreException partly = heldInPart(held);
+                    throw settledAfter(partly, () -> settle(flight, haltedBy(flight, partly)));
+                }
+                // Held with nothing written: refused before writing.
                 final StoreException unsent = new StoreException.Busy("");
                 throw settledAfter(unsent, () -> settleUnwritten(flight, unsent));
             }
         }
+    }
+
+    /**
+     * A group the queue held after part of it was written, or may have been, as the save that
+     * pushed only part.
+     *
+     * @param held what the queue answered
+     * @return the failure, naming why the rest is held
+     */
+    static StoreException.PartlySaved heldInPart(final CommandOutcome.Held held) {
+        return new StoreException.PartlySaved(
+                "",
+                List.of(),
+                held.done().size()
+                        + " of the save's commands were written, and the rest may stand or is held"
+                        + " for the owner account: "
+                        + held.why());
     }
 
     /**

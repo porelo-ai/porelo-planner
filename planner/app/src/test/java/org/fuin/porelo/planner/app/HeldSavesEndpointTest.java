@@ -477,6 +477,43 @@ class HeldSavesEndpointTest {
     }
 
     @Test
+    void aHaltedRunsGroupInTheOutboxAnswersSaveOfRun() throws Exception {
+        // Harm: a halted run's save the outbox keeps is offered to resend and written through the
+        // runner behind the run's halt, as if it were a window's.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> current);
+        final Command.Write move =
+                new Command.Write(
+                        RUN + "/0",
+                        "ST1",
+                        new Writes(Map.of(), Map.of("ST1", "Finished")),
+                        Basis.of(current),
+                        Recheck.none());
+        outbox.enqueue(new CommandGroup(RUN, List.of(move), "ST1"));
+        outbox.begin(move.id());
+        outbox.refused(
+                move.id(), new StoreException.Unreachable("porelo-store", "timed out"), true, null);
+        given = new OutboxHeldSaves(outbox, new CommandRunner(outbox, store), HeldSaves.NO_RUNS);
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame());
+        assertThat(ids(shown)).as("the run's group").containsExactly(RUN);
+        assertThat(shown.path(0).path("run").asBoolean()).as("told as a run's").isTrue();
+        assertThat(shown.path(0).path("resendable").asBoolean()).as("not resendable").isFalse();
+
+        mvc.perform(post("/projects/alpha/saves/" + RUN + "/resend"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:SaveOfRun"))
+                .andExpect(jsonPath("$.parameters.save").value(RUN));
+        assertThat(outbox.pending())
+                .as("kept for the run's Stop or Start")
+                .extracting(CommandOutbox.Group::id)
+                .containsExactly(RUN);
+        assertThat(outbox.told(RUN).getFirst().state())
+                .as("nothing sent: held as the halt left it")
+                .isEqualTo(CommandOutbox.State.HELD);
+    }
+
+    @Test
     void anotherSourcesGroupIsNotResent() throws Exception {
         // Harm: a save judged against another repository or branch is written to this one.
         saves.kept.add(

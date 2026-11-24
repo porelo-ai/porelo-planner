@@ -146,9 +146,12 @@ public final class HandedIdeas {
         session.write(pending);
         // An idea changes no item held, so no other save refuses it and no board is read whole;
         // its own check runs once more where the store saves it.
+        // The command's id is the group's own, so an idea held in the outbox never blocks a later
+        // idea's save under the same id.
+        final String group = UUID.randomUUID().toString();
         final Command.CreateIdea create =
                 new Command.CreateIdea(
-                        "idea",
+                        group + "/0",
                         checked,
                         Basis.none(),
                         new Recheck(
@@ -157,8 +160,7 @@ public final class HandedIdeas {
                                 dependencies -> NewIdeas.check(dependencies.board(), idea, shape)));
         // A queue that fails to answer may have written the idea: the offer stays pending, so a
         // resent hand-in is refused rather than saved a second time.
-        final CommandOutcome outcome =
-                queue.submit(new CommandGroup(UUID.randomUUID().toString(), List.of(create)));
+        final CommandOutcome outcome = queue.submit(new CommandGroup(group, List.of(create)));
         if (outcome instanceof CommandOutcome.Done done) {
             final String story = Objects.requireNonNull(done.created().get(create.id())).item();
             session.write(with(pending, offer, new Handed(DONE, story, List.of(), next(pending))));
@@ -171,9 +173,10 @@ public final class HandedIdeas {
             // The idea's own check runs where the store saves it, before anything is written.
             unwritten = !refusal.mayHaveWritten() || refused instanceof WorkRefusal;
         } else {
-            // Only the stand-in queue holds a group, nothing of which was sent.
+            // A held group stays for the owner account to resend, so its offer stays pending and a
+            // retried hand-in never makes the idea a second time.
             refused = new StoreException.Busy("");
-            unwritten = true;
+            unwritten = false;
         }
         if (refused instanceof StoreException.PartlySaved partly) {
             session.write(

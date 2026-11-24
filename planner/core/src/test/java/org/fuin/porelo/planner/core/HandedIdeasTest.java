@@ -130,6 +130,50 @@ class HandedIdeasTest {
     }
 
     @Test
+    void anIdeaHeldInTheQueueDoesNotBlockTheNextIdeasSave() {
+        // Harm: one idea held for the owner account makes every later idea's save fail, since its
+        // command's id is taken in the outbox.
+        final java.util.Set<String> kept = new java.util.HashSet<>();
+        final org.fuin.porelo.planner.store.DirectQueue direct =
+                new org.fuin.porelo.planner.store.DirectQueue(store);
+        // As the outbox does: a command id it keeps is refused, and the first group is held.
+        final org.fuin.porelo.planner.store.CommandQueue queue =
+                group -> {
+                    for (final org.fuin.porelo.planner.store.Command command : group.commands()) {
+                        if (!kept.add(command.id())) {
+                            throw new IllegalArgumentException(
+                                    "The outbox holds command " + command.id() + " already.");
+                        }
+                    }
+                    return kept.size() == 1
+                            ? new org.fuin.porelo.planner.store.CommandOutcome.Held(
+                                    List.of(), group.commands(), "The project stayed busy.")
+                            : direct.submit(group);
+                };
+        final WorkRun held = new WorkRun(store, record, Clock.systemUTC(), why -> {}, queue);
+
+        assertThat(catchThrowable(() -> held.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("the first idea is held, nothing of it written")
+                .isInstanceOf(StoreException.Busy.class);
+        // Harm: the held group stays in the outbox for the owner account to resend, so a retry of
+        // the same offer would make the idea twice.
+        assertThat(record.value.ideas())
+                .as("the offer stays pending while its group is held")
+                .containsKey(OFFER);
+        assertThat(catchThrowable(() -> held.idea(OFFER, NewIdeasTest.idea(), List.of())))
+                .as("a retry of the held offer is refused, never saved a second time")
+                .isInstanceOf(WorkRefusal.class);
+
+        assertThat(
+                        held.idea(
+                                "5f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f",
+                                NewIdeasTest.idea(),
+                                List.of()))
+                .as("a later idea is saved")
+                .isEqualTo("ST1");
+    }
+
+    @Test
     void aStoreRefusalBeforeAnyPushLeavesTheOfferFreeForARetry() {
         // A refusal kept as pending would refuse the corrected retry for good.
         store.failures.add(new StoreException.NotSavable("", "no prefix"));

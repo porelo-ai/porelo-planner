@@ -259,14 +259,15 @@ public class StoreConfiguration {
     }
 
     /**
-     * The saves each project's outbox keeps for the person: none, since no project's saves go
-     * through an outbox yet.
+     * The saves each project's outbox keeps for the owner account: a GitHub project's, and none of
+     * a Git, local or mock project, whose saves go through no outbox.
      *
+     * @param projects the projects the window has given
      * @return the held saves of each project
      */
     @Bean
-    HeldSavesOf heldSaves() {
-        return HeldSavesOf.NONE;
+    HeldSavesOf heldSaves(final Projects projects) {
+        return projects::held;
     }
 
     /**
@@ -324,14 +325,15 @@ public class StoreConfiguration {
     }
 
     /**
-     * The queues the window's saves are handed to: each writes a group by calling its project's
-     * store directly, the mock mode's too.
+     * The queues the window's saves are handed to: each project's own, the one its work service
+     * writes through.
      *
+     * @param projects the projects the window has given
      * @return the queues
      */
     @Bean
-    public CommandQueues commandQueues() {
-        return CommandQueues.DIRECT;
+    public CommandQueues commandQueues(final Projects projects) {
+        return projects::queue;
     }
 
     /**
@@ -370,7 +372,7 @@ public class StoreConfiguration {
      *     mock mode too, which makes no Git opener to check it
      * @return the registry
      */
-    @Bean
+    @Bean(destroyMethod = "forgetAll")
     public Projects projects(
             final ObjectProvider<MockMode> mode,
             final ObjectProvider<GitProjects> gits,

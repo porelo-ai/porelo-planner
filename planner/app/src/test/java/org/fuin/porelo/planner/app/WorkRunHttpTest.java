@@ -58,6 +58,139 @@ class WorkRunHttpTest {
     @AfterEach
     void closeTheFollower() {
         changes.close();
+        durable.forEach(WorkRecord::close);
+    }
+
+    /** The records a test serves through a project's outbox, closed after it. */
+    private final List<WorkRecord> durable = new java.util.ArrayList<>();
+
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path state;
+
+    /**
+     * Serves the project from a durable record, its runs' saves written through the command runner
+     * over its outbox, and its held saves on the board.
+     */
+    private void throughTheOutbox() {
+        changes.close();
+        final WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", state.toString()), false);
+        durable.add(records);
+        projects = new Projects((p, r, b) -> store, records);
+        projects.put("project", "https://example.org/store.git", null);
+        changes =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor(),
+                        ChangesRegistry.LONGEST_WAIT,
+                        projects::held);
+        mvc =
+                MockMvcBuilders.standaloneSetup(
+                                new BoardController(projects, changes),
+                                new HeldSavesController(projects, changes, projects::held))
+                        .setControllerAdvice(new Problems(projects))
+                        .build();
+    }
+
+    private int startedStatus(final String offer) throws Exception {
+        return mvc.perform(
+                        post("/projects/project/tasks/build/events")
+                                .contentType("application/json")
+                                .content(event(offer, "STARTED", "")))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private JsonNode heldOnTheBoard() {
+        return JSON.valueToTree(changes.subscribe("project").firstFrame().held());
+    }
+
+    @Test
+    void aRunsSaveHeldAfterItsFirstCommandWasWrittenHaltsTheRunAndShowsOnTheBoard()
+            throws Exception {
+        // Harm: a run going on as if its save stood whole, or as if nothing of it was written,
+        // and the owner account never shown the rest that waits.
+        store.twoIssues();
+        throughTheOutbox();
+        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
+        store.busyAfter = 1;
+
+        assertThat(startedStatus(offer))
+                .as("the start's save is not answered whole")
+                .isNotEqualTo(200);
+
+        assertThat(store.saves).as("the first command was written").isEqualTo(2);
+        assertThat(java.util.Objects.requireNonNull(projects.work("project").work("ST1")).halted())
+                .as("the run halts, as after a save that pushed only part")
+                .isTrue();
+        assertThat(heldOnTheBoard()).as("the rest is held on the project's board").hasSize(1);
+    }
+
+    @Test
+    void aTaskEndRefusedAtItsJudgmentIsShownAsARunsSaveAndSavedAgainThroughItsRun()
+            throws Exception {
+        // Harm: a task's end refused before writing kept under Needs you while its save leaves the
+        // outbox, so the owner account is never shown a save to send again; or one resent around
+        // its run, which then never clears the refusal; or kept after the end was saved.
+        throughTheOutbox();
+        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
+        assertThat(startedStatus(offer)).as("the start is saved").isEqualTo(200);
+        store.judged = new StoreException.NotSavable("AA1", "failed");
+
+        assertThat(
+                        mvc.perform(
+                                        post("/projects/project/tasks/build/events")
+                                                .contentType("application/json")
+                                                .content(event(offer, "ENDED", "Built")))
+                                .andReturn()
+                                .getResponse()
+                                .getStatus())
+                .as("the end is refused")
+                .isNotEqualTo(200);
+
+        final JsonNode held = heldOnTheBoard();
+        assertThat(held).as("the end's save is held on the board").hasSize(1);
+        assertThat(held.path(0).path("run").asBoolean()).as("as a run's").isTrue();
+        assertThat(held.path(0).path("resendable").asBoolean()).as("resendable").isTrue();
+        final String save = held.path(0).path("id").asString();
+        final int saves = store.saves;
+
+        store.judged = null;
+        mvc.perform(post("/projects/project/saves/" + save + "/resend"))
+                .andExpect(
+                        org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
+                                .isOk());
+
+        assertThat(store.saves).as("the end saved once").isEqualTo(saves + 1);
+        assertThat(heldOnTheBoard()).as("the group left the outbox").isEmpty();
+        assertThat(projects.work("project").resavable("ST1", save))
+                .as("the run keeps no refused end")
+                .isFalse();
+        assertThat(
+                        java.util.Objects.requireNonNull(projects.work("project").work("ST1"))
+                                .issues()
+                                .get("AA1")
+                                .reason())
+                .as("the issue out of Needs you")
+                .isNotEqualTo("SAVE_REFUSED");
+    }
+
+    @Test
+    void aRunsSaveHeldWithNothingWrittenKeepsTheRun() throws Exception {
+        // Harm: a run halted for a save of which nothing was written, so its task's report is lost.
+        throughTheOutbox();
+        final String offer = offerWork("ST1").at("/tasks/0/offer").asString();
+        store.busyAfter = 0;
+
+        assertThat(startedStatus(offer)).as("the start's save is held").isNotEqualTo(200);
+
+        assertThat(store.saves).as("nothing was written").isEqualTo(1);
+        final WorkRun.Run run =
+                java.util.Objects.requireNonNull(projects.work("project").work("ST1"));
+        assertThat(run.halted()).as("the run is not halted").isFalse();
+        assertThat(run.pending()).as("no save of it stays marked").isNull();
     }
 
     @Test
@@ -1215,6 +1348,14 @@ class WorkRunHttpTest {
         private int saves = 1;
         private boolean unreachable;
 
+        /** What the store's judgment refuses every group with, or null when it takes them. */
+        private @org.jspecify.annotations.Nullable RuntimeException judged;
+
+        /** From which save on every save is refused as busy; negative for none. */
+        private int busyAfter = -1;
+
+        private int tried;
+
         private Store() {
             final WorkRule build =
                     new WorkRule(
@@ -1279,6 +1420,91 @@ class WorkRunHttpTest {
                                     List.of("alpha")));
         }
 
+        /** Gives ST1 a second issue, AA2, of the same repository, so a start writes both. */
+        private void twoIssues() {
+            final Story one = current.stories().getFirst();
+            final Issue first = current.issues().getFirst();
+            current =
+                    new Board(
+                            current.revision(),
+                            current.workflow(),
+                            List.of(
+                                    new Story(
+                                            one.id(),
+                                            one.title(),
+                                            one.state(),
+                                            one.priority(),
+                                            null,
+                                            List.of("AA1", "AA2"),
+                                            "",
+                                            null)),
+                            List.of(
+                                    first,
+                                    new Issue(
+                                            "AA2", "alpha", "Issue", "Backlog", null, List.of(),
+                                            null, null, "")),
+                            current.work(),
+                            current.repositories());
+        }
+
+        /** Writes every issue and story the writes name, each as given. */
+        private Board savedEach(final Writes writes) {
+            current =
+                    new Board(
+                            new Revision("r" + ++saves),
+                            current.workflow(),
+                            current.stories().stream()
+                                    .map(
+                                            story ->
+                                                    new Story(
+                                                            story.id(),
+                                                            story.title(),
+                                                            writes.stories()
+                                                                    .getOrDefault(
+                                                                            story.id(),
+                                                                            story.state()),
+                                                            story.priority(),
+                                                            null,
+                                                            story.issues(),
+                                                            "",
+                                                            null))
+                                    .toList(),
+                            current.issues().stream()
+                                    .map(
+                                            issue ->
+                                                    new Issue(
+                                                            issue.id(),
+                                                            issue.repository(),
+                                                            issue.title(),
+                                                            writes.issues()
+                                                                    .getOrDefault(
+                                                                            issue.id(),
+                                                                            issue.state()),
+                                                            null,
+                                                            List.of(),
+                                                            null,
+                                                            null,
+                                                            "",
+                                                            writes.workers()
+                                                                    .getOrDefault(
+                                                                            issue.id(),
+                                                                            issue.worker()),
+                                                            Risk.ORDINARY))
+                                    .toList(),
+                            current.work(),
+                            current.repositories());
+            return current;
+        }
+
+        @Override
+        public void judge(final org.fuin.porelo.planner.store.CommandGroup group) {
+            final RuntimeException refusal = judged;
+            if (refusal != null) {
+                throw refusal;
+            }
+            PlanningStore.super.judge(group);
+        }
+
         /** Supplies the same snapshot to every read. */
         @Override
         public Board board() {
@@ -1294,6 +1520,12 @@ class WorkRunHttpTest {
         /** Makes the actual planning effect observable through HTTP. */
         @Override
         public Board save(final Revision revision, final Writes writes) {
+            if (busyAfter >= 0 && tried++ >= busyAfter) {
+                throw new StoreException.Busy("project");
+            }
+            if (current.issues().size() > 1) {
+                return savedEach(writes);
+            }
             if (unreachable) {
                 throw new StoreException.Unreachable("project", "timed out");
             }

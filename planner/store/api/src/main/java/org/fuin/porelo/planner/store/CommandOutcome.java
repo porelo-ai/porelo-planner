@@ -75,13 +75,28 @@ public sealed interface CommandOutcome
      * @param done the commands written before it was held, in order; empty for none
      * @param unsent the group's commands not written, in order
      * @param why one sentence why
+     * @param mayHaveWritten whether anything of the group may stand at the store or may still be
+     *     sent by the outbox: true when a command was written, or when the outbox could not keep
+     *     how a command went
      */
-    record Held(List<Command> done, List<Command> unsent, String why) implements CommandOutcome {
+    record Held(List<Command> done, List<Command> unsent, String why, boolean mayHaveWritten)
+            implements CommandOutcome {
 
         /** Copies the commands. */
         public Held {
             done = List.copyOf(done);
             unsent = List.copyOf(unsent);
+        }
+
+        /**
+         * A group held with what it wrote known: it may have written only the commands done.
+         *
+         * @param done the commands written before it was held, in order; empty for none
+         * @param unsent the group's commands not written, in order
+         * @param why one sentence why
+         */
+        public Held(final List<Command> done, final List<Command> unsent, final String why) {
+            this(done, unsent, why, !done.isEmpty());
         }
     }
 

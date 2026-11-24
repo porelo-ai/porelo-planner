@@ -244,6 +244,37 @@ final class LoggedStore implements PlanningStore {
         store.comment(issue, text);
     }
 
+    /** The store's own note of a Reload, so its whole read is told from that moment. */
+    @Override
+    public void reloadAsked() {
+        store.reloadAsked();
+    }
+
+    /** Ends the Reload the store noted. */
+    @Override
+    public void reloadEnded() {
+        store.reloadEnded();
+    }
+
+    /** The store's own judgment, so a group is refused as that store refuses it. */
+    @Override
+    public void judge(final org.fuin.porelo.planner.store.CommandGroup group) {
+        store.judge(group);
+    }
+
+    /** The store's own write of one command, with its own conflict check. */
+    @Override
+    public org.fuin.porelo.planner.store.Written writeAlone(
+            final org.fuin.porelo.planner.store.Command command) {
+        return store.writeAlone(command);
+    }
+
+    /** The store's own read after a group, logged as every board read is. */
+    @Override
+    public Board readAfter(final java.util.Set<String> written) {
+        return BoardLog.read(project, store.readAfter(written));
+    }
+
     @Override
     public Board saveResult(final StageResult result) {
         return store.saveResult(result);

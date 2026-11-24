@@ -19,6 +19,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.fuin.porelo.planner.app.CommandOutbox.State;
+import org.fuin.porelo.planner.core.RefusedEventResave;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
@@ -461,7 +462,7 @@ class CommandRunnerTest {
         final CommandOutbox outbox = outbox();
         final CommandRunner runner = new CommandRunner(outbox, store);
         runner.submit(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
-        runner.resume();
+        runner.resume(outbox.waiting());
         assertThat(store.calls.stream().filter(call -> call.equals("write c1")).count())
                 .as("never resumed on its own")
                 .isEqualTo(1);
@@ -506,7 +507,7 @@ class CommandRunnerTest {
                 CompletableFuture.supplyAsync(() -> runner.resend("g1"));
         assertThat(judging.await(5, TimeUnit.SECONDS)).as("queued again, being judged").isTrue();
 
-        runner.resume();
+        runner.resume(outbox.waiting());
         assertThatThrownBy(() -> runner.resend("g1"))
                 .as("a second resend leaves the running group alone")
                 .isInstanceOf(IllegalStateException.class);
@@ -529,7 +530,7 @@ class CommandRunnerTest {
         final CommandOutbox again = outbox();
         final CommandRunner runner = new CommandRunner(again, store);
 
-        runner.resume();
+        runner.resume(again.waiting());
 
         assertThat(store.calls).containsExactly("judge g1", "write c1", "readAfter");
         assertThat(again.pending()).isEmpty();
@@ -642,6 +643,71 @@ class CommandRunnerTest {
     }
 
     @Test
+    void aFailureThatMayHaveWrittenTheOutboxCannotKeepIsHeldAsMayHaveWritten() {
+        // Harm: a save that may stand told as held with nothing written, so its run goes on as if
+        // it was never sent.
+        final AtomicBoolean broken = new AtomicBoolean();
+        final CommandOutbox outbox = brokenWhen(broken);
+        final Fake store = new Fake();
+        store.onWrite =
+                command -> {
+                    broken.set(true);
+                    throw new IllegalStateException("GitHub answered 502");
+                };
+        final CommandRunner runner = new CommandRunner(outbox, store);
+
+        final CommandOutcome outcome =
+                runner.submit(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+
+        assertThat(outcome)
+                .isInstanceOfSatisfying(
+                        CommandOutcome.Held.class,
+                        held -> {
+                            assertThat(held.done()).as("nothing known written").isEmpty();
+                            assertThat(held.mayHaveWritten()).as("but it may stand").isTrue();
+                        });
+    }
+
+    @Test
+    void aBusyGroupTheOutboxCannotHoldIsHeldAsMayStillBeSent() {
+        // Harm: a group the file keeps waiting told as unwritten, so the next open sends it behind
+        // a run that went on without it.
+        final AtomicBoolean broken = new AtomicBoolean();
+        final CommandOutbox outbox = brokenWhen(broken);
+        final Fake store = new Fake();
+        store.onWrite =
+                command -> {
+                    broken.set(true);
+                    throw new StoreException.Busy("planning");
+                };
+        final CommandRunner runner = new CommandRunner(outbox, store);
+
+        final CommandOutcome outcome =
+                runner.submit(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+
+        assertThat(outcome)
+                .isInstanceOfSatisfying(
+                        CommandOutcome.Held.class,
+                        held -> assertThat(held.mayHaveWritten()).as("it may be sent").isTrue());
+    }
+
+    @Test
+    void resumeRunsOnlyTheGroupsWaitingAtOpenNeverALiveOneQueuedSince() {
+        // Harm: a live group its submitter handed back run a second time by the resume, or its
+        // state flipped under the submitter.
+        final CommandOutbox outbox = outbox();
+        final Fake store = new Fake();
+        final CommandRunner runner = new CommandRunner(outbox, store);
+        final List<String> atOpen = outbox.waiting();
+        outbox.enqueue(new CommandGroup("live", List.of(move("c9", "AA1", "Building"))));
+
+        runner.resume(atOpen);
+
+        assertThat(store.calls).as("the live group is not run").doesNotContain("write c9");
+        assertThat(state(outbox, "live", "c9")).isEqualTo(State.QUEUED);
+    }
+
+    @Test
     void aRefusedSaveTheOutboxCannotDropIsToldItMayStillBeSent() {
         // Harm: a save told refused that the file keeps, so a restart sends it unseen.
         final AtomicBoolean broken = new AtomicBoolean();
@@ -654,7 +720,15 @@ class CommandRunnerTest {
         final CommandOutcome outcome =
                 runner.submit(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
 
-        assertThat(outcome).as("may still be sent").isInstanceOf(CommandOutcome.Held.class);
+        assertThat(outcome)
+                .as("may still be sent")
+                .isInstanceOfSatisfying(
+                        CommandOutcome.Held.class,
+                        held -> {
+                            assertThat(held.done()).as("nothing known written").isEmpty();
+                            // A run's save answered so halts its run, as a save written in part.
+                            assertThat(held.mayHaveWritten()).as("it may yet be sent").isTrue();
+                        });
     }
 
     @Test
@@ -668,7 +742,7 @@ class CommandRunnerTest {
         store.judgeRefusal = new StoreException.Changed(List.of("AA1"));
         final CommandRunner runner = new CommandRunner(again, store);
 
-        runner.resume();
+        runner.resume(again.waiting());
 
         assertThat(state(again, "g1", "c1")).isEqualTo(State.REFUSED);
         assertThat(store.calls).doesNotContain("write c1");
@@ -693,7 +767,7 @@ class CommandRunnerTest {
                 };
         final CommandRunner runner = new CommandRunner(again, store);
 
-        runner.resume();
+        runner.resume(again.waiting());
 
         assertThat(store.calls).contains("judge g1", "judge g3");
     }
@@ -714,8 +788,171 @@ class CommandRunnerTest {
                 };
         final CommandRunner runner = new CommandRunner(again, store);
 
-        runner.resume();
+        runner.resume(again.waiting());
 
         assertThat(again.pending()).as("done, nothing kept").isEmpty();
+    }
+
+    /** A story's run that keeps one refused event under the group its refusal names. */
+    private static final class Kept implements RefusedEventResave {
+        @Nullable String group;
+        Function<String, Board> resave = group -> BEFORE;
+
+        Kept(final String group) {
+            this.group = group;
+        }
+
+        @Override
+        public boolean resavable(final String story, final String group) {
+            return group.equals(this.group);
+        }
+
+        @Override
+        public Board resave(final String story, final String group) {
+            return resave.apply(group);
+        }
+    }
+
+    /**
+     * Keeps a run's group of one move refused before writing, as a task's refused end leaves it.
+     */
+    private static void refusedEnd(final CommandOutbox outbox, final String group) {
+        outbox.enqueue(
+                new CommandGroup(group, List.of(move(group + "/0", "AA1", "Building")), "ST1"));
+        outbox.begin(group + "/0");
+        outbox.refused(group + "/0", new StoreException.NotSavable("AA1", "failed"), false, null);
+    }
+
+    private static List<String> ids(final CommandOutbox outbox) {
+        return outbox.pending().stream().map(CommandOutbox.Group::id).toList();
+    }
+
+    @Test
+    void aResaveRefusedAtItsJudgmentKeepsTheOneGroupItsRefusalNames() {
+        // Harm: a task's end saved again and refused before writing stays under Needs you, but its
+        // new group leaves the outbox at its judgment and the old one is dropped, so nothing is
+        // left to send it again; or both stay, and one end is offered twice.
+        final Fake store = new Fake();
+        final CommandOutbox outbox = outbox();
+        final CommandRunner runner = new CommandRunner(outbox, store);
+        refusedEnd(outbox, "g1");
+        final Kept run = new Kept("g1");
+        final StoreException.Changed changed = new StoreException.Changed(List.of("AA1"));
+        run.resave =
+                group -> {
+                    store.judgeRefusal = changed;
+                    final CommandOutcome outcome =
+                            runner.submit(
+                                    new CommandGroup(
+                                            "g2", List.of(move("g2/0", "AA1", "Building")), "ST1"));
+                    if (outcome instanceof CommandOutcome.Refused refused
+                            && !refused.mayHaveWritten()) {
+                        // The run keeps its event under the group the refusal names now.
+                        run.group = "g2";
+                        throw (RuntimeException) refused.cause();
+                    }
+                    throw new AssertionError("refused at its judgment: " + outcome);
+                };
+
+        assertThatThrownBy(() -> new OutboxResave(run, outbox).resave("ST1", "g1"))
+                .isSameAs(changed);
+
+        assertThat(run.group).as("the kept refusal names the new group").isEqualTo("g2");
+        assertThat(ids(outbox)).as("exactly the group the refusal names").containsExactly("g2");
+        assertThat(outbox.refusedUnwritten("g2", "ST1")).as("kept refused before writing").isTrue();
+    }
+
+    @Test
+    void aRunsGroupRefusedAtItsJudgmentStaysRefusedForTheOwnerAccount() {
+        // Harm: a task's end refused at its judgment kept under Needs you by its run while its
+        // group leaves the outbox, so the owner account is never shown a save to send again.
+        final Fake store = new Fake();
+        store.judgeRefusal = new StoreException.Changed(List.of("AA1"));
+        final CommandOutbox outbox = outbox();
+        final CommandRunner runner = new CommandRunner(outbox, store);
+
+        final CommandOutcome outcome =
+                runner.submit(
+                        new CommandGroup(
+                                "g1",
+                                List.of(
+                                        move("g1/0", "AA1", "Building"),
+                                        move("g1/1", "AB2", "Building")),
+                                "ST1"));
+
+        assertThat(outcome)
+                .isInstanceOfSatisfying(
+                        CommandOutcome.Refused.class,
+                        refused -> assertThat(refused.mayHaveWritten()).isFalse());
+        assertThat(store.calls).as("nothing written").containsExactly("judge g1");
+        assertThat(ids(outbox)).as("kept for the owner account").containsExactly("g1");
+        assertThat(outbox.refusedUnwritten("g1", "ST1")).as("kept refused before writing").isTrue();
+    }
+
+    @Test
+    void aResaveWhoseNewGroupTheOutboxDoesNotKeepLeavesTheOldGroup() {
+        // Harm: the old group of a kept end dropped although no other group stands in the outbox,
+        // so the owner account has nothing left to send the end again.
+        final CommandOutbox outbox = outbox();
+        refusedEnd(outbox, "g1");
+        final Kept run = new Kept("g1");
+        final StoreException.Changed changed = new StoreException.Changed(List.of("AA1"));
+        run.resave =
+                group -> {
+                    run.group = "g2";
+                    throw changed;
+                };
+
+        assertThatThrownBy(() -> new OutboxResave(run, outbox).resave("ST1", "g1"))
+                .isSameAs(changed);
+
+        assertThat(ids(outbox)).as("the old group stays").containsExactly("g1");
+    }
+
+    @Test
+    void aRunsGroupHeldOnABusyStoreBeforeWritingLeavesTheOutboxOnceItsEndIsSavedAgain() {
+        // Harm: a task's end held on a busy store, which the run keeps refused before writing,
+        // stays in the outbox after the owner account saved it again, shown as a halted run's save
+        // that nothing ever clears; or a group of which a part stands is dropped unseen.
+        final Fake store = new Fake();
+        store.onWrite =
+                command -> {
+                    if (!command.id().equals("g3/0")) {
+                        throw new StoreException.Busy("porelo-lib");
+                    }
+                    return new Written.Done(null, null);
+                };
+        final CommandOutbox outbox = outbox();
+        final CommandRunner runner = new CommandRunner(outbox, store);
+        assertThat(
+                        runner.submit(
+                                new CommandGroup(
+                                        "g1", List.of(move("g1/0", "AA1", "Building")), "ST1")))
+                .isInstanceOf(CommandOutcome.Held.class);
+        assertThat(
+                        runner.submit(
+                                new CommandGroup(
+                                        "g3",
+                                        List.of(
+                                                move("g3/0", "AB2", "Building"),
+                                                move("g3/1", "AC3", "Building")),
+                                        "ST1")))
+                .isInstanceOf(CommandOutcome.Held.class);
+
+        assertThat(outbox.refusedUnwritten("g1", "ST1"))
+                .as("held unbegun: nothing written")
+                .isTrue();
+        assertThat(outbox.refusedUnwritten("g3", "ST1"))
+                .as("held after a command written")
+                .isFalse();
+
+        final Kept run = new Kept("g1");
+        run.resave =
+                group -> {
+                    run.group = null;
+                    return BEFORE;
+                };
+        assertThat(new OutboxResave(run, outbox).resave("ST1", "g1")).isSameAs(BEFORE);
+        assertThat(ids(outbox)).as("the saved end's group left the outbox").containsExactly("g3");
     }
 }
