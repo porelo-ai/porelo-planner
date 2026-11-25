@@ -8,14 +8,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.PlaceRead;
 import org.fuin.porelo.planner.core.PlaceReviews;
+import org.fuin.porelo.planner.core.ReviewOpen;
+import org.fuin.porelo.planner.core.RunPlace;
 import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
@@ -42,6 +46,12 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
     /** A refusal's or reason's name, as Porelo's contract names one. */
     private static final java.util.regex.Pattern NAME =
             java.util.regex.Pattern.compile("[A-Z][A-Za-z]{0,63}");
+
+    /**
+     * Porelo's refusals saying no pull request stands from a task's branch: none is open, or its
+     * forge is none Porelo knows, so none could have been opened.
+     */
+    private static final Set<String> NO_PULL_REQUEST = Set.of("NoPullRequest", "UnknownForge");
 
     /** How often a followed project's places are read. */
     public static final Duration INTERVAL = Duration.ofSeconds(60);
@@ -437,15 +447,51 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         }
         PlaceRead read;
         try {
-            read =
-                    new PlaceRead.Opened(
-                            place.place(),
-                            place.task(),
-                            reviews.open(project, place.place(), RunRole.AUTHOR, place.task()));
+            final ReviewOpen answer =
+                    reviews.open(project, place.place(), RunRole.AUTHOR, place.task());
+            read = new PlaceRead.Opened(place.place(), place.task(), answer);
+            if (forwarded(place, answer)) {
+                read = ownRead(project, place, answer, reviews);
+            }
         } catch (final TaskRecords.Unanswered e) {
             read = new PlaceRead.Unread(place.place(), place.task(), said(project, e));
         }
         return work.placeRead(waits.story(), waits.issue(), read);
+    }
+
+    /** Whether an author's gate push was forwarded, so its work may go on at its pull request. */
+    private static boolean forwarded(final IssuePlace place, final ReviewOpen answer) {
+        return place.role() == RunRole.AUTHOR
+                && place.place().gatePush() != null
+                && answer.decision() == ReviewOpen.Decision.APPROVED
+                && answer.mergedCommit() != null
+                && answer.complete();
+    }
+
+    /**
+     * What is open at the task's own pull request once its gate push was forwarded: the gate's
+     * answer alone where Porelo finds no pull request from the task's branch, and no answer at all
+     * where it cannot say, so the forwarding is never taken for the work's end.
+     */
+    private static PlaceRead ownRead(
+            final String project,
+            final IssuePlace place,
+            final ReviewOpen atGate,
+            final PlaceReviews reviews) {
+        try {
+            return new PlaceRead.Forwarded(
+                    place.place(),
+                    place.task(),
+                    atGate,
+                    reviews.open(project, RunPlace.own(), RunRole.AUTHOR, place.task()));
+        } catch (final PlaceReviews.Refused refused) {
+            if (NO_PULL_REQUEST.contains(refused.refusal())) {
+                return new PlaceRead.Opened(place.place(), place.task(), atGate);
+            }
+            return new PlaceRead.Unread(place.place(), place.task(), said(project, refused));
+        } catch (final TaskRecords.Unanswered e) {
+            return new PlaceRead.Unread(place.place(), place.task(), said(project, e));
+        }
     }
 
     /**

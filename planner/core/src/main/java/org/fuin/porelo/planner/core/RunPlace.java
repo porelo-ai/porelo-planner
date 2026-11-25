@@ -85,6 +85,15 @@ public record RunPlace(
     }
 
     /**
+     * The task's own pull request, the one its gate's forwarding opened.
+     *
+     * @return the place
+     */
+    public static RunPlace own() {
+        return new RunPlace(null, null, true);
+    }
+
+    /**
      * Answers the push at the gate of a task.
      *
      * @param repository the project's repository, or null for the task's own

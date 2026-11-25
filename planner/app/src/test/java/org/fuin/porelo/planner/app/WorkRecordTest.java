@@ -995,6 +995,44 @@ class WorkRecordTest {
     }
 
     @Test
+    void anAuthorsReworkAtItsOwnPullRequestIsReadBack() throws Exception {
+        // Harm: once Porelo forwarded the work to its task's pull request, the saved rework offer
+        // there is refused, so the record no longer opens and the author is never sent back.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String rework = "00000000-0000-0000-0000-000000000005";
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode run = (ObjectNode) document.path("runs").iterator().next();
+        final ObjectNode offer = ((ObjectNode) run.get("offers").get(0)).deepCopy();
+        offer.put("id", rework).put("status", "OFFERED");
+        for (final String unbound : List.of("task", "containerId", "machine", "since", "ended")) {
+            offer.putNull(unbound);
+        }
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        arguments.put("runRole", "AUTHOR");
+        final ObjectNode place = arguments.putObject("place");
+        place.putNull("gatePush");
+        place.putNull("pullRequest");
+        place.put("ownPullRequest", true);
+        ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
+        run.putArray("placeOffers").add(rework);
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run read = run(records);
+            assertThat(read.placeOffers()).as("the rework read back").containsExactly(rework);
+            assertThat(WorkRun.placeStarts(read))
+                    .as("the window is given it again")
+                    .extracting(WorkRun.Offered::offer)
+                    .containsExactly(rework);
+            assertThat(read.offers().getLast().arguments().place())
+                    .as("at the own pull request")
+                    .isEqualTo(RunPlace.own());
+        }
+    }
+
+    @Test
     void aReviewerAReadOfAPlaceOfferedAndTheHeadItReviewedAreReadBack() throws Exception {
         // Harm: after a restart the reviewer a read offered is lost or refused, so the window never
         // starts it, or the reviewed head is lost, so the same push is reviewed again; an older

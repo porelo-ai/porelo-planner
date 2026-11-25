@@ -4259,6 +4259,126 @@ class WorkRunTest {
         assertThat(working.run.waiting()).as("nor is its place listed").isEmpty();
     }
 
+    @Test
+    void aForwardedGatePushMovesTheAuthorsPlaceToItsOwnPullRequestAndReworksThere() {
+        // Harm: work forwarded to its pull request is taken as ended at the gate, so the points
+        // open on the pull request never send its author back; or the author is sent back to the
+        // gate push its work left.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                forwarded("task", answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .as("points open on the own pull request")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.places().get("AA1").place())
+                .as("the work goes on at the task's own pull request")
+                .isEqualTo(RunPlace.own());
+        assertThat(run.places().get("AA1").authorRuns())
+                .as("the same author runs")
+                .containsExactly(build.offer());
+        final WorkRun.Offer rework = run.offers().getLast();
+        assertThat(List.of(rework.arguments().runRole(), rework.arguments().place()))
+                .as("its author sent back to the own pull request")
+                .containsExactly(RunRole.AUTHOR, RunPlace.own());
+        assertThat(WorkRun.placeStarts(run))
+                .as("the window starts it")
+                .extracting(WorkRun.Offered::offer)
+                .containsExactly(rework.id());
+    }
+
+    @Test
+    void aForwardedPushKeepsTheOwnPullRequestAndTheTasksRecordAtItsGatePushStillMatches() {
+        // Harm: the move to the pull request is lost when nothing is open there, so the next read
+        // judges the gate again; or Porelo's record of the run at its gate push is taken for
+        // another place and stops the issue.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final String repository = build.task().repository();
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                forwarded("task", answer(ReviewOpen.Decision.OPEN, 0, 0, 0))))
+                .as("nothing open on the own pull request")
+                .isEqualTo(WorkRun.PlaceOutcome.KEPT);
+        assertThat(f.run.work("ST1").places().get("AA1").place())
+                .as("kept at the own pull request")
+                .isEqualTo(RunPlace.own());
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Recorded(
+                                        record("box", RunRole.AUTHOR, repository, null))))
+                .as("the run's record at its gate push")
+                .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Opened(
+                                        RunPlace.own(),
+                                        "task",
+                                        answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .as("a later read there sends its author back")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+    }
+
+    @Test
+    void aForwardedPushOfAnotherTaskOrUnderAReviewerRuleStaysAtTheGate() {
+        // Harm: a read for another task moves the issue's work to a pull request that is not its
+        // own; or a reviewer reviewing at the gate loses the place it reviews.
+        final Fixture other = new Fixture();
+        waiting(other);
+        assertThat(
+                        other.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                forwarded("task-2", answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .as("another task's forwarding")
+                .isEqualTo(WorkRun.PlaceOutcome.PLACE_CHANGED);
+        assertThat(other.run.work("ST1").places().get("AA1").place())
+                .as("its place stands")
+                .isEqualTo(RunPlace.gate(null, "task"));
+
+        final Fixture reviewed = new Fixture();
+        reviewed.store.current = reviewed(reviewed.store.current);
+        waiting(reviewed);
+        reviewed.run.placeRead(
+                "ST1", "AA1", forwarded("task", answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
+        assertThat(reviewed.run.work("ST1").places().get("AA1").place())
+                .as("under a reviewer rule the gate push stays the place")
+                .isEqualTo(RunPlace.gate(null, "task"));
+    }
+
+    /** The gate push of task, forwarded, and the answer at its own pull request. */
+    private static PlaceRead forwarded(final String task, final ReviewOpen own) {
+        return new PlaceRead.Forwarded(
+                RunPlace.gate(null, task),
+                task,
+                new ReviewOpen(
+                        COMMIT,
+                        ReviewOpen.Decision.APPROVED,
+                        "f".repeat(40),
+                        "porelo/" + task,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        List.of(),
+                        0,
+                        0,
+                        true,
+                        null,
+                        "forwarded"),
+                own);
+    }
+
     /** A read at the kept push of task, for task. */
     private static PlaceRead atTask(final ReviewOpen answer) {
         return new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", answer);

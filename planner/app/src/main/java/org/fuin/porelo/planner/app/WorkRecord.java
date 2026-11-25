@@ -1619,7 +1619,8 @@ public final class WorkRecord implements AutoCloseable {
 
         /**
          * Refuses an offer a read of a kept place made that is named twice, or that is neither an
-         * author's offer of the run at a gate push nor a reviewer's, as a reader, at a place.
+         * author's offer of the run at a gate push or at its task's own pull request nor a
+         * reviewer's, as a reader, at a place.
          */
         private static void checkedPlaceOffers(final WorkRun.Run run) {
             if (Set.copyOf(run.placeOffers()).size() != run.placeOffers().size()) {
@@ -1632,8 +1633,12 @@ public final class WorkRecord implements AutoCloseable {
                                         o.id().equals(id)
                                                 && o.arguments().place() != null
                                                 && (o.arguments().runRole() == RunRole.AUTHOR
-                                                                && o.arguments().place().gatePush()
-                                                                        != null
+                                                                && (o.arguments().place().gatePush()
+                                                                                != null
+                                                                        || o.arguments()
+                                                                                        .place()
+                                                                                        .ownPullRequest()
+                                                                                != null)
                                                         || o.arguments().runRole()
                                                                         == RunRole.REVIEWER
                                                                 && o.binding()

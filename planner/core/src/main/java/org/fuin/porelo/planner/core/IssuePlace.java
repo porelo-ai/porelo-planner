@@ -231,6 +231,29 @@ public record IssuePlace(
     }
 
     /**
+     * The place an author's work goes on at once its gate push was forwarded: its task's own pull
+     * request, for the same task and author runs, nothing read there yet.
+     *
+     * @return the place
+     */
+    public IssuePlace forwarded() {
+        return new IssuePlace(RunPlace.own(), role, task, authorRuns, null);
+    }
+
+    /**
+     * Whether a place a task record names is the gate push this own pull request's work was
+     * forwarded from: its task's own push, where its runs worked before the forwarding.
+     *
+     * @param read the place the record names
+     * @param repository the repository the work is in
+     * @return true for that push
+     */
+    public boolean forwardedFrom(final RunPlace read, final String repository) {
+        return place.ownPullRequest() != null
+                && own(read, repository).equals(RunPlace.gate(null, task));
+    }
+
+    /**
      * Whether a place read is this one: a push at the gate naming the task's own repository is that
      * task's own push, as Porelo takes a push naming none.
      *

@@ -2295,8 +2295,11 @@ public final class WorkRun implements RefusedEventResave {
                                         && o.arguments().place() != null
                                         && (o.arguments().runRole() == RunRole.REVIEWER
                                                 || o.arguments().runRole() == RunRole.AUTHOR
-                                                        && o.arguments().place().gatePush()
-                                                                != null))
+                                                        && (o.arguments().place().gatePush() != null
+                                                                || o.arguments()
+                                                                                .place()
+                                                                                .ownPullRequest()
+                                                                        != null)))
                 .map(o -> new Offered(o.id(), o.arguments()))
                 .toList();
     }
@@ -2373,7 +2376,7 @@ public final class WorkRun implements RefusedEventResave {
             final Session session,
             final String story,
             final String issue,
-            final PlaceRead found,
+            final PlaceRead given,
             final String[] told) {
         final Snapshot snapshot = read(session);
         final Run run = snapshot.runs().get(story);
@@ -2383,13 +2386,13 @@ public final class WorkRun implements RefusedEventResave {
         if (run.pending() != null) {
             return new PlaceStep(PlaceOutcome.WAITING, null);
         }
-        final IssuePlace kept = run.places().get(issue);
+        final IssuePlace left = run.places().get(issue);
         if (run.stopped() || run.halted()) {
             // A stopped or halted run takes no step and asks nothing more.
             return new PlaceStep(PlaceOutcome.UNCHANGED, null);
         }
-        final Offer bound = kept == null ? null : bound(run.offers(), kept);
-        if (kept == null || bound == null) {
+        final Offer bound = left == null ? null : bound(run.offers(), left);
+        if (left == null || bound == null) {
             throw WorkRefusal.runChanged(story, "The issue keeps no place in the run.");
         }
         final Board board = store.board();
@@ -2397,9 +2400,25 @@ public final class WorkRun implements RefusedEventResave {
             // Moved on by hand, or bound by a run of its own: its work no longer waits there.
             return new PlaceStep(PlaceOutcome.UNCHANGED, null);
         }
+        final boolean switched =
+                given instanceof PlaceRead.Forwarded forwarded
+                        && forwardsToOwn(board, issue, left, bound, forwarded);
+        // The author's work goes on at the pull request its gate's forwarding opened.
+        final IssuePlace kept = switched ? left.forwarded() : left;
+        final PlaceRead found =
+                given instanceof PlaceRead.Forwarded forwarded
+                        ? switched
+                                ? new PlaceRead.Opened(
+                                        kept.place(), forwarded.task(), forwarded.own())
+                                : new PlaceRead.Opened(
+                                        forwarded.gate(), forwarded.task(), forwarded.atGate())
+                        : given;
         // A reviewer offered but not started yet leaves the place read, so its end is taken.
         final Offer waitingReviewer = waitingReviewer(run, issue);
         final Draft draft = new Draft(run);
+        if (switched) {
+            draft.places.put(issue, kept);
+        }
         final NextStep.Progress progress = draft.progress(issue);
         final String differs = differs(kept, bound, found);
         if (differs != null) {
@@ -2417,12 +2436,11 @@ public final class WorkRun implements RefusedEventResave {
                         ? plain(missing.reason(), 200)
                         : answer != null && !answer.complete() ? incomplete(answer) : null;
         if (unread != null) {
-            if (progress.needsYou() && progress.reason().equals(PLACE_UNREADABLE)) {
-                return new PlaceStep(PlaceOutcome.UNCHANGED, null);
-            }
             if (progress.needsYou()) {
-                // The person is already asked for another reason, which stands.
-                return new PlaceStep(PlaceOutcome.UNCHANGED, null);
+                // Asked already, for this reason or another, which stands; a switch is kept.
+                return switched
+                        ? new PlaceStep(PlaceOutcome.KEPT, written(session, snapshot, draft))
+                        : new PlaceStep(PlaceOutcome.UNCHANGED, null);
             }
             draft.progress.put(issue, progress.attention(PLACE_UNREADABLE));
             told[0] =
@@ -2437,7 +2455,7 @@ public final class WorkRun implements RefusedEventResave {
         if (answer == null) {
             return new PlaceStep(PlaceOutcome.UNCHANGED, null);
         }
-        boolean changed = false;
+        boolean changed = switched;
         IssuePlace now = kept;
         if (kept.last() == null || !kept.last().version().equals(answer.version())) {
             now = kept.read(answer);
@@ -2784,7 +2802,10 @@ public final class WorkRun implements RefusedEventResave {
                                         planned.task()
                                                 .at(
                                                         RunRole.AUTHOR,
-                                                        RunPlace.gate(null, place.task())),
+                                                        place.place().ownPullRequest() != null
+                                                                ? RunPlace.own()
+                                                                : RunPlace.gate(
+                                                                        null, place.task())),
                                         planned.state(),
                                         planned.rule(),
                                         planned.basis()),
@@ -2999,7 +3020,7 @@ public final class WorkRun implements RefusedEventResave {
                 yield task.task().equals(bound.containerId())
                                 && (role == null || role == kept.role())
                                 && (in == null || in.equals(repository))
-                                && kept.same(at, repository)
+                                && (kept.same(at, repository) || kept.forwardedFrom(at, repository))
                         ? null
                         : "Porelo's record of container "
                                 + task.task()
@@ -3027,6 +3048,12 @@ public final class WorkRun implements RefusedEventResave {
                                     + ", not for "
                                     + expected
                                     + ", where its work waits";
+            case PlaceRead.Forwarded forwarded ->
+                    differs(
+                            kept,
+                            bound,
+                            new PlaceRead.Opened(
+                                    forwarded.gate(), forwarded.task(), forwarded.atGate()));
             case PlaceRead.Opened opened ->
                     opened.task().equals(kept.task()) && kept.same(opened.place(), repository)
                             ? null
@@ -3038,6 +3065,24 @@ public final class WorkRun implements RefusedEventResave {
                                     + expected
                                     + ", where its work waits";
         };
+    }
+
+    /**
+     * Whether a read of a forwarded gate push moves an author's kept place to its task's own pull
+     * request: the push kept is the one read, for its task, and no reviewer rule reads the work,
+     * whose reviewer reviews at the gate.
+     */
+    private static boolean forwardsToOwn(
+            final Board board,
+            final String issue,
+            final IssuePlace kept,
+            final Offer bound,
+            final PlaceRead.Forwarded forwarded) {
+        return kept.role() == RunRole.AUTHOR
+                && kept.place().gatePush() != null
+                && forwarded.task().equals(kept.task())
+                && kept.same(forwarded.gate(), bound.binding().repository())
+                && reviewerRule(board, issue) == null;
     }
 
     /** Whether an offer's task hands back its result instead of pushing its work. */

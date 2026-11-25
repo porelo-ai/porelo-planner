@@ -5398,7 +5398,9 @@ components:
           description: >-
             The run's offers made without a request of the window's, which wait for their Start: an author sent back
             to answer the points open at the gate push its work waits at, with runRole AUTHOR and that push as its
-            place, started under that push's name; or, where the reading rule names a reviewer, a reviewer of a new
+            place, started under that push's name; an author sent back to answer the points open at its task's own
+            pull request, once Porelo forwarded the gate push there, with runRole AUTHOR and place ownPullRequest,
+            started under the same task's name; or, where the reading rule names a reviewer, a reviewer of a new
             head at the place the work waits at, with runRole REVIEWER, role READER and that place, started under a
             task name of its own, never the name of the task whose work it reviews. The window starts each once,
             through the callback it gives for offers it did not ask for; empty when none waits, and for a stopped or

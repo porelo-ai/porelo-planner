@@ -6,7 +6,8 @@ import java.util.Objects;
  * What was read of an issue's kept place from Porelo: a task's record, what is open there, or why
  * Porelo gave no answer that can be trusted.
  */
-public sealed interface PlaceRead permits PlaceRead.Recorded, PlaceRead.Opened, PlaceRead.Unread {
+public sealed interface PlaceRead
+        permits PlaceRead.Recorded, PlaceRead.Opened, PlaceRead.Forwarded, PlaceRead.Unread {
 
     /**
      * Porelo's record of the task bound at the place.
@@ -33,6 +34,36 @@ public sealed interface PlaceRead permits PlaceRead.Recorded, PlaceRead.Opened, 
             Objects.requireNonNull(place, "place");
             Objects.requireNonNull(task, "task");
             Objects.requireNonNull(answer, "answer");
+        }
+    }
+
+    /**
+     * What Porelo answered at a gate push it forwarded, and what is open at the task's own pull
+     * request, which the forwarding opened: the place the author's work goes on at.
+     *
+     * @param gate the gate push asked about
+     * @param task the task asked for, by its name within the project
+     * @param atGate the gate's answer, APPROVED with the forwarded commit
+     * @param own the answer at the task's own pull request
+     */
+    record Forwarded(RunPlace gate, String task, ReviewOpen atGate, ReviewOpen own)
+            implements PlaceRead {
+        /**
+         * Refuses a missing part, a place that is no gate push and a gate that forwarded nothing.
+         */
+        public Forwarded {
+            Objects.requireNonNull(gate, "gate");
+            Objects.requireNonNull(task, "task");
+            Objects.requireNonNull(atGate, "atGate");
+            Objects.requireNonNull(own, "own");
+            if (gate.gatePush() == null) {
+                throw new IllegalArgumentException("Only a gate push forwards its work");
+            }
+            if (atGate.decision() != ReviewOpen.Decision.APPROVED
+                    || atGate.mergedCommit() == null
+                    || !atGate.complete()) {
+                throw new IllegalArgumentException("The gate forwarded no commit");
+            }
         }
     }
 

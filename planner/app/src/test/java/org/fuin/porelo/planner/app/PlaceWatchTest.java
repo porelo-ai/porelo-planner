@@ -281,6 +281,118 @@ class PlaceWatchTest {
     }
 
     @Test
+    void aForwardedGatePushIsReadOnAtTheTasksOwnPullRequestAndNeverTakenForTheWorksEnd() {
+        // Harm: the forwarding taken for the end of the work, so the points opened on the pull
+        // request never send its author back; or a pull request that cannot be read taken for
+        // none.
+        final ReviewOpen gate = forwardedAnswer();
+        final ReviewOpen own = answer();
+        final List<String> asked = new ArrayList<>();
+        final Fake answered = new Fake(WorkRun.PlaceOutcome.KEPT);
+        new PlaceWatch(
+                        p -> answered,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> {
+                            asked.add(place + " " + role + " " + task);
+                            return place.ownPullRequest() == null ? gate : own;
+                        },
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+        assertThat(answered.reads)
+                .as("the gate's answer and the own pull request's, together")
+                .containsExactly(
+                        new PlaceRead.Forwarded(RunPlace.gate(null, "task"), "task", gate, own));
+        assertThat(asked)
+                .as("the own pull request asked for the same author task")
+                .containsExactly(
+                        RunPlace.gate(null, "task") + " AUTHOR task",
+                        RunPlace.own() + " AUTHOR task");
+
+        for (final String none : List.of("NoPullRequest", "UnknownForge")) {
+            final Fake absent = new Fake(WorkRun.PlaceOutcome.KEPT);
+            new PlaceWatch(
+                            p -> absent,
+                            (project, from) -> List.of(),
+                            (project, place, role, task) -> {
+                                if (place.ownPullRequest() == null) {
+                                    return gate;
+                                }
+                                throw new PlaceReviews.Refused(none, null);
+                            },
+                            saved::add,
+                            scheduler,
+                            Duration.ofMinutes(1))
+                    .readAll("project");
+            assertThat(absent.reads)
+                    .as("no pull request from the task's branch (" + none + "): the gate's answer")
+                    .containsExactly(
+                            new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", gate));
+        }
+
+        final Fake unreadable = new Fake(WorkRun.PlaceOutcome.NEEDS_YOU);
+        new PlaceWatch(
+                        p -> unreadable,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> {
+                            if (place.ownPullRequest() == null) {
+                                return gate;
+                            }
+                            throw new PlaceReviews.Refused("ForgeAdapterMissing", null);
+                        },
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+        assertThat(unreadable.reads)
+                .as("a pull request Porelo cannot read: the place unreadable, in fixed words")
+                .containsExactly(
+                        new PlaceRead.Unread(
+                                RunPlace.gate(null, "task"),
+                                "task",
+                                "Porelo refused the place: ForgeAdapterMissing"));
+
+        final Fake unanswered = new Fake(WorkRun.PlaceOutcome.NEEDS_YOU);
+        new PlaceWatch(
+                        p -> unanswered,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> {
+                            if (place.ownPullRequest() == null) {
+                                return gate;
+                            }
+                            throw new TaskRecords.Unanswered("/home/someone/bin/porelo timed out");
+                        },
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+        assertThat(unanswered.reads)
+                .as("no answer at the pull request: the place unreadable, no local path shown")
+                .containsExactly(
+                        new PlaceRead.Unread(
+                                RunPlace.gate(null, "task"),
+                                "task",
+                                "Porelo gave no answer that can be trusted"));
+
+        final List<String> openAsked = new ArrayList<>();
+        new PlaceWatch(
+                        p -> new Fake(WorkRun.PlaceOutcome.KEPT),
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> {
+                            openAsked.add(String.valueOf(place));
+                            return answer();
+                        },
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+        assertThat(openAsked)
+                .as("a gate push still open: no pull request asked")
+                .containsExactly(String.valueOf(RunPlace.gate(null, "task")));
+    }
+
+    @Test
     void oneIssueThatCannotBeReadLeavesTheOthersRead() {
         // Harm: one broken place stops every other issue's rework.
         final Fake work = new Fake(WorkRun.PlaceOutcome.KEPT);
@@ -497,6 +609,22 @@ class PlaceWatchTest {
                 RunRole.AUTHOR,
                 null,
                 null);
+    }
+
+    /** The gate's answer once Porelo forwarded the push to the task's pull request. */
+    private static ReviewOpen forwardedAnswer() {
+        return new ReviewOpen(
+                "a".repeat(40),
+                ReviewOpen.Decision.APPROVED,
+                "b".repeat(40),
+                "porelo/task",
+                WHEN,
+                List.of(),
+                0,
+                0,
+                true,
+                null,
+                "forwarded");
     }
 
     private static ReviewOpen answer() {
