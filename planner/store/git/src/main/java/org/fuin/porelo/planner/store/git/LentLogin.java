@@ -7,7 +7,6 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -17,6 +16,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -45,9 +45,6 @@ final class LentLogin {
     static final int BOUND = 64 * 1024;
 
     private static final Logger LOG = LoggerFactory.getLogger(LentLogin.class);
-
-    static final boolean WINDOWS =
-            !FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
     /** The checked executable, or null when nothing is lent. */
     private final @Nullable String executable;
@@ -92,7 +89,8 @@ final class LentLogin {
      * @return the login lent, none without the variable; a refused one when the check refuses
      */
     static LentLogin of(final Map<String, String> environment, final LimitFactors limits) {
-        return of(environment, PoreloExecutable.of(environment, WINDOWS, limits), limits);
+        return of(
+                environment, PoreloExecutable.of(environment, HostSystem.WINDOWS, limits), limits);
     }
 
     /**
@@ -367,7 +365,7 @@ final class LentLogin {
     /** The variable's value; Windows reads a variable's name in any case. */
     static @Nullable String variable(final Map<String, String> environment) {
         final String value = environment.get(VARIABLE);
-        if (value != null || !WINDOWS) {
+        if (value != null || !HostSystem.WINDOWS) {
             return value;
         }
         for (final Map.Entry<String, String> variable : environment.entrySet()) {

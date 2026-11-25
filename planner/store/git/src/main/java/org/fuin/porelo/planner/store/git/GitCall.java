@@ -1,12 +1,12 @@
 package org.fuin.porelo.planner.store.git;
 
-import java.nio.file.FileSystems;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
+import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.planner.store.files.WindowsPrivateFiles;
 
 /**
@@ -17,12 +17,6 @@ import org.fuin.porelo.planner.store.files.WindowsPrivateFiles;
  * @param environment the whole environment the call runs with
  */
 public record GitCall(List<String> arguments, Map<String, String> environment) {
-
-    /**
-     * Whether this is Windows, where Git takes {@code /dev/null} as a path on the current drive.
-     */
-    private static final boolean WINDOWS =
-            !FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
     /** The configuration every call gets on Linux, ahead of its own arguments. */
     static final List<String> SAFE_CONFIG = safeConfig("/dev/null");
@@ -61,7 +55,7 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
             final Map<String, String> inherited,
             final Duration connectTimeout,
             final List<String> arguments) {
-        return of(inherited, connectTimeout, arguments, WINDOWS);
+        return of(inherited, connectTimeout, arguments, HostSystem.WINDOWS);
     }
 
     /**
@@ -103,7 +97,7 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
             final CloneUrl url,
             final List<String> arguments) {
         final List<String> lent = login.config(url);
-        final GitCall call = of(inherited, connectTimeout, arguments, WINDOWS);
+        final GitCall call = of(inherited, connectTimeout, arguments, HostSystem.WINDOWS);
         if (lent.isEmpty()) {
             return call;
         }
@@ -143,7 +137,7 @@ public record GitCall(List<String> arguments, Map<String, String> environment) {
             final Duration connectTimeout,
             final java.nio.file.Path index,
             final List<String> arguments) {
-        final GitCall call = of(inherited, connectTimeout, arguments, WINDOWS);
+        final GitCall call = of(inherited, connectTimeout, arguments, HostSystem.WINDOWS);
         final Map<String, String> variables = new TreeMap<>(call.environment());
         // Set after the person's GIT_ variables are gone, so only this one names an index.
         variables.put("GIT_INDEX_FILE", index.toString());

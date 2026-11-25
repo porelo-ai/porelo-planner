@@ -28,6 +28,7 @@ import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
@@ -55,9 +56,6 @@ public final class PoreloTaskRecords implements TaskRecords {
     static final List<String> PASSED_ON_WINDOWS =
             List.of("LOCALAPPDATA", "APPDATA", "USERPROFILE", "SYSTEMROOT", "TEMP", "TMP");
 
-    private static final boolean WINDOWS =
-            !java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
-
     /**
      * The part of the planner's environment a child of Porelo gets.
      *
@@ -66,7 +64,7 @@ public final class PoreloTaskRecords implements TaskRecords {
      *     Windows reads a variable's name
      */
     static Map<String, String> passed(final Map<String, String> source) {
-        return passed(source, WINDOWS);
+        return passed(source, HostSystem.WINDOWS);
     }
 
     static Map<String, String> passed(final Map<String, String> source, final boolean windows) {

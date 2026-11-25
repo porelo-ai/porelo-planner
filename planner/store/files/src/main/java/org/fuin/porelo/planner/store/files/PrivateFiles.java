@@ -1,7 +1,6 @@
 package org.fuin.porelo.planner.store.files;
 
 import java.io.IOException;
-import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.util.List;
@@ -34,7 +33,7 @@ public interface PrivateFiles {
      * @return POSIX modes where the file system has them, access control lists otherwise
      */
     static PrivateFiles of(final Map<String, String> environment, final LimitFactors limits) {
-        return FileSystems.getDefault().supportedFileAttributeViews().contains("posix")
+        return !HostSystem.WINDOWS
                 ? new PosixPrivateFiles()
                 : WindowsPrivateFiles.of(environment, limits);
     }

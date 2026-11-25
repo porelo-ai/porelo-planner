@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.store.git;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.Map;
+import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.wire.LimitFactors;
 import org.jspecify.annotations.Nullable;
 
@@ -24,7 +25,7 @@ public final class PoreloProgram {
      */
     public static @Nullable Path of(
             final Map<String, String> environment, final LimitFactors limits) {
-        return of(environment, PoreloExecutable.of(environment, LentLogin.WINDOWS, limits));
+        return of(environment, PoreloExecutable.of(environment, HostSystem.WINDOWS, limits));
     }
 
     static @Nullable Path of(final Map<String, String> environment, final PoreloExecutable check) {
@@ -61,7 +62,7 @@ public final class PoreloProgram {
      *     cannot run, saying why in words free of secrets
      */
     public static Path checked(final Map<String, String> environment, final LimitFactors limits) {
-        return checked(environment, PoreloExecutable.of(environment, LentLogin.WINDOWS, limits));
+        return checked(environment, PoreloExecutable.of(environment, HostSystem.WINDOWS, limits));
     }
 
     /**
