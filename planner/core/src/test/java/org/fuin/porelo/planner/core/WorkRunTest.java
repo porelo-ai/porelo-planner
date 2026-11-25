@@ -3152,6 +3152,51 @@ class WorkRunTest {
     }
 
     @Test
+    void anUnreadPlaceStopEndsOnceTheIssueNoLongerWaitsThereAndNoOtherStopDoes() {
+        // Harm: the person is asked about a place that no longer matters, and every Start of the
+        // run is refused for the attention it still needs; or a stop that still matters ends.
+        final PlaceRead unread =
+                new PlaceRead.Unread(RunPlace.gate(null, "task"), "task", "Porelo cannot be run");
+        final Fixture f = new Fixture();
+        waiting(f);
+        f.run.placeRead("ST1", "AA1", unread);
+        assertThat(f.run.placesLeft()).as("its work still waits there").isEmpty();
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("so the stop stands")
+                .isEqualTo(WorkRun.PLACE_UNREADABLE);
+
+        f.store.current = inState(f.store.current, "AA1", "Review");
+        assertThat(f.run.placesLeft()).as("moved on by hand").containsExactly("ST1");
+        assertThat(
+                        List.of(
+                                f.run.work("ST1").issues().get("AA1").needsYou(),
+                                f.run.work("ST1").issues().get("AA1").reason()))
+                .as("the stop ended")
+                .containsExactly(false, "NONE");
+        assertThat(f.run.placesLeft()).as("nothing more to end").isEmpty();
+
+        final Fixture other = new Fixture();
+        waiting(other);
+        other.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.REJECTED, 0, 0, 0)));
+        final String reason = other.run.work("ST1").issues().get("AA1").reason();
+        other.store.current = inState(other.store.current, "AA1", "Review");
+        // An unread stop beside it, kept at no place, so the read goes through each issue.
+        final WorkRun.Run stopped = other.run.work("ST1");
+        final Map<String, NextStep.Progress> issues =
+                new java.util.LinkedHashMap<>(stopped.issues());
+        issues.put("AA2", NextStep.Progress.start(2).attention(WorkRun.PLACE_UNREADABLE));
+        other.record.value = withRun(other.record.value, withIssues(stopped, issues));
+        assertThat(other.run.placesLeft()).as("the unread stop ended").containsExactly("ST1");
+        assertThat(
+                        List.of(
+                                other.run.work("ST1").issues().get("AA1").reason(),
+                                other.run.work("ST1").issues().get("AA2").reason()))
+                .as("the other reason's stop stands, the unread one beside it ended")
+                .containsExactly(reason, "NONE");
+        assertThat(reason).as("a stop of another reason").isNotIn("NONE", WorkRun.PLACE_UNREADABLE);
+    }
+
+    @Test
     void anIncompleteAnswerOrNoneAsksThePersonUntilACompleteOneIsRead() {
         // Harm: a partial read taken as nothing open, so the issue moves on with points open;
         // or every poll tells the person again; or the stop stands after Porelo answers again.

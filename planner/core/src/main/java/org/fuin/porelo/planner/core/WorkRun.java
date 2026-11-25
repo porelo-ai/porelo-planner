@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -2189,10 +2190,7 @@ public final class WorkRun implements RefusedEventResave {
                     .forEach(
                             (issue, kept) -> {
                                 final Offer bound = bound(run.offers(), kept);
-                                if (waits(run.offers(), kept)
-                                        && !bindsIssueAtWork(run, issue)
-                                        && (bound == null
-                                                || standsWhereLeft(board, bound, issue))) {
+                                if (stillWaits(board, run, issue)) {
                                     waiting.add(
                                             new Waits(
                                                     run.story(),
@@ -2204,6 +2202,77 @@ public final class WorkRun implements RefusedEventResave {
                             });
         }
         return waiting;
+    }
+
+    /**
+     * Whether an issue's work still waits at the place its run keeps: kept there, not yet past its
+     * place, bound by no offer of its run, and standing where its author left it.
+     */
+    private static boolean stillWaits(final Board board, final Run run, final String issue) {
+        final IssuePlace kept = run.places().get(issue);
+        if (kept == null || !waits(run.offers(), kept) || bindsIssueAtWork(run, issue)) {
+            return false;
+        }
+        final Offer bound = bound(run.offers(), kept);
+        return bound == null || standsWhereLeft(board, bound, issue);
+    }
+
+    /**
+     * Ends the stop of each issue that asks the person because what is open at its place could not
+     * be read, once its work no longer waits there: moved on by hand, bound by an offer of its run,
+     * or its place given up. A stop for any other reason stands; a stopped or halted run and one
+     * whose save is in flight are left as they are.
+     *
+     * @return the stories whose runs changed, none when nothing did
+     */
+    public Set<String> placesLeft() {
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    if (snapshot.runs().values().stream()
+                            .noneMatch(
+                                    r ->
+                                            r.issues().values().stream()
+                                                    .anyMatch(WorkRun::unreadStop))) {
+                        return Set.of();
+                    }
+                    final Board board = store.board();
+                    Snapshot next = snapshot;
+                    final Set<String> stories = new LinkedHashSet<>();
+                    for (final Run run : snapshot.runs().values()) {
+                        if (run.pending() != null || run.stopped() || run.halted()) {
+                            continue;
+                        }
+                        final Draft draft = new Draft(run);
+                        for (final Map.Entry<String, NextStep.Progress> entry :
+                                run.issues().entrySet()) {
+                            final NextStep.Progress p = entry.getValue();
+                            if (unreadStop(p) && !stillWaits(board, run, entry.getKey())) {
+                                draft.progress.put(
+                                        entry.getKey(),
+                                        new NextStep.Progress(
+                                                p.rounds(),
+                                                p.findings(),
+                                                false,
+                                                "NONE",
+                                                p.answer()));
+                            }
+                        }
+                        if (!draft.progress.equals(run.issues())) {
+                            next = replace(next, draft.freeze());
+                            stories.add(run.story());
+                        }
+                    }
+                    if (next != snapshot) {
+                        session.write(next);
+                    }
+                    return Set.copyOf(stories);
+                });
+    }
+
+    /** Whether an issue asks the person only because its place could not be read. */
+    private static boolean unreadStop(final NextStep.Progress progress) {
+        return progress.needsYou() && progress.reason().equals(PLACE_UNREADABLE);
     }
 
     /**

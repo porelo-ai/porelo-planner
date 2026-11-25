@@ -107,6 +107,30 @@ class PlaceWatchTest {
     }
 
     @Test
+    void aStopWhosePlaceWasLeftEndsAndTellsTheWindowsEvenWithNothingWaiting() {
+        // Harm: the person's question about an unreadable place stands on the board after the
+        // issue moved on, because nothing of the project waits any more to be read.
+        final Fake work = new Fake(WorkRun.PlaceOutcome.UNCHANGED);
+        work.waits.clear();
+        work.left = java.util.Set.of("ST1");
+        final PlaceWatch watch =
+                new PlaceWatch(
+                        p -> work,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> answer(),
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1));
+
+        assertThat(watch.readAll("project")).as("nothing read").isEmpty();
+        assertThat(saved).as("the windows are told of the ended stop").containsExactly("project");
+
+        saved.clear();
+        watch.readAll("project");
+        assertThat(saved).as("nothing ended, nobody told").isEmpty();
+    }
+
+    @Test
     void theHeldItemsAReadFoundStandForTheirTaskAndForNoOther() {
         // Harm: the card shows no held items though Porelo counted some, those of another task or
         // another project's task of the same name, or 0 where Porelo gave no count.
@@ -366,6 +390,16 @@ class PlaceWatchTest {
 
         Fake(final WorkRun.PlaceOutcome outcome) {
             this.outcome = outcome;
+        }
+
+        /** The stories whose stops the next call ends. */
+        java.util.Set<String> left = java.util.Set.of();
+
+        @Override
+        public java.util.Set<String> placesLeft() {
+            final java.util.Set<String> ended = left;
+            left = java.util.Set.of();
+            return ended;
         }
 
         @Override

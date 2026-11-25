@@ -67,6 +67,13 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         WorkRun.PlaceOutcome placeRead(String story, String issue, PlaceRead found);
 
         /**
+         * Ends the unreadable place stop of each issue whose work no longer waits there.
+         *
+         * @return the stories whose runs changed
+         */
+        java.util.Set<String> placesLeft();
+
+        /**
          * A project's work as the watch reads it.
          *
          * @param work the work
@@ -83,6 +90,11 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                 public WorkRun.PlaceOutcome placeRead(
                         final String story, final String issue, final PlaceRead found) {
                     return work.placeRead(story, issue, found);
+                }
+
+                @Override
+                public java.util.Set<String> placesLeft() {
+                    return work.placesLeft();
                 }
             };
         }
@@ -305,9 +317,25 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
             return Map.of();
         }
         final Places work = works.apply(project);
+        // A stop for a place that could not be read ends once nothing waits there, even when
+        // nothing of the project waits any more.
+        boolean left;
+        try {
+            left = !work.placesLeft().isEmpty();
+        } catch (final RuntimeException e) {
+            // The places are read all the same; a save that failed may have changed the run.
+            left = true;
+            LOG.warn(
+                    "Ending the stops of project {} whose places were left failed: {}",
+                    LogText.of(project),
+                    logged(e));
+        }
         final List<WorkRun.Waits> waiting = work.waiting();
         final Map<String, WorkRun.PlaceOutcome> outcomes = new LinkedHashMap<>();
         if (waiting.isEmpty()) {
+            if (left) {
+                saved.accept(project);
+            }
             return outcomes;
         }
         final TaskRecords recordsRead = records;
@@ -322,7 +350,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                 unread = said(project, e);
             }
         }
-        boolean changed = false;
+        boolean changed = left;
         for (final WorkRun.Waits waits : waiting) {
             final String key = waits.story() + "/" + waits.issue();
             try {
