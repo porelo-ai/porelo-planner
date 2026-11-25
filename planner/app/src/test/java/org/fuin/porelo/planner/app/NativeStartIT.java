@@ -447,6 +447,13 @@ class NativeStartIT {
                         .as("the mock board's stories" + log)
                         .startsWith("200 ")
                         .contains("\"revision\":\"mock@1\"");
+                assertThat(call(address, "POST", "/mock/projects/any/reviewer", null))
+                        .as("a reviewer made by the planner's flow in the image" + log)
+                        .startsWith("204 ");
+                assertThat(call(address, "GET", "/projects/any/stories/ST14/work", null))
+                        .as("the reviewer's order served" + log)
+                        .startsWith("200 ")
+                        .contains("\"runRole\":\"REVIEWER\"");
                 assertThat(call(address, "POST", "/mock/reset", null))
                         .as("a reset" + log)
                         .startsWith("204 ");

@@ -339,6 +339,42 @@ class MockModeTest {
     }
 
     @Test
+    void aReviewerAskedForIsServedWithItsPlaceUntilTheNextReset() throws Exception {
+        // The window's planning tests start a reviewer from the order the planner serves; a mock
+        // that serves none, another role or no place leaves that start untested, and one that
+        // keeps it past a reset makes the next test start from another board.
+        assertThat(call(runtime, "POST", "/mock/projects/none/reviewer", null).statusCode())
+                .as("a reviewer for a project never given")
+                .isEqualTo(404);
+        call(runtime, "PUT", "/projects/reviewed", SOURCE);
+
+        assertThat(call(runtime, "POST", "/mock/projects/reviewed/reviewer", null).statusCode())
+                .as("a reviewer asked for")
+                .isEqualTo(204);
+        final JsonNode starts =
+                json(call(runtime, "GET", "/projects/reviewed/stories/ST14/work", null))
+                        .at("/work/starts");
+        assertThat(starts.size()).as("one start waits").isEqualTo(1);
+        assertThat(
+                        List.of(
+                                starts.at("/0/runRole").asString(),
+                                starts.at("/0/role").asString(),
+                                starts.at("/0/place/gatePush/name").asString(),
+                                starts.at("/0/issues/0").asString()))
+                .as("a reviewer reading at the gate push the issue's work waits at")
+                .containsExactly("REVIEWER", "READER", "mock-author", "PJ58");
+
+        call(runtime, "POST", "/mock/reset", null);
+        call(runtime, "PUT", "/projects/reviewed", SOURCE);
+        assertThat(
+                        json(call(runtime, "GET", "/projects/reviewed/stories/ST14/work", null))
+                                .get("work")
+                                .isNull())
+                .as("no run after the reset")
+                .isTrue();
+    }
+
+    @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
         // Projects kept across the window's tests would leak a test's project into the next, and
         // the projects of every test before would pile up for as long as the mock runs.
@@ -392,19 +428,25 @@ class MockModeTest {
             assertThat(call(plain, "POST", "/mock/reset", null).statusCode())
                     .as("the reset of a planner started with the profile alone")
                     .isEqualTo(404);
+            assertThat(call(plain, "POST", "/mock/projects/any/reviewer", null).statusCode())
+                    .as("a mock reviewer asked of a planner started with the profile alone")
+                    .isEqualTo(404);
         } finally {
             RuntimeDirectories.delete(plain);
         }
     }
 
     @Test
-    void withoutTheMockModeTheResetIsNotFound() throws Exception {
-        // A person's planner must offer nothing that throws its boards away.
+    void withoutTheMockModeTheResetAndTheMockReviewerAreNotFound() throws Exception {
+        // A person's planner must offer nothing that throws its boards away or plants a run.
         final Path plain = RuntimeDirectories.create();
         try (ConfigurableApplicationContext planner = start(plain)) {
             final HttpResponse<String> answer = call(plain, "POST", "/mock/reset", null);
             assertThat(answer.statusCode())
                     .as("the status of a reset without the mock mode")
+                    .isEqualTo(404);
+            assertThat(call(plain, "POST", "/mock/projects/any/reviewer", null).statusCode())
+                    .as("the status of a mock reviewer asked for without the mock mode")
                     .isEqualTo(404);
         } finally {
             RuntimeDirectories.delete(plain);

@@ -1,0 +1,2 @@
+title: "The mock mode gives a project a pushed issue with its reviewer offered at the gate push on POST /mock/projects/{project}/reviewer, so the window's tests see a reviewer's order with its place"
+type: added

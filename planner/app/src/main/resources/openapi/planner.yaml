@@ -133,6 +133,27 @@ paths:
         '404':
           description: The planner does not run in the mock mode.
 
+  /mock/projects/{project}/reviewer:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: offerMockReviewer
+      summary: Offer a reviewer on the mock board
+      description: >-
+        Only in the mock mode (`porelo-planner --mock`), for the window's tests: gives the project a run whose
+        pushed work waits at its author's gate push, with a reviewer offered there, as the planner's own flow makes
+        it on the mock board as first served. The project's work then holds that run alone, in place of any run it
+        held, and its `starts` the reviewer, with runRole REVIEWER, role READER and the gate push as its place; the
+        mock board itself is left as it is, and a reset forgets the run. Outside the mock mode a POST here answers 404, as for a path that does not exist.
+      tags: [mock]
+      responses:
+        '204':
+          description: The project's work holds the reviewer offered.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The planner does not run in the mock mode, or the project was not given.
+
   /projects/{project}:
     parameters:
       - $ref: '#/components/parameters/Project'

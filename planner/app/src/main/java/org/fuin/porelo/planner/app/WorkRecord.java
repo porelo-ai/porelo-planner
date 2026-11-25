@@ -193,6 +193,29 @@ public final class WorkRecord implements AutoCloseable {
         this.paths = LocalPaths.of(environment, files.windows());
     }
 
+    /**
+     * Puts a whole record in place of a given project's record in memory, as the mock mode's tests
+     * ask for one.
+     *
+     * @param project the project, given before
+     * @param record the record it holds from now on
+     * @return false when the project was not given
+     * @throws IllegalStateException for durable records, which only the planner's flow writes
+     */
+    public boolean plant(final String project, final WorkRun.Snapshot record) {
+        if (!memory) {
+            throw new IllegalStateException("A durable work record is written only by its flow");
+        }
+        synchronized (gate(project)) {
+            final Entry entry = entries.get(project);
+            if (entry == null || entry.closing) {
+                return false;
+            }
+            entry.start(record);
+            return true;
+        }
+    }
+
     /** The factors a refused replacement of a record follows. */
     LimitFactors limits() {
         return limits;
@@ -837,6 +860,22 @@ public final class WorkRecord implements AutoCloseable {
         private WorkRefusal heldElsewhere() {
             return unavailable(
                     project, "Another planner holds the work record of " + project + ".");
+        }
+
+        /** Holds a whole record in memory, taking both locks in their order. */
+        private void start(final WorkRun.Snapshot record) {
+            writers.lock();
+            try {
+                mutex.lock();
+                try {
+                    stored = record;
+                    settle(record);
+                } finally {
+                    mutex.unlock();
+                }
+            } finally {
+                writers.unlock();
+            }
         }
 
         /** Answers the generation held in memory, read from the disk once, at open. */

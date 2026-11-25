@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app.mock;
 
 import org.fuin.porelo.planner.app.Projects;
+import org.fuin.porelo.planner.app.WorkRecord;
 import org.jspecify.annotations.Nullable;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -41,11 +43,15 @@ public class MockController {
 
     private static final String RESET = "/mock/reset";
 
+    private static final String REVIEWER = "/mock/projects/{project}/reviewer";
+
     private final ObjectProvider<MockMode> mode;
 
     private final ObjectProvider<MockStore> store;
 
     private final Projects projects;
+
+    private final WorkRecord records;
 
     /**
      * Makes the controller.
@@ -53,14 +59,17 @@ public class MockController {
      * @param mode present only in the mock mode
      * @param store the mock store, made only when the mock mode is on
      * @param projects the projects given, forgotten by a reset
+     * @param records the work records, held in memory in the mock mode
      */
     public MockController(
             final ObjectProvider<MockMode> mode,
             final ObjectProvider<MockStore> store,
-            final Projects projects) {
+            final Projects projects,
+            final WorkRecord records) {
         this.mode = mode;
         this.store = store;
         this.projects = projects;
+        this.records = records;
     }
 
     /**
@@ -78,6 +87,26 @@ public class MockController {
         }
         store.getObject().reset();
         projects.forgetAll();
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Gives a project given before the record of {@link MockSeed}: one pushed issue whose work
+     * waits at its gate push, its reviewer offered there, until the next reset.
+     *
+     * @param project the project
+     * @return no content, or not found for a project not given
+     * @throws NoResourceFoundException outside the mock mode, as for any unknown path
+     */
+    @PostMapping(REVIEWER)
+    public ResponseEntity<Void> reviewer(@PathVariable("project") final String project)
+            throws NoResourceFoundException {
+        if (mode.getIfAvailable() == null) {
+            throw new NoResourceFoundException(HttpMethod.POST, REVIEWER, REVIEWER.substring(1));
+        }
+        if (!records.plant(project, MockSeed.of(MockStore.fromClassPath().board()))) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.noContent().build();
     }
 }
