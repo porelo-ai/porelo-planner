@@ -69,7 +69,7 @@ public interface TrackedStores {
                 if (opener == null) {
                     throw new StoreException.Unreadable(
                             project.repositories().getFirst().name(),
-                            "project.yml names a tracker of a kind the planner does not keep");
+                            "planner.yml names a tracker of a kind the planner does not keep");
                 }
                 return opener;
             }

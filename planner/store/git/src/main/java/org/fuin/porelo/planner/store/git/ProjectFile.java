@@ -11,7 +11,9 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TrackedProject;
 import org.fuin.porelo.planner.store.TrackedStores;
 import org.fuin.porelo.planner.store.files.ProjectLock;
+import org.fuin.porelo.planner.store.git.stories.PlannerFile;
 import org.fuin.porelo.planner.store.git.stories.Project;
+import org.fuin.porelo.planner.store.git.stories.StageRecords;
 import org.jspecify.annotations.Nullable;
 
 /** Reads which repositories a project has from {@code project.yml} in its own repository. */
@@ -57,9 +59,13 @@ public final class ProjectFile {
     }
 
     /**
-     * Fetches the project's own repository and reads its {@code project.yml}; for a project a
-     * tracker keeps, also its workflow and work rules, after checking that every repository and the
-     * tracker's project stand on the own repository's host under its owner.
+     * Fetches the project's own repository and reads its {@code project.yml}, and at the same
+     * commit the planner's own {@code planner.yml} and the velocity seed {@code stats/seed.csv}:
+     * without {@code planner.yml} no tracker keeps the project, without a seed the measured medians
+     * stand alone. For a project a tracker keeps, also its workflow and work rules, after checking
+     * that every repository and the tracker's project stand on the own repository's host under its
+     * owner. A {@code planner.yml} or a seed that cannot be read refuses the project, naming what
+     * is wrong.
      *
      * @param remote reaches the repositories
      * @param own the own repository's clone URL, as the window names it
@@ -121,9 +127,16 @@ public final class ProjectFile {
                                 folder(folders, central.getKey())));
             }
         }
-        final Project.Tracker tracker;
+        // The planner's own settings stand in its own file, read at the same commit; a tracker
+        // project.yml may still name is Porelo's to refuse, not the planner's to read.
+        final PlannerFile.Tracker tracker;
+        final Map<String, Double> seed;
         try {
-            tracker = Project.tracker(text).orElse(null);
+            final java.util.Optional<String> planner = remote.read(name, commit, PlannerFile.FILE);
+            tracker = planner.isEmpty() ? null : PlannerFile.tracker(planner.get()).orElse(null);
+            seed = seed(remote, name, commit);
+        } catch (final GitFailure e) {
+            throw GitStore.refusal(name, e);
         } catch (final IllegalArgumentException e) {
             throw new StoreException.Unreadable(name, GitRunner.scrubbed(e.getMessage()));
         }
@@ -143,7 +156,24 @@ public final class ProjectFile {
                                 name,
                                 java.util.Objects.requireNonNull(project.centrals().get(name)),
                                 folder(folders, name)),
-                        tracker));
+                        tracker,
+                        seed));
+    }
+
+    /**
+     * Reads the velocity seed of the own repository at the commit, {@code stats/seed.csv}.
+     *
+     * @param remote reaches the repositories
+     * @param name the own repository's name
+     * @param commit the commit the project's files are read at
+     * @return the seed's minutes by size, empty when the repository keeps no seed
+     * @throws IllegalArgumentException naming the line of a seed that cannot be read
+     * @throws GitFailure when the file cannot be read from the commit
+     */
+    static Map<String, Double> seed(final Remote remote, final String name, final String commit) {
+        return remote.read(name, commit, StageRecords.SEED)
+                .map(StageRecords::seed)
+                .orElse(Map.of());
     }
 
     private static TrackedProject tracked(
@@ -152,9 +182,10 @@ public final class ProjectFile {
             final String commit,
             final List<Repository> repositories,
             final Repository central,
-            final Project.Tracker tracker) {
+            final PlannerFile.Tracker tracker,
+            final Map<String, Double> seed) {
         URI home = null;
-        if (!Project.Tracker.LOCAL.equals(tracker.kind())) {
+        if (!PlannerFile.Tracker.LOCAL.equals(tracker.kind())) {
             // A local tracker asks no forge, so its repositories may stand anywhere.
             home = home(name, repositories.get(0).url());
             // The file's own central names where the stories live for every other reader of it.
@@ -205,7 +236,7 @@ public final class ProjectFile {
                                                 repository.name(), repository.folder()))
                         .toList(),
                 workflow.board(),
-                WorkReader.read(work),
+                WorkReader.read(work).withSeed(seed),
                 commit,
                 new TrackedProject.StoryStates() {
                     @Override
@@ -444,7 +475,9 @@ public final class ProjectFile {
                 final TrackedProject read = read(remote, own, branch, most).tracked();
                 if (read == null) {
                     throw new StoreException.Unreadable(
-                            name, FILE + " names no tracker any more; open the project again");
+                            name,
+                            PlannerFile.FILE
+                                    + " names no tracker any more; open the project again");
                 }
                 kept = read;
                 return read;

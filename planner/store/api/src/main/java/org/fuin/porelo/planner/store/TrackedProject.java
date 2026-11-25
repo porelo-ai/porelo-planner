@@ -10,8 +10,8 @@ import java.util.List;
  * @param forge the forge's origin, {@code https://<host>}, taken from the own repository's address
  *     the window gave, never from the project's files
  * @param owner the owner both the own repository and the tracker's project belong to
- * @param kind the tracker's kind, as {@code project.yml} names it
- * @param project the tracker's project within the owner, as {@code project.yml} names it
+ * @param kind the tracker's kind, as {@code planner.yml} names it
+ * @param project the tracker's project within the owner, as {@code planner.yml} names it
  * @param repositories the project's repositories, its own first, each with its folder
  * @param workflow the project's workflow
  * @param work the project's work rules

@@ -18,7 +18,7 @@ import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Opens the store of a project whose {@code project.yml} names a tracker of the kind {@code local}:
+ * Opens the store of a project whose {@code planner.yml} names a tracker of the kind {@code local}:
  * its items lie in the directory the person chose for it, kept by {@link ItemsDirectories}, or by
  * default in {@code $XDG_DATA_HOME/porelo-planner/items/<project>/} on Linux and {@code
  * %LOCALAPPDATA%\porelo-planner\items\<project>\} on Windows. Only that default directory is ever
@@ -29,7 +29,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class LocalDirectoryStores implements TrackedStores {
 
-    /** The kind {@code project.yml} names a local directory's tracker by. */
+    /** The kind {@code planner.yml} names a local directory's tracker by. */
     public static final String KIND = "local";
 
     /** The step below the planner's data directory that holds the projects' items. */
@@ -163,7 +163,7 @@ public final class LocalDirectoryStores implements TrackedStores {
         final String own = project.repositories().getFirst().name();
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
-                    own, "project.yml names a tracker of another kind than a local directory");
+                    own, "planner.yml names a tracker of another kind than a local directory");
         }
         return own;
     }

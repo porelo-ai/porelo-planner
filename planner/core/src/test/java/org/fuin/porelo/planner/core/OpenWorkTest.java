@@ -196,6 +196,55 @@ class OpenWorkTest {
         assertThat(open.unestimated()).as("the L issue has no expectation").isEqualTo(1);
     }
 
+    // An unmeasured size without its seed shows no expected time although the planning repository
+    // seeds it; a seed kept past the first measured issue would outweigh what was measured.
+    @Test
+    void theSeedGivesAnUnmeasuredSizeItsMinutesAndGivesWayToTheMeasuredMedian() {
+        seed = Map.of("S", 50.0, "M", 90.0);
+        issue("own#1", "Backlog", "S", null, null);
+        issue("other#2", "Backlog", "M", null, 15.0);
+        issue("own#3", "Backlog", "L", null, null);
+        issue("own#10", "Finished", "S", null, 10.0);
+
+        assertThat(OpenWork.minutesLeft(board()))
+                .as("own#1 the measured S median; other#2 the M seed less what it took; no L seed")
+                .containsExactlyInAnyOrderEntriesOf(Map.of("own#1", 10.0, "other#2", 75.0));
+    }
+
+    // Harm: the seed outweighs an estimate, or a median measured over other repositories outweighs
+    // the issue's own repository, so the expected time is not the best one the board holds.
+    @Test
+    void anEstimateWinsOverTheSeedAndTheOwnMedianOverTheMedianOfAllOverTheSeed() {
+        seed = Map.of("S", 50.0, "M", 90.0);
+        issue("own#1", "Backlog", "S", 20.0, null);
+        issue("own#2", "Backlog", "S", null, null);
+        issue("other#3", "Backlog", "S", null, null);
+        issue("other#4", "Backlog", "M", null, null);
+        issue("own#10", "Finished", "S", null, 10.0);
+        issue("own#11", "Finished", "S", null, 30.0);
+        issue("other#12", "Finished", "S", null, 100.0);
+
+        assertThat(OpenWork.minutesLeft(board()))
+                .as(
+                        "own#1 its estimate; own#2 the own S median; other#3 its own S median;"
+                                + " other#4 the M seed")
+                .containsExactlyInAnyOrderEntriesOf(
+                        Map.of("own#1", 20.0, "own#2", 20.0, "other#3", 100.0, "other#4", 90.0));
+    }
+
+    // Harm: an issue of a size its own repository never finished falls back to the seed while
+    // other repositories measured that size.
+    @Test
+    void theMedianOfEveryRepositoryWinsOverTheSeed() {
+        seed = Map.of("S", 50.0);
+        issue("other#1", "Backlog", "S", null, null);
+        issue("own#10", "Finished", "S", null, 10.0);
+
+        assertThat(OpenWork.minutesLeft(board()))
+                .as("the S median of every repository, not the seed")
+                .containsExactlyInAnyOrderEntriesOf(Map.of("other#1", 10.0));
+    }
+
     // Work that took longer than expected must not count as negative time left.
     @Test
     void theMinutesAnIssuesWorkTookAreTakenOffItsExpectationNeverBelowZero() {
@@ -249,6 +298,8 @@ class OpenWorkTest {
         return new OpenWork.Counter(board).story(board.stories().get(0));
     }
 
+    private Map<String, Double> seed = Map.of();
+
     private Board board() {
         return board(issues.stream().map(Issue::id).toList(), true);
     }
@@ -262,7 +313,7 @@ class OpenWorkTest {
                                 "own#100", "A story", "Backlog", "High", null, ids, "", null,
                                 whole)),
                 List.copyOf(issues),
-                new Work(Map.of("Implementing", rule()), List.of()),
+                new Work(Map.of("Implementing", rule()), List.of(), seed),
                 org.fuin.porelo.planner.store.ProjectRepository.named(List.of("own", "other")),
                 List.of(),
                 null);

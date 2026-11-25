@@ -168,83 +168,6 @@ public record Project(
     }
 
     /**
-     * The tracker a project names under {@code tracker}, which keeps its stories and issues instead
-     * of files.
-     *
-     * @param kind the tracker's kind, such as {@code github}, or {@code local} for a directory on
-     *     the person's computer
-     * @param owner the owner the tracker's project belongs to; empty for a local tracker
-     * @param project the tracker's project within the owner; empty for a local tracker
-     */
-    public record Tracker(String kind, String owner, String project) {
-
-        /** The kind of a tracker that is a directory on the person's computer. */
-        public static final String LOCAL = "local";
-
-        private static final java.util.regex.Pattern KIND =
-                java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,19}");
-        private static final java.util.regex.Pattern REFERENCE =
-                java.util.regex.Pattern.compile(
-                        "([A-Za-z0-9][A-Za-z0-9-]{0,38})/([1-9][0-9]{0,8})");
-
-        /** Checks the kind's and the project's form. */
-        public Tracker {
-            if (!KIND.matcher(kind).matches()) {
-                throw new IllegalArgumentException(
-                        "project.yml tracker: kind must be a lower-case name");
-            }
-            if (LOCAL.equals(kind)) {
-                if (!owner.isEmpty() || !project.isEmpty()) {
-                    throw new IllegalArgumentException(
-                            "project.yml tracker: a local tracker names its kind alone");
-                }
-            } else if (!REFERENCE.matcher(owner + "/" + project).matches()) {
-                throw new IllegalArgumentException(
-                        "project.yml tracker: project must be <owner>/<number>, the number from 1");
-            }
-        }
-    }
-
-    /**
-     * Reads the tracker a {@code project.yml} names: a mapping of exactly {@code kind} and {@code
-     * project}, the latter {@code <owner>/<number>}, or of {@code kind: local} alone.
-     *
-     * @param text the file's text
-     * @return the tracker, or empty when the file names none
-     * @throws IllegalArgumentException when the text is no YAML, or its tracker has another shape
-     */
-    public static java.util.Optional<Tracker> tracker(String text) {
-        final JsonNode tracker = yaml(text, FILE).get("tracker");
-        if (tracker == null) {
-            return java.util.Optional.empty();
-        }
-        if (tracker.isObject() && Tracker.LOCAL.equals(tracker.path("kind").asText())) {
-            // A local tracker names no path, so no machine's place enters the signed file.
-            if (tracker.size() != 1) {
-                throw new IllegalArgumentException(
-                        "project.yml tracker: a local tracker names its kind alone");
-            }
-            return java.util.Optional.of(new Tracker(Tracker.LOCAL, "", ""));
-        }
-        if (!tracker.isObject()
-                || tracker.size() != 2
-                || !tracker.has("kind")
-                || !tracker.has("project")) {
-            throw new IllegalArgumentException(
-                    "project.yml tracker: expected a mapping of kind and project");
-        }
-        final String kind = string(tracker, "kind", "project.yml tracker");
-        final String reference = string(tracker, "project", "project.yml tracker");
-        final int slash = reference.indexOf('/');
-        if (slash < 0) {
-            throw new IllegalArgumentException(
-                    "project.yml tracker: project must be <owner>/<number>");
-        }
-        return java.util.Optional.of(
-                new Tracker(kind, reference.substring(0, slash), reference.substring(slash + 1)));
-    }
-
-    /**
      * The folder each repository a {@code project.yml} names is read in by a task that reads the
      * whole project, as Porelo places them under {@code /workspace}: the own repository's is {@code
      * project.name}, every other's its key under {@code repositories}.
@@ -333,7 +256,7 @@ public record Project(
         }
     }
 
-    private static JsonNode yaml(String text, String file) {
+    static JsonNode yaml(String text, String file) {
         try (var parser = YAML.createParser(text)) {
             return yaml(parser, file);
         } catch (IOException ex) {
@@ -366,8 +289,7 @@ public record Project(
         return value;
     }
 
-    private static String string(JsonNode data, String key, String where)
-            throws IllegalArgumentException {
+    static String string(JsonNode data, String key, String where) throws IllegalArgumentException {
         final JsonNode value = required(data, key, where);
         if (!value.isTextual() || value.textValue().isBlank()) {
             throw new IllegalArgumentException(where + ": " + key + " must be a nonblank string");

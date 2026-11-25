@@ -758,7 +758,7 @@ public final class LocalDirectoryStore implements PlanningStore {
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
                     project.repositories().getFirst().name(),
-                    "project.yml names a tracker of another kind than a local directory");
+                    "planner.yml names a tracker of another kind than a local directory");
         }
         return project;
     }

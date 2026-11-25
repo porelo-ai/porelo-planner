@@ -1,6 +1,6 @@
 # Stories and issues in GitHub Issues
 
-A project whose `project.yml` names GitHub Issues as its tracker keeps its stories and issues in a GitHub project
+A project whose `planner.yml` names GitHub Issues as its tracker keeps its stories and issues in a GitHub project
 instead of Markdown files. This page says where each part of a story and an issue stands there. The workflow and
 the work rules stay files in the project's own repository.
 

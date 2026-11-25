@@ -16,6 +16,24 @@ and moves stories and issues through it; Porelo itself only runs tasks, which th
 - **It tells the window of changes** over Server-Sent Events, whether the planner made them or someone else pushed
   them.
 
+## The planning repository's settings
+
+The planner reads its own settings from the planning repository of the Git store's own project, at the commit it
+reads `project.yml` at, and never from Porelo's `project.yml`; a `tracker` key left there is ignored, and Porelo
+refuses it once it no longer reads it:
+
+- **`planner.yml`**, beside `project.yml`, names the tracker that keeps the stories and issues under its one key
+  `tracker`: `{kind: github, project: <owner>/<number>}` for a GitHub project, or `{kind: local}` for a directory on
+  the person's computer. Without the file, with an empty file or one of comments alone, or without the key, no
+  tracker keeps them and the Git store reads the repositories' own issue files.
+- **`stats/seed.csv`** is the velocity seed: the header `size,minutes`, then one row per size (XS to XL) with the
+  minutes, in decimal digits with an optional fraction, that an issue of that size is expected to take until
+  finished issues of that size are measured; the measured median then takes its place. Empty lines at the file's
+  end are skipped. Without the file, only the measured medians give an expected time.
+
+A `planner.yml` with a key it does not know or a setting of the wrong shape, and a seed with a line it cannot read,
+refuse the project, naming the key or the line.
+
 ## How it is installed
 
 - **From the same package repositories as Porelo**, as `porelo-planner`, a `.deb` and an `.rpm` for x86-64. The

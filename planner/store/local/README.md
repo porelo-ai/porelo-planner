@@ -1,7 +1,7 @@
 # Local directory store
 
 This module keeps a project's stories and issues as Markdown files in one directory on the person's
-computer, outside every repository, for a project whose `project.yml` names `tracker: {kind: local}`.
+computer, outside every repository, for a project whose `planner.yml` names `tracker: {kind: local}`.
 By default the directory is `$XDG_DATA_HOME/porelo-planner/items/<project>/` (`%LOCALAPPDATA%` on
 Windows), made at the project's first opening as the account's alone; a directory chosen elsewhere
 must exist and is never made. It uses the [private file checks and locks](../files/README.md) and

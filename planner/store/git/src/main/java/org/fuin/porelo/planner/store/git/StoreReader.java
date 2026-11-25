@@ -200,11 +200,23 @@ public final class StoreReader implements PartReader {
                 workflow,
                 List.copyOf(stories),
                 issues,
-                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null)),
+                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null))
+                        .withSeed(seed(name, commit)),
                 paths,
                 faults,
                 twice(copies),
                 versions);
+    }
+
+    /**
+     * The own repository's velocity seed; one that cannot be read refuses the board, never a guess.
+     */
+    private Map<String, Double> seed(final String name, final String commit) {
+        try {
+            return ProjectFile.seed(remote, name, commit);
+        } catch (final IllegalArgumentException e) {
+            throw new StoreException.Unreadable(name, GitRunner.scrubbed(e.getMessage()));
+        }
     }
 
     /** The files of each id two or more files carry. */

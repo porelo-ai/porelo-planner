@@ -10,7 +10,7 @@ class ProjectRefTest {
 
     @Test
     void aGitHubProjectIsReadFromOwnerAndNumber() {
-        // Harm: the planner reading or writing another owner's project than project.yml names.
+        // Harm: the planner reading or writing another owner's project than planner.yml names.
         assertThat(ProjectRef.parse("example-org/7"))
                 .as("the tracker's project")
                 .isEqualTo(new ProjectRef("example-org", 7));

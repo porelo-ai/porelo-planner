@@ -140,6 +140,8 @@ class NativeStartIT {
                             engine:
                                 central: "https://github.com/porelo-ai/engine"
                                 issues: ["E"]
+                        """,
+                        """
                         tracker:
                             kind: local
                         """)) {

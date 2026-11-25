@@ -158,6 +158,31 @@ class GitHubStoreOpenerTest {
     }
 
     @Test
+    void aTrackerNamingNoGitHubProjectIsRefusedNamingThePlannersOwnFile() {
+        // Harm: the person sent to fix project.yml, which the planner no longer reads its tracker
+        // from, while the fault stands in planner.yml.
+        final TrackedProject project =
+                new TrackedProject(
+                        URI.create("https://github.com"),
+                        "example-org",
+                        "github",
+                        "seven",
+                        List.of(
+                                new org.fuin.porelo.planner.store.ProjectRepository(
+                                        "example-project", "example")),
+                        WORKFLOW,
+                        new Work(java.util.Map.of(), List.of()),
+                        "c1",
+                        states -> null);
+
+        assertThatThrownBy(() -> overGitHub().open(project, () -> project))
+                .as("refused naming the file the tracker stands in")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("planner.yml names no GitHub project");
+        assertThat(asked).as("no token asked").isEmpty();
+    }
+
+    @Test
     void aTrackerOfAnotherKindOrOnAnotherForgeIsRefusedWithoutAToken() {
         // Harm: the person's GitHub token sent to a server that only says it keeps a GitHub
         // project.

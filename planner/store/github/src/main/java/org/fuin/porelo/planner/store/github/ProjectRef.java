@@ -3,7 +3,7 @@ package org.fuin.porelo.planner.store.github;
 import java.util.regex.Pattern;
 
 /**
- * The GitHub project that holds a Porelo project's fields, as {@code project.yml}'s {@code tracker}
+ * The GitHub project that holds a Porelo project's fields, as {@code planner.yml}'s {@code tracker}
  * names it.
  *
  * @param owner the organization or user that owns the project

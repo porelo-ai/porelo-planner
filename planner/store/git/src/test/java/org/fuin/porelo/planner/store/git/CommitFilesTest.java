@@ -12,6 +12,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class CommitFilesTest {
 
+    // Harm: planner.yml read past the commit's one listing, so its blob is not among those the
+    // snapshot lists and its text is fetched alone, or a directory of that name taken for one.
+    @Test
+    void thePlannersOwnFileIsOneOfTheSnapshotsFilesAndNoDirectory() {
+        assertThat(CommitFiles.PLANNING).as("listed with the commit").contains("planner.yml");
+        assertThat(CommitFiles.file("planner.yml")).as("a file the snapshot answers for").isTrue();
+        assertThat(CommitFiles.file("planner.yml/x")).as("nothing below it").isFalse();
+        assertThat(CommitFiles.directory("planner.yml")).as("no directory").isFalse();
+    }
+
     private static final String ONE = "1".repeat(40);
 
     private static final String TWO = "2".repeat(40);

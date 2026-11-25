@@ -17,7 +17,11 @@ import org.jspecify.annotations.Nullable;
 final class CommitFiles {
 
     /** The top-level paths whose files a commit's snapshot holds. */
-    static final List<String> PLANNING = List.of("project.yml", "issues", "stories", "stats");
+    static final List<String> PLANNING =
+            List.of("project.yml", "planner.yml", "issues", "stories", "stats");
+
+    /** The top-level files among them. */
+    private static final List<String> TOP_FILES = List.of("project.yml", "planner.yml");
 
     private static final Pattern OBJECT = Pattern.compile("[0-9a-f]{40}([0-9a-f]{24})?");
 
@@ -52,14 +56,14 @@ final class CommitFiles {
     }
 
     /**
-     * Answers whether a path is one a snapshot answers for: {@code project.yml} or below one of the
-     * planning directories.
+     * Answers whether a path is one a snapshot answers for: {@code project.yml}, {@code
+     * planner.yml} or below one of the planning directories.
      *
      * @param path a checked path
      * @return whether it is one
      */
     static boolean file(final String path) {
-        return path.equals("project.yml") || directory(path) && path.indexOf('/') > 0;
+        return TOP_FILES.contains(path) || directory(path) && path.indexOf('/') > 0;
     }
 
     /**
@@ -71,7 +75,7 @@ final class CommitFiles {
     static boolean directory(final String directory) {
         final int slash = directory.indexOf('/');
         final String top = slash < 0 ? directory : directory.substring(0, slash);
-        return !top.equals("project.yml") && PLANNING.contains(top);
+        return !TOP_FILES.contains(top) && PLANNING.contains(top);
     }
 
     /**

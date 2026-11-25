@@ -1,0 +1,2 @@
+title: The planner reads its tracker from its own planner.yml and its velocity seed from stats/seed.csv in the planning repository, refusing either when it cannot be read, and no longer reads a tracker from project.yml.
+type: changed

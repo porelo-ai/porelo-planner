@@ -12,6 +12,7 @@ import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -510,5 +511,62 @@ class StageRecordsTest {
         assertThatThrownBy(() -> StageRecords.statistic(seed, Map.of(), "M", false, workflow()))
                 .as("refused, never taken as no seed")
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // Prevents a broken seed from being refused without saying where, so the person cannot set it
+    // right.
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "id,stage|stats/seed.csv: the header must be size,minutes",
+                "size,minutes\\nM|stats/seed.csv line 2: expected size,minutes",
+                "size,minutes\\nS,1\\nXXL,2|stats/seed.csv line 3: the size must be one of XS, S, M, L, XL",
+                "size,minutes\\nM,soon|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,-1|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,Infinity|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,1\\nM,2|stats/seed.csv line 3: the size is named twice",
+                "size,minutes\\nM, 30|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,30d|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,1e3|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,0x1p3|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nM,+3|stats/seed.csv line 2: the minutes are no number",
+                "size,minutes\\nS,1\\n\\nM,2|stats/seed.csv line 3: expected size,minutes",
+                "\uFEFFsize,minutes\\nM,1|stats/seed.csv: the header must be size,minutes",
+            })
+    void aSeedThatCannotBeReadIsRefusedNamingItsLine(final String seed, final String said) {
+        assertThatThrownBy(() -> StageRecords.seed(seed.replace("\\n", "\n")))
+                .as("refused naming the header or the line")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(said);
+    }
+
+    // Harm: minutes too large for a number read as infinite, so the expected time is endless.
+    @Test
+    void aSeedWhoseMinutesOverflowIsRefusedNamingItsLine() {
+        assertThatThrownBy(() -> StageRecords.seed("size,minutes\nM," + "9".repeat(400) + "\n"))
+                .as("refused, never infinite")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("stats/seed.csv line 2: the minutes must be a finite number from 0");
+    }
+
+    // Harm: a seed saved on Windows, or with blank lines after its last row, refused for nothing.
+    @Test
+    void aSeedWithCrlfLinesOrEmptyLinesAtItsEndIsRead() {
+        assertThat(StageRecords.seed("size,minutes\r\nS,27\r\nM,53.5\r\n\r\n\n"))
+                .as("each size's minutes")
+                .containsExactly(Map.entry("S", 27.0), Map.entry("M", 53.5));
+    }
+
+    // Prevents a sound seed from being misread, which would show a wrong expected time.
+    @Test
+    void aSeedGivesEachSizeItsMinutesInTheFilesOrder() {
+        assertThat(StageRecords.seed(SEED))
+                .as("each size's minutes")
+                .containsExactly(
+                        Map.entry("XS", 8.0),
+                        Map.entry("S", 27.0),
+                        Map.entry("M", 53.0),
+                        Map.entry("L", 80.0));
     }
 }

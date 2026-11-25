@@ -29,7 +29,7 @@ public final class GitHubStoreOpener implements TrackedStores {
 
     private static final Logger LOG = LoggerFactory.getLogger(GitHubStoreOpener.class);
 
-    /** The kind {@code project.yml} names a GitHub project's tracker by. */
+    /** The kind {@code planner.yml} names a GitHub project's tracker by. */
     public static final String KIND = "github";
 
     /** The one forge a GitHub tracker is kept on; an enterprise host is not taken yet. */
@@ -437,7 +437,7 @@ public final class GitHubStoreOpener implements TrackedStores {
         final String own = project.repositories().get(0).name();
         if (!KIND.equals(project.kind())) {
             throw new StoreException.Unreadable(
-                    own, "project.yml names a tracker of a kind the planner does not keep");
+                    own, "planner.yml names a tracker of a kind the planner does not keep");
         }
         if (!GITHUB.equals(project.forge())) {
             throw new StoreException.Unreadable(
@@ -447,7 +447,7 @@ public final class GitHubStoreOpener implements TrackedStores {
         try {
             ref = ProjectRef.parse(project.owner() + "/" + project.project());
         } catch (final IllegalArgumentException e) {
-            throw new StoreException.Unreadable(own, "project.yml names no GitHub project");
+            throw new StoreException.Unreadable(own, "planner.yml names no GitHub project");
         }
         return new ProjectConfig(
                 Objects.requireNonNull(project.forge()),

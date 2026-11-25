@@ -43,27 +43,49 @@ final class FixtureProject implements AutoCloseable {
     }
 
     /**
-     * Writes and serves the project, its repositories and tracker as given.
+     * Writes and serves the project with its repositories as given, and the planner's own file.
      *
      * @param dir the test's own directory
-     * @param rest the project file's lines after its name: its repositories and tracker
+     * @param rest the project file's lines after its name: its repositories
+     * @param planner the text of {@code planner.yml}, which names the tracker
+     * @return the served project
+     * @throws Exception when it cannot be served
+     */
+    static FixtureProject serve(final Path dir, final String rest, final String planner)
+            throws Exception {
+        final ServedRepositories repositories = new ServedRepositories(dir);
+        final Map<String, String> files = new HashMap<>(files(rest));
+        files.put("planner.yml", planner);
+        repositories.repository("porelo-store", files);
+        return served(dir, repositories);
+    }
+
+    /**
+     * Writes and serves the project with its repositories as given.
+     *
+     * @param dir the test's own directory
+     * @param rest the project file's lines after its name: its repositories
      * @return the served project
      * @throws Exception when it cannot be served
      */
     static FixtureProject serve(final Path dir, final String rest) throws Exception {
         final ServedRepositories repositories = new ServedRepositories(dir);
-        repositories.repository(
-                "porelo-store",
-                Map.of(
-                        "project.yml",
-                        """
+        repositories.repository("porelo-store", files(rest));
+        return served(dir, repositories);
+    }
+
+    /** The own repository's files, its project file ending with the lines given. */
+    private static Map<String, String> files(final String rest) {
+        return Map.of(
+                "project.yml",
+                """
                         project:
                             name: "alpha"
                             central: "git@github.com:porelo-ai/porelo-store.git"
                         """
-                                + rest,
-                        "stories/workflow.yml",
-                        """
+                        + rest,
+                "stories/workflow.yml",
+                """
                         states:
                           - {name: Backlog, closed: false}
                           - {name: Implementing, closed: false, measured: true}
@@ -75,8 +97,8 @@ final class FixtureProject implements AutoCloseable {
                           - {name: Build, states: [Implementing, Review, Rework]}
                           - {name: Done, states: [Finished]}
                         """,
-                        "stories/work.yml",
-                        """
+                "stories/work.yml",
+                """
                         work:
                           Implementing:
                             from: [Backlog]
@@ -86,16 +108,16 @@ final class FixtureProject implements AutoCloseable {
                             order: "Build {issues}."
                             models: {claude: claude-opus-5-5}
                         """,
-                        "stories/README.md",
-                        "# Stories\n",
-                        "stories/ST7-Served.md",
-                        "# ST7 — Served\n\nA story served to the window.\n\n## Data\n\n```json\n{\n"
-                                + "  \"$schema\": \"story-2.json\",\n  \"id\": \"ST7\",\n"
-                                + "  \"title\": \"Served\",\n  \"gain\": \"Something.\",\n"
-                                + "  \"test\": \"A test.\",\n  \"priority\": \"High\",\n"
-                                + "  \"issues\": [\"porelo-store#XY07\"],\n  \"tested\": null\n}\n```\n",
-                        "issues/workflow.yml",
-                        """
+                "stories/README.md",
+                "# Stories\n",
+                "stories/ST7-Served.md",
+                "# ST7 — Served\n\nA story served to the window.\n\n## Data\n\n```json\n{\n"
+                        + "  \"$schema\": \"story-2.json\",\n  \"id\": \"ST7\",\n"
+                        + "  \"title\": \"Served\",\n  \"gain\": \"Something.\",\n"
+                        + "  \"test\": \"A test.\",\n  \"priority\": \"High\",\n"
+                        + "  \"issues\": [\"porelo-store#XY07\"],\n  \"tested\": null\n}\n```\n",
+                "issues/workflow.yml",
+                """
                         states:
                           - {name: Backlog, closed: false}
                           - {name: Implementing, closed: false, measured: true}
@@ -107,15 +129,19 @@ final class FixtureProject implements AutoCloseable {
                           - {name: Build, states: [Implementing, Review, Rework]}
                           - {name: Done, states: [Finished]}
                         """,
-                        "issues/README.md",
-                        "# Issues\n",
-                        "issues/XY07-Served.md",
-                        "# XY07 — Served\n\n```json\n{\n  \"$schema\": \"issue-1.json\",\n"
-                                + "  \"id\": \"XY07\",\n  \"title\": \"Served\",\n"
-                                + "  \"state\": \"Implementing\",\n  \"size\": \"S\",\n"
-                                + "  \"priority\": \"Medium\",\n  \"rank\": 1,\n"
-                                + "  \"blockedBy\": [],\n  \"covers\": \"Something.\"\n}\n```\n\n"
-                                + "**What must be true.** It is served.\n"));
+                "issues/README.md",
+                "# Issues\n",
+                "issues/XY07-Served.md",
+                "# XY07 — Served\n\n```json\n{\n  \"$schema\": \"issue-1.json\",\n"
+                        + "  \"id\": \"XY07\",\n  \"title\": \"Served\",\n"
+                        + "  \"state\": \"Implementing\",\n  \"size\": \"S\",\n"
+                        + "  \"priority\": \"Medium\",\n  \"rank\": 1,\n"
+                        + "  \"blockedBy\": [],\n  \"covers\": \"Something.\"\n}\n```\n\n"
+                        + "**What must be true.** It is served.\n");
+    }
+
+    private static FixtureProject served(final Path dir, final ServedRepositories repositories)
+            throws Exception {
         // An owner-only home, whatever the machine's umask: the work record refuses a replaceable
         // one.
         final Path home =

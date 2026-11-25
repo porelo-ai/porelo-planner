@@ -206,6 +206,50 @@ public final class StageRecords {
         return (existing == null ? "" : existing) + line + "\n";
     }
 
+    /** The seed file, below the planning repository's root. */
+    public static final String SEED = "stats/seed.csv";
+
+    /** The minutes of a seed's row as written: decimal digits, a fraction optional. */
+    private static final java.util.regex.Pattern MINUTES =
+            java.util.regex.Pattern.compile("[0-9]+(\\.[0-9]+)?");
+
+    /**
+     * Reads the seed, {@code stats/seed.csv}: the header {@code size,minutes}, then one row per
+     * size with the minutes an issue of that size is expected to take until finished issues of the
+     * size are measured.
+     *
+     * @param seed the file's text
+     * @return the minutes by size, in the file's order
+     * @throws IllegalArgumentException naming the header or the line that cannot be read: a size
+     *     that is none of XS to XL or is named twice, or minutes that are no finite number from 0
+     */
+    public static Map<String, Double> seed(final String seed) {
+        final List<String> lines = new java.util.ArrayList<>(seed.lines().toList());
+        require(
+                !lines.isEmpty() && lines.getFirst().equals("size,minutes"),
+                SEED + ": the header must be size,minutes");
+        // Empty lines at the file's end are no rows; one between rows is refused by its line.
+        while (lines.size() > 1 && lines.getLast().isEmpty()) {
+            lines.removeLast();
+        }
+        final Map<String, Double> seeds = new LinkedHashMap<>();
+        for (int row = 1; row < lines.size(); row++) {
+            // Named by its line in the file, the header being line 1.
+            final String at = SEED + " line " + (row + 1) + ": ";
+            final String[] cells = lines.get(row).split(",", -1);
+            require(cells.length == 2, at + "expected size,minutes");
+            require(SIZES.contains(cells[0]), at + "the size must be one of XS, S, M, L, XL");
+            // Plain decimal digits alone: no sign, blank, exponent, suffix or hexadecimal form.
+            require(MINUTES.matcher(cells[1]).matches(), at + "the minutes are no number");
+            final double minutes = Double.parseDouble(cells[1]);
+            require(
+                    Double.isFinite(minutes) && minutes >= 0,
+                    at + "the minutes must be a finite number from 0");
+            require(seeds.putIfAbsent(cells[0], minutes) == null, at + "the size is named twice");
+        }
+        return java.util.Collections.unmodifiableMap(seeds);
+    }
+
     /**
      * Computes what a size took, as {@code stage median} and {@code stage p80} compute it: the
      * seed's minutes and, per finished issue, the sum of its agent's measured stages of that size.
@@ -227,27 +271,7 @@ public final class StageRecords {
             final boolean p80,
             final Workflow workflow) {
         require(SIZES.contains(size), "unknown size");
-        final List<String> lines = seed.lines().toList();
-        require(
-                !lines.isEmpty() && lines.getFirst().equals("size,minutes"),
-                "seed header must be size,minutes");
-        final Map<String, Double> seeds = new LinkedHashMap<>();
-        for (final String line : lines.subList(1, lines.size())) {
-            final String[] cells = line.split(",", -1);
-            require(cells.length == 2 && SIZES.contains(cells[0]), "invalid seed row");
-            final double minutes;
-            try {
-                minutes = Double.parseDouble(cells[1]);
-            } catch (final NumberFormatException e) {
-                throw new IllegalArgumentException("invalid seed row", e);
-            }
-            require(
-                    Double.isFinite(minutes)
-                            && minutes >= 0
-                            && seeds.putIfAbsent(cells[0], minutes) == null,
-                    "invalid or duplicate seed size");
-        }
-        final Double seedMinutes = seeds.get(size);
+        final Double seedMinutes = seed(seed).get(size);
         if (seedMinutes == null) {
             throw new IllegalArgumentException("no seed for size " + size);
         }

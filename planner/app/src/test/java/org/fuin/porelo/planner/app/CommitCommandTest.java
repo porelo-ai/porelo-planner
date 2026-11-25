@@ -266,7 +266,7 @@ class CommitCommandTest {
         repository(message, false);
     }
 
-    /** A tracker keeps its issues outside the checkout; only the project configuration names it. */
+    /** A tracker keeps its issues outside the checkout; only the planner's own file names it. */
     private void repository(final String message, final boolean tracked) throws Exception {
         final Path root = Files.createDirectories(dir.resolve("repository"));
         final String changed;
@@ -280,6 +280,10 @@ class CommitCommandTest {
                     repositories:
                         sample:
                             central: https://github.com/example/sample.git
+                    """);
+            Files.writeString(
+                    root.resolve("planner.yml"),
+                    """
                     tracker:
                         kind: github
                         project: example/1
@@ -291,7 +295,7 @@ class CommitCommandTest {
         }
         Files.writeString(root.resolve(changed), "**Status:** Idea.\n");
         git(root, "init", "-q", "-b", "main");
-        if (tracked) git(root, "add", "project.yml");
+        if (tracked) git(root, "add", "project.yml", "planner.yml");
         git(root, "add", changed);
         git(root, "commit", "-q", "-m", "Start the sample");
         Files.writeString(root.resolve(changed), "**Status:** Accepted.\n");

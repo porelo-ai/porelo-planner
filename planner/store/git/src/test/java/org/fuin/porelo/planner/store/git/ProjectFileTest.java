@@ -240,8 +240,19 @@ class ProjectFileTest {
                 project: porelo-ai/7
             """;
 
+    /**
+     * Puts a tracked project's files at a commit: the text's lines from {@code tracker:} on are the
+     * planner's own file, those before it Porelo's project file.
+     */
+    private static void put(final Files remote, final String commit, final String text) {
+        final int at = text.indexOf("tracker:");
+        remote.files.put("porelo-project@" + commit + ":project.yml", text.substring(0, at));
+        remote.files.put("porelo-project@" + commit + ":planner.yml", text.substring(at));
+    }
+
     private static Files tracked(final String project) throws java.io.IOException {
-        final Files remote = with(project);
+        final Files remote = new Files();
+        put(remote, "c1", project);
         remote.files.put(
                 "porelo-project@c1:stories/workflow.yml",
                 java.nio.file.Files.readString(
@@ -423,7 +434,7 @@ class ProjectFileTest {
         final ProjectFile.Again again =
                 new ProjectFile.Again(remote, () -> () -> {}, HTTPS_OWN, null, 10, first);
         remote.commit = "c2";
-        remote.files.put("porelo-project@c2:project.yml", broken);
+        put(remote, "c2", broken);
         assertThatThrownBy(again::current)
                 .as("the opened project's read once its head names such a key")
                 .isInstanceOf(StoreException.Unreadable.class)
@@ -447,7 +458,7 @@ class ProjectFileTest {
         assertThat(remote.fetches).as("nothing fetched again").isEqualTo(fetchesAtOpening);
 
         remote.commit = "c2";
-        remote.files.put("porelo-project@c2:project.yml", TRACKED);
+        put(remote, "c2", TRACKED);
         remote.files.put("porelo-project@c2:stories/workflow.yml", SHORT_WORKFLOW);
         final org.fuin.porelo.planner.store.TrackedProject moved = again.current();
 
@@ -460,7 +471,7 @@ class ProjectFileTest {
         // Harm: a tracked project's own repository that dropped its stories/ stops every read and
         // every save of a board whose stories and issues live in the tracker.
         remote.commit = "c3";
-        remote.files.put("porelo-project@c3:project.yml", TRACKED);
+        put(remote, "c3", TRACKED);
         assertThat(again.current().workflow().states())
                 .as("the workflow the planner carries, at a head without stories/workflow.yml")
                 .startsWith("New", "Accepted")
@@ -482,5 +493,96 @@ class ProjectFileTest {
         assertThatThrownBy(again::current)
                 .as("never the project read before, shown as the head's")
                 .isInstanceOf(StoreException.class);
+    }
+
+    @Test
+    void aTrackerOnlyPoreloProjectFileNamesIsNotRead() throws Exception {
+        // Harm: the planner opens a tracker from Porelo's own file, which carries no setting of the
+        // planner, instead of the Git store a project without planner.yml has.
+        final Files remote = new Files();
+        remote.files.put("porelo-project@c1:project.yml", TRACKED);
+
+        assertThat(ProjectFile.read(remote, HTTPS_OWN, null, 10).tracked())
+                .as("no planner.yml, so no tracker, whatever project.yml names")
+                .isNull();
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "velocity: 3|planner.yml: unknown key 'velocity'",
+                "readings: here|planner.yml: unknown key 'readings'",
+            })
+    void aPlannerFileNamingAKeyItDoesNotKnowIsRefusedNamingTheKey(
+            final String line, final String said) throws Exception {
+        // Harm: a setting the planner does not know passed over, so the person believes it holds.
+        final Files remote = tracked(TRACKED + line + "\n");
+
+        assertThatThrownBy(() -> ProjectFile.read(remote, HTTPS_OWN, null, 10))
+                .as("refused, never a silent default")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining(said);
+    }
+
+    @Test
+    void theSeedIsReadWithTheProjectsFilesAtTheSameCommit() throws Exception {
+        // Harm: an unmeasured size shows no expected time although the planning repository seeds
+        // it.
+        final Files remote = tracked(TRACKED);
+        remote.files.put("porelo-project@c1:stats/seed.csv", "size,minutes\nS,30\nM,60\n");
+
+        final org.fuin.porelo.planner.store.TrackedProject project =
+                java.util.Objects.requireNonNull(
+                        ProjectFile.read(remote, HTTPS_OWN, null, 10).tracked());
+        assertThat(project.work().seed())
+                .as("the seed's minutes by size")
+                .isEqualTo(Map.of("S", 30.0, "M", 60.0));
+        assertThat(
+                        java.util.Objects.requireNonNull(
+                                        ProjectFile.read(tracked(TRACKED), HTTPS_OWN, null, 10)
+                                                .tracked())
+                                .work()
+                                .seed())
+                .as("no seed file, no seed")
+                .isEmpty();
+    }
+
+    @Test
+    void theProjectIsOpenedAtItsHeadAndAPlannerFileOrSeedOfALaterCommitIsNotRead()
+            throws Exception {
+        // Harm: a tracker or seed of another commit than the project's files mixed into the
+        // project read at the head.
+        final Files remote = tracked(TRACKED);
+        remote.files.put("porelo-project@c1:stats/seed.csv", "size,minutes\nS,30\n");
+        remote.files.put(
+                "porelo-project@c2:project.yml", TRACKED.substring(0, TRACKED.indexOf("tracker:")));
+        remote.files.put("porelo-project@c2:planner.yml", "tracker: {kind: local}\nvelocity: 3\n");
+        remote.files.put("porelo-project@c2:stats/seed.csv", "size,minutes\nS,x\n");
+
+        final org.fuin.porelo.planner.store.TrackedProject atHead =
+                java.util.Objects.requireNonNull(
+                        ProjectFile.read(remote, HTTPS_OWN, null, 10).tracked());
+        assertThat(atHead.filesCommit()).as("read at the head").isEqualTo("c1");
+        assertThat(atHead.project()).as("the head's tracker").isEqualTo("7");
+        assertThat(atHead.work().seed()).as("the head's seed").isEqualTo(Map.of("S", 30.0));
+
+        remote.commit = "c2";
+        assertThatThrownBy(() -> ProjectFile.read(remote, HTTPS_OWN, null, 10))
+                .as("the later commit's files are read once the head stands there")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("planner.yml: unknown key 'velocity'");
+    }
+
+    @Test
+    void aSeedThatCannotBeReadRefusesTheProjectNamingItsLine() {
+        // Harm: a broken seed read as no seed, so the expected time silently falls back.
+        final Files untracked = with(PROJECT);
+        untracked.files.put("porelo-project@c1:stats/seed.csv", "size,minutes\nS,30\nM,soon\n");
+
+        assertThatThrownBy(() -> ProjectFile.read(untracked, OWN, null, 10))
+                .as("refused for the Git store too, naming the line")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("stats/seed.csv line 3");
     }
 }

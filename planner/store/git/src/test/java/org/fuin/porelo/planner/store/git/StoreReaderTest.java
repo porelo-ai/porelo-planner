@@ -188,6 +188,26 @@ class StoreReaderTest {
     }
 
     @Test
+    void theOwnRepositorysSeedIsReadWithItsWorkAndOneThatCannotBeReadRefusesTheBoard() {
+        // Harm: a Git store's unmeasured size shows no expected time although the own repository
+        // seeds it, or a seed broken after opening is read on as no seed.
+        final Tree tree = new Tree();
+        tree.files.put("stories/workflow.yml", WORKFLOW);
+        tree.files.put("stats/seed.csv", "size,minutes\nM,45\n");
+
+        final Part part = new StoreReader(tree, 100).read(OWN, "c1", null);
+
+        assertThat(java.util.Objects.requireNonNull(part.work()).seed())
+                .as("the seed beside the work")
+                .isEqualTo(Map.of("M", 45.0));
+        tree.files.put("stats/seed.csv", "size,minutes\nM,45\nM,50\n");
+        assertThatThrownBy(() -> new StoreReader(tree, 100).read(OWN, "c1", null))
+                .as("refused, naming the line")
+                .isInstanceOf(StoreException.Unreadable.class)
+                .hasMessageContaining("stats/seed.csv line 3");
+    }
+
+    @Test
     void aStoryFileWithoutATitleIsReadOntoTheBoardBesideOneWithATitle() {
         // Prevents a story the stories index lists from missing on the board without a word, when
         // its file is named ST<n>.md, which the work format allows beside ST<n>-<Title>.md.

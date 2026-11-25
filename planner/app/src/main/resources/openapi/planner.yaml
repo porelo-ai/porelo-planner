@@ -4239,8 +4239,9 @@ components:
             For an issue left to build, the minutes expected of it less those its work took so far, never below zero;
             what it took is its Minutes field as the store holds it. Expected is
             its estimate; without one, the median minutes of the finished issues of its size in its
-            repository; without those, that median over every repository. Null when it is not left to build or
-            nothing gives an expectation.
+            repository; without those, that median over every repository; without those, the minutes the planning
+            repository's velocity seed, stats/seed.csv, gives its size. Null when it is not left to build or nothing
+            gives an expectation.
         blockedBy:
           type: array
           description: The issues of the board blocking it.

@@ -214,7 +214,8 @@ public record OpenWork(
      *
      * <p>What is expected is its estimate; without one, the median minutes of the finished issues
      * of its size in its repository; without those, the median of the finished issues of its size
-     * in every repository. An issue without a size and without an estimate has none.
+     * in every repository; without those, the seed's minutes for its size. An issue without a size
+     * and without an estimate has none, as has one whose size neither is measured nor seeded.
      *
      * @param board the board
      * @return the minutes left by issue id
@@ -254,6 +255,9 @@ public record OpenWork(
                     expected =
                             medians.computeIfAbsent(
                                     " " + issue.size(), key -> median(bySize.get(issue.size())));
+                }
+                if (expected == null) {
+                    expected = board.work().seed().get(issue.size());
                 }
             }
             if (expected != null) {

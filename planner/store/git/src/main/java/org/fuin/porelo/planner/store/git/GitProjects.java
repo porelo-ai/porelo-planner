@@ -73,7 +73,7 @@ public final class GitProjects {
      * @param settings the bounds of each store
      * @param clock tells when a board was checked
      * @param background runs the checks requests start
-     * @param tracked opens a project whose {@code project.yml} names a tracker
+     * @param tracked opens a project whose {@code planner.yml} names a tracker
      */
     public GitProjects(
             final Map<String, String> environment,
@@ -92,7 +92,7 @@ public final class GitProjects {
      * @param settings the bounds of each store
      * @param clock tells when a board was checked
      * @param background runs the checks requests start
-     * @param tracked opens a project whose {@code project.yml} names a tracker
+     * @param tracked opens a project whose {@code planner.yml} names a tracker
      * @param limits the factors the stores' waits and tries, Porelo's helper and the platform's
      *     calls follow
      */
