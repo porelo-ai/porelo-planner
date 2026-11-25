@@ -89,7 +89,7 @@ public record IssuePlace(
      * @param decision the place's decision
      * @param mergedCommit the forwarded or merge commit, or null
      * @param mergedHead the branch that commit landed on, null with mergedCommit
-     * @param decisionSince when the decision began
+     * @param decisionSince when the decision began, or null where Porelo's answer may lack it
      * @param points the open points kept, each with the time of its last word
      * @param pointsTotal how many open points the answer named, the cut ones included
      * @param findings the findings no one answered
@@ -101,7 +101,7 @@ public record IssuePlace(
             ReviewOpen.Decision decision,
             @Nullable String mergedCommit,
             @Nullable String mergedHead,
-            Instant decisionSince,
+            @Nullable Instant decisionSince,
             List<ReviewOpen.Point> points,
             int pointsTotal,
             int findings,
@@ -113,7 +113,6 @@ public record IssuePlace(
          * a count that does not fit them.
          */
         public Review {
-            Objects.requireNonNull(decisionSince, "decisionSince");
             points = List.copyOf(points);
             // Its parts are checked as a complete answer's are.
             answer(head, decision, mergedCommit, mergedHead, decisionSince, points, findings, held);
@@ -131,8 +130,7 @@ public record IssuePlace(
          * @throws IllegalArgumentException for an incomplete answer, which is never kept
          */
         public static Review of(final ReviewOpen answer) {
-            final Instant since = answer.decisionSince();
-            if (!answer.complete() || since == null) {
+            if (!answer.complete()) {
                 throw new IllegalArgumentException("An incomplete answer is never kept");
             }
             final List<ReviewOpen.Point> all = answer.points();
@@ -141,7 +139,7 @@ public record IssuePlace(
                     answer.decision(),
                     answer.mergedCommit(),
                     answer.mergedHead(),
-                    since,
+                    answer.decisionSince(),
                     all.subList(0, Math.min(all.size(), MOST_POINTS)),
                     all.size(),
                     answer.findings(),
@@ -154,7 +152,7 @@ public record IssuePlace(
                 final ReviewOpen.Decision decision,
                 final @Nullable String mergedCommit,
                 final @Nullable String mergedHead,
-                final Instant since,
+                final @Nullable Instant since,
                 final List<ReviewOpen.Point> points,
                 final int findings,
                 final int held) {

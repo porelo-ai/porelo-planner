@@ -129,6 +129,44 @@ class IssuePlaceTest {
     }
 
     @Test
+    void anOpenOrApprovedAnswerWithoutItsDecisionsTimeIsKeptAndNoOtherIs() {
+        // Harm: an open or approved pull request, whose forge says no time, is refused as no
+        // answer, so its issue stops under Needs you; or an ended decision without its time is
+        // trusted.
+        for (final ReviewOpen.Decision decision : ReviewOpen.Decision.values()) {
+            final boolean undated =
+                    decision == ReviewOpen.Decision.OPEN
+                            || decision == ReviewOpen.Decision.APPROVED;
+            final boolean merged =
+                    decision == ReviewOpen.Decision.MERGED
+                            || decision == ReviewOpen.Decision.LANDED;
+            final java.util.function.Supplier<ReviewOpen> untimed =
+                    () ->
+                            new ReviewOpen(
+                                    "a".repeat(40),
+                                    decision,
+                                    merged ? "e".repeat(40) : null,
+                                    merged ? "main" : null,
+                                    null,
+                                    List.of(),
+                                    0,
+                                    0,
+                                    true,
+                                    null,
+                                    "v");
+            if (undated) {
+                assertThat(IssuePlace.Review.of(untimed.get()).decisionSince())
+                        .as("kept without a time: " + decision)
+                        .isNull();
+            } else {
+                assertThatThrownBy(untimed::get)
+                        .as("refused without its time: " + decision)
+                        .hasMessageContaining("says when its decision began");
+            }
+        }
+    }
+
+    @Test
     void aPlaceCountsEachAuthorRunOnceAndRefusesAnyOtherList() {
         // Harm: a resent end or a record changed on disk spending an author's rounds twice, or
         // naming a run that is no offer.

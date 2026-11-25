@@ -14,8 +14,9 @@ import org.jspecify.annotations.Nullable;
  * @param decision the place's decision
  * @param mergedCommit the forwarded or merge commit, or null until one exists
  * @param mergedHead the branch that commit landed on, null with mergedCommit
- * @param decisionSince when the current decision began, or null when the answer is incomplete for a
- *     missing time
+ * @param decisionSince when the current decision began; null when the answer is incomplete for a
+ *     missing time, and for an open or approved pull request, whose forge does not say when its
+ *     head was pushed
  * @param points the open threads whose last word is not the asking role's side
  * @param findings the findings no one answered, counted apart from the points
  * @param held the review items held back from the run at the place
@@ -37,6 +38,14 @@ public record ReviewOpen(
         String version) {
 
     private static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
+
+    /**
+     * Whether a complete answer may lack its decision's time: a pull request's forge never gives
+     * it.
+     */
+    private static boolean undated(final Decision decision) {
+        return decision == Decision.OPEN || decision == Decision.APPROVED;
+    }
 
     /** A place's decision. */
     public enum Decision {
@@ -86,9 +95,9 @@ public record ReviewOpen(
 
     /**
      * Refuses an answer whose parts do not fit together: an incomplete one without a reason or a
-     * complete one with one, a complete one without the time of its decision, a merge commit
-     * without the branch it landed on, a commit that is no commit, a branch that is no branch name,
-     * negative counts and a blank version.
+     * complete one with one, a complete one without the time of a decision that always has one, a
+     * merge commit without the branch it landed on, a commit that is no commit, a branch that is no
+     * branch name, negative counts and a blank version.
      */
     public ReviewOpen {
         Objects.requireNonNull(decision, "decision");
@@ -100,7 +109,7 @@ public record ReviewOpen(
         if (reason != null && reason.isBlank()) {
             throw new IllegalArgumentException("An incomplete answer gives a blank reason");
         }
-        if (complete && decisionSince == null) {
+        if (complete && decisionSince == null && !undated(decision)) {
             throw new IllegalArgumentException("A complete answer says when its decision began");
         }
         if ((mergedCommit == null) != (mergedHead == null)) {
