@@ -33,12 +33,17 @@ public final class GitHttpsServer implements AutoCloseable {
 
     private final Path caFile;
 
+    /** Serves each request on a thread of its own, so a slow backend never stalls another. */
+    private final java.util.concurrent.ExecutorService workers =
+            java.util.concurrent.Executors.newCachedThreadPool();
+
     /** The Authorization header of each request, empty for none, in their order. */
     private final Queue<String> authorizations = new ConcurrentLinkedQueue<>();
 
     private GitHttpsServer(final HttpsServer server, final Path caFile) {
         this.server = server;
         this.caFile = caFile;
+        server.setExecutor(workers);
     }
 
     /**
@@ -180,12 +185,15 @@ public final class GitHttpsServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop(0);
+        workers.shutdownNow();
     }
 
     private void serve(final HttpExchange exchange, final Path root, final @Nullable String login)
             throws IOException {
         try (exchange) {
             recorded(exchange);
+            // Each connection serves one request, so git never reuses one the server dropped.
+            exchange.getResponseHeaders().set("Connection", "close");
             if (login != null) {
                 final String expected =
                         "Basic "
