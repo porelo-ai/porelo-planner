@@ -55,7 +55,11 @@ public final class PoreloTaskReports implements TaskReports {
      * @param limits the factors
      */
     public PoreloTaskReports(final Path executable, final LimitFactors limits) {
-        this(executable, new ProcessRunner(limits.services(LIMIT)), System.getenv(), limits);
+        this(
+                executable,
+                new ProcessRunner(limits.services(LIMIT), "task reports"),
+                System.getenv(),
+                limits);
     }
 
     PoreloTaskReports(

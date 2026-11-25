@@ -717,7 +717,8 @@ class PoreloTaskRecordsTest {
                         "GITHUB_TOKEN", "ghp_SECRET123",
                         "SSH_AUTH_SOCK", "/run/agent.sock");
         final PoreloTaskRecords records =
-                new PoreloTaskRecords(porelo, new ProcessRunner(Duration.ofSeconds(30)), source);
+                new PoreloTaskRecords(
+                        porelo, new ProcessRunner(Duration.ofSeconds(30), "task records"), source);
 
         assertThat(records.since("porelo-planner", SINCE)).as("no record").isEmpty();
         assertThat(Files.readAllLines(dir.resolve("args")))
@@ -746,7 +747,8 @@ class PoreloTaskRecordsTest {
                         () ->
                                 new PoreloTaskRecords(
                                                 failing,
-                                                new ProcessRunner(Duration.ofSeconds(30)),
+                                                new ProcessRunner(
+                                                        Duration.ofSeconds(30), "task records"),
                                                 source)
                                         .since("porelo-planner", SINCE))
                 .as("the process's own exit code")
@@ -768,7 +770,8 @@ class PoreloTaskRecordsTest {
                         () ->
                                 new PoreloTaskRecords(
                                                 porelo,
-                                                new ProcessRunner(Duration.ofSeconds(1)),
+                                                new ProcessRunner(
+                                                        Duration.ofSeconds(1), "task records"),
                                                 Map.of("PATH", "/usr/bin:/bin"))
                                         .since("porelo-planner", SINCE));
 
@@ -793,6 +796,37 @@ class PoreloTaskRecordsTest {
         assertThat(gone).as("the child killed too").isTrue();
     }
 
+    // Prevents an operator chasing a review open's timeout or start failure from reading of
+    // another read's.
+    @Test
+    void aRefusalNamesWhatWasRead() throws Exception {
+        final Path sleeping = script("/bin/sleep 60\n");
+
+        final Unanswered late =
+                catchThrowableOfType(
+                        Unanswered.class,
+                        () ->
+                                new ProcessRunner(Duration.ofSeconds(1), "review open")
+                                        .run(List.of(sleeping.toString()), Map.of()));
+        final Unanswered unstarted =
+                catchThrowableOfType(
+                        Unanswered.class,
+                        () ->
+                                new ProcessRunner(Duration.ofSeconds(1), "review open")
+                                        .run(List.of(dir.resolve("missing").toString()), Map.of()));
+
+        assertThat(late).as("late").isNotNull();
+        assertThat(late.getMessage())
+                .contains("no answer within 1 s")
+                .contains("review open")
+                .doesNotContain("task records");
+        assertThat(unstarted).as("unstarted").isNotNull();
+        assertThat(unstarted.getMessage())
+                .contains("cannot be started")
+                .contains("review open")
+                .doesNotContain("task records");
+    }
+
     // Prevents an answer past the limit from filling the planner's memory or being read in part.
     @Test
     void aRealAnswerPastTheLimitIsCutOff() throws Exception {
@@ -803,7 +837,8 @@ class PoreloTaskRecordsTest {
                         () ->
                                 new PoreloTaskRecords(
                                                 porelo,
-                                                new ProcessRunner(Duration.ofSeconds(30)),
+                                                new ProcessRunner(
+                                                        Duration.ofSeconds(30), "task records"),
                                                 Map.of())
                                         .since("porelo-planner", SINCE))
                 .as("cut off")
@@ -821,7 +856,8 @@ class PoreloTaskRecordsTest {
                         () ->
                                 new PoreloTaskRecords(
                                                 missing,
-                                                new ProcessRunner(Duration.ofSeconds(30)),
+                                                new ProcessRunner(
+                                                        Duration.ofSeconds(30), "task records"),
                                                 Map.of())
                                         .since("porelo-planner", SINCE))
                 .as("not started")

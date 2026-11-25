@@ -170,7 +170,11 @@ public final class PoreloTaskRecords implements TaskRecords {
      * @param limits the factors
      */
     public PoreloTaskRecords(final Path executable, final LimitFactors limits) {
-        this(executable, new ProcessRunner(limits.services(LIMIT)), System.getenv(), limits);
+        this(
+                executable,
+                new ProcessRunner(limits.services(LIMIT), "task records"),
+                System.getenv(),
+                limits);
     }
 
     PoreloTaskRecords(
@@ -586,11 +590,20 @@ public final class PoreloTaskRecords implements TaskRecords {
 
         private final Duration limit;
 
+        /** The words of what is read, told in every refusal: no path, no secret. */
+        private final String label;
+
         /**
          * @param limit how long the process may run before it and its children are killed
+         * @param label the words of what is read, such as "task records", told in every refusal
          */
-        ProcessRunner(final Duration limit) {
+        ProcessRunner(final Duration limit, final String label) {
             this.limit = limit;
+            this.label = label;
+        }
+
+        private String named(final String reason) {
+            return reason + " (" + label + ")";
         }
 
         @Override
@@ -603,14 +616,14 @@ public final class PoreloTaskRecords implements TaskRecords {
                 process = builder.start();
             } catch (final IOException ex) {
                 // The executable's path is local and stays out of every message.
-                throw new Unanswered("Porelo's executable cannot be started", ex);
+                throw new Unanswered(named("Porelo's executable cannot be started"), ex);
             }
             try {
                 // Porelo reads nothing: its input is closed at once, on every platform.
                 process.getOutputStream().close();
             } catch (final IOException ex) {
                 kill(process);
-                throw new Unanswered("Porelo's input could not be closed", ex);
+                throw new Unanswered(named("Porelo's input could not be closed"), ex);
             }
             final long deadline = System.nanoTime() + limit.toNanos();
             final CompletableFuture<Capture> out = drain(process.getInputStream(), ANSWER_LIMIT);
@@ -619,7 +632,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                 if (!process.waitFor(limit.toNanos(), TimeUnit.NANOSECONDS)) {
                     kill(process);
                     throw new Unanswered(
-                            "Porelo gave no answer within " + Seconds.of(limit) + " s");
+                            named("Porelo gave no answer within " + Seconds.of(limit) + " s"));
                 }
                 final long left = Math.max(0, deadline - System.nanoTime());
                 final Capture answer = out.get(left, TimeUnit.NANOSECONDS);
@@ -633,14 +646,14 @@ public final class PoreloTaskRecords implements TaskRecords {
             } catch (final InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 kill(process);
-                throw new Unanswered("Reading Porelo's answer was interrupted", ex);
+                throw new Unanswered(named("Reading Porelo's answer was interrupted"), ex);
             } catch (final TimeoutException ex) {
                 kill(process);
                 throw new Unanswered(
-                        "Porelo gave no answer within " + Seconds.of(limit) + " s", ex);
+                        named("Porelo gave no answer within " + Seconds.of(limit) + " s"), ex);
             } catch (final ExecutionException ex) {
                 kill(process);
-                throw new Unanswered("Porelo's answer could not be read", ex);
+                throw new Unanswered(named("Porelo's answer could not be read"), ex);
             } finally {
                 out.cancel(true);
                 err.cancel(true);

@@ -81,7 +81,7 @@ public final class PoreloReviewOpen implements PlaceReviews {
     public PoreloReviewOpen(final Path executable, final LimitFactors limits) {
         this(
                 executable,
-                new PoreloTaskRecords.ProcessRunner(limits.services(LIMIT)),
+                new PoreloTaskRecords.ProcessRunner(limits.services(LIMIT), "review open"),
                 System.getenv(),
                 limits);
     }
