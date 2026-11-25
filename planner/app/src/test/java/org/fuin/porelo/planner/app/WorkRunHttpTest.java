@@ -811,6 +811,78 @@ class WorkRunHttpTest {
     }
 
     @Test
+    void aStartPoreloRefusedStandsOnItsIssueWithItsNameAndAMalformedRefusalIsRefused()
+            throws Exception {
+        // Harm: the window's report of a refused Start is taken for another event, or answered
+        // without the reason the person must read, or a malformed one reaches the record.
+        final String offer =
+                call(
+                                "/stories/ST1/work",
+                                "{\"project\":\"project\",\"story\":\"ST1\",\"to\":\"Building\",\"mode\":\"AGENT\",\"seen\":"
+                                        + Seens.of(store.board())
+                                        + ",\"readingRounds\":1}",
+                                200)
+                        .at("/tasks/0/offer")
+                        .asString();
+        final String refused =
+                "{\"offer\":\""
+                        + offer
+                        + "\",\"event\":\"REFUSED\",\"machine\":\"workstation\",\"refusal\":"
+                        + "{\"name\":\"AdapterNotInstalled\",\"parameters\":{\"adapter\":\"maven\"},"
+                        + "\"detail\":\"Install it.\\nThen retry.\"}}";
+        for (final String body :
+                List.of(
+                        refused.replace("\"machine\"", "\"container\":\"box\",\"machine\""),
+                        refused.replace(",\"refusal\":", ",\"x\":"),
+                        refused.replace("AdapterNotInstalled", "Adapter Not"),
+                        refused.replace("\"maven\"", "1"),
+                        refused.replace("\"detail\":\"Install it.\\nThen retry.\"", "\"detail\":1"),
+                        refused.replace("\"detail\":\"Install it.\\nThen retry.\"", "\"extra\":1"),
+                        refused.replace("\"parameters\":{\"adapter\":\"maven\"},", ""),
+                        event(offer, "STARTED", "")
+                                .replace(
+                                        "\"machine\"",
+                                        "\"refusal\":{\"name\":\"A\",\"parameters\":{},\"detail\":\"\"},"
+                                                + "\"machine\""),
+                        event(offer, "STARTED", "")
+                                .replace("\"container\":\"box-" + offer + "\",", ""))) {
+            assertThat(call("/tasks/build/events", body, 400).path("type").asString())
+                    .as("the malformed report %s is refused", body)
+                    .endsWith(":InvalidSettings");
+        }
+
+        final JsonNode answered = call("/tasks/build/events", refused, 200);
+
+        final JsonNode issue = answered.at("/work/issues/0");
+        assertThat(
+                        List.of(
+                                issue.path("needsYou").asBoolean(),
+                                issue.path("reason").asString(),
+                                issue.at("/startRefusal/name").asString(),
+                                issue.at("/startRefusal/parameters/adapter").asString(),
+                                issue.at("/startRefusal/detail").asString()))
+                .as("the issue asks the person with Porelo's name, parameters and words")
+                .containsExactly(
+                        true,
+                        "START_REFUSED",
+                        "AdapterNotInstalled",
+                        "maven",
+                        "Install it.\nThen retry.");
+        assertThat(answered.at("/work/tasks").size()).as("no task started").isZero();
+        assertThat(call("/tasks/build/events", refused, 200).at("/work/issues/0"))
+                .as("the resend is answered as before")
+                .isEqualTo(issue);
+
+        final JsonNode started = call("/tasks/build/events", event(offer, "STARTED", ""), 200);
+        assertThat(started.at("/work/issues/0/reason").asString())
+                .as("a later Start of the same offer clears the reason")
+                .isEqualTo("NONE");
+        assertThat(started.at("/work/issues/0").has("startRefusal"))
+                .as("and the refusal")
+                .isFalse();
+    }
+
+    @Test
     void anEndWithoutAnOutcomeAnswersNoneAndAMalformedOutcomeIsRefused() throws Exception {
         // An outcome taken in another spelling or form would be judged as none, and a blocked
         // task would move on as done.

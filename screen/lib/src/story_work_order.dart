@@ -6,6 +6,7 @@ import 'models.dart';
 import 'work_reply.dart';
 
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
+final _pullRequestAddress = RegExp(r'^https://[!-~]+$');
 // An issue id in the Git store's form or a tracker's reference within the project, as the description gives them.
 final _trackedIssue = RegExp(r'^(?![^#]*\.\.)[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
 final _issueName = RegExp(
@@ -285,8 +286,9 @@ class PlanningRunPlace {
       }
       return PlanningRunPlace._(gatePush: name, gateRepository: repository as String?);
     }
-    if (value['pullRequest'] case final String branch when branch.trim().isNotEmpty && branch.length <= 255) {
-      return PlanningRunPlace._(pullRequest: branch);
+    if (value['pullRequest'] case final String address
+        when _pullRequestAddress.hasMatch(address) && address.length <= 2048) {
+      return PlanningRunPlace._(pullRequest: address);
     }
     if (value['ownPullRequest'] == true) return const PlanningRunPlace._(ownPullRequest: true);
     _invalid('The task place is invalid.');
@@ -298,7 +300,7 @@ class PlanningRunPlace {
   /// The push's repository; null for the task's own.
   final String? gateRepository;
 
-  /// The branch a pull request comes from; null for another place.
+  /// A pull request by its https address; null for another place.
   final String? pullRequest;
 
   /// Whether the place is the task's own pull request.

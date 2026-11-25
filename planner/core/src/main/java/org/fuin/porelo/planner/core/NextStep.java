@@ -412,7 +412,24 @@ public final class NextStep {
                 continue;
             }
             final String role = judgment instanceof WorkEnds.Read ? "BUILDER" : "READER";
-            if (next != null && !awaitsLanding(role, ended)) {
+            // A reviewer is offered where the work waits, never by an end; work that landed at
+            // once left no place to review it at.
+            if (next != null
+                    && role.equals("READER")
+                    && next.reviewer() != null
+                    && !awaitsLanding(role, ended)) {
+                unavailable(
+                        progress,
+                        unavailable,
+                        id,
+                        "the rule "
+                                + target
+                                + " reviews where the work waits, and it landed without waiting");
+                continue;
+            }
+            if (next != null
+                    && !awaitsLanding(role, ended)
+                    && !(role.equals("READER") && next.reviewer() != null)) {
                 try {
                     tasks.add(
                             task(
@@ -483,8 +500,10 @@ public final class NextStep {
             if (issue != null
                     && (issue.worker() == Worker.MANUAL
                             || !issue.state().equals(target)
-                            || next == null && !reading)) {
+                            || next == null && !reading
+                            || next != null && next.reviewer() != null)) {
                 // A person works it, moved it on, or its children hold it; none waits on a reader.
+                // A reviewer reviewed the work where it waited, before it landed.
                 continue;
             }
             try {
@@ -564,6 +583,74 @@ public final class NextStep {
             final String role,
             final Build built) {
         return task(board, storyId, issue, state, rule, chosen, comment, words, role, built, null);
+    }
+
+    /**
+     * Builds the reviewer run of a reviewer rule for one issue: Porelo's run in the role {@code
+     * REVIEWER} at the place its work waits at, under the duty of a reader, reading the task bound
+     * there; it writes its points at that place, so its order asks for no findings block.
+     *
+     * @param board the board as it stands
+     * @param storyId the story
+     * @param issue the issue
+     * @param state the reviewer rule's state, where the issue stands
+     * @param rule the reviewer rule
+     * @param comment the run's comment
+     * @param place where the work waits
+     * @param task the task bound there, whose work the reviewer reads
+     * @param said the place in words, as the order names it
+     * @return the reviewer run
+     * @throws WorkRefusal when its settings or order do not fit a task
+     */
+    public static Planned reviewer(
+            final Board board,
+            final String storyId,
+            final Issue issue,
+            final String state,
+            final WorkRule rule,
+            final String comment,
+            final RunPlace place,
+            final String task,
+            final String said) {
+        if (rule.reviewer() == null) {
+            throw new IllegalArgumentException("The rule names no reviewer");
+        }
+        final Choice choice = Choice.of(state, rule, board, List.of(issue));
+        final Settings settings = Settings.of(rule, choice, null);
+        final Story story =
+                board.story(storyId).orElseThrow(() -> WorkRefusal.noSuchStory(storyId));
+        if (settings.agent().length() > 128
+                || settings.model().length() > 128
+                || settings.mode().length() > 128) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final String prompt =
+                WorkOrder.prompt(
+                        rule,
+                        story,
+                        WorkOrder.issueText(board, story, state, List.of(issue.id())),
+                        "the work of Porelo task " + task + " at " + said,
+                        fence(comment));
+        if (prompt.getBytes(StandardCharsets.UTF_8).length > WorkEnds.MOST_ANSWER) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return new Planned(
+                new WorkOrder.Task(
+                                issue.repository(),
+                                List.of(issue.id()),
+                                "READER",
+                                settings.agent(),
+                                settings.model(),
+                                choice.effort(),
+                                settings.mode(),
+                                prompt,
+                                List.of(task),
+                                choice.basis(),
+                                null)
+                        .at(RunRole.REVIEWER, place),
+                state,
+                rule,
+                choice.basis());
     }
 
     /**

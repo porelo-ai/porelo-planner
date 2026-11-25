@@ -545,6 +545,80 @@ class WorkRecordTest {
     }
 
     @Test
+    void aRefusedStartSurvivesRestartAndAForgedOneOrOneOfAStartedOfferDoesNotOpen()
+            throws Exception {
+        // Harm: a planner restart forgets that Porelo refused a Start, so the issue silently leaves
+        // Needs you; or a forged refusal, or one on a task that runs, is read back as the planner's
+        // own and shown to the person.
+        final WorkRun.StartRefusal refusal =
+                new WorkRun.StartRefusal(
+                        "AdapterNotInstalled",
+                        Map.of("adapter", "maven", "tool", "mvn"),
+                        "Line\nTwo");
+        final WorkRun.Run saved = writeRefusedRecord("OFFERED", refusal);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored).as("the run with its refusal survives").isEqualTo(saved);
+            assertThat(restored.offers().getFirst().startRefusal())
+                    .as("name, parameters and words as reported")
+                    .isEqualTo(refusal);
+        }
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        offer.remove("startRefusal");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.StartRefusal older =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(
+                                    session ->
+                                            session.read()
+                                                    .runs()
+                                                    .values()
+                                                    .iterator()
+                                                    .next()
+                                                    .offers()
+                                                    .getFirst()
+                                                    .startRefusal());
+            assertThat(older).as("a record written before refusals were kept holds none").isNull();
+            final ObjectNode forged = offer.putObject("startRefusal");
+            forged.put("name", "not a name").put("detail", "");
+            forged.putObject("parameters");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a name of another form")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            records.forget("project");
+            offer.putObject("startRefusal")
+                    .put("name", "UnknownForge")
+                    .put("detail", "")
+                    .putObject("parameters");
+            offer.put("status", "ENDED");
+            Files.writeString(file, json.writeValueAsString(document));
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a refusal on an offer that ended")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
     void aRefusalKeptBeforeRightsWereToldStillReads() throws Exception {
         // Harm: an upgrade makes a work record with a kept save refusal unreadable, so the story's
         // work stops until the record is removed by hand.
@@ -917,6 +991,80 @@ class WorkRecordTest {
                         .as("refused: " + named)
                         .isInstanceOf(WorkRefusal.class);
             }
+        }
+    }
+
+    @Test
+    void aReviewerAReadOfAPlaceOfferedAndTheHeadItReviewedAreReadBack() throws Exception {
+        // Harm: after a restart the reviewer a read offered is lost or refused, so the window never
+        // starts it, or the reviewed head is lost, so the same push is reviewed again; an older
+        // record without these fields no longer opens; or a reviewer that is no reader's duty, as
+        // changed on disk, is trusted.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String reviewer = "00000000-0000-0000-0000-000000000004";
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode run = (ObjectNode) document.path("runs").iterator().next();
+        final ObjectNode offer = ((ObjectNode) run.get("offers").get(0)).deepCopy();
+        offer.put("id", reviewer).put("status", "OFFERED");
+        for (final String unbound : List.of("task", "containerId", "machine", "since", "ended")) {
+            offer.putNull(unbound);
+        }
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        arguments.put("role", "READER").put("runRole", "REVIEWER");
+        arguments.putArray("reads").add("task");
+        final ObjectNode place = arguments.putObject("place");
+        place.putObject("gatePush").putNull("repository").put("name", "task");
+        place.putNull("pullRequest");
+        place.putNull("ownPullRequest");
+        ((ObjectNode) offer.get("binding")).put("role", "READER").put("state", "Reading");
+        ((ObjectNode) offer.get("binding").get("rule")).put("reviewer", "AT_WORK");
+        ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
+        run.putArray("placeOffers").add(reviewer);
+        final String head = "0123456789abcdef0123456789abcdef01234567";
+        ((ObjectNode) run.get("places").get("AA1")).put("reviewed", head);
+        final String sound = json.writeValueAsString(document);
+        Files.writeString(file, sound);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run read = run(records);
+            assertThat(read.placeOffers()).as("the reviewer read back").containsExactly(reviewer);
+            assertThat(read.offers().getLast().binding().rule().reviewer())
+                    .as("its rule's reviewer read back")
+                    .isEqualTo(WorkRule.Reviewer.AT_WORK);
+            assertThat(read.places().get("AA1").reviewed())
+                    .as("the reviewed head read back")
+                    .isEqualTo(head);
+            assertThat(WorkRun.placeStarts(read))
+                    .as("the window is given it again")
+                    .extracting(WorkRun.Offered::offer)
+                    .containsExactly(reviewer);
+
+            final var older = json.readTree(sound);
+            final ObjectNode olderRun = (ObjectNode) older.path("runs").iterator().next();
+            ((ObjectNode) olderRun.get("places").get("AA1")).remove("reviewed");
+            for (final var each : olderRun.get("offers")) {
+                ((ObjectNode) each.get("binding").get("rule")).remove("reviewer");
+            }
+            Files.writeString(file, json.writeValueAsString(older));
+            records.forget("project");
+            final WorkRun.Run upgraded = run(records);
+            assertThat(upgraded.places().get("AA1").reviewed())
+                    .as("an older place names no reviewed head")
+                    .isNull();
+            assertThat(upgraded.offers().getFirst().binding().rule().reviewer())
+                    .as("an older rule names no reviewer")
+                    .isNull();
+
+            final var tampered = json.readTree(sound);
+            final ObjectNode at = (ObjectNode) tampered.path("runs").iterator().next();
+            ((ObjectNode) at.get("offers").get(1).get("binding")).put("role", "BUILDER");
+            Files.writeString(file, json.writeValueAsString(tampered));
+            records.forget("project");
+            assertThatThrownBy(() -> run(records))
+                    .as("a reviewer place offer that is no reader's duty is refused")
+                    .isInstanceOf(WorkRefusal.class);
         }
     }
 
@@ -1586,6 +1734,72 @@ class WorkRecordTest {
                 assertThat(reason(refused)).as("its words").doesNotContain("escape");
             }
         }
+    }
+
+    private WorkRun.Run writeRefusedRecord(
+            final String status, final WorkRun.StartRefusal refusal) {
+        final String story = "ST1";
+        final var rule =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Build",
+                        Map.of("codex", "model"),
+                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")));
+        final var task =
+                new WorkOrder.Task(
+                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build");
+        final var offer =
+                new WorkRun.Offer(
+                        "00000000-0000-0000-0000-000000000002",
+                        task,
+                        new NextStep.Binding(
+                                story, "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                        status,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null,
+                        false,
+                        "",
+                        new NextStep.Settings("AGENT", "codex", "careful"),
+                        refusal);
+        final var run =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        story,
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        2,
+                        List.of(),
+                        List.of(),
+                        java.time.Instant.EPOCH.toString(),
+                        List.of(offer),
+                        Map.of(),
+                        false,
+                        false,
+                        null);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(1, Map.of(story, run)));
+                                return true;
+                            });
+        }
+        return run;
     }
 
     private WorkRun.Run writeTaskRecord(final String machine) {

@@ -208,6 +208,7 @@ class _PlanningStoryViewState extends State<PlanningStoryView> {
                   name: task.task,
                   onOpen: () => onTask(task.task),
                   unavailable: taskUnavailable(task.task),
+                  run: task,
                 ),
             ],
           ]),

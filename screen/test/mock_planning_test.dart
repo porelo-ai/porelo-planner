@@ -351,6 +351,73 @@ void main() {
     expect(source.work.calls.where((call) => call.$1 == 'StartStoryWork'), hasLength(1));
   });
 
+  // Harm: the stand-in answers a refused Start otherwise than the planner, so the window's planning tests rehearse a
+  // refusal the real planner never shows.
+  test('a refused Start stands on its issues as the planner shows it, and a later Start clears it', () async {
+    final source = MockPlanningSource();
+    final board = source.board('demo');
+    final story = (board['stories'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (story) => (story['issues'] as List? ?? const []).isNotEmpty && story['work'] == null,
+    );
+    final working = (board['states'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (state) => state['kind'] == 'WORKING',
+    );
+    final order = await source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: story['id'] as String,
+        to: working['name'] as String,
+        mode: 'AGENT',
+        seen: seenOn(board),
+        subAgents: const [],
+      ),
+    );
+    final offer = order.tasks.first;
+    const refusal = PlanningStartRefusal(name: 'NoPullRequest', parameters: {'branch': 'x'}, detail: 'None open.');
+    Future<TaskEventResolution> refused([String name = 'NoPullRequest']) => source.taskEvent(
+      'demo',
+      'task',
+      PlanningTaskEvent.refused,
+      offer: offer.offer!,
+      container: '',
+      machine: 'Machine',
+      refusal: PlanningStartRefusal(name: name, parameters: refusal.parameters, detail: refusal.detail),
+    );
+
+    final answered = await refused();
+
+    final raised = answered.work.issues.where((issue) => offer.issues.contains(issue.issue));
+    expect(raised.map((issue) => (issue.reason, issue.needsYou)), everyElement(('START_REFUSED', true)));
+    expect(raised.first.startRefusal!.name, 'NoPullRequest');
+    expect(answered.work.tasks, isEmpty, reason: 'no task started');
+    expect(
+      (await refused('Other')).work.issues.first.startRefusal!.name,
+      'NoPullRequest',
+      reason: 'a resend is answered with what stands',
+    );
+
+    await mockStartTask(source, 'demo', story['id'] as String, offer);
+
+    final after = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (each) => each['id'] == story['id'],
+    );
+    final started = (after['work'] as Map)['issues'] as List;
+    expect(
+      started.cast<Map<String, dynamic>>().map((issue) => issue['reason']),
+      everyElement('NONE'),
+      reason: 'the Start that went through clears the refusal',
+    );
+    final cleared = (after['issues'] as List).cast<Map<String, dynamic>>().where(
+      (issue) => offer.issues.contains(issue['id']),
+    );
+    expect(
+      cleared.map((issue) => (issue['needsYou'], issue['attention'])),
+      everyElement((false, 'NONE')),
+      reason: 'and the issues ask the person for nothing',
+    );
+    await expectLater(refused(), throwsA(isA<PlanningRefusal>()), reason: 'a refusal for a started offer conflicts');
+  });
+
   // Harm: the window's own choices of provider and project are lost on the way to the screen.
   test('a client of one source answers it as the current provider', () {
     final source = MockPlanningSource();

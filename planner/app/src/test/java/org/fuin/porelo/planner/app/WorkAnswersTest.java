@@ -20,6 +20,11 @@ import org.junit.jupiter.api.Test;
 
 class WorkAnswersTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void forgetHeld() {
+        TaskHeld.clear();
+    }
+
     // Harm: the window starts a tracked project's stage without the tracker's issue and phase, so
     // Porelo's Start records the task for no issue.
     @Test
@@ -80,7 +85,9 @@ class WorkAnswersTest {
                                         task.at(
                                                 org.fuin.porelo.planner.core.RunRole.REVIEWER,
                                                 new org.fuin.porelo.planner.core.RunPlace(
-                                                        null, "feature/x", null)))));
+                                                        null,
+                                                        "https://github.com/owner/shop/pull/7",
+                                                        null)))));
         final com.fasterxml.jackson.databind.ObjectMapper json =
                 new com.fasterxml.jackson.databind.ObjectMapper();
         assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("runRole"))
@@ -94,7 +101,7 @@ class WorkAnswersTest {
                 .isEqualTo(
                         org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.AUTHOR);
         assertThat(json.readTree(json.writeValueAsString(starts.get(2))).get("place").toString())
-                .isEqualTo("{\"pullRequest\":\"feature/x\"}");
+                .isEqualTo("{\"pullRequest\":\"https://github.com/owner/shop/pull/7\"}");
         assertThat(
                         json.readTree(
                                         json.writeValueAsString(
@@ -113,6 +120,132 @@ class WorkAnswersTest {
         assertThat(starts.get(2).runRole())
                 .isEqualTo(
                         org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.REVIEWER);
+    }
+
+    private static WorkRun.Offer started(
+            final String id,
+            final String task,
+            final org.fuin.porelo.planner.core.WorkOrder.Task arguments) {
+        final var rule =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Build",
+                        Map.of("codex", "model"));
+        return new WorkRun.Offer(
+                id,
+                arguments,
+                new NextStep.Binding(
+                        "ST1", "alpha", List.of(), arguments.role(), "Building", "AGENT", rule),
+                "STARTED",
+                task,
+                "box-" + task,
+                "workstation",
+                "2026-01-01T00:00:00Z",
+                null,
+                "",
+                List.of(),
+                List.of(),
+                null);
+    }
+
+    private static WorkRun.Run runOf(final WorkRun.Offer... offers) {
+        return new WorkRun.Run(
+                "00000000-0000-0000-0000-000000000001",
+                "ST1",
+                "Building",
+                "AGENT",
+                "",
+                "START",
+                1,
+                List.of(),
+                List.of(),
+                "2026-01-01T00:00:00Z",
+                List.of(offers),
+                Map.of(),
+                false,
+                false,
+                null);
+    }
+
+    // Harm: a reviewer's card is shown as an author's, or a task shows the place or the held items
+    // of another task, so the person reads the wrong run.
+    @Test
+    void eachStartedTaskAnswersItsOwnRunRolePlaceAndHeldItems() {
+        final org.fuin.porelo.planner.core.WorkOrder.Task base =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                        "alpha", List.of(), "MAIN", "codex", "model", null, "AGENT", "Build.");
+        final WorkRun.Offer author = started("a", "task-author", base);
+        final WorkRun.Offer reviewer =
+                started(
+                        "b",
+                        "task-reviewer",
+                        base.at(
+                                org.fuin.porelo.planner.core.RunRole.REVIEWER,
+                                new org.fuin.porelo.planner.core.RunPlace(
+                                        null, "https://github.com/owner/shop/pull/7", null)));
+        final WorkRun.Offer resumed =
+                started(
+                        "c",
+                        "task-resumed",
+                        base.at(
+                                org.fuin.porelo.planner.core.RunRole.AUTHOR,
+                                org.fuin.porelo.planner.core.RunPlace.gate("docs", "cart")));
+        TaskHeld.read(
+                "project",
+                List.of(
+                        record("task-reviewer", 3),
+                        record("task-author", null),
+                        record("task-other", 9),
+                        record("task-reviewer", 4)));
+        TaskHeld.read("other", List.of(record("task-resumed", 7)));
+
+        final List<org.fuin.porelo.planner.app.answers.PlanWorkTask> tasks =
+                WorkAnswers.knownWork("project", runOf(author, reviewer, resumed), issue -> false)
+                        .tasks();
+
+        assertThat(tasks)
+                .extracting(
+                        org.fuin.porelo.planner.app.answers.PlanWorkTask::task,
+                        t -> String.valueOf(t.runRole()),
+                        t -> String.valueOf(t.place()),
+                        org.fuin.porelo.planner.app.answers.PlanWorkTask::held)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("task-author", "null", "null", null),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "task-reviewer",
+                                "REVIEWER",
+                                String.valueOf(WorkAnswers.place(reviewer.arguments().place())),
+                                4),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "task-resumed",
+                                "AUTHOR",
+                                String.valueOf(WorkAnswers.place(resumed.arguments().place())),
+                                null));
+        assertThat(tasks.get(1).place().pullRequest())
+                .as("the pull request as offered")
+                .isEqualTo("https://github.com/owner/shop/pull/7");
+    }
+
+    private static org.fuin.porelo.planner.core.TaskRecord record(
+            final String task, final Integer held) {
+        return new org.fuin.porelo.planner.core.TaskRecord(
+                task,
+                "project",
+                "alpha",
+                List.of(),
+                java.time.Instant.EPOCH,
+                null,
+                null,
+                List.of(),
+                null,
+                null,
+                held,
+                null);
     }
 
     // Harm: a value the core can give that the answer's enum lacks fails every board read with a
@@ -154,7 +287,9 @@ class WorkAnswersTest {
                 List.of(
                         org.fuin.porelo.planner.core.WorkRun.REJECTED_WITHOUT_POINTS,
                         org.fuin.porelo.planner.core.WorkRun.REVIEW_ROUNDS_USED,
-                        org.fuin.porelo.planner.core.WorkRun.PLACE_UNREADABLE)) {
+                        org.fuin.porelo.planner.core.WorkRun.PLACE_UNREADABLE,
+                        org.fuin.porelo.planner.core.WorkRun.PLACE_CLOSED,
+                        org.fuin.porelo.planner.core.WorkRun.MERGED_OTHER_HEAD)) {
             assertThat(
                             List.of(
                                     org.fuin.porelo.planner.app.answers.PlanWorkIssue.ReasonEnum

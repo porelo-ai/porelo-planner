@@ -1,5 +1,7 @@
 package org.fuin.porelo.planner.core;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
@@ -9,13 +11,16 @@ import org.jspecify.annotations.Nullable;
  * pull request.
  *
  * @param gatePush the push at the gate, or null
- * @param pullRequest the branch a pull request at the forge comes from, or null
+ * @param pullRequest a pull request at the forge by its https address, or null
  * @param ownPullRequest true for the task's own pull request, null otherwise
  */
 public record RunPlace(
         @Nullable GatePush gatePush,
         @Nullable String pullRequest,
         @Nullable Boolean ownPullRequest) {
+
+    /** The longest pull request address Porelo takes. */
+    public static final int MOST_ADDRESS = 2048;
 
     /** A task's name as Start takes it, Porelo's task label. */
     static final Pattern TASK = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
@@ -45,12 +50,38 @@ public record RunPlace(
             throw new IllegalArgumentException(
                     "A run's place names " + set + " places, never exactly one");
         }
-        if (pullRequest != null && !BRANCH.matcher(pullRequest).matches()) {
-            throw new IllegalArgumentException("A pull request's branch is no branch name");
+        if (pullRequest != null && !address(pullRequest)) {
+            throw new IllegalArgumentException("A pull request's place is no https address");
         }
         if (Boolean.FALSE.equals(ownPullRequest)) {
             throw new IllegalArgumentException("A task's own pull request is given only as true");
         }
+    }
+
+    /**
+     * Whether a pull request's address is one Porelo takes: https, a host, no user info, query or
+     * fragment, ASCII only and at most {@link #MOST_ADDRESS} characters; which forge the host names
+     * is Porelo's to judge at Start.
+     */
+    private static boolean address(final String address) {
+        if (address.isEmpty()
+                || address.length() > MOST_ADDRESS
+                || !address.chars().allMatch(c -> c > 0x20 && c < 0x7F)) {
+            return false;
+        }
+        final URI uri;
+        try {
+            uri = new URI(address);
+        } catch (final URISyntaxException notAnAddress) {
+            return false;
+        }
+        final String host = uri.getHost();
+        return "https".equals(uri.getScheme())
+                && host != null
+                && !host.isEmpty()
+                && uri.getRawUserInfo() == null
+                && uri.getRawQuery() == null
+                && uri.getRawFragment() == null;
     }
 
     /**

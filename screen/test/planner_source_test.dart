@@ -2706,7 +2706,7 @@ void main() {
       'work': servedContinuationWork(),
       'tasks': [servedFollowUp(10)],
     });
-    for (final event in PlanningTaskEvent.values) {
+    for (final event in PlanningTaskEvent.values.where((event) => event != PlanningTaskEvent.refused)) {
       final answer = await source.taskEvent(
         'demo',
         'main-task',
@@ -2732,6 +2732,88 @@ void main() {
       expect(planner.calls.last.target, '/projects/demo/tasks/main-task/events');
       expect(answer.tasks.map((task) => task.offer), [servedOffer(10)]);
     }
+  });
+
+  // Harm: a refused Start reported with a container, or without Porelo's name and words, or a refusal riding on
+  // another event, reaches the planner as a shape fault or is read as a started task.
+  test('a refused Start travels with Porelo\'s refusal and no container, and no other event carries one', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/tasks/main-task/events'] = () =>
+        _Reply(200, {'revision': 'r1', 'work': servedContinuationWork(), 'tasks': <dynamic>[]});
+    const refusal = PlanningStartRefusal(
+      name: 'AdapterNotInstalled',
+      parameters: {'adapter': 'maven'},
+      detail: 'Install it.\nThen retry.',
+    );
+
+    await source.taskEvent(
+      'demo',
+      'main-task',
+      PlanningTaskEvent.refused,
+      offer: servedOffer(1),
+      container: '',
+      machine: 'Machine',
+      refusal: refusal,
+    );
+
+    expect(jsonDecode(planner.calls.last.body), {
+      'offer': servedOffer(1),
+      'event': 'REFUSED',
+      'machine': 'Machine',
+      'refusal': {
+        'name': 'AdapterNotInstalled',
+        'parameters': {'adapter': 'maven'},
+        'detail': 'Install it.\nThen retry.',
+      },
+    }, reason: 'no container, since Porelo started none');
+    final calls = planner.calls.length;
+    for (final (event, container, given) in [
+      (PlanningTaskEvent.refused, '', null),
+      (PlanningTaskEvent.refused, 'container-main-task', refusal),
+      (PlanningTaskEvent.started, 'container-main-task', refusal),
+      (PlanningTaskEvent.ended, 'container-main-task', refusal),
+      (PlanningTaskEvent.stopped, '', null),
+    ]) {
+      await expectLater(
+        source.taskEvent(
+          'demo',
+          'main-task',
+          event,
+          offer: servedOffer(1),
+          container: container,
+          machine: 'Machine',
+          refusal: given,
+        ),
+        throwsArgumentError,
+        reason: '$event with container "$container" and ${given == null ? 'no refusal' : 'a refusal'}',
+      );
+    }
+    expect(planner.calls.length, calls, reason: 'a refused report reaches no planner');
+  });
+
+  // Harm: the refusal the planner answers an issue with is read away, so the screen cannot say why nothing ran.
+  test('an issue the planner answers refused reads Porelo\'s name, parameters and words', () {
+    final issue = PlanWorkIssue.from({
+      'issue': 'PR1',
+      'reason': 'START_REFUSED',
+      'rounds': 0,
+      'roundsMost': 1,
+      'atWork': false,
+      'needsYou': true,
+      'readingStopped': false,
+      'findings': <dynamic>[],
+      'startRefusal': {
+        'name': 'UnknownForge',
+        'parameters': {'forge': 'example.org'},
+        'detail': 'No forge there.',
+      },
+    });
+
+    expect(issue.reason, 'START_REFUSED');
+    expect(issue.startRefusal!.name, 'UnknownForge');
+    expect(issue.startRefusal!.parameters, {'forge': 'example.org'});
+    expect(issue.startRefusal!.detail, 'No forge there.');
+    expect(PlanWorkIssue.from({'issue': 'PR1', 'reason': 'NONE'}).startRefusal, isNull);
   });
 
   // Harm: a landing sent without its event, or a landed report naming none, offers a reader on nothing.

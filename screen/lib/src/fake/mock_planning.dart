@@ -547,18 +547,21 @@ class MockPlanningSource implements PlanningSource {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) async {
     checkLanded(event, landed);
+    checkRefused(event, container, refusal);
     return TaskEventResolution.from(
       work.call('TaskEvent', {
         'project': project,
         'task': task,
         'event': event.name.toUpperCase(),
         'offer': offer,
-        'container': container,
+        if (event != PlanningTaskEvent.refused) 'container': container,
         'machine': machine,
         if (ended != null) 'ended': ended.toMap(),
         if (event == PlanningTaskEvent.landed) 'landed': [for (final landing in landed) landing.toMap()],
+        if (refusal != null) 'refusal': refusal.toMap(),
       }),
     );
   }
@@ -675,6 +678,7 @@ class MockPlanningClient extends ChangeNotifier with PlanningTaskReports {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) async {
     events.add((project, task, event, offer, container, machine, ended));
     await super.taskEvent(
@@ -686,6 +690,7 @@ class MockPlanningClient extends ChangeNotifier with PlanningTaskReports {
       machine: machine,
       ended: ended,
       landed: landed,
+      refusal: refusal,
     );
   }
 }

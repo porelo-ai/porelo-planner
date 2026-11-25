@@ -79,12 +79,27 @@ enum PlanningTaskEvent {
 
   /// The work of a task that ended while it still waited at Porelo's gate has landed.
   landed,
+
+  /// Porelo refused the window's Start of the offered task, so no task started and no container exists.
+  refused,
 }
 
 /// Refuses a report whose landings do not fit its event: only [PlanningTaskEvent.landed] carries them, at least one.
 void checkLanded(PlanningTaskEvent event, List<PlanningLanding> landed) {
   if (event == PlanningTaskEvent.landed ? landed.isEmpty : landed.isNotEmpty) {
     throw ArgumentError.value(landed, 'landed', 'Only a landed report names where the work landed');
+  }
+}
+
+/// Refuses a report whose refusal does not fit its event: only [PlanningTaskEvent.refused] carries one, and it names
+/// no container, since Porelo started none; every other event names its container.
+void checkRefused(PlanningTaskEvent event, String container, PlanningStartRefusal? refusal) {
+  final refused = event == PlanningTaskEvent.refused;
+  if (refused != (refusal != null)) {
+    throw ArgumentError.value(refusal, 'refusal', 'Only a refused report carries the refusal, and it must');
+  }
+  if (refused != container.isEmpty) {
+    throw ArgumentError.value(container, 'container', 'A refused report names no container, every other one does');
   }
 }
 
@@ -101,7 +116,9 @@ abstract interface class PlanningClient implements Listenable {
   /// The project the window has chosen elsewhere, preferred when no project was chosen here.
   String? get chosenProject;
 
-  /// Reports a change of a task the window started for [project].
+  /// Reports a change of a task the window started for [project], or, with [PlanningTaskEvent.refused] and a
+  /// [refusal], that Porelo refused the Start of [offer]: then [task] is the task as the order handed it to Start and
+  /// [container] is empty.
   Future<void> taskEvent(
     String project,
     String task,
@@ -111,6 +128,7 @@ abstract interface class PlanningClient implements Listenable {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   });
 }
 
@@ -373,7 +391,8 @@ abstract interface class PlanningSource {
   /// Stops the story's work without changing its planning state; with [run], only while that run stands.
   Future<StoryWorkStatus> stopStoryWork(String project, String story, {String? run});
 
-  /// Reports a bound task and returns checked follow-up offers without starting them.
+  /// Reports a bound task and returns checked follow-up offers without starting them; a refused Start is reported
+  /// with its [refusal] and no [container].
   Future<TaskEventResolution> taskEvent(
     String project,
     String task,
@@ -383,6 +402,7 @@ abstract interface class PlanningSource {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   });
 
   /// Reads the issue's last findings.

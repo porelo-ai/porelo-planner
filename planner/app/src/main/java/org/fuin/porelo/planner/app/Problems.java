@@ -282,7 +282,9 @@ public class Problems {
         if (project instanceof String name) {
             try {
                 return BoardController.changed(
-                        projects.work(BoardController.name(name)), changed.ids());
+                        BoardController.name(name),
+                        projects.work(BoardController.name(name)),
+                        changed.ids());
             } catch (final RuntimeException unreadable) {
                 // The refusal stands; only the items it would show cannot be read now.
                 LOG.info(

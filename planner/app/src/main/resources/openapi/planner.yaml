@@ -1597,8 +1597,16 @@ paths:
       operationId: taskEvent
       summary: Report the lifecycle of an offered task
       description: >-
-        Accepts STARTED, ENDED, STOPPED or LANDED against an offer. Only ENDED carries Porelo's unmapped ended record.
-        STARTED binds task and container once. LANDED reports once where a build's work landed after its ENDED,
+        Accepts STARTED, ENDED, STOPPED, LANDED or REFUSED against an offer. Only ENDED carries Porelo's unmapped ended
+        record. STARTED binds task and container once. REFUSED reports that Porelo refused the Start of the offered
+        task, sent once per refusal after the window called Start and again at its next sweep until answered; it
+        carries the refusal and no container, since no task started. The offer stays offered, and a later Start of it
+        is still possible, which clears the refusal; the issues of the offer ask the person with START_REFUSED, and
+        the refusal's name, parameters and words stand in `startRefusal` of each. A rework at the place its issue
+        keeps that is refused as NotTheTasksPush or RoleNotAllowed says the place changed instead, as PLACE_CHANGED.
+        The planner judges no name: any well-shaped one stands as given. REFUSED for an offer that ended, or that
+        already stands refused, is a resend, answered with what stands and recorded once; for an offer Porelo started
+        it is refused as TaskEventConflict. LANDED reports once where a build's work landed after its ENDED,
         when that end named no landing; only then is the build's reader offered. LANDED for an unknown offer, an
         offer that did not end done, or one that already landed is refused as TaskEventConflict, so a resend
         changes nothing. Unknown, void or foreign offers and contradictory bindings are refused.
@@ -4238,7 +4246,7 @@ components:
             by a commit or moved by hand beside a run that ended; it is shown, not raised.
         attention:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, START_REFUSED, PLACE_CLOSED, MERGED_OTHER_HEAD]
           description: >-
             Why the person must act, the reason the run reported; NONE when needsYou is false. INVALID_FINDINGS says a
             reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
@@ -4248,7 +4256,13 @@ components:
             REJECTED_WITHOUT_POINTS says the push where the issue's work waits was rejected with nothing open, so no
             rework can say what to change. REVIEW_ROUNDS_USED says points stand open there after as many reworks at
             that place as the issue's readings allowed. PLACE_UNREADABLE says what is open there could not be read,
-            wholly or in part; nothing moved, and it is read again.
+            wholly or in part; nothing moved, and it is read again. START_REFUSED says Porelo refused to start the
+            issue's offered task, which stays offered: the refusal stands under Needs you until a Start of it goes
+            through.
+            PLACE_CLOSED says the pull request there was closed unmerged; MERGED_OTHER_HEAD says it merged, landed or was
+            approved at another head than the one a reviewer reviewed there, or with none reviewed. Under a reviewer's
+            rule, work merged or landed at the head reviewed, or approved there with nothing open and nothing held,
+            moves the issue on to its rule's done state, Review; only the person sets Finished or Rejected.
         findings:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
@@ -4946,8 +4960,13 @@ components:
           $ref: '#/components/schemas/GatePush'
         pullRequest:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          $ref: '#/components/schemas/RefName'
-          description: A pull request at the forge, named by the branch it comes from.
+          type: string
+          minLength: 9
+          maxLength: 2048
+          pattern: '^https://[!-~]+$'
+          description: >-
+            A pull request at the forge by its https address, such as https://github.com/owner/repo/pull/12: ASCII only,
+            with a host and without user info, query or fragment; Porelo judges at Start which forge the host names.
         ownPullRequest:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: boolean
@@ -5038,14 +5057,14 @@ components:
     TaskEventRequest:
       type: object
       additionalProperties: false
-      required: [offer, event, container, machine]
+      required: [offer, event, machine]
       properties:
         offer:
           type: string
           format: uuid
         event:
           type: string
-          enum: [STARTED, ENDED, STOPPED, LANDED]
+          enum: [STARTED, ENDED, STOPPED, LANDED, REFUSED]
         container:
           $ref: '#/components/schemas/TaskLabel'
         machine:
@@ -5064,9 +5083,34 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/Landing'
+        refusal:
+          $ref: '#/components/schemas/TaskRefusal'
       description: >-
-        ended is required only for ENDED and forbidden for STARTED, STOPPED and LANDED; landed, with at least one
-        entry, is required only for LANDED and forbidden for the others, whose end carries its own.
+        container is required for every event but REFUSED and forbidden for it, since Porelo started none; ended is
+        required only for ENDED and forbidden for the others; landed, with at least one entry, is required only for
+        LANDED and forbidden for the others, whose end carries its own; refusal is required only for REFUSED and
+        forbidden for the others.
+    TaskRefusal:
+      type: object
+      additionalProperties: false
+      required: [name, parameters, detail]
+      description: What Porelo refused a Start with, kept as given; the planner judges no name.
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z0-9]{1,64}$'
+          description: Porelo's name for the refusal, 1 to 64 letters and digits.
+        parameters:
+          type: object
+          maxProperties: 16
+          description: The refusal's parameters, each key 1 to 64 characters; no control character anywhere.
+          additionalProperties:
+            type: string
+            maxLength: 500
+        detail:
+          type: string
+          maxLength: 1000
+          description: Porelo's words, possibly empty, with no control character but line breaks.
     TaskEnded:
       type: object
       additionalProperties: false
@@ -5333,8 +5377,11 @@ components:
           description: >-
             The run's offers made without a request of the window's, which wait for their Start: an author sent back
             to answer the points open at the gate push its work waits at, with runRole AUTHOR and that push as its
-            place, started under that push's name. The window starts each once, through the callback it gives for
-            offers it did not ask for; empty when none waits, and for a stopped or halted run.
+            place, started under that push's name; or, where the reading rule names a reviewer, a reviewer of a new
+            head at the place the work waits at, with runRole REVIEWER, role READER and that place, started under a
+            task name of its own, never the name of the task whose work it reviews. The window starts each once,
+            through the callback it gives for offers it did not ask for; empty when none waits, and for a stopped or
+            halted run.
           items:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanWorkTask:
@@ -5386,6 +5433,32 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TaskEnded'
             - type: 'null'
+        runRole:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          enum: [AUTHOR, REVIEWER]
+          description: >-
+            Porelo's role of the run, as the offer the task was bound to handed it to Start, beside the duty `role`
+            above: AUTHOR for a run that writes the work, REVIEWER for one that reviews another's. Absent for an
+            author at its own task's gate push, which Start takes as the default.
+        place:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            Where the run works, as the offer the task was bound to handed it to Start. Absent for the task's own gate
+            push, which Start takes as the default. A pull request is an address from outside, to be shown as plain
+            text and never opened by itself.
+          allOf:
+            - $ref: '#/components/schemas/RunPlace'
+        held:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: >-
+            How many undecided held items Porelo's newest record of this task gives, as that record was read since
+            the planner started. Absent when it is unknown: no record of the task was read, or Porelo's record gives
+            no count because the task's hold journal cannot be read or the record predates the count. Absent is
+            shown as unknown, never as 0; the number is shown as served and nothing is judged from it.
     PlanWorkIssue:
       type: object
       required: [issue, reason, rounds, roundsMost, atWork, needsYou, readingStopped, findings]
@@ -5394,7 +5467,7 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, MANUAL]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, START_REFUSED, PLACE_CLOSED, MERGED_OTHER_HEAD, MANUAL]
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
@@ -5407,11 +5480,16 @@ components:
             BLOCKED stops its reading as INVALID_FINDINGS does, readingStopped true, with a round counted, roundsMost
             raised by one without using up the limit, and no findings kept.
             PLACE_CHANGED says what was read where the issue's work waits, or another author's end, named another task
-            or place than the run keeps; the kept place stands and nothing moved.
-            REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED and PLACE_UNREADABLE stop an issue whose push waits at the gate:
-            rejected with nothing open, its reworks there used up, or what is open there unreadable; nothing moved.
-            Points or findings open there, with nothing held and no task of the issue offered or at work, send the
-            issue back to its rework instead, its author offered again in starts.
+            or place than the run keeps, or that Porelo refused to start the issue's rework at its kept place as
+            NotTheTasksPush or RoleNotAllowed; the kept place stands and nothing moved.
+            START_REFUSED says Porelo refused to start the issue's offered task, with `startRefusal` naming why; the
+            offer stays offered and nothing moved.
+            REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, PLACE_CLOSED and MERGED_OTHER_HEAD stop an
+            issue whose work waits at a place: rejected with nothing open, its reworks there used up, what is open there
+            unreadable, closed unmerged, or merged, landed or approved at another head than the one reviewed;
+            nothing moved. Points or findings open there, with nothing held and no task of the issue offered or at
+            work, send the issue back to its rework instead, its author offered again in starts; a reviewer offered
+            there and not started yet holds the rework back, and an end read there voids that reviewer.
             A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer
@@ -5431,6 +5509,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Finding'
+        startRefusal:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          $ref: '#/components/schemas/TaskRefusal'
+          description: >-
+            What Porelo refused the Start of the issue's offered task with, present while that refusal stands, the
+            reason being START_REFUSED, or PLACE_CHANGED for a rework refused as NotTheTasksPush or RoleNotAllowed.
     Finding:
       type: object
       required: [number, severity, text]

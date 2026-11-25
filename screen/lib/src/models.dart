@@ -358,7 +358,8 @@ class PlanWork {
       starts = _starts(map['starts'], _planList(map['repositories'], PlanRepositoryWork.from));
 
   /// Reads the offers the window starts without asking, each once by its offer; one that cannot be read, or that is
-  /// no builder of one issue the run works in its repository, is left out and never started.
+  /// no author's builder or reviewer's reader of one issue the run works in its repository, is left out and never
+  /// started.
   static List<PlanningTaskOrder> _starts(Object? value, List<PlanRepositoryWork> repositories) {
     if (value is! List) return const [];
     final starts = <PlanningTaskOrder>[];
@@ -367,11 +368,11 @@ class PlanWork {
       try {
         final order = PlanningTaskOrder.from(entry);
         final repository = repositories.where((repo) => repo.repository == order.repository).firstOrNull;
-        // Only an author sent back to a place it resumes starts without the person: a builder of one issue of
-        // the run's, which pushes its work.
-        if (order.runRole == 'AUTHOR' &&
-            order.place?.gatePush != null &&
-            order.role == 'BUILDER' &&
+        // Only an author sent back to a place it resumes, a builder that pushes its work, or a reviewer of the work
+        // at its place, a reader, starts without the person, each for one issue of the run's.
+        final author = order.runRole == 'AUTHOR' && order.place?.gatePush != null && order.role == 'BUILDER';
+        final reviewer = order.runRole == 'REVIEWER' && order.place != null && order.role == 'READER';
+        if ((author || reviewer) &&
             order.result == null &&
             order.issues.length == 1 &&
             repository != null &&
@@ -387,7 +388,8 @@ class PlanWork {
   }
 
   /// The run's offers made without a request of the window's, which the window starts through the hook it gives for
-  /// them: an author sent back to the push its work waits at.
+  /// them: an author sent back to the push its work waits at, started under that push's name, or a reviewer of the
+  /// work at its place, started under a task name of its own.
   final List<PlanningTaskOrder> starts;
 
   /// The run the planner drew when the work started, compared only for equality; null from a planner without it.
@@ -460,7 +462,33 @@ class PlanWorkTask {
       role = _planText(map, 'role'),
       since = _planText(map, 'since'),
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
-      ended = map['ended'] is Map<String, dynamic> ? WorkEnded.from(map['ended'] as Map<String, dynamic>) : null;
+      ended = map['ended'] is Map<String, dynamic> ? WorkEnded.from(map['ended'] as Map<String, dynamic>) : null,
+      runRole = map['runRole'] is String ? map['runRole'] as String : null,
+      place = _readPlace(map['place']),
+      placeUnreadable = map['place'] != null && _readPlace(map['place']) == null,
+      held = map['held'] is int && (map['held'] as int) >= 0 ? map['held'] as int : null;
+
+  /// The place as served, or null where none is served or the one served cannot be read.
+  static PlanningRunPlace? _readPlace(Object? value) {
+    try {
+      return value == null ? null : PlanningRunPlace.fromJson(value);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Porelo's run role, `AUTHOR` or `REVIEWER`; null where Start's default, an author, holds.
+  final String? runRole;
+
+  /// Where the run works; null for the task's own gate push, and where [placeUnreadable].
+  final PlanningRunPlace? place;
+
+  /// Whether the planner served a place the screen refuses, which is shown as unreadable and never as a default.
+  final bool placeUnreadable;
+
+  /// The undecided held items Porelo's newest record of the task gave, as served; null where the planner read no
+  /// record of the task, which is not none held. Shown, never judged.
+  final int? held;
 
   /// The task, containerId, repository, state, done, mode, agent, model, role, since reported by the daemon.
   final String task, containerId, repository, state, done, mode, agent, model, role, since;
@@ -503,10 +531,14 @@ class PlanWorkIssue {
       needsYou = map['needsYou'] is bool ? map['needsYou'] as bool : null,
       readingStopped = map['readingStopped'] is bool ? map['readingStopped'] as bool : null,
       findings = _planList(map['findings'], PlanFinding.from),
-      reason = _planText(map, 'reason');
+      reason = _planText(map, 'reason'),
+      startRefusal = PlanningStartRefusal.read(map['startRefusal']);
 
   /// The issue, reason reported by the daemon.
   final String issue, reason;
+
+  /// What Porelo refused the Start of the issue's offered task with, while that refusal stands; null otherwise.
+  final PlanningStartRefusal? startRefusal;
 
   /// The rounds, roundsMost reported by the daemon.
   final int? rounds, roundsMost;
@@ -2566,6 +2598,40 @@ class PlanningLanding {
 
   /// The exact fields Porelo supplied.
   Map<String, dynamic> toMap() => {'branch': branch, 'ref': ref, 'remote': remote, 'commit': commit};
+}
+
+/// What Porelo refused a Start with, as the window reports it: Porelo's name for the refusal, its parameters and its
+/// words. The planner keeps any well-shaped name as given and judges none.
+class PlanningStartRefusal {
+  const PlanningStartRefusal({required this.name, this.parameters = const {}, this.detail = ''});
+
+  /// Reads the refusal the planner answers an issue with; null when the issue stands under none.
+  static PlanningStartRefusal? read(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final parameters = value['parameters'];
+    return PlanningStartRefusal(
+      name: _planText(value, 'name'),
+      parameters: parameters is Map
+          ? {
+              for (final entry in parameters.entries)
+                if (entry.key is String && entry.value is String) entry.key as String: entry.value as String,
+            }
+          : const {},
+      detail: _planText(value, 'detail'),
+    );
+  }
+
+  /// Porelo's name for the refusal, 1 to 64 letters and digits.
+  final String name;
+
+  /// The refusal's parameters, at most 16, each key 1 to 64 characters and each value at most 500.
+  final Map<String, String> parameters;
+
+  /// Porelo's words, at most 1000 characters; line breaks allowed.
+  final String detail;
+
+  /// The exact fields Porelo supplied.
+  Map<String, dynamic> toMap() => {'name': name, 'parameters': parameters, 'detail': detail};
 }
 
 /// Porelo's original end record, sent without interpreting or rewriting any field.

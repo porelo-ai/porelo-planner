@@ -42,6 +42,12 @@ class MockStoryWork {
   String nextRun() => '00000000-0000-4000-9000-${(++_run).toRadixString(16).padLeft(12, "0")}';
   final _orders = <(String, String), Map<String, dynamic>>{};
 
+  /// The offers handed out, by id: where each belongs, which issues it works, and how it stands.
+  final _offers = <String, ({String project, String story, List<String> issues, String status})>{};
+
+  /// The refusals standing on offers Porelo refused to start, by offer id.
+  final _refusals = <String, Map<String, dynamic>>{};
+
   /// Applies one action to a copy and publishes only after validation.
   Map<String, dynamic> call(String method, Map<String, dynamic> parameters) {
     calls.add((method, jsonDecode(jsonEncode(parameters)) as Map<String, dynamic>));
@@ -66,6 +72,53 @@ class MockStoryWork {
         'issue': {...issue, 'findings': findings[issue['id']] ?? issue['findings'] ?? <dynamic>[]},
         'revision': board['revision'],
       };
+    }
+    if (method == 'TaskEvent' && parameters['event'] == 'REFUSED') {
+      // As the planner does: the refusal stands on the offer's issues, which ask the person, the offer stays offered,
+      // a resend is answered with what stands and an offer Porelo started is a conflict.
+      final offer = _offers[parameters['offer']];
+      if (offer == null || offer.project != project) refuse('TaskNotAnswered', {'task': parameters['task']});
+      if (offer.status == 'STARTED') refuse('TaskEventConflict', {'task': parameters['task']});
+      final owner = stories.singleWhere((item) => item['id'] == offer.story);
+      final work = <String, dynamic>{
+        'tasks': <Map<String, dynamic>>[],
+        'coordinator': null,
+        'since': '',
+        'atWork': false,
+        'repositories': <Map<String, dynamic>>[],
+        'comment': '',
+        'readingRounds': 2,
+        'issueReadingRounds': <Map<String, dynamic>>[],
+        'issues': <Map<String, dynamic>>[],
+        if (owner['work'] is Map) ...owner['work'] as Map<String, dynamic>,
+      };
+      if (offer.status == 'OFFERED' && !_refusals.containsKey(parameters['offer'])) {
+        _refusals[parameters['offer'] as String] = parameters['refusal'] as Map<String, dynamic>;
+        for (final item in (owner['issues'] as List).cast<Map<String, dynamic>>()) {
+          if (offer.issues.contains(item['id'])) {
+            item['needsYou'] = true;
+            item['attention'] = 'START_REFUSED';
+          }
+        }
+        work['issues'] = [
+          for (final item in (owner['issues'] as List).cast<Map<String, dynamic>>())
+            {
+              'issue': item['id'],
+              'rounds': item['rounds'] ?? 0,
+              'roundsMost': item['roundsMost'] ?? 2,
+              'atWork': item['atWork'] == true,
+              'needsYou': item['needsYou'] == true,
+              'readingStopped': item['readingStopped'] == true,
+              'findings': item['findings'] ?? <Map<String, dynamic>>[],
+              'reason': offer.issues.contains(item['id']) ? 'START_REFUSED' : 'NONE',
+              if (offer.issues.contains(item['id'])) 'startRefusal': _refusals[parameters['offer']],
+            },
+        ];
+        owner['work'] = work;
+        boardFor(project)['stories'] = board['stories'];
+        if (!deferEcho) changed(project, board);
+      }
+      return {'revision': board['revision'], 'work': work, 'tasks': <dynamic>[]};
     }
     if (method == 'TaskEvent') {
       final owner = stories
@@ -383,37 +436,43 @@ class MockStoryWork {
       'readingRounds': rounds,
       'issueReadingRounds': overrides,
     };
-    return {
-      'revision': board['revision'],
-      'tasks': [
-        for (final repo in repos) ...[
-          {
-            'offer': nextOffer(),
-            'repository': repo['repository'],
-            'issues': repo['issues'],
-            'role': 'MAIN',
-            'agent': (repo['main'] as Map)['agent'],
-            'model': (repo['main'] as Map)['model'],
-            'effort': ?(repo['main'] as Map)['effort'],
-            'mode': parameters['mode'],
-            'prompt': (repo['main'] as Map)['brief'],
-          },
-          for (final sub in (repo['subAgents'] as List).cast<Map<String, dynamic>>())
-            if (sub['kind'] == 'BUILDER' && sub['choice'] != 'DROP')
-              {
-                'offer': nextOffer(),
-                'repository': repo['repository'],
-                'issues': [sub['issue']],
-                'role': 'BUILDER',
-                'agent': sub['agent'],
-                'model': sub['model'],
-                'effort': ?sub['effort'],
-                'mode': parameters['mode'],
-                'prompt': sub['brief'],
-              },
-        ],
+    final tasks = [
+      for (final repo in repos) ...[
+        {
+          'offer': nextOffer(),
+          'repository': repo['repository'],
+          'issues': repo['issues'],
+          'role': 'MAIN',
+          'agent': (repo['main'] as Map)['agent'],
+          'model': (repo['main'] as Map)['model'],
+          'effort': ?(repo['main'] as Map)['effort'],
+          'mode': parameters['mode'],
+          'prompt': (repo['main'] as Map)['brief'],
+        },
+        for (final sub in (repo['subAgents'] as List).cast<Map<String, dynamic>>())
+          if (sub['kind'] == 'BUILDER' && sub['choice'] != 'DROP')
+            {
+              'offer': nextOffer(),
+              'repository': repo['repository'],
+              'issues': [sub['issue']],
+              'role': 'BUILDER',
+              'agent': sub['agent'],
+              'model': sub['model'],
+              'effort': ?sub['effort'],
+              'mode': parameters['mode'],
+              'prompt': sub['brief'],
+            },
       ],
-    };
+    ];
+    for (final task in tasks) {
+      _offers[task['offer'] as String] = (
+        project: project,
+        story: story['id'] as String,
+        issues: (task['issues'] as List).cast<String>(),
+        status: 'OFFERED',
+      );
+    }
+    return {'revision': board['revision'], 'tasks': tasks};
   }
 
   /// Runtime activity is published only for the individual task the window actually started.
@@ -421,6 +480,21 @@ class MockStoryWork {
     final board = jsonDecode(jsonEncode(boardFor(project))) as Map<String, dynamic>;
     final story = (board['stories'] as List).cast<Map<String, dynamic>>().singleWhere((story) => story['id'] == id);
     final parameters = _orders[(project, id)]!;
+    // A Start that went through after Porelo refused one clears the refusal, as the planner does.
+    if (task.offer case final offer?) {
+      final earlier = _offers[offer];
+      if (earlier != null) {
+        _offers[offer] = (project: earlier.project, story: earlier.story, issues: earlier.issues, status: 'STARTED');
+      }
+      if (_refusals.remove(offer) != null) {
+        for (final item in (story['issues'] as List).cast<Map<String, dynamic>>()) {
+          if (task.issues.contains(item['id'])) {
+            item['needsYou'] = false;
+            item['attention'] = 'NONE';
+          }
+        }
+      }
+    }
     final rounds = parameters['readingRounds'] as int;
     final overrides = (parameters['issueReadingRounds'] as List).cast<Map<String, dynamic>>();
     final name =
@@ -459,6 +533,7 @@ class MockStoryWork {
         'since': 'mock-start',
         'atWork': true,
         'ended': null,
+        'held': 0,
       },
     ];
     for (final item in (story['issues'] as List? ?? <dynamic>[]).cast<Map<String, dynamic>>()) {

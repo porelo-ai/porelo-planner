@@ -404,6 +404,7 @@ class PlanningIssueView extends StatelessWidget {
                 onOpen: () => onTask(task.task),
                 machine: task.machine,
                 endedAt: task.ended?.at,
+                run: task,
                 opens: task.atWork == true && task.ended == null,
                 // Only a task at work is asked of the window, so an ended one carries no words of it.
                 unavailable: task.atWork == true && task.ended == null ? taskUnavailable(task.task) : null,

@@ -19,9 +19,15 @@ import org.jspecify.annotations.Nullable;
  * @param task the bound task's name within the project, as Start took it, never its container
  * @param authorRuns the offers of the author runs used at the place, each once, in their order
  * @param last the last complete answer read at the place, or null while none was read
+ * @param reviewed the head a reviewer run was last offered at there, or null while none was
  */
 public record IssuePlace(
-        RunPlace place, RunRole role, String task, List<String> authorRuns, @Nullable Review last) {
+        RunPlace place,
+        RunRole role,
+        String task,
+        List<String> authorRuns,
+        @Nullable Review last,
+        @Nullable String reviewed) {
 
     /** The most author runs a place keeps. */
     public static final int MOST_RUNS = 16;
@@ -55,6 +61,24 @@ public record IssuePlace(
                 || authorRuns.stream().anyMatch(id -> !UUID.fromString(id).toString().equals(id))) {
             throw new IllegalArgumentException("A kept place's author runs do not fit");
         }
+    }
+
+    /**
+     * A place no reviewer run was offered at.
+     *
+     * @param place the place
+     * @param role the role of the runs at the place
+     * @param task the bound task's name within the project
+     * @param authorRuns the offers of the author runs used at the place
+     * @param last the last complete answer read at the place, or null while none was read
+     */
+    public IssuePlace(
+            final RunPlace place,
+            final RunRole role,
+            final String task,
+            final List<String> authorRuns,
+            final @Nullable Review last) {
+        this(place, role, task, authorRuns, last, null);
     }
 
     /**
@@ -173,7 +197,7 @@ public record IssuePlace(
         }
         final List<String> runs = new ArrayList<>(authorRuns);
         runs.add(offer);
-        return new IssuePlace(place, role, task, runs, last);
+        return new IssuePlace(place, role, task, runs, last, reviewed);
     }
 
     /**
@@ -184,7 +208,17 @@ public record IssuePlace(
      * @throws IllegalArgumentException for an incomplete answer
      */
     public IssuePlace read(final ReviewOpen answer) {
-        return new IssuePlace(place, role, task, authorRuns, Review.of(answer));
+        return new IssuePlace(place, role, task, authorRuns, Review.of(answer), reviewed);
+    }
+
+    /**
+     * The place with a reviewer run offered at the head given.
+     *
+     * @param head the head the reviewer reviews, or null when no head counts as reviewed any more
+     * @return the place
+     */
+    public IssuePlace reviewing(final @Nullable String head) {
+        return new IssuePlace(place, role, task, authorRuns, last, head);
     }
 
     /**

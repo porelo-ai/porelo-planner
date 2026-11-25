@@ -23,6 +23,8 @@ import org.jspecify.annotations.Nullable;
  * @param risks what the rule chooses for an issue's risk instead of its own models, per risk it
  *     names
  * @param result what the work hands back instead of pushing, or null when it pushes its work
+ * @param reviewer where a reviewer run reviews the work instead of a reader reading it, or null for
+ *     a reader
  */
 public record WorkRule(
         List<String> from,
@@ -34,7 +36,8 @@ public record WorkRule(
         String order,
         Map<String, String> models,
         Map<Risk, ForRisk> risks,
-        @Nullable Result result) {
+        @Nullable Result result,
+        @Nullable Reviewer reviewer) {
 
     /** Longest agent, model or effort a rule names, as a task's settings allow. */
     public static final int LONGEST = 128;
@@ -114,6 +117,43 @@ public record WorkRule(
             final Map<String, String> models,
             final Map<Risk, ForRisk> risks) {
         this(from, done, then, blocked, per, modes, order, models, risks, null);
+    }
+
+    /**
+     * A rule whose work is read, not reviewed, by a reader.
+     *
+     * @param from the states a story or an issue may enter this work from
+     * @param done the state the work's success leads to when no further work follows
+     * @param then the working state success leads to instead, or null when it leads to {@code done}
+     * @param blocked the working state blocking findings lead to, or null when none do
+     * @param per whether one task runs per story or per repository
+     * @param modes the modes a task of this work may be started in, the first the default
+     * @param order the order the task is given
+     * @param models the model per agent, the first agent the default
+     * @param risks what the rule chooses for an issue's risk, per risk it names
+     * @param result what the work hands back instead of pushing, or null when it pushes its work
+     */
+    public WorkRule(
+            final List<String> from,
+            final String done,
+            final @Nullable String then,
+            final @Nullable String blocked,
+            final Per per,
+            final List<String> modes,
+            final String order,
+            final Map<String, String> models,
+            final Map<Risk, ForRisk> risks,
+            final @Nullable Result result) {
+        this(from, done, then, blocked, per, modes, order, models, risks, result, null);
+    }
+
+    /**
+     * Where a reviewer run reviews: Porelo's run in the role {@code REVIEWER}, which writes its
+     * points at the place, never a findings block.
+     */
+    public enum Reviewer {
+        /** At the place the issue's work waits at, as its author's end left it. */
+        AT_WORK
     }
 
     /**

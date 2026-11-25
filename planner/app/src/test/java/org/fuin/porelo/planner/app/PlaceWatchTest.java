@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class PlaceWatchTest {
@@ -34,6 +35,11 @@ class PlaceWatchTest {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private final List<String> saved = new CopyOnWriteArrayList<>();
+
+    @BeforeEach
+    void forgetHeld() {
+        TaskHeld.clear();
+    }
 
     @AfterEach
     void stop() {
@@ -98,6 +104,58 @@ class PlaceWatchTest {
                 .as("no record of the container: what is open is still read")
                 .hasSize(1);
         assertThat(saved).as("nothing changed, nobody told").isEmpty();
+    }
+
+    @Test
+    void theHeldItemsAReadFoundStandForTheirTaskAndForNoOther() {
+        // Harm: the card shows no held items though Porelo counted some, those of another task or
+        // another project's task of the same name, or 0 where Porelo gave no count.
+        final Fake work = new Fake(WorkRun.PlaceOutcome.UNCHANGED);
+        new PlaceWatch(
+                        p -> work,
+                        (project, from) ->
+                                List.of(
+                                        new TaskRecord(
+                                                "box-held",
+                                                "project",
+                                                "alpha",
+                                                List.of("AA1"),
+                                                WHEN,
+                                                null,
+                                                null,
+                                                List.of(),
+                                                RunRole.AUTHOR,
+                                                null,
+                                                2),
+                                        record("box")),
+                        (project, place, role, task) -> answer(),
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+
+        assertThat(
+                        java.util.Arrays.asList(
+                                TaskHeld.of("project", "box-held"),
+                                TaskHeld.of("project", "box"),
+                                TaskHeld.of("project", "none")))
+                .as(
+                        "a count read; a record with no count and a task never read are unknown, never 0")
+                .containsExactly(2, null, null);
+        new PlaceWatch(
+                        p -> work,
+                        (project, from) -> List.of(heldRecord("box-held", 5)),
+                        (project, place, role, task) -> answer(),
+                        saved::add,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("other");
+        assertThat(
+                        java.util.Arrays.asList(
+                                TaskHeld.of("project", "box-held"),
+                                TaskHeld.of("other", "box-held")))
+                .as("the same task name in two projects")
+                .containsExactly(2, 5);
     }
 
     @Test
@@ -337,6 +395,21 @@ class PlaceWatchTest {
                 "ST1", issue, IssuePlace.atGate("task", OFFER), "box", WHEN.toString());
     }
 
+    private static TaskRecord heldRecord(final String container, final int held) {
+        return new TaskRecord(
+                container,
+                "other",
+                "alpha",
+                List.of("AA1"),
+                WHEN,
+                null,
+                null,
+                List.of(),
+                RunRole.AUTHOR,
+                null,
+                held);
+    }
+
     private static TaskRecord record(final String container) {
         return new TaskRecord(
                 container,
@@ -349,7 +422,7 @@ class PlaceWatchTest {
                 List.of(),
                 RunRole.AUTHOR,
                 null,
-                0);
+                null);
     }
 
     private static ReviewOpen answer() {

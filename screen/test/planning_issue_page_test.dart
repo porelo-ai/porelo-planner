@@ -343,6 +343,46 @@ void main() {
     expect(tasksOpened, ['pi-3'], reason: 'a task at work opens in the window');
   });
 
+  // Harm: the person cannot tell a reviewer's run from an author's, nor where it works or what it holds, and a place
+  // from outside is opened by the screen on its own.
+  testWidgets('a task of the issue shows its run role, place and held items as plain text', (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': true,
+      'tasks': [
+        {
+          'task': 'pi-4',
+          'containerId': 'c1',
+          'machine': 'local',
+          'repository': 'repo',
+          'issues': ['PL1'],
+          'state': 'Implementing',
+          'done': 'Review',
+          'mode': 'AGENT',
+          'agent': 'agent',
+          'model': 'model',
+          'role': 'READER',
+          'since': '2026-01-02T03:04:05Z',
+          'atWork': true,
+          'runRole': 'REVIEWER',
+          'place': {'pullRequest': 'https://github.com/owner/shop/pull/7'},
+          'held': 2,
+        },
+      ],
+    };
+    await _page(tester, data, taskUnavailable: (_) => null);
+
+    final facts = tester.widget<Text>(find.byKey(const Key('planning-task-run pi-4')));
+    expect(facts.data, contains('run role reviewer'));
+    expect(facts.data, contains('at pull request https://github.com/owner/shop/pull/7'));
+    expect(facts.data, endsWith('held 2'));
+    expect(
+      find.descendant(of: find.byKey(const Key('planning-task-run pi-4')), matching: find.byType(TextButton)),
+      findsNothing,
+      reason: 'the place is text, never a link the screen opens',
+    );
+  });
+
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.
   testWidgets('a task link shows no control or direction character', (tester) async {
     await tester.pumpWidget(

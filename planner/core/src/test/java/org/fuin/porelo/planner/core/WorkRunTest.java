@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -2254,7 +2255,9 @@ class WorkRunTest {
                         new PlaceRead.Opened(
                                 RunPlace.gate("beta", "task"), "task", opened("v1", 1)),
                         new PlaceRead.Opened(
-                                new RunPlace(null, "feature/x", null), "task", opened("v1", 1)))) {
+                                new RunPlace(null, "https://github.com/owner/shop/pull/7", null),
+                                "task",
+                                opened("v1", 1)))) {
             final Fixture f = new Fixture();
             final WorkRun.Offered build = waiting(f);
             final int saves = f.store.saves;
@@ -2666,6 +2669,337 @@ class WorkRunTest {
         assertThat(f.run.work("ST1").places().get("AA1").authorRuns())
                 .as("no author run is counted before the rework ends")
                 .containsExactly(build.offer());
+    }
+
+    private static WorkRun.Report refused(
+            final String offer, final String name, final String detail) {
+        return WorkRun.Report.refused(
+                offer,
+                "workstation",
+                new WorkRun.StartRefusal(name, Map.of("forge", "github.com"), detail));
+    }
+
+    @Test
+    void aRefusedStartOnAStoppedRunLeavesTheStopAsItIs() {
+        // Harm: a stopped run's issues turn to a refusal no Start can ever clear, and the person
+        // can no longer pass over the stop.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.run.stop("ST1");
+        final WorkRun.Run before = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        final String reason = before.issues().get("AA1").reason();
+
+        assertThatThrownBy(() -> f.run.report("task", refused(offer.offer(), "UnknownForge", "")))
+                .as("a stopped run's offers are void, so it answers no start")
+                .isInstanceOf(WorkRefusal.class);
+        final WorkRun.Run after = java.util.Objects.requireNonNull(f.run.work("ST1"));
+        assertThat(after.issues().get("AA1").reason())
+                .as("the stop stands")
+                .isEqualTo(reason)
+                .isNotEqualTo(WorkRun.START_REFUSED);
+        assertThat(after.offers())
+                .as("no refusal stands on the offer")
+                .allSatisfy(o -> assertThat(o.startRefusal()).isNull());
+    }
+
+    @Test
+    void everyWellShapedRefusalNameStandsOnItsIssueAndTheOfferStaysOffered() {
+        // Harm: a Start Porelo refused is lost, so the person never learns why nothing runs; or
+        // the planner judges a name it does not know and drops it; or the refusal moves the issue.
+        for (final String name :
+                List.of(
+                        "UnknownForge",
+                        "AdapterNotInstalled",
+                        "NoPullRequest",
+                        "PlaceUnreadable",
+                        "NotTheTasksPush",
+                        "RoleNotAllowed",
+                        "NameNoOneKnowsYet",
+                        "A")) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            final String state = f.store.board().issue("AA1").orElseThrow().state();
+            final int saves = f.store.saves;
+
+            f.run.report("task", refused(offer.offer(), name, "Porelo's words.\nSecond line."));
+
+            final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+            final WorkRun.Offer kept =
+                    run.offers().stream()
+                            .filter(o -> o.id().equals(offer.offer()))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(kept.startRefusal())
+                    .as("the name %s stands as given, with its parameters and words", name)
+                    .isEqualTo(
+                            new WorkRun.StartRefusal(
+                                    name,
+                                    Map.of("forge", "github.com"),
+                                    "Porelo's words.\nSecond line."));
+            assertThat(List.of(kept.status(), String.valueOf(kept.task())))
+                    .as("the offer stays offered, bound to no task")
+                    .containsExactly("OFFERED", "null");
+            for (final String issue : kept.binding().issues()) {
+                assertThat(
+                                List.of(
+                                        run.issues().get(issue).needsYou(),
+                                        run.issues().get(issue).reason()))
+                        .as("%s asks the person with the refusal's reason", issue)
+                        .containsExactly(true, WorkRun.START_REFUSED);
+            }
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("the issue's workflow state does not change")
+                    .isEqualTo(state);
+            assertThat(f.store.saves).as("nothing is written to the store").isEqualTo(saves);
+        }
+    }
+
+    @Test
+    void aRefusalOverItsBoundsOrOfAnotherShapeIsAShapeFaultAndRecordsNothing() {
+        // Harm: an unbounded or control-laden refusal reaches the record and the window's screen,
+        // or a refusal rides on an event that never carries one.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final String id = offer.offer();
+        final Map<String, String> seventeen = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < 17; i++) {
+            seventeen.put("k" + i, "v");
+        }
+        final List<WorkRun.Report> faults =
+                List.of(
+                        refused(id, "", ""),
+                        refused(id, "A".repeat(65), ""),
+                        refused(id, "Not Allowed", ""),
+                        refused(id, "Not-Allowed", ""),
+                        refused(id, "Name\n", ""),
+                        refused(id, "Name", "x".repeat(1001)),
+                        refused(id, "Name", "tab\there"),
+                        refused(id, "Name", "nul\u0000here"),
+                        refused(id, "Name", "separator\u2028here"),
+                        WorkRun.Report.refused(
+                                id, "workstation", new WorkRun.StartRefusal("Name", seventeen, "")),
+                        WorkRun.Report.refused(
+                                id,
+                                "workstation",
+                                new WorkRun.StartRefusal("Name", Map.of("", "v"), "")),
+                        WorkRun.Report.refused(
+                                id,
+                                "workstation",
+                                new WorkRun.StartRefusal("Name", Map.of("k".repeat(65), "v"), "")),
+                        WorkRun.Report.refused(
+                                id,
+                                "workstation",
+                                new WorkRun.StartRefusal("Name", Map.of("k", "v".repeat(501)), "")),
+                        WorkRun.Report.refused(
+                                id,
+                                "workstation",
+                                new WorkRun.StartRefusal("Name", Map.of("k", "a\nb"), "")),
+                        WorkRun.Report.refused(
+                                id,
+                                "workstation",
+                                new WorkRun.StartRefusal("Name", Map.of("k\u0007", "v"), "")),
+                        new WorkRun.Report(
+                                id,
+                                WorkRun.Event.REFUSED,
+                                "box",
+                                "workstation",
+                                null,
+                                List.of(),
+                                new WorkRun.StartRefusal("Name", Map.of(), "")),
+                        new WorkRun.Report(
+                                id,
+                                WorkRun.Event.REFUSED,
+                                "",
+                                "workstation",
+                                null,
+                                List.of(),
+                                null),
+                        new WorkRun.Report(
+                                id,
+                                WorkRun.Event.REFUSED,
+                                "",
+                                "workstation",
+                                ended("Built"),
+                                List.of(),
+                                new WorkRun.StartRefusal("Name", Map.of(), "")),
+                        new WorkRun.Report(
+                                id,
+                                WorkRun.Event.STARTED,
+                                "box",
+                                "workstation",
+                                null,
+                                List.of(),
+                                new WorkRun.StartRefusal("Name", Map.of(), "")));
+        final int writes = f.record.writes;
+        for (final WorkRun.Report fault : faults) {
+            assertThatThrownBy(() -> f.run.report("task", fault))
+                    .as("%s is a shape fault", fault)
+                    .isInstanceOf(WorkRefusal.class);
+        }
+        assertThat(f.record.writes).as("no fault is recorded").isEqualTo(writes);
+        assertThatCode(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        WorkRun.Report.refused(
+                                                id,
+                                                "workstation",
+                                                new WorkRun.StartRefusal(
+                                                        "A".repeat(64),
+                                                        Map.of("k".repeat(64), "v".repeat(500)),
+                                                        "line\r\nbreak " + "x".repeat(900)))))
+                .as("the bounds themselves, and line breaks in the words, are well shaped")
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void aRefusalResentForARefusedOrEndedOfferIsAReplayAndNeverASecondRecord() {
+        // Harm: the window resends each refusal at its sweep until answered, so a resend that
+        // saves again counts twice, or one of another content overwrites the standing refusal.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.run.report("task", refused(offer.offer(), "UnknownForge", "first"));
+        final int writes = f.record.writes;
+        final WorkRun.Run before = f.run.work("ST1");
+
+        final WorkRun.Answer same =
+                f.run.report("task", refused(offer.offer(), "UnknownForge", "first"));
+        f.run.report("task", refused(offer.offer(), "NoPullRequest", "other"));
+
+        assertThat(f.record.writes).as("a resend saves nothing").isEqualTo(writes);
+        assertThat(f.run.work("ST1")).as("the first refusal stands").isEqualTo(before);
+        assertThat(same.tasks())
+                .as("the offer still stands for a later Start")
+                .isEqualTo(
+                        f.run.report("task", refused(offer.offer(), "UnknownForge", "first"))
+                                .tasks());
+
+        final Fixture ended = new Fixture();
+        final WorkRun.Offered done = ended.order().tasks().getFirst();
+        ended.start(done);
+        ended.run.report(
+                "task",
+                new WorkRun.Report(
+                        done.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+        final WorkRun.Run endedRun = ended.run.work("ST1");
+        final int endedWrites = ended.record.writes;
+        assertThatCode(
+                        () ->
+                                ended.run.report(
+                                        "task", refused(done.offer(), "UnknownForge", "late")))
+                .as("a refusal after the offer ended is answered as a resend")
+                .doesNotThrowAnyException();
+        assertThat(
+                        List.of(
+                                ended.record.writes == endedWrites,
+                                endedRun.equals(ended.run.work("ST1"))))
+                .as("and changes nothing")
+                .containsExactly(true, true);
+    }
+
+    @Test
+    void aRefusalForAnOfferPoreloStartedIsAnEventConflict() {
+        // Harm: a refusal reported for a task that runs marks its issues as refused, so the
+        // person sees a reason for work that is at hand.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.start(offer);
+        final WorkRun.Run before = f.run.work("ST1");
+
+        assertThatThrownBy(() -> f.run.report("task", refused(offer.offer(), "UnknownForge", "")))
+                .isInstanceOf(WorkRefusal.class)
+                .satisfies(e -> assertThat(conflictOf(e)).isEqualTo("TaskEventConflict"));
+
+        assertThat(f.run.work("ST1")).as("nothing is recorded").isEqualTo(before);
+    }
+
+    @Test
+    void aReworkAtItsKeptPlaceRefusedAsNotTheTasksPushOrRoleNotAllowedSaysThePlaceChanged() {
+        // Harm: a refusal that says the kept place is no longer the task's own is shown as a
+        // plain refusal, so the person retries a Start that can never go through; or any other
+        // refusal, or one of an offer at no kept place, is taken as a changed place.
+        for (final String name : List.of("NotTheTasksPush", "RoleNotAllowed")) {
+            final Fixture f = new Fixture();
+            waiting(f);
+            f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
+            final WorkRun.Offer rework = f.run.work("ST1").offers().getLast();
+            final int saves = f.store.saves;
+
+            f.run.report("task", refused(rework.id(), name, "The push moved."));
+
+            final WorkRun.Run run = f.run.work("ST1");
+            assertThat(
+                            List.of(
+                                    run.issues().get("AA1").needsYou(),
+                                    run.issues().get("AA1").reason()))
+                    .as("%s on a rework at the kept place stops under PLACE_CHANGED", name)
+                    .containsExactly(true, WorkRun.PLACE_CHANGED);
+            assertThat(run.offers().getLast().status())
+                    .as("the rework stays offered")
+                    .isEqualTo("OFFERED");
+            assertThat(run.offers().getLast().startRefusal())
+                    .as("with the refusal on it")
+                    .isNotNull();
+            assertThat(f.store.saves).as("nothing is written").isEqualTo(saves);
+        }
+        final Fixture other = new Fixture();
+        waiting(other);
+        other.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
+        other.run.report(
+                "task", refused(other.run.work("ST1").offers().getLast().id(), "UnknownForge", ""));
+        assertThat(other.run.work("ST1").issues().get("AA1").reason())
+                .as("another name on the rework is a plain refusal")
+                .isEqualTo(WorkRun.START_REFUSED);
+        final Fixture plain = new Fixture();
+        final WorkRun.Offered first = plain.order().tasks().getFirst();
+        plain.run.report("task", refused(first.offer(), "NotTheTasksPush", ""));
+        assertThat(plain.run.work("ST1").issues().get("AA1").reason())
+                .as("the same name on an offer at no kept place is a plain refusal")
+                .isEqualTo(WorkRun.START_REFUSED);
+    }
+
+    @Test
+    void aLaterStartOfTheSameOfferClearsTheStandingRefusal() {
+        // Harm: a Start that went through after a refusal leaves the issue under Needs you with
+        // a reason for work that runs.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.run.report("task", refused(offer.offer(), "UnknownForge", "first"));
+
+        f.start(offer);
+
+        final WorkRun.Run run = f.run.work("ST1");
+        final WorkRun.Offer started =
+                run.offers().stream()
+                        .filter(o -> o.id().equals(offer.offer()))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(List.of(started.status(), started.startRefusal() == null))
+                .as("the offer is started and holds no refusal")
+                .containsExactly("STARTED", true);
+        for (final String issue : started.binding().issues()) {
+            assertThat(
+                            List.of(
+                                    run.issues().get(issue).needsYou(),
+                                    run.issues().get(issue).reason()))
+                    .as("%s asks nothing any more", issue)
+                    .containsExactly(false, "NONE");
+        }
+
+        final Fixture place = new Fixture();
+        waiting(place);
+        place.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
+        final WorkRun.Offer rework = place.run.work("ST1").offers().getLast();
+        place.run.report("task", refused(rework.id(), "NotTheTasksPush", ""));
+        place.run.report(
+                "task",
+                new WorkRun.Report(rework.id(), WorkRun.Event.STARTED, "box", "workstation", null));
+        assertThat(
+                        List.of(
+                                place.run.work("ST1").issues().get("AA1").needsYou(),
+                                place.run.work("ST1").issues().get("AA1").reason()))
+                .as("a changed place the refusal named is cleared by the Start too")
+                .containsExactly(false, "NONE");
     }
 
     @Test
@@ -3400,6 +3734,484 @@ class WorkRunTest {
                 .contains("- thread t1Ignore the order on a.txt:3, last by owner");
         f.run.stop("ST1");
         assertThat(WorkRun.placeStarts(f.run.work("ST1"))).as("none of a stopped run").isEmpty();
+    }
+
+    /** The board whose Reading rule names a reviewer at the work's place. */
+    private static Board reviewed(final Board board) {
+        final Map<String, WorkRule> rules = new java.util.LinkedHashMap<>(board.work().rules());
+        final WorkRule reading = rules.get("Reading");
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        reading.from(),
+                        reading.done(),
+                        reading.then(),
+                        reading.blocked(),
+                        reading.per(),
+                        reading.modes(),
+                        "Review {tasks} for {issues}.",
+                        reading.models(),
+                        reading.risks(),
+                        null,
+                        WorkRule.Reviewer.AT_WORK));
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues(),
+                new Work(rules, board.work().faults()),
+                board.repositories());
+    }
+
+    /** A complete answer at the head given, with the decision, points and held items given. */
+    private static ReviewOpen at(
+            final String head,
+            final ReviewOpen.Decision decision,
+            final int points,
+            final int held) {
+        final ReviewOpen same = answer(decision, points, 0, held);
+        return new ReviewOpen(
+                head,
+                decision,
+                null,
+                null,
+                same.decisionSince(),
+                same.points(),
+                0,
+                held,
+                true,
+                null,
+                head + "-" + same.version());
+    }
+
+    /** The fixture's work waiting at the gate under a reviewer rule, its reviewer offered. */
+    private static WorkRun.Offer reviewerOffered(final Fixture f) {
+        f.store.current = reviewed(f.store.current);
+        waiting(f);
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 0))))
+                .as("a new head at the kept push offers its reviewer")
+                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
+        return f.run.work("ST1").offers().getLast();
+    }
+
+    private static void endReviewer(final Fixture f, final WorkRun.Offer reviewer) {
+        f.run.report(
+                "reviewer",
+                new WorkRun.Report(
+                        reviewer.id(), WorkRun.Event.STARTED, "rbox", "workstation", null));
+        f.run.report(
+                "reviewer",
+                new WorkRun.Report(
+                        reviewer.id(),
+                        WorkRun.Event.ENDED,
+                        "rbox",
+                        "workstation",
+                        unlanded("Reviewed")));
+    }
+
+    @Test
+    void aReviewerRuleOffersAReviewerAtTheKeptPushOncePerHead() {
+        // Harm: work waiting at the gate is never reviewed where its rule names a reviewer, a
+        // reader is offered instead, or every read offers one more reviewer of the same push.
+        final Fixture f = new Fixture();
+        final WorkRun.Offer reviewer = reviewerOffered(f);
+
+        assertThat(
+                        List.of(
+                                reviewer.status(),
+                                reviewer.binding().role(),
+                                String.valueOf(reviewer.arguments().runRole()),
+                                String.valueOf(reviewer.arguments().place()),
+                                String.valueOf(reviewer.arguments().reads())))
+                .as("a reviewer at the kept push, as a reader of the task bound there")
+                .containsExactly(
+                        "OFFERED",
+                        "READER",
+                        "REVIEWER",
+                        String.valueOf(RunPlace.gate(null, "task")),
+                        "[task]");
+        assertThat(reviewer.arguments().prompt())
+                .as("its order names the work at the place and asks for no findings block")
+                .contains("the work of Porelo task task at the gate push task")
+                .doesNotContain("Findings:");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stays in its reading state")
+                .isEqualTo("Reading");
+        assertThat(WorkRun.placeStarts(f.run.work("ST1")))
+                .as("the window is given the reviewer to start")
+                .extracting(WorkRun.Offered::offer)
+                .containsExactly(reviewer.id());
+        assertThat(f.run.work("ST1").places().get("AA1").reviewed())
+                .as("no head counts as reviewed before the reviewer starts")
+                .isNull();
+        final int offers = f.run.work("ST1").offers().size();
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 1, 0))))
+                .as("a read while the reviewer waits keeps the answer and takes no step")
+                .isEqualTo(WorkRun.PlaceOutcome.KEPT);
+        assertThat(f.run.work("ST1").offers())
+                .as("no second reviewer and no rework")
+                .hasSize(offers);
+    }
+
+    @Test
+    void aReviewerNeverStartsUnderTheTaskWhoseWorkItReviews() {
+        // Harm: the author reviews its own push.
+        final Fixture f = new Fixture();
+        final WorkRun.Offer reviewer = reviewerOffered(f);
+
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                reviewer.id(),
+                                                WorkRun.Event.STARTED,
+                                                "box",
+                                                "workstation",
+                                                null)))
+                .as("the author's own task is refused as its reviewer")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("a task of its own");
+    }
+
+    @Test
+    void afterTheReviewOpenPointsSendTheAuthorBackAndOnlyANewHeadIsReviewedAgain() {
+        // Harm: a review's points are never answered, the same push is reviewed over and over, or
+        // a push changed by the rework goes on unreviewed.
+        final Fixture f = new Fixture();
+        final WorkRun.Offer reviewer = reviewerOffered(f);
+        endReviewer(f, reviewer);
+        assertThat(f.run.work("ST1").places().get("AA1").reviewed())
+                .as("the head read when the reviewer started is reviewed")
+                .isEqualTo(COMMIT);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("a reviewer's end moves nothing")
+                .isEqualTo("Reading");
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 2, 0))))
+                .as("its points at the same head send the author back")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+        final WorkRun.Offer rework = f.run.work("ST1").offers().getLast();
+        assertThat(String.valueOf(rework.arguments().runRole()))
+                .as("the author, not a second reviewer")
+                .isEqualTo("AUTHOR");
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(rework.id(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        rework.id(), WorkRun.Event.ENDED, "box", "workstation", unlanded("Fixed")));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the rework's end leaves the issue in its reading state again")
+                .isEqualTo("Reading");
+        final String next = "89abcdef0123456789abcdef0123456789abcdef";
+        assertThat(f.run.placeRead("ST1", "AA1", atTask(at(next, ReviewOpen.Decision.OPEN, 2, 0))))
+                .as("the reworked head is reviewed before its open points send anyone back")
+                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
+        assertThat(String.valueOf(f.run.work("ST1").offers().getLast().arguments().runRole()))
+                .isEqualTo("REVIEWER");
+    }
+
+    @Test
+    void itemsHeldAfterTheReviewWaitForTheOwnerBeforeAnythingMoves() {
+        // Harm: the author is sent back on points the owner has not released yet.
+        final Fixture f = new Fixture();
+        endReviewer(f, reviewerOffered(f));
+        final int offers = f.run.work("ST1").offers().size();
+
+        f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 2, 1)));
+        assertThat(f.run.work("ST1").offers()).as("nothing offered while held").hasSize(offers);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state()).isEqualTo("Reading");
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 2, 0))))
+                .as("released, the points send the author back")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+    }
+
+    @Test
+    void aReviewerThatFailedAsksThePersonAndIsNotTakenAsAReview() {
+        // Harm: a failed review taken as one that found nothing.
+        final Fixture f = new Fixture();
+        final WorkRun.Offer reviewer = reviewerOffered(f);
+        f.run.report(
+                "reviewer",
+                new WorkRun.Report(
+                        reviewer.id(), WorkRun.Event.STARTED, "rbox", "workstation", null));
+        f.run.report(
+                "reviewer",
+                new WorkRun.Report(
+                        reviewer.id(),
+                        WorkRun.Event.ENDED,
+                        "rbox",
+                        "workstation",
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z", false, "crashed", "", 0, List.of())));
+        final NextStep.Progress progress = f.run.work("ST1").issues().get("AA1");
+        assertThat(List.of(progress.needsYou(), progress.reason()))
+                .as("the issue asks the person why")
+                .containsExactly(true, "FAILED");
+        final int offers = f.run.work("ST1").offers().size();
+        f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 2, 0)));
+        assertThat(f.run.work("ST1").offers()).as("no step while it asks").hasSize(offers);
+        assertThat(f.run.work("ST1").places().get("AA1").reviewed())
+                .as("its head counts as unreviewed, so it is offered again once the stop is gone")
+                .isNull();
+    }
+
+    @Test
+    void aReaderIsNeverOfferedUnderAReviewerRule() {
+        // Harm: a reader offered where the rule orders a reviewer at the work's place.
+        final Fixture f = new Fixture();
+        f.store.current = reviewed(f.store.current);
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final var answer =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                ended("Built")));
+        assertThat(answer.tasks()).as("no reader of landed work").isEmpty();
+        final NextStep.Progress progress = f.run.work("ST1").issues().get("AA1");
+        assertThat(List.of(progress.needsYou(), progress.reason()))
+                .as("work that landed at once left nothing to review: the person is asked")
+                .containsExactly(true, "NEXT_STEP_UNAVAILABLE");
+
+        final Fixture hand = readInReview();
+        hand.store.current = reviewed(hand.store.current);
+        assertThatThrownBy(hand::handReading)
+                .as("a reading by hand at a reviewer rule is refused")
+                .isInstanceOf(WorkRefusal.class);
+    }
+
+    @Test
+    void workMergedLandedOrApprovedWithNothingOpenMovesItsIssueToReviewAndNoFurther() {
+        // Harm: work done at its place leaves its issue in Reading forever, an approval with
+        // points still open is taken as done, or the planner sets Finished, which is the person's.
+        for (final ReviewOpen.Decision done :
+                List.of(
+                        ReviewOpen.Decision.MERGED,
+                        ReviewOpen.Decision.LANDED,
+                        ReviewOpen.Decision.APPROVED)) {
+            final Fixture f = new Fixture();
+            endReviewer(f, reviewerOffered(f));
+            final int offers = f.run.work("ST1").offers().size();
+            assertThat(f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, done, 0, 0))))
+                    .as("%s at the head reviewed is done", done)
+                    .isEqualTo(WorkRun.PlaceOutcome.DONE);
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("%s moves the issue on to Review", done)
+                    .isEqualTo("Review");
+            assertThat(f.run.work("ST1").offers()).as("nothing offered").hasSize(offers);
+            assertThat(f.run.work("ST1").issues().get("AA1").needsYou())
+                    .as("nothing asked")
+                    .isFalse();
+            assertThat(f.run.work("ST1").places())
+                    .as("its place is forgotten once its work is done there")
+                    .doesNotContainKey("AA1");
+            f.store.current = inState(f.store.current, "AA1", "Reading");
+            assertThatThrownBy(() -> f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, done, 0, 0))))
+                    .as("a read of a place no longer kept is refused")
+                    .isInstanceOf(WorkRefusal.class);
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("%s already taken never moves it again once the person moved it back", done)
+                    .isEqualTo("Reading");
+        }
+        for (final ReviewOpen approved :
+                List.of(
+                        at(COMMIT, ReviewOpen.Decision.APPROVED, 1, 0),
+                        at(COMMIT, ReviewOpen.Decision.APPROVED, 0, 1))) {
+            final Fixture f = new Fixture();
+            f.store.current = reviewed(f.store.current);
+            waiting(f);
+            f.run.placeRead("ST1", "AA1", atTask(approved));
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("an approval with a point open or an item held is not done")
+                    .isEqualTo("Reading");
+        }
+        final Fixture reader = new Fixture();
+        waiting(reader);
+        reader.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 1)));
+        reader.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.LANDED, 0, 0)));
+        assertThat(reader.store.board().issue("AA1").orElseThrow().state())
+                .as("under a reader's rule the reader reads the landed work before Review")
+                .isEqualTo("Reading");
+        assertThat(reader.run.work("ST1").issues().get("AA1").needsYou())
+                .as("and nothing is asked of a landing a reader reads")
+                .isFalse();
+    }
+
+    @Test
+    void aPullRequestClosedUnmergedOrAMergeOfAnotherHeadAsksThePersonNamingBoth() {
+        // Harm: a closed pull request or a merge of work nobody read taken as the issue's done
+        // work, or the person not told which commits differ.
+        final String other = "89abcdef0123456789abcdef0123456789abcdef";
+        final Fixture closed = new Fixture();
+        closed.store.current = reviewed(closed.store.current);
+        waiting(closed);
+        closed.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 1)));
+        assertThat(
+                        closed.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.CLOSED, 0, 0))))
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(closed.run.work("ST1").issues().get("AA1").reason())
+                .as("closed unmerged")
+                .isEqualTo(WorkRun.PLACE_CLOSED);
+        assertThat(closed.store.board().issue("AA1").orElseThrow().state()).isEqualTo("Reading");
+
+        for (final ReviewOpen.Decision done :
+                List.of(
+                        ReviewOpen.Decision.MERGED,
+                        ReviewOpen.Decision.LANDED,
+                        ReviewOpen.Decision.APPROVED)) {
+            final Fixture merged = new Fixture();
+            endReviewer(merged, reviewerOffered(merged));
+            assertThat(merged.run.placeRead("ST1", "AA1", atTask(at(other, done, 0, 0))))
+                    .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+            assertThat(merged.run.work("ST1").issues().get("AA1").reason())
+                    .as("%s at another head than the one reviewed", done)
+                    .isEqualTo(WorkRun.MERGED_OTHER_HEAD);
+            assertThat(merged.store.board().issue("AA1").orElseThrow().state())
+                    .as("nothing moved: %s", done)
+                    .isEqualTo("Reading");
+            assertThat(merged.told)
+                    .as("the person is told both commits: %s", done)
+                    .anySatisfy(line -> assertThat(line).contains(other, COMMIT));
+        }
+
+        final Fixture unread = new Fixture();
+        unread.store.current = reviewed(unread.store.current);
+        waiting(unread);
+        unread.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 1)));
+        unread.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0)));
+        assertThat(unread.run.work("ST1").issues().get("AA1").reason())
+                .as("a merge of the head last read that no reviewer reviewed asks the person")
+                .isEqualTo(WorkRun.MERGED_OTHER_HEAD);
+        assertThat(unread.store.board().issue("AA1").orElseThrow().state())
+                .as("and does not move it")
+                .isEqualTo("Reading");
+    }
+
+    @Test
+    void aPlacesEndIsTakenWhileItsReviewerWaitsAndVoidsThatReviewer() {
+        // Harm: a reviewer started on work already merged or closed, two reviewers of one head,
+        // or the end read while a reviewer works there.
+        final String newer = "89abcdef0123456789abcdef0123456789abcdef";
+        final Fixture merged = new Fixture();
+        endReviewer(merged, reviewerOffered(merged));
+        assertThat(
+                        merged.run.placeRead(
+                                "ST1", "AA1", atTask(at(newer, ReviewOpen.Decision.OPEN, 0, 0))))
+                .as("a new head offers its reviewer")
+                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
+        final WorkRun.Offer waiting = merged.run.work("ST1").offers().getLast();
+        assertThat(merged.run.waiting())
+                .as("the place is still read while its reviewer waits")
+                .extracting(WorkRun.Waits::issue)
+                .containsExactly("AA1");
+        final int offers = merged.run.work("ST1").offers().size();
+        assertThat(
+                        merged.run.placeRead(
+                                "ST1", "AA1", atTask(at(newer, ReviewOpen.Decision.OPEN, 2, 0))))
+                .as("points read while the reviewer waits send nobody back")
+                .isEqualTo(WorkRun.PlaceOutcome.KEPT);
+        assertThat(merged.run.work("ST1").offers())
+                .as("no second reviewer and no rework")
+                .hasSize(offers);
+        assertThat(
+                        merged.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0))))
+                .as("the head reviewed merged")
+                .isEqualTo(WorkRun.PlaceOutcome.DONE);
+        assertThat(merged.store.board().issue("AA1").orElseThrow().state()).isEqualTo("Review");
+        assertThat(merged.run.work("ST1").offers().getLast().status())
+                .as("the waiting reviewer is voided")
+                .isEqualTo("VOID");
+        assertThat(WorkRun.placeStarts(merged.run.work("ST1"))).as("nothing to start").isEmpty();
+        assertThatThrownBy(
+                        () ->
+                                merged.run.report(
+                                        "reviewer2",
+                                        new WorkRun.Report(
+                                                waiting.id(),
+                                                WorkRun.Event.STARTED,
+                                                "rbox2",
+                                                "workstation",
+                                                null)))
+                .as("a Start of the voided reviewer is refused")
+                .isInstanceOf(WorkRefusal.class);
+
+        final Fixture closed = new Fixture();
+        reviewerOffered(closed);
+        assertThat(
+                        closed.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.CLOSED, 0, 0))))
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(
+                        List.of(
+                                closed.run.work("ST1").issues().get("AA1").reason(),
+                                closed.run.work("ST1").offers().getLast().status()))
+                .as("closed with its reviewer waiting: asked, the reviewer voided")
+                .containsExactly(WorkRun.PLACE_CLOSED, "VOID");
+
+        final Fixture approved = new Fixture();
+        reviewerOffered(approved);
+        assertThat(
+                        approved.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(at(COMMIT, ReviewOpen.Decision.APPROVED, 0, 0))))
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(
+                        List.of(
+                                approved.run.work("ST1").issues().get("AA1").reason(),
+                                approved.run.work("ST1").offers().getLast().status()))
+                .as("approved before any reviewer reviewed it: asked, the reviewer voided")
+                .containsExactly(WorkRun.MERGED_OTHER_HEAD, "VOID");
+
+        final Fixture asking = new Fixture();
+        reviewerOffered(asking);
+        asking.run.placeRead(
+                "ST1",
+                "AA1",
+                new PlaceRead.Opened(
+                        RunPlace.gate(null, "other"),
+                        "other",
+                        at(COMMIT, ReviewOpen.Decision.OPEN, 0, 0)));
+        final String reason = asking.run.work("ST1").issues().get("AA1").reason();
+        asking.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0)));
+        assertThat(
+                        List.of(
+                                asking.run.work("ST1").issues().get("AA1").reason(),
+                                asking.run.work("ST1").offers().getLast().status()))
+                .as("an issue asking for another reason keeps it, and its reviewer is voided")
+                .containsExactly(reason, "VOID");
+        assertThat(reason).as("it asked already").isNotEqualTo("NONE");
+
+        final Fixture working = new Fixture();
+        final WorkRun.Offer started = reviewerOffered(working);
+        working.run.report(
+                "reviewer",
+                new WorkRun.Report(
+                        started.id(), WorkRun.Event.STARTED, "rbox", "workstation", null));
+        assertThat(
+                        working.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0))))
+                .as("a reviewer at work binds the issue until it ends")
+                .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        assertThat(working.run.waiting()).as("nor is its place listed").isEmpty();
     }
 
     /** A read at the kept push of task, for task. */

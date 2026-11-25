@@ -180,23 +180,24 @@ final class SerializationCheck {
         // A forwarded push names the branch its commit landed on, not a commit.
         final IssuePlace forwarded =
                 new IssuePlace(
-                        RunPlace.gate(null, "task"),
-                        RunRole.AUTHOR,
-                        "task",
-                        List.of("00000000-0000-0000-0000-000000000003"),
-                        IssuePlace.Review.of(
-                                new ReviewOpen(
-                                        "0123456789abcdef0123456789abcdef01234567",
-                                        ReviewOpen.Decision.APPROVED,
-                                        "89abcdef0123456789abcdef0123456789abcdef",
-                                        "main",
-                                        WHEN,
-                                        List.of(),
-                                        0,
-                                        0,
-                                        true,
-                                        null,
-                                        "v2")));
+                                RunPlace.gate(null, "task"),
+                                RunRole.AUTHOR,
+                                "task",
+                                List.of("00000000-0000-0000-0000-000000000003"),
+                                IssuePlace.Review.of(
+                                        new ReviewOpen(
+                                                "0123456789abcdef0123456789abcdef01234567",
+                                                ReviewOpen.Decision.APPROVED,
+                                                "89abcdef0123456789abcdef0123456789abcdef",
+                                                "main",
+                                                WHEN,
+                                                List.of(),
+                                                0,
+                                                0,
+                                                true,
+                                                null,
+                                                "v2")))
+                        .reviewing("0123456789abcdef0123456789abcdef01234567");
         final Map<String, WorkRun.Run> runs = new LinkedHashMap<>(filled.runs());
         runs.put(
                 "ST1",
@@ -275,7 +276,10 @@ final class SerializationCheck {
                                 org.fuin.porelo.planner.store.WorkRule.Per.REPOSITORY,
                                 List.of("AGENT"),
                                 "Rework {issues}",
-                                Map.of("agent", "model"))),
+                                Map.of("agent", "model"),
+                                Map.of(),
+                                null,
+                                org.fuin.porelo.planner.store.WorkRule.Reviewer.AT_WORK)),
                 "OFFERED",
                 null,
                 null,
@@ -285,7 +289,12 @@ final class SerializationCheck {
                 "",
                 List.of(),
                 List.of(),
-                null);
+                null,
+                false,
+                "",
+                new NextStep.Settings("AGENT", "agent", "model"),
+                new WorkRun.StartRefusal(
+                        "AdapterNotInstalled", Map.of("adapter", "maven"), "Not installed."));
     }
 
     /**

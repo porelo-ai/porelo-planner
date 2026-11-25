@@ -1,5 +1,6 @@
 import '../client.dart' show planningTopicLabelOf, planningTopicLabels;
 import '../models.dart';
+import '../story_work_order.dart' show PlanningRunPlace;
 
 import 'package:flutter/material.dart';
 
@@ -98,8 +99,12 @@ class PlanningTaskLink extends StatelessWidget {
     this.machine,
     this.endedAt,
     this.opens = true,
+    this.run,
     super.key,
   });
+
+  /// The task as the planner served it, whose duty role, run role, place and held items are shown under its name.
+  final PlanWorkTask? run;
 
   /// The task's full name.
   final String name;
@@ -125,13 +130,15 @@ class PlanningTaskLink extends StatelessWidget {
       if (machine case final machine? when machine.trim().isNotEmpty) 'on ${planningShown(machine, multiline: false)}',
       if (endedAt case final at?) 'ended ${planningLocalTime(at)}',
     ].join(' · ');
+    final facts = run == null ? null : Text(planningRunFacts(run!), key: Key('planning-task-run $name'));
     if (!opens) {
-      return Text(
+      final line = Text(
         [planningShown(name, multiline: false), if (where.isNotEmpty) where].join(' · '),
         key: Key('planning-task $name'),
       );
+      return facts == null ? line : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [line, facts]);
     }
-    return Wrap(
+    final open = Wrap(
       spacing: Space.small,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
@@ -147,8 +154,35 @@ class PlanningTaskLink extends StatelessWidget {
         if (unavailable case final reason?) Text(planningShown(reason, multiline: false)),
       ],
     );
+    return facts == null ? open : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [open, facts]);
   }
 }
+
+/// The most characters of a place from outside the screen shows.
+const planningMostPlaceText = 120;
+
+/// What a served place says, as plain text: a pull request's address is cut to a bounded length and never a link.
+String planningPlaceText(PlanningRunPlace? place) {
+  String cut(String text) {
+    final shown = planningShown(text, multiline: false);
+    final runes = shown.runes.toList();
+    return runes.length <= planningMostPlaceText
+        ? shown
+        : '${String.fromCharCodes(runes.take(planningMostPlaceText))}…';
+  }
+
+  if (place == null) return "the task's own gate push";
+  if (place.pullRequest case final address?) return 'pull request ${cut(address)}';
+  if (place.ownPullRequest) return "the task's own pull request";
+  final repository = place.gateRepository;
+  return 'gate push of task ${cut(place.gatePush ?? '')}${repository == null ? '' : ' in ${cut(repository)}'}';
+}
+
+/// A run's duty role beside Porelo's run role, its place and its held items, as served.
+String planningRunFacts(PlanWorkTask task) =>
+    '${planningValue(task.role)} · run role ${task.runRole == 'REVIEWER' ? 'reviewer' : 'author'}'
+    ' · at ${task.placeUnreadable ? 'a place the screen cannot read' : planningPlaceText(task.place)}'
+    ' · held ${task.held ?? 'unknown'}';
 
 /// A reported time in the person's own zone to the minute, with its date only when it is not today, or the reported
 /// text when it is no time.

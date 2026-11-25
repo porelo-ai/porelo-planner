@@ -126,6 +126,48 @@ class WorkReaderTest {
                 .isEmpty();
     }
 
+    // Prevents a rule that names only half of a reviewer from running as a reader, and a
+    // reviewer from being read where none was named.
+    @Test
+    void aReviewerIsReadOnlyWithItsRoleAndPlaceTogether() {
+        final String rule =
+                """
+                work:
+                  Reading:
+                    from: [Implementing]
+                    done: Review
+                    blocked: Reworking
+                    per: repository
+                    modes: [UNATTENDED]
+                    order: "Review {issues}."
+                    models: {claude-code: claude-opus-5-5}
+                %s
+                """;
+
+        assertThat(
+                        WorkReader.read(rule.formatted("    role: reviewer\n    place: work"))
+                                .rules()
+                                .get("Reading"))
+                .as("a reviewer at the work's place")
+                .extracting(WorkRule::reviewer)
+                .isEqualTo(WorkRule.Reviewer.AT_WORK);
+        assertThat(WorkReader.read(rule.formatted("")).rules().get("Reading"))
+                .as("a rule naming no reviewer is read by a reader")
+                .extracting(WorkRule::reviewer)
+                .isNull();
+        for (final String half :
+                List.of(
+                        "    role: reviewer",
+                        "    place: work",
+                        "    role: reader\n    place: work",
+                        "    role: reviewer\n    place: gate",
+                        "    role: REVIEWER\n    place: work")) {
+            final Work work = WorkReader.read(rule.formatted(half));
+            assertThat(work.rules()).as("%s drops its rule", half).isEmpty();
+            assertThat(work.faults()).as("%s names its fault", half).hasSize(1);
+        }
+    }
+
     @Test
     void aMissingFileIsAFaultNotAFailure() {
         // Without work rules the board is still read; only work cannot start.

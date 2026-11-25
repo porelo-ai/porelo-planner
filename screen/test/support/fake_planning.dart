@@ -409,6 +409,7 @@ class FakePlanningSource implements PlanningSource {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) async => _notServed('TaskEvent');
 
   @override
@@ -462,6 +463,7 @@ class FakePlanningClient extends ChangeNotifier with PlanningTaskReports {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) async {
     events.add((project, task, event, offer, container, machine, ended));
     await super.taskEvent(
@@ -473,6 +475,7 @@ class FakePlanningClient extends ChangeNotifier with PlanningTaskReports {
       machine: machine,
       ended: ended,
       landed: landed,
+      refusal: refusal,
     );
   }
 }

@@ -95,6 +95,11 @@ public final class WorkRules {
         if (rule.result() != null && (rule.then() != null || rule.blocked() != null)) {
             faults.add(at + "a rule with a result names no then and no blocked");
         }
+        // A reviewer's open points send the work back to rework, so a reviewer needs somewhere to
+        // send it and hands back no result.
+        if (rule.reviewer() != null && (rule.result() != null || rule.blocked() == null)) {
+            faults.add(at + "a reviewer names blocked and no result");
+        }
         // An issue not ready goes back where it came from, so there is one place, open and idle.
         if (rule.result() == WorkRule.Result.READINESS) {
             if (rule.from().size() != 1) {

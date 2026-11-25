@@ -38,7 +38,7 @@ public final class WorkReader {
     private static final Set<String> KEYS =
             Set.of(
                     "from", "done", "then", "blocked", "per", "modes", "order", "models", "risks",
-                    "result");
+                    "result", "role", "place");
 
     private static final Set<String> RISK_KEYS = Set.of("models", "effort");
 
@@ -106,7 +106,29 @@ public final class WorkReader {
                 text(node, "order"),
                 models(node),
                 risks(node),
-                result(optional(node, "result")));
+                result(optional(node, "result")),
+                reviewer(optional(node, "role"), optional(node, "place")));
+    }
+
+    /** A reviewer is named by its role and its place together, so half of one never runs. */
+    private static WorkRule.@Nullable Reviewer reviewer(
+            final @Nullable String role, final @Nullable String place) throws Fault {
+        if (role == null && place == null) {
+            return null;
+        }
+        if (!"reviewer".equals(role)) {
+            throw new Fault(
+                    role == null
+                            ? "place is named without role: reviewer"
+                            : "role '" + role + "' is not reviewer");
+        }
+        if (!"work".equals(place)) {
+            throw new Fault(
+                    place == null
+                            ? "role: reviewer names no place: work"
+                            : "place '" + place + "' is not work");
+        }
+        return WorkRule.Reviewer.AT_WORK;
     }
 
     private static void known(final JsonNode node, final Set<String> keys) throws Fault {

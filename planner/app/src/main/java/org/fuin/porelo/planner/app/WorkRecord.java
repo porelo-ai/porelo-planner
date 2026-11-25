@@ -992,6 +992,12 @@ public final class WorkRecord implements AutoCloseable {
                 if (run instanceof ObjectNode placed && !placed.has("placeOffers")) {
                     placed.putArray("placeOffers");
                 }
+                // A place kept before reviewers ran there names no head a reviewer was offered at.
+                for (final JsonNode place : run.path("places")) {
+                    if (place instanceof ObjectNode kept && !kept.has("reviewed")) {
+                        kept.putNull("reviewed");
+                    }
+                }
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
                     // A main recorded before the rule's offered agents were proposed names none.
@@ -1005,7 +1011,7 @@ public final class WorkRecord implements AutoCloseable {
                 }
                 for (final JsonNode offer : run.path("offers")) {
                     // Only the newer fields may be absent in older records.
-                    for (final String newer : List.of("machine", "rework")) {
+                    for (final String newer : List.of("machine", "rework", "startRefusal")) {
                         if (offer instanceof ObjectNode object && !object.has(newer)) {
                             object.putNull(newer);
                         }
@@ -1054,6 +1060,11 @@ public final class WorkRecord implements AutoCloseable {
                     if (offer.path("binding").path("rule") instanceof ObjectNode rule
                             && !rule.has("result")) {
                         rule.putNull("result");
+                    }
+                    // A rule recorded before reviewers ran is read by a reader.
+                    if (offer.path("binding").path("rule") instanceof ObjectNode rule
+                            && !rule.has("reviewer")) {
+                        rule.putNull("reviewer");
                     }
                     // A refusal kept before a forge's missing right was told names no right.
                     if (offer.path("refusal") instanceof ObjectNode refusal
@@ -1158,7 +1169,7 @@ public final class WorkRecord implements AutoCloseable {
                     final var answer =
                             new TaskEventReply(
                                     "",
-                                    WorkAnswers.knownWork(run, issue -> false),
+                                    WorkAnswers.knownWork(project, run, issue -> false),
                                     WorkAnswers.starts(offers));
                     // Revision changes and cancellation must fit beside the work answer.
                     if (JSON.writeValueAsBytes(answer).length + END_RESERVE > MOST_RECORD) {
@@ -1193,7 +1204,7 @@ public final class WorkRecord implements AutoCloseable {
                                             board,
                                             found,
                                             new WorkRun.Snapshot(0, Map.of(run.story(), run))),
-                                    WorkAnswers.knownWork(board, run),
+                                    WorkAnswers.knownWork(project, board, run),
                                     board.revision().value(),
                                     WorkAnswers.starts(offers));
                     if (JSON.writeValueAsBytes(answer).length + 65536 > MOST_RECORD) {
@@ -1474,6 +1485,21 @@ public final class WorkRecord implements AutoCloseable {
                                     if (refusal != null) {
                                         checkedRefusal(refusal);
                                     }
+                                    final WorkRun.StartRefusal startRefusal = offer.startRefusal();
+                                    if (startRefusal != null) {
+                                        // Only an offer never started stands refused, still
+                                        // offered or voided since.
+                                        if (!Set.of("OFFERED", "VOID").contains(offer.status())) {
+                                            throw new IllegalArgumentException(
+                                                    "an offer fails its check");
+                                        }
+                                        try {
+                                            WorkRun.checkedStartRefusal(startRefusal);
+                                        } catch (final WorkRefusal invalid) {
+                                            throw new IllegalArgumentException(
+                                                    "an offer fails its check", invalid);
+                                        }
+                                    }
                                     final NextStep.Settings rework = offer.rework();
                                     if (rework != null) {
                                         present(rework.mode(), rework.agent(), rework.model());
@@ -1547,8 +1573,8 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         /**
-         * Refuses an offer a read of a kept place made that is named twice, or that is no author's
-         * offer of the run at a gate push.
+         * Refuses an offer a read of a kept place made that is named twice, or that is neither an
+         * author's offer of the run at a gate push nor a reviewer's, as a reader, at a place.
          */
         private static void checkedPlaceOffers(final WorkRun.Run run) {
             if (Set.copyOf(run.placeOffers()).size() != run.placeOffers().size()) {
@@ -1559,9 +1585,15 @@ public final class WorkRecord implements AutoCloseable {
                         .noneMatch(
                                 o ->
                                         o.id().equals(id)
-                                                && o.arguments().runRole() == RunRole.AUTHOR
                                                 && o.arguments().place() != null
-                                                && o.arguments().place().gatePush() != null)) {
+                                                && (o.arguments().runRole() == RunRole.AUTHOR
+                                                                && o.arguments().place().gatePush()
+                                                                        != null
+                                                        || o.arguments().runRole()
+                                                                        == RunRole.REVIEWER
+                                                                && o.binding()
+                                                                        .role()
+                                                                        .equals("READER")))) {
                     throw new IllegalArgumentException("a place's offer fails its check");
                 }
             }

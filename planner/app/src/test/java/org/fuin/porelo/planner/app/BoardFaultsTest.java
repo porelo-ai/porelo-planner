@@ -294,6 +294,7 @@ class BoardFaultsTest {
 
     private static org.fuin.porelo.planner.app.answers.Board boardOf(final Board board) {
         return BoardController.boardOf(
+                "project",
                 board,
                 new WorkRun.Snapshot(0, Map.of()),
                 false,

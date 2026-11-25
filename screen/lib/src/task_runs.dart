@@ -24,6 +24,7 @@ mixin PlanningTaskReports implements PlanningClient {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) {
     retainPlanningSources();
     return PlanningRun.report(
@@ -35,6 +36,7 @@ mixin PlanningTaskReports implements PlanningClient {
       machine: machine,
       ended: ended,
       landed: landed,
+      refusal: refusal,
       sources: _reportSources,
     );
   }
@@ -262,8 +264,10 @@ class PlanningRun {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
     required Set<PlanningSource> sources,
   }) async {
+    checkRefused(event, container, refusal);
     // Do not permanently bind an offer to a machine name the planner must refuse.
     final points = machine.runes.toList();
     if (points.isEmpty ||
@@ -273,6 +277,33 @@ class PlanningRun {
       throw const PlanningRefusal('InvalidSettings', {}, 'The machine name is invalid.');
     }
     final candidates = <_Offer>[for (final source in sources) ?_offers[source]?[offer]];
+    if (event == PlanningTaskEvent.refused) {
+      // Only an offer handed to Start whose Start failed can have been refused by Porelo; none started, so no task,
+      // container or machine binds.
+      final refused = candidates.where((binding) => binding.run.project == project && binding.failure != null).toList();
+      if (refused.length != 1 || refused.single.started != null) {
+        throw const PlanningRefusal('TaskEventConflict', {}, 'The offer does not identify a refused Start.');
+      }
+      final run = refused.single.run;
+      final expected = run.epoch;
+      try {
+        final answer = await run.source.taskEvent(
+          project,
+          task,
+          event,
+          offer: offer,
+          container: container,
+          machine: machine,
+          refusal: refusal,
+        );
+        run.observe(answer.work);
+        await run.follow(answer.tasks, expected);
+      } catch (error) {
+        if (planningRefused(error, 'SaveRefused')) run.cancel();
+        rethrow;
+      }
+      return;
+    }
     final matching = candidates
         .where(
           (binding) =>

@@ -246,7 +246,7 @@ public class EventsController {
         try {
             // A project given anew in the meantime has closed it; its old board is not sent.
             if (subscription.open()) {
-                board(emitter, subscription.firstFrame(), store.tracker());
+                board(emitter, name, subscription.firstFrame(), store.tracker());
             }
             final Duration step = keepAlive.compareTo(LOAD_EVERY) < 0 ? keepAlive : LOAD_EVERY;
             Instant lastSent = Instant.now();
@@ -283,7 +283,7 @@ public class EventsController {
                                             MediaType.APPLICATION_JSON));
                     lastSent = Instant.now();
                 } else if (next.isPresent()) {
-                    board(emitter, next.get(), store.tracker());
+                    board(emitter, name, next.get(), store.tracker());
                     lastSent = Instant.now();
                 } else if (readsNow) {
                     load(emitter, store, Instant.now());
@@ -314,6 +314,7 @@ public class EventsController {
 
     private static void board(
             final SseEmitter emitter,
+            final String project,
             final Changes.Frame frame,
             final org.fuin.porelo.planner.store.Tracker tracker)
             throws IOException {
@@ -323,6 +324,7 @@ public class EventsController {
                         .id(frame.board().revision().value())
                         .data(
                                 BoardController.boardOf(
+                                        project,
                                         frame.board(),
                                         frame.work(),
                                         frame.reasons(),

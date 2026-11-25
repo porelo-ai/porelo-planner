@@ -25,8 +25,8 @@ class RunPlaceTest {
     // contract does not allow, from being handed on.
     @ParameterizedTest
     @ValueSource(strings = {"-p", "--json", "a..b", "b/", "x.lock", "a b", "a~1", ""})
-    void aBranchThatIsNoBranchIsRefused(final String branch) {
-        assertThatThrownBy(() -> new RunPlace(null, branch, null))
+    void aValuePoreloWouldReadAsAnOptionIsRefused(final String value) {
+        assertThatThrownBy(() -> new RunPlace(null, value, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -48,6 +48,40 @@ class RunPlaceTest {
     void soundPlacesAreKept() {
         assertThat(RunPlace.gate("shop-docs", "porelo_cart.2").gatePush())
                 .isEqualTo(new RunPlace.GatePush("shop-docs", "porelo_cart.2"));
-        assertThat(new RunPlace(null, "feature/ä-x", null).pullRequest()).isEqualTo("feature/ä-x");
+        assertThat(new RunPlace(null, "https://github.com/owner/repo/pull/12", null).pullRequest())
+                .as("a pull request's https address is its place")
+                .isEqualTo("https://github.com/owner/repo/pull/12");
+    }
+
+    /** Porelo refuses any other address at Start; the planner never offers one. */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "feature/x",
+                "http://github.com/owner/repo/pull/12",
+                "https://user@github.com/owner/repo/pull/12",
+                "https://github.com/owner/repo/pull/12?x=1",
+                "https://github.com/owner/repo/pull/12#a",
+                "https://github.com/owner/repo/pull/ä",
+                "https:///owner/repo/pull/12",
+                "https://github.com/owner/repo/pull/1 2",
+                ""
+            })
+    void aPullRequestThatIsNoHttpsAddressIsRefused(final String address) {
+        assertThatThrownBy(() -> new RunPlace(null, address, null))
+                .as("%s is no pull request address Porelo takes", address)
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aPullRequestAddressLongerThanPoreloTakesIsRefused() {
+        final String base = "https://github.com/owner/repo/pull/";
+        final String fits = base + "1".repeat(RunPlace.MOST_ADDRESS - base.length());
+        assertThat(new RunPlace(null, fits, null).pullRequest())
+                .as("an address of the most characters is kept")
+                .isEqualTo(fits);
+        assertThatThrownBy(() -> new RunPlace(null, fits + "1", null))
+                .as("one character more is refused")
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

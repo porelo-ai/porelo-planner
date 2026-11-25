@@ -161,18 +161,31 @@ public final class WorkRequests {
      *
      * @param offer the offer
      * @param event the event
-     * @param container the task's container
+     * @param container the task's container, absent for REFUSED
      * @param machine the machine's name as the person sees it
      * @param ended Porelo's end record
      * @param landed where a build's work landed after its end
+     * @param refusal what Porelo refused a Start with, present only for REFUSED, which names no
+     *     container
      */
     public record TaskEventRequest(
             String offer,
             String event,
-            String container,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String container,
             String machine,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskEnded ended,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<NextStep.Landing> landed,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TaskRefusal refusal) {}
+
+    /**
+     * Porelo's refusal of a Start, as the window reports it.
+     *
+     * @param name Porelo's name for the refusal
+     * @param parameters the refusal's parameters
+     * @param detail Porelo's words
+     */
+    public record TaskRefusal(
+            String name, java.util.Map<String, String> parameters, String detail) {}
 
     /**
      * Porelo's ended record with no outcome invented by the window.
@@ -817,13 +830,20 @@ public final class WorkRequests {
     }
 
     static WorkRun.Report event(final JsonNode body) {
-        fields(body, Set.of("offer", "event", "container", "machine", "ended", "landed"));
+        fields(
+                body,
+                Set.of("offer", "event", "container", "machine", "ended", "landed", "refusal"));
         final String machine = text(body, "machine");
         WorkRun.checkedMachine(machine);
         final WorkRun.Event event;
         try {
             event = WorkRun.Event.valueOf(text(body, "event"));
         } catch (final IllegalArgumentException invalid) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final boolean refused = event == WorkRun.Event.REFUSED;
+        if (refused == body.has("container") || refused != body.has("refusal")) {
+            // A refused Start started no container, and every other event names its own.
             throw WorkRefusal.invalidSettings();
         }
         WorkRun.Ended ended = null;
@@ -849,10 +869,25 @@ public final class WorkRequests {
         return new WorkRun.Report(
                 text(body, "offer"),
                 event,
-                text(body, "container"),
+                refused ? "" : text(body, "container"),
                 machine,
                 ended,
-                landings(body));
+                landings(body),
+                refused ? startRefusal(body.path("refusal")) : null);
+    }
+
+    /** Reads what Porelo refused a Start with, exactly its three names and strings only. */
+    private static WorkRun.StartRefusal startRefusal(final JsonNode node) {
+        fields(node, Set.of("name", "parameters", "detail"));
+        final JsonNode parameters = node.path("parameters");
+        if (!parameters.isObject()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final Map<String, String> given = new java.util.LinkedHashMap<>();
+        for (final String key : parameters.propertyNames()) {
+            given.put(key, text(parameters, key));
+        }
+        return new WorkRun.StartRefusal(text(node, "name"), given, text(node, "detail"));
     }
 
     /** Reads the outcome a task declared, exactly one of its names; none when absent. */

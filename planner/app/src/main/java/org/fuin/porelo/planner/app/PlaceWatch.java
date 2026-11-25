@@ -317,6 +317,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         if (recordsRead != null && reviewsRead != null) {
             try {
                 found = recordsRead.since(project, earliest(waiting).minus(SKEW));
+                TaskHeld.read(project, found);
             } catch (final TaskRecords.Unanswered e) {
                 unread = said(project, e);
             }

@@ -51,16 +51,7 @@ public final class PoreloReviewOpen implements PlaceReviews {
                     "version");
 
     private static final Set<String> REFUSALS =
-            Set.of("PlaceUnreadable", "UnknownForge", "NoPullRequest");
-
-    private static final Set<String> REASONS =
-            Set.of(
-                    "NoSuchPush",
-                    "NotInProject",
-                    "MovedSinceReview",
-                    "MissingForgeToken",
-                    "ForgeAdapterMissing",
-                    "Unreachable");
+            Set.of("PlaceUnreadable", "UnknownForge", "NoPullRequest", "NoSuchPullRequest");
 
     /** A name as Porelo's contract gives one, such as why an answer is incomplete. */
     private static final java.util.regex.Pattern NAME =
@@ -213,8 +204,9 @@ public final class PoreloReviewOpen implements PlaceReviews {
         }
         final String reason =
                 "PlaceUnreadable".equals(name) ? text(root, "reason", "reason") : null;
-        if (reason != null && !REASONS.contains(reason)) {
-            throw refused("reason", "is none of " + REASONS);
+        // Porelo adds reasons without notice; each is shown by its name, so none is refused.
+        if (reason != null && !NAME.matcher(reason).matches()) {
+            throw refused("reason", "is no name");
         }
         return new PlaceReviews.Refused(name, reason);
     }

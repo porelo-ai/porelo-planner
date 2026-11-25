@@ -170,19 +170,26 @@ public final class WorkAnswers {
                 place.ownPullRequest());
     }
 
-    static @Nullable PlanWork work(final Board board, final WorkRun.@Nullable Run run) {
-        return run == null ? null : knownWork(board, run);
+    static @Nullable PlanWork work(
+            final String project, final Board board, final WorkRun.@Nullable Run run) {
+        return run == null ? null : knownWork(project, board, run);
     }
 
-    static PlanWork knownWork(final Board board, final WorkRun.Run run) {
-        return knownWork(run, issue -> manual(board, issue));
+    static PlanWork knownWork(final String project, final Board board, final WorkRun.Run run) {
+        return knownWork(project, run, issue -> manual(board, issue));
+    }
+
+    /** The run's work for a caller that names no project, so no held items are known. */
+    static PlanWork knownWork(final WorkRun.Run run, final Predicate<String> manual) {
+        return knownWork("", run, manual);
     }
 
     /**
      * Answers the run, a person's issue reported as theirs: no task takes it and it waits on no
      * agent's choice, whatever the run recorded before the switch.
      */
-    static PlanWork knownWork(final WorkRun.Run run, final Predicate<String> manual) {
+    static PlanWork knownWork(
+            final String project, final WorkRun.Run run, final Predicate<String> manual) {
         final List<PlanWorkTask> tasks =
                 run.offers().stream()
                         .filter(o -> o.task() != null)
@@ -206,7 +213,15 @@ public final class WorkAnswers {
                                                         o.arguments().role()),
                                                 String.valueOf(o.since()),
                                                 o.status().equals("STARTED"),
-                                                ended(o.ended())))
+                                                ended(o.ended()),
+                                                o.arguments().runRole() == null
+                                                        ? null
+                                                        : PlanWorkTask.RunRoleEnum.fromValue(
+                                                                o.arguments().runRole().name()),
+                                                o.arguments().place() == null
+                                                        ? null
+                                                        : place(o.arguments().place()),
+                                                TaskHeld.of(project, String.valueOf(o.task()))))
                         .toList();
         return new PlanWork(
                 run.id(),
@@ -239,10 +254,28 @@ public final class WorkAnswers {
                                             atWork(run, entry.getKey()),
                                             p.needsYou(),
                                             !person && p.rounds().stopped(),
-                                            findings(p.findings()));
+                                            findings(p.findings()),
+                                            person ? null : startRefusal(run, entry.getKey()));
                                 })
                         .toList(),
                 starts(WorkRun.placeStarts(run)));
+    }
+
+    /**
+     * The refusal of a Start that stands on an issue's offer, which the issue asks the person for.
+     */
+    private static org.fuin.porelo.planner.app.answers.@Nullable TaskRefusal startRefusal(
+            final WorkRun.Run run, final String issue) {
+        return run.offers().stream()
+                .filter(o -> o.status().equals("OFFERED") && o.startRefusal() != null)
+                .filter(o -> o.binding().issues().contains(issue))
+                .map(o -> Objects.requireNonNull(o.startRefusal()))
+                .map(
+                        refusal ->
+                                new org.fuin.porelo.planner.app.answers.TaskRefusal(
+                                        refusal.name(), refusal.parameters(), refusal.detail()))
+                .findFirst()
+                .orElse(null);
     }
 
     private static boolean manual(final Board board, final String issue) {

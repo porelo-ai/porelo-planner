@@ -131,6 +131,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("GatePush", org.fuin.porelo.planner.app.answers.GatePush.class),
                     Map.entry("TaskEnded", org.fuin.porelo.planner.app.answers.TaskEnded.class),
                     Map.entry("Landing", org.fuin.porelo.planner.app.answers.Landing.class),
+                    Map.entry("TaskRefusal", org.fuin.porelo.planner.app.answers.TaskRefusal.class),
                     Map.entry(
                             "StoryWorkReply",
                             org.fuin.porelo.planner.app.answers.StoryWorkReply.class),
@@ -172,6 +173,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("PlanAssignment", WorkRequests.Assignment.class),
                     Map.entry("IssueReadingRounds", WorkRequests.IssueLimit.class),
                     Map.entry("TaskEnded", WorkRequests.TaskEnded.class),
+                    Map.entry("TaskRefusal", WorkRequests.TaskRefusal.class),
                     Map.entry("Landing", NextStep.Landing.class),
                     Map.entry("Level", LogLevelController.Chosen.class),
                     Map.entry("StoryRequest", EditRequests.StoryRequest.class),
@@ -706,13 +708,14 @@ class ApiMatchesDescriptionTest {
                         WorkRequests.IssueLimit.class,
                         WorkRequests.TaskEventRequest.class,
                         WorkRequests.TaskEnded.class,
+                        WorkRequests.TaskRefusal.class,
                         NextStep.Landing.class,
                         WorkRequests.ReadingRequest.class);
         final Set<Class<?>> described = new HashSet<>(SCHEMAS.values());
         described.addAll(READ_BY_HAND.values());
         assertThat(workTypes)
                 .as("every work body and nested record read by hand participates")
-                .hasSize(13)
+                .hasSize(14)
                 .isSubsetOf(described);
         for (final Class<?> type : workTypes) {
             final JsonNode properties = schemas.get(schemaOf(type)).get("properties");
@@ -798,6 +801,14 @@ class ApiMatchesDescriptionTest {
                     list.get("items"),
                     parameterized.getActualTypeArguments()[0],
                     name + "[]");
+            return;
+        }
+        if (type instanceof ParameterizedType parameterized
+                && parameterized.getRawType() == Map.class) {
+            assertThat(field.path("type").asText()).as("%s is a map", name).isEqualTo("object");
+            assertThat(field.at("/additionalProperties/type").asText())
+                    .as("%s maps to strings", name)
+                    .isEqualTo("string");
             return;
         }
         final Class<?> raw = (Class<?>) type;

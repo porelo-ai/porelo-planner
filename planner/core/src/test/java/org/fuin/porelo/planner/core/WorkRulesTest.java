@@ -151,6 +151,46 @@ class WorkRulesTest {
                 .doesNotContainKeys("Implementing", "Reading");
     }
 
+    private static WorkRule reviewing(
+            final WorkRule rule,
+            final @Nullable String blocked,
+            final WorkRule.@Nullable Result result) {
+        return new WorkRule(
+                rule.from(),
+                rule.done(),
+                rule.then(),
+                blocked,
+                rule.per(),
+                rule.modes(),
+                rule.order(),
+                rule.models(),
+                rule.risks(),
+                result,
+                WorkRule.Reviewer.AT_WORK);
+    }
+
+    // Prevents a reviewer whose open points have no rework to go to, or one started as a stage
+    // whose result would move the issue past its review.
+    @Test
+    void aReviewerWithoutBlockedOrWithAResultIsNamedAndDropped() {
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Reading", reviewing(rules.get("Reading"), "Reworking", null));
+        assertThat(WorkRules.check(WORKFLOW, new Work(rules, List.of())).faults())
+                .as("a reviewer sending its open points to rework is sound")
+                .isEmpty();
+        for (final WorkRule unsound :
+                List.of(
+                        reviewing(rules.get("Reading"), null, null),
+                        reviewing(rules.get("Reading"), "Reworking", WorkRule.Result.ANALYSIS))) {
+            rules.put("Reading", unsound);
+            final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+            assertThat(checked.faults())
+                    .as("its fault named")
+                    .contains("stories/work.yml: Reading: a reviewer names blocked and no result");
+            assertThat(checked.rules()).as("the reviewer dropped").doesNotContainKey("Reading");
+        }
+    }
+
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> readinessFrom() {
         return java.util.stream.Stream.of(
                 org.junit.jupiter.params.provider.Arguments.of(

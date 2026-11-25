@@ -60,6 +60,7 @@ class _Source extends FakePlanningSource {
     required String machine,
     PlanningTaskEnded? ended,
     List<PlanningLanding> landed = const [],
+    PlanningStartRefusal? refusal,
   }) async {
     reports.add((project, task, event, offer, container, machine, ended));
     if (reportError case final error?) throw error;
@@ -349,6 +350,47 @@ void main() {
     await report(machine: 'Actual machine');
     await report(machine: 'Actual machine', event: PlanningTaskEvent.stopped);
     expect(source.reports.skip(1).map((call) => call.$6), ['Actual machine', 'Actual machine']);
+  });
+
+  // Harm: a Start Porelo refused is never told to the planner, so the person sees nothing; or the report is taken
+  // for a started task's and binds a machine, or one is told for an offer whose Start went through.
+  test('a refused Start is reported for an offer handed to Start that failed, with no container', () async {
+    start = (source, project, story, order) async =>
+        throw const PlanningRefusal('NoMachine', {}, 'No machine can start it.');
+    final work = StoryWork(board, board.stories.single, 'Building', startTask: start, agentChoices: FakeAgents());
+    addTearDown(work.dispose);
+    await work.load();
+    await work.start();
+    await work.ended;
+    const refusal = PlanningStartRefusal(name: 'UnknownForge', parameters: {'forge': 'x'}, detail: 'No forge.');
+
+    await client.taskEvent(
+      'demo',
+      'task-1',
+      PlanningTaskEvent.refused,
+      offer: servedOffer(1),
+      container: '',
+      machine: 'Machine 🚀',
+      refusal: refusal,
+    );
+
+    expect(source.reports.single.$3, PlanningTaskEvent.refused);
+    expect(source.reports.single.$4, servedOffer(1));
+    expect(source.reports.single.$5, isEmpty);
+    await expectLater(
+      client.taskEvent(
+        'demo',
+        'task-1',
+        PlanningTaskEvent.refused,
+        offer: servedOffer(2),
+        container: '',
+        machine: 'Machine',
+        refusal: refusal,
+      ),
+      throwsA(isA<PlanningRefusal>()),
+      reason: 'an offer never handed to Start was not refused by Porelo',
+    );
+    expect(source.reports, hasLength(1));
   });
 
   // Harm: one provider reuses an offer under another project and starts the same work twice.

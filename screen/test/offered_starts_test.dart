@@ -50,6 +50,20 @@ void main() {
     expect(PlanWork.from(servedWork()).starts, isEmpty, reason: 'a planner without starts offers none');
   });
 
+  test('the work reads a reviewer of the work at its place as a start, never one with another duty', () {
+    // Harm: a reviewer the planner offered is never started, so the work waiting at its place is never reviewed; or a
+    // reviewer that would build, or one without a place, starts without the person.
+    final work = _work([
+      _rework(20, runRole: 'REVIEWER', role: 'READER'),
+      _rework(21, runRole: 'REVIEWER', role: 'READER', place: {'pullRequest': 'https://github.com/acme/shop/pull/12'}),
+      _rework(22, runRole: 'REVIEWER'),
+      _rework(23, runRole: 'REVIEWER', role: 'READER')..remove('place'),
+    ]);
+    expect(work.starts.map((order) => order.offer), [servedOffer(20), servedOffer(21)]);
+    expect(work.starts.map((order) => order.runRole), ['REVIEWER', 'REVIEWER']);
+    expect(work.starts.last.place?.pullRequest, 'https://github.com/acme/shop/pull/12');
+  });
+
   test('a start the planner offered is started once through its own hook, and only through it', () async {
     // Harm: the window's pressed start opens for an offer nobody pressed; a rework never starts; it starts twice; or
     // a machine not ready yet stops it for good.
