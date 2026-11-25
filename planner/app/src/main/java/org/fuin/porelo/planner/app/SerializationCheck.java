@@ -52,9 +52,12 @@ final class SerializationCheck {
     /** How deep records are filled; deeper ones stay empty, as GitHub's own nest without end. */
     private static final int DEPTH = 6;
 
-    /** The texts a record is made with, the first it takes kept. */
+    /**
+     * The texts a record is made with, the first it takes kept: a plain word, an issue's reference
+     * and a UTC time, for a record that holds one as text, as the work record does.
+     */
     private static final List<String> TEXTS =
-            List.of("sample", "porelo-ai/sample#1"); // not-a-citation
+            List.of("sample", "porelo-ai/sample#1", "2026-01-02T03:04:05Z"); // not-a-citation
 
     private static final Instant WHEN = Instant.parse("2026-01-02T03:04:05Z");
 
@@ -225,7 +228,9 @@ final class SerializationCheck {
                 filled.generation(),
                 runs,
                 filled.ideas(),
-                filled.results());
+                filled.results(),
+                filled.followed(),
+                filled.reports());
     }
 
     /**
@@ -353,7 +358,7 @@ final class SerializationCheck {
     }
 
     /** A value of a type with every part set, records filled to {@value #DEPTH} deep. */
-    private static @Nullable Object fill(final Type type, final int depth) {
+    static @Nullable Object fill(final Type type, final int depth) {
         if (type instanceof ParameterizedType parameterized) {
             final Class<?> raw = (Class<?>) parameterized.getRawType();
             final Type[] arguments = parameterized.getActualTypeArguments();

@@ -25,9 +25,9 @@ import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.HandedResults;
-import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.ReportTaking;
 import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.StageOrder;
 import org.fuin.porelo.planner.core.WorkOrder;
@@ -207,7 +207,9 @@ public final class WorkRecord implements AutoCloseable {
             long generation,
             Map<String, WorkRun.Run> runs,
             Map<String, HandedIdeas.Handed> ideas,
-            Map<String, HandedResults.Handed> results) {}
+            Map<String, HandedResults.Handed> results,
+            Map<String, ReportTaking.Followed> followed,
+            Map<String, ReportTaking.Mark> reports) {}
 
     /**
      * Opens a project's one writer, clearing a record from a different repository or branch; a
@@ -722,11 +724,7 @@ public final class WorkRecord implements AutoCloseable {
             final WorkRun.Snapshot now = stored;
             final WorkRun.Snapshot changed = change.apply(now);
             final WorkRun.Snapshot next =
-                    new WorkRun.Snapshot(
-                            Math.addExact(now.generation(), 1),
-                            changed.runs(),
-                            changed.ideas(),
-                            changed.results());
+                    changed.withGeneration(Math.addExact(now.generation(), 1));
             preflight(next);
             store(next);
         }
@@ -865,9 +863,7 @@ public final class WorkRecord implements AutoCloseable {
                                     runs.put(story, before);
                                 }
                             });
-            settled =
-                    new WorkRun.Snapshot(
-                            snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
+            settled = snapshot.withRuns(snapshot.generation(), runs);
             return snapshot;
         }
 
@@ -885,7 +881,13 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         private static WorkRun.Snapshot snapshot(final Document doc) {
-            return new WorkRun.Snapshot(doc.generation(), doc.runs(), doc.ideas(), doc.results());
+            return new WorkRun.Snapshot(
+                    doc.generation(),
+                    doc.runs(),
+                    doc.ideas(),
+                    doc.results(),
+                    doc.followed(),
+                    doc.reports());
         }
 
         private Path opened() {
@@ -939,6 +941,26 @@ public final class WorkRecord implements AutoCloseable {
             // A record written before ideas were handed in holds none.
             if (tree instanceof ObjectNode root && !root.has("ideas")) {
                 root.putObject("ideas");
+            }
+            // An idea kept under a discussion's offer guarded a hand-in that is gone: ideas are
+            // taken from reports now, each kept under its task's name and number.
+            if (tree.path("ideas") instanceof ObjectNode ideas) {
+                final List<String> offers = new java.util.ArrayList<>();
+                ideas.propertyNames()
+                        .forEach(
+                                key -> {
+                                    if (HandedIdeas.offerKey(key)) {
+                                        offers.add(key);
+                                    }
+                                });
+                offers.forEach(ideas::remove);
+            }
+            // A record written before reports were read follows no offer and has taken none.
+            if (tree instanceof ObjectNode root && !root.has("followed")) {
+                root.putObject("followed");
+            }
+            if (tree instanceof ObjectNode root && !root.has("reports")) {
+                root.putObject("reports");
             }
             // A record written before stages handed in their results holds none.
             if (tree instanceof ObjectNode root && !root.has("results")) {
@@ -1215,7 +1237,9 @@ public final class WorkRecord implements AutoCloseable {
                     Math.max(written.generation(), Math.addExact(now.generation(), 1)),
                     laid(seen.runs(), now.runs(), written.runs(), true),
                     laid(seen.ideas(), now.ideas(), written.ideas(), false),
-                    laid(seen.results(), now.results(), written.results(), false));
+                    laid(seen.results(), now.results(), written.results(), false),
+                    laid(seen.followed(), now.followed(), written.followed(), false),
+                    laid(seen.reports(), now.reports(), written.reports(), false));
         }
 
         /**
@@ -1324,7 +1348,9 @@ public final class WorkRecord implements AutoCloseable {
                                         snapshot.generation(),
                                         snapshot.runs(),
                                         snapshot.ideas(),
-                                        snapshot.results()));
+                                        snapshot.results(),
+                                        snapshot.followed(),
+                                        snapshot.reports()));
                 if (bytes.length > MOST_RECORD) {
                     throw WorkRefusal.recordUnavailable(project, "The work record is full.");
                 }
@@ -1336,6 +1362,16 @@ public final class WorkRecord implements AutoCloseable {
 
         private void validate(final Document doc) {
             doc.ideas().forEach(HandedIdeas::validate);
+            doc.followed()
+                    .keySet()
+                    .forEach(
+                            offer -> {
+                                if (!HandedIdeas.offerKey(offer)) {
+                                    throw new IllegalArgumentException(
+                                            "a followed offer fails its check");
+                                }
+                            });
+            doc.reports().keySet().forEach(Ids::task);
             doc.results().forEach(HandedResults::validate);
             final Set<String> ids = new HashSet<>();
             doc.runs()
@@ -1546,9 +1582,9 @@ public final class WorkRecord implements AutoCloseable {
     }
 
     /**
-     * Whether an offer's result and given files are what its role is served: an idea for a
-     * discussion, a stage's file for its main or builder, then each owned issue at most once by its
-     * id within the bounds a task is given, and no file for work that pushes.
+     * Whether an offer's result and given files are what its role is served: none for a discussion,
+     * which reports its idea back, a stage's file for its main or builder, then each owned issue at
+     * most once by its id within the bounds a task is given, and no file for work that pushes.
      */
     private static boolean givenFits(final WorkOrder.Task task) {
         final String result = task.result();
@@ -1557,9 +1593,7 @@ public final class WorkRecord implements AutoCloseable {
                         && java.util.Arrays.stream(WorkRule.Result.values())
                                 .anyMatch(kind -> kind.file().equals(result));
         if (result != null
-                && !(task.role().equals("DISCUSSION")
-                        ? result.equals(IdeaDiscussion.RESULT)
-                        : stage && !task.role().equals("READER"))) {
+                && (task.role().equals("DISCUSSION") || !stage || task.role().equals("READER"))) {
             return false;
         }
         // An ended stage's offer is kept compacted, its result named and its files dropped.

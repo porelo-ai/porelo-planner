@@ -157,29 +157,7 @@ class MockPlanningSource implements PlanningSource {
       'agent': 'codex',
       'model': 'mock-model',
       'mode': 'AGENT',
-      'prompt': 'Discuss this idea with the person, change nothing, and once they agree write idea.json.\n\n$idea',
-      'result': 'idea.json',
-    });
-  }
-
-  /// The ideas handed in, each with its project and offer, in order.
-  final List<(String, String, Map<String, Object?>)> handedIdeas = [];
-
-  final Map<(String, String), String> _handed = {};
-
-  /// Answers one story per offer, numbered after the board's stories; the board itself is left as it is.
-  @override
-  Future<String> handIdea(String project, String offer, Map<String, Object?> idea) async {
-    final current = board(project);
-    handedIdeas.add((project, offer, idea));
-    if (moveFailure case final failure?) throw failure;
-    return _handed.putIfAbsent((project, offer), () {
-      var highest = 0;
-      for (final story in (current['stories'] as List).cast<Map<String, dynamic>>()) {
-        final number = int.tryParse((story['id'] as String).substring(2)) ?? 0;
-        if (number > highest) highest = number;
-      }
-      return 'ST${highest + 1 + _handed.length}';
+      'prompt': 'Discuss this idea with the person, change nothing, and once they agree report it back.\n\n$idea',
     });
   }
 

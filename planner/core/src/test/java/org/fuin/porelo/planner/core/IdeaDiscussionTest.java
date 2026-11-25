@@ -28,7 +28,16 @@ class IdeaDiscussionTest {
                 .contains("/workspace/project/", "/workspace/alpha/", "/workspace/beta/");
         assertThat(offer.prompt())
                 .as("the person's first words and the idea format the planner holds")
-                .contains("Let people tag stories", "idea.json");
+                .contains("Let people tag stories", "\"$id\": \"idea-1.json\"");
+        // Harm: a discussion told to write a result file nobody reads, or to report its idea
+        // under a kind the planner does not take, so the person's idea is lost.
+        assertThat(offer.prompt())
+                .as("the idea reported back through Report, kind idea, within Porelo's bound")
+                .contains(
+                        "through Porelo's Report",
+                        "with the kind `idea`",
+                        "at most 65536 characters")
+                .doesNotContain("idea.json", "result");
         assertThat(IdeaDiscussion.format(List.of("project")))
                 .as("the format asks who works each issue, never assuming it")
                 .contains("\"$id\": \"idea-1.json\"", "\"worker\"", "\"Agent\"", "\"Manual\"");

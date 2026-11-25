@@ -99,7 +99,6 @@ class ApiMatchesDescriptionTest {
                     Map.entry("MovedStory", org.fuin.porelo.planner.app.answers.MovedStory.class),
                     Map.entry("MoveWarning", org.fuin.porelo.planner.app.answers.MoveWarning.class),
                     Map.entry("IssueAdded", org.fuin.porelo.planner.app.answers.IssueAdded.class),
-                    Map.entry("IdeaAdded", org.fuin.porelo.planner.app.answers.IdeaAdded.class),
                     Map.entry("StoryAdded", org.fuin.porelo.planner.app.answers.StoryAdded.class),
                     Map.entry("EditSaved", org.fuin.porelo.planner.app.answers.EditSaved.class),
                     Map.entry("WorkerSaved", org.fuin.porelo.planner.app.answers.WorkerSaved.class),
@@ -149,7 +148,6 @@ class ApiMatchesDescriptionTest {
                     Map.entry("Finding", org.fuin.porelo.planner.app.answers.Finding.class),
                     Map.entry("ProjectSource", BoardController.ProjectSource.class),
                     Map.entry("Level", org.fuin.porelo.planner.app.answers.Level.class),
-                    Map.entry("IdeaRequest", WorkRequests.IdeaRequest.class),
                     Map.entry("Idea", NewIdeas.Idea.class),
                     Map.entry("IdeaStory", NewIdeas.Story.class),
                     Map.entry("WorkerRequest", WorkRequests.WorkerRequest.class),
@@ -726,49 +724,6 @@ class ApiMatchesDescriptionTest {
                         type.getSimpleName() + "." + component.getName());
             }
         }
-    }
-
-    @Test
-    void theHandInOfAnIdeaDescribesItsBodyItsAnswerAndEveryRefusal() {
-        // A refusal or a member missing from the contract lets the window take a refused idea as
-        // saved, or send an idea the planner reads otherwise.
-        final JsonNode operation =
-                description.path("paths").path("/projects/{project}/ideas").path("post");
-        assertThat(operation.at("/requestBody/content/application~1json/schema/$ref").asText())
-                .as("the hand-in's body")
-                .isEqualTo("#/components/schemas/IdeaRequest");
-        assertThat(operation.at("/responses/201/content/application~1json/schema/$ref").asText())
-                .as("the hand-in's answer")
-                .isEqualTo("#/components/schemas/IdeaAdded");
-        final Set<String> statuses = new TreeSet<>();
-        operation.path("responses").fieldNames().forEachRemaining(statuses::add);
-        assertThat(statuses)
-                .as("every answer of the hand-in")
-                .isEqualTo(
-                        Set.of(
-                                "201", "400", "401", "404", "409", "422", "501", "502", "503",
-                                "504"));
-        assertThat(operation.at("/responses/422/$ref").asText())
-                .as("a refused idea's answer")
-                .isEqualTo("#/components/responses/IdeaRefused");
-        final JsonNode schemas = description.path("components").path("schemas");
-        final JsonNode issue = schemas.path("IdeaIssue");
-        final Set<String> properties = new TreeSet<>();
-        issue.path("properties").fieldNames().forEachRemaining(properties::add);
-        assertThat(properties)
-                .as("an idea's issue has exactly the members the planner reads")
-                .isEqualTo(names(NewIdeas.Issue.class.getRecordComponents()));
-        final Set<String> required = new TreeSet<>();
-        issue.path("required").forEach(field -> required.add(field.asText()));
-        assertThat(required)
-                .as("only the size of an idea's issue may be left out")
-                .isEqualTo(Set.of("repository", "title", "mustBeTrue", "worker"));
-        assertThat(schemas.at("/Idea/properties/issues/items/$ref").asText())
-                .as("the idea's issues")
-                .isEqualTo("#/components/schemas/IdeaIssue");
-        assertThat(schemas.at("/Problem/properties/parameters/properties/faults/type").asText())
-                .as("an idea's faults are a list")
-                .isEqualTo("array");
     }
 
     @Test

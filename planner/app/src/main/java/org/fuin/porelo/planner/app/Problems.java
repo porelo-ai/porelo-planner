@@ -126,10 +126,6 @@ public class Problems {
             fields.put("reason", reason);
             return problem("MoveNotAllowed", HttpStatus.UNPROCESSABLE_CONTENT, reason, fields);
         }
-        if ("/projects/{project}/ideas".equals(pattern)) {
-            final String reason = "The body is no hand-in of an idea.";
-            return refused(WorkRefusal.ideaRefused(reason, List.of("body: " + reason), null));
-        }
         if ("/log/level".equals(pattern)) {
             return problem(
                     "InvalidLevel",

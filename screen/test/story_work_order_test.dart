@@ -11,12 +11,11 @@ Map<String, dynamic> _discussion() => {
   'model': 'idea-model',
   'mode': 'AGENT',
   'prompt': 'Discuss the idea.\n',
-  'result': 'idea.json',
 };
 
 void main() {
   // Harm: the window cannot start a discussion the planner offered, or starts it with altered arguments.
-  test('a discussion order reads without a repository and keeps its result', () {
+  test('a discussion order reads without a repository or a result file', () {
     final task = PlanningTaskOrder.from(_discussion());
     expect(
       [
@@ -30,17 +29,7 @@ void main() {
         task.prompt,
         task.result,
       ],
-      [
-        servedOffer(7),
-        null,
-        <String>[],
-        'DISCUSSION',
-        'codex',
-        'idea-model',
-        'AGENT',
-        'Discuss the idea.\n',
-        'idea.json',
-      ],
+      [servedOffer(7), null, <String>[], 'DISCUSSION', 'codex', 'idea-model', 'AGENT', 'Discuss the idea.\n', null],
       reason: 'every Start argument must come through as served',
     );
   });
@@ -59,9 +48,10 @@ void main() {
       'discussion unattended': _discussion()..['mode'] = 'UNATTENDED',
       'discussion in a shell': _discussion()..['mode'] = 'SHELL',
       'discussion over issues': _discussion()..['issues'] = ['PR1'],
-      'discussion without a result': _discussion()..remove('result'),
-      for (final name in ['../idea.json', 'a/idea.json', '..', '.', '.idea.json', '', ' idea.json', 'a\\b'])
-        'discussion result $name': _discussion()..['result'] = name,
+      // Harm: a discussion told to hand back a file nobody reads, so the person's idea is lost.
+      for (final name in ['idea.json', '../idea.json', ''])
+        'discussion with the result $name': _discussion()..['result'] = name,
+      'discussion with a null result': _discussion()..['result'] = null,
       'main without a repository': (servedFollowUp(1, role: 'MAIN')..remove('repository')),
       'main with a result': servedFollowUp(1, role: 'MAIN')..['result'] = 'idea.json',
       'reader with a result': servedFollowUp(1)..['result'] = 'idea.json',

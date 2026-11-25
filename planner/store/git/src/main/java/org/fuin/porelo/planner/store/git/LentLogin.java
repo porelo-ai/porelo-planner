@@ -46,7 +46,7 @@ final class LentLogin {
 
     private static final Logger LOG = LoggerFactory.getLogger(LentLogin.class);
 
-    private static final boolean WINDOWS =
+    static final boolean WINDOWS =
             !FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
     /** The checked executable, or null when nothing is lent. */
@@ -365,7 +365,7 @@ final class LentLogin {
     }
 
     /** The variable's value; Windows reads a variable's name in any case. */
-    private static @Nullable String variable(final Map<String, String> environment) {
+    static @Nullable String variable(final Map<String, String> environment) {
         final String value = environment.get(VARIABLE);
         if (value != null || !WINDOWS) {
             return value;

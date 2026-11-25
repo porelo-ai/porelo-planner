@@ -310,6 +310,15 @@ public final class ChangesRegistry implements AutoCloseable {
         return followed.size();
     }
 
+    /**
+     * Answers the names of the projects a window follows.
+     *
+     * @return their names, a copy
+     */
+    public synchronized java.util.Set<String> followedNames() {
+        return java.util.Set.copyOf(followed.keySet());
+    }
+
     /** Ends every subscription and stops the polling. */
     @Override
     public void close() {

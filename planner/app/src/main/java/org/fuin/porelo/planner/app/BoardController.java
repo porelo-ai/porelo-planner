@@ -16,7 +16,6 @@ import java.util.stream.Stream;
 import org.fuin.porelo.planner.app.answers.ChangedItem;
 import org.fuin.porelo.planner.app.answers.CorrectionPreview;
 import org.fuin.porelo.planner.app.answers.CorrectionSaved;
-import org.fuin.porelo.planner.app.answers.IdeaAdded;
 import org.fuin.porelo.planner.app.answers.IssueAdded;
 import org.fuin.porelo.planner.app.answers.IssueDetail;
 import org.fuin.porelo.planner.app.answers.IssueList;
@@ -128,6 +127,8 @@ public class BoardController {
 
     private final CommandQueues queues;
 
+    private final ReportReading reading;
+
     /**
      * Makes the controller, its saves written by calling each project's store directly.
      *
@@ -139,18 +140,35 @@ public class BoardController {
     }
 
     /**
-     * Makes the controller.
+     * Makes the controller, which reads no task's reports.
      *
      * @param projects the projects the window has given
      * @param changes tells a followed project's windows of a save
      * @param queues gives each project's saves the queue that writes their commands
      */
-    @Autowired
     public BoardController(
             final Projects projects, final ChangesRegistry changes, final CommandQueues queues) {
+        this(projects, changes, queues, ReportReading.idle());
+    }
+
+    /**
+     * Makes the controller.
+     *
+     * @param projects the projects the window has given
+     * @param changes tells a followed project's windows of a save
+     * @param queues gives each project's saves the queue that writes their commands
+     * @param reading reads a project's task reports soon after one of its tasks' events
+     */
+    @Autowired
+    public BoardController(
+            final Projects projects,
+            final ChangesRegistry changes,
+            final CommandQueues queues,
+            final ReportReading reading) {
         this.projects = projects;
         this.changes = changes;
         this.queues = queues;
+        this.reading = reading;
     }
 
     /**
@@ -1578,54 +1596,23 @@ public class BoardController {
     }
 
     /**
-     * Offers one task that discusses an idea over every repository of the project; it records,
-     * saves and announces nothing.
+     * Offers one task that discusses an idea over every repository of the project; it records only
+     * the offer, so the reports of the task started with it are read and its idea saved, and saves
+     * or announces nothing.
      */
     @PostMapping("/projects/{project}/ideas/discussion")
     public PlanningStartTask discussIdea(
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = name(project);
         final String idea = WorkRequests.idea(WorkRequests.read(request));
-        return WorkAnswers.discussion(IdeaDiscussion.offer(board(name), idea));
-    }
-
-    /**
-     * Saves the idea a discussion wrote as a story in the workflow's first state with its issues,
-     * once per offer.
-     *
-     * @param project the project's name
-     * @param request the request, whose body is the offer and the idea
-     * @return the story's id, as created
-     */
-    @PostMapping("/projects/{project}/ideas")
-    public ResponseEntity<IdeaAdded> handIdea(
-            @PathVariable("project") final String project, final HttpServletRequest request) {
-        final String name = name(project);
-        final WorkRequests.HandIn handIn = WorkRequests.handIn(request);
-        final String offer = handIn.request().offer();
-        final String story;
+        final IdeaDiscussion discussion = IdeaDiscussion.offer(board(name), idea);
+        final String offer = java.util.UUID.randomUUID().toString();
         try {
-            story = projects.work(name).idea(offer, handIn.request().idea(), handIn.shape());
-        } catch (final StoreException.NotSavable e) {
-            throw WorkRefusal.ideaRefused(
-                    "The store cannot write the idea.",
-                    List.of(bounded(String.valueOf(e.getMessage()))),
-                    null);
-        } catch (final UnsupportedOperationException e) {
-            throw new Refusal(
-                    "NotOffered",
-                    HttpStatus.NOT_IMPLEMENTED,
-                    "This planner does not add ideas.",
-                    Map.of("project", name));
-        } finally {
-            changes.saved(name);
+            projects.work(name).discussed(offer);
+        } catch (final UnsupportedOperationException unavailable) {
+            throw notOffered(name);
         }
-        LOG.info(
-                "Saved the idea of offer {} in project {} as story {}",
-                LogText.of(offer),
-                LogText.of(name),
-                LogText.of(story));
-        return ResponseEntity.status(HttpStatus.CREATED).body(new IdeaAdded(story));
+        return WorkAnswers.discussion(offer, discussion);
     }
 
     /** Computes the proposal from one board without starting or recording work. */
@@ -1699,6 +1686,8 @@ public class BoardController {
                     report.ended() == null
                             ? ""
                             : report.ended().finished() ? ", finished" : ", not finished");
+            // A task's event may follow a report of its own, so its reports are read soon.
+            reading.soon(name);
             return new TaskEventReply(
                     answer.revision(),
                     WorkAnswers.knownWork(answer.board(), answer.work()),

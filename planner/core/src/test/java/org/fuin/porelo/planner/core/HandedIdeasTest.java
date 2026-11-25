@@ -2,7 +2,6 @@ package org.fuin.porelo.planner.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.time.Clock;
 import java.util.ArrayDeque;
@@ -21,107 +20,122 @@ import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.StoreException;
 import org.junit.jupiter.api.Test;
 
-/** A discussed idea is saved once per offer, whatever happens between two hand-ins. */
+/** A reported idea is saved once per task name and number, whatever happens between two reads. */
 class HandedIdeasTest {
 
-    private static final String OFFER = "4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f";
+    private static final String OFFER = ReportTakingTest.OFFER;
+
+    private static final String TASK = ReportTakingTest.TASK;
+
+    private static final String KEY = TASK + "#1";
 
     private final Store store = new Store();
 
     private final WorkRunTest.Memory record = new WorkRunTest.Memory();
 
-    private final WorkRun run = new WorkRun(store, record, Clock.systemUTC());
+    private final ReportTakingTest.Porelo porelo = new ReportTakingTest.Porelo();
+
+    private WorkRun run = new WorkRun(store, record, Clock.systemUTC());
+
+    /** One discussion, followed, whose task reported one idea. */
+    private void reported() {
+        run.discussed(OFFER);
+        porelo.task(TASK, OFFER, false);
+        porelo.report(TASK, "idea", "good");
+    }
+
+    private ReportTaking.Outcome take() {
+        return run.takeReports(ReportTakingTest.PROJECT, porelo, porelo, ReportTakingTest::read);
+    }
 
     @Test
-    void aSecondHandInOfASavedOfferAnswersTheSameStoryAndSavesNothing() {
-        // A window that hands the idea in again after a lost answer would make a second story.
-        final String first = run.idea(OFFER, NewIdeasTest.idea(), List.of());
-        final NewIdeas.Idea other =
-                new NewIdeas.Idea(
-                        new NewIdeas.Story("Another", "G", "T", "Low"),
-                        List.of(NewIdeasTest.issue("porelo-other")));
+    void aSavedReportReadAgainAnswersNothingNewAndSavesNothing() {
+        // A report read again after a lost mark would make a second story.
+        reported();
+        take();
+        // The mark lost, the key kept: the report is read again.
+        record.value = ReportTaking.marked(record.value, "porelo-proj_x", 1);
+        final java.util.Map<String, ReportTaking.Mark> marks =
+                new java.util.HashMap<>(record.value.reports());
+        marks.remove(TASK);
+        record.value =
+                record.value.withReading(
+                        record.value.generation() + 1, record.value.followed(), marks);
 
-        assertThat(run.idea(OFFER, other, List.of()))
-                .as("the story the offer was saved as")
-                .isEqualTo(first)
-                .isEqualTo("ST1");
-        assertThat(store.saved).as("one save for the offer").hasSize(1);
-        assertThat(record.value.ideas().get(OFFER).status())
-                .as("the offer is recorded as done")
+        final ReportTaking.Outcome again = take();
+
+        assertThat(again.stories()).as("the story it was saved as").containsExactly(KEY + " ST1");
+        assertThat(store.saved).as("one save for the report").hasSize(1);
+        assertThat(record.value.ideas().get(KEY).status())
+                .as("the report is recorded as done")
                 .isEqualTo(HandedIdeas.DONE);
     }
 
     @Test
-    void aMalformedIdeaIsRefusedOnATakenOfferToo() {
-        // An idea let through because its offer was taken would hide its faults from the person.
-        run.idea(OFFER, NewIdeasTest.idea(), List.of());
+    void theReportIsMarkedTakenInTheSameWriteThatRecordsItsStory() {
+        // Harm: a planner stopped between the two writes reads the report again.
+        reported();
+        store.during = () -> String.valueOf(record.value.reports().get(TASK));
+        final int before = record.writes;
 
-        final WorkRefusal refused =
-                catchThrowableOfType(
-                        WorkRefusal.class,
-                        () ->
-                                run.idea(
-                                        OFFER,
-                                        new NewIdeas.Idea(NewIdeasTest.story(), List.of()),
-                                        List.of()));
+        take();
 
-        assertThat(refused).as("the malformed idea is refused").isNotNull();
-        assertThat(refused.name()).as("its name").isEqualTo("IdeaRefused");
-        assertThat(store.saved).as("nothing more is saved").hasSize(1);
+        assertThat(store.seen).as("not yet taken while the store saves").containsExactly("null");
+        assertThat(record.writes - before)
+                .as("one write before the save, one after it with the mark")
+                .isEqualTo(2);
+        assertThat(record.value.reports().get(TASK).seq()).isEqualTo(1);
     }
 
     @Test
-    void aPartlySavedOfferIsKeptAndRefusedNamingThePushedRepositoriesWithoutASave() {
+    void aPartlySavedReportIsKeptAndTakenAsRefusedNamingThePushedRepositories() {
         // A retry after a partial push would put the pushed issues in their repositories twice.
+        reported();
         store.failures.add(
                 new StoreException.PartlySaved(
                         "porelo-project", List.of("porelo-other"), "refused"));
 
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the partial save is answered as such")
-                .isInstanceOf(StoreException.PartlySaved.class);
-        final WorkRefusal refused =
-                catchThrowableOfType(
-                        WorkRefusal.class, () -> run.idea(OFFER, NewIdeasTest.idea(), List.of()));
+        final ReportTaking.Outcome first = take();
+        final ReportTaking.Outcome second = take();
 
-        assertThat(refused).as("the second hand-in is refused").isNotNull();
-        assertThat(refused.name()).as("its name").isEqualTo("IdeaRefused");
-        assertThat(refused.parameters().get("pushed"))
-                .as("the repositories already pushed")
-                .isEqualTo("porelo-other");
+        assertThat(first.unread()).as("the partial save said, not taken").hasSize(1);
+        assertThat(second.refused())
+                .as("the second read refused and taken")
+                .singleElement()
+                .asString()
+                .startsWith(KEY + ": The idea of this report was saved only in part")
+                .contains("porelo-other");
         assertThat(store.attempts).as("no second save is tried").isEqualTo(1);
+        assertThat(record.value.reports().get(TASK).seq()).isEqualTo(1);
     }
 
     @Test
-    void anOfferLeftPendingByAStoppedPlannerIsRefusedWithoutASave() {
+    void aReportLeftPendingByAStoppedPlannerIsTakenAsRefusedWithoutASave() {
         // A planner stopped mid-save may have pushed; saving again could make a second story.
+        run.discussed(OFFER);
         record.value =
-                new WorkRun.Snapshot(
-                        3,
-                        Map.of(),
+                record.value.withIdeas(
+                        record.value.generation() + 1,
                         Map.of(
-                                OFFER,
+                                KEY,
                                 new HandedIdeas.Handed(HandedIdeas.PENDING, null, List.of(), 3)));
+        porelo.task(TASK, OFFER, false);
+        porelo.report(TASK, "idea", "good");
 
-        final WorkRefusal refused =
-                catchThrowableOfType(
-                        WorkRefusal.class, () -> run.idea(OFFER, NewIdeasTest.idea(), List.of()));
+        final ReportTaking.Outcome outcome = take();
 
-        assertThat(refused).as("the pending offer is refused").isNotNull();
-        assertThat(refused.name()).as("its name").isEqualTo("IdeaRefused");
-        assertThat(refused.parameters().get("pushed")).as("nothing known pushed").isEqualTo("");
+        assertThat(outcome.refused()).as("refused and taken").hasSize(1);
         assertThat(store.attempts).as("no save is tried").isZero();
     }
 
     @Test
     void anIdeaIsSavedOnABoardAnotherSaveMovedWithoutReadingItWhole() {
-        // Harm: every idea handed in after another save reads the whole project inside the work
+        // Harm: every idea taken after another save reads the whole project inside the work
         // record's lock, or is refused though it changes no item held.
         store.moved = true;
+        reported();
 
-        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
-                .as("the idea is saved on the first try")
-                .isEqualTo("ST1");
+        assertThat(take().stories()).as("saved on the first try").containsExactly(KEY + " ST1");
         assertThat(store.refreshes).as("no whole read").isZero();
         assertThat(store.attempts).as("one try").isEqualTo(1);
         assertThat(store.bases)
@@ -130,13 +144,12 @@ class HandedIdeasTest {
     }
 
     @Test
-    void anIdeaHeldInTheQueueDoesNotBlockTheNextIdeasSave() {
-        // Harm: one idea held for the owner account makes every later idea's save fail, since its
-        // command's id is taken in the outbox.
+    void anIdeaHeldInTheQueueStaysPendingAndDoesNotBlockTheNextReport() {
+        // Harm: one idea held for the owner account is saved again, or makes every later idea's
+        // save fail, since its command's id is taken in the outbox.
         final java.util.Set<String> kept = new java.util.HashSet<>();
         final org.fuin.porelo.planner.store.DirectQueue direct =
                 new org.fuin.porelo.planner.store.DirectQueue(store);
-        // As the outbox does: a command id it keeps is refused, and the first group is held.
         final org.fuin.porelo.planner.store.CommandQueue queue =
                 group -> {
                     for (final org.fuin.porelo.planner.store.Command command : group.commands()) {
@@ -150,123 +163,113 @@ class HandedIdeasTest {
                                     List.of(), group.commands(), "The project stayed busy.")
                             : direct.submit(group);
                 };
-        final WorkRun held = new WorkRun(store, record, Clock.systemUTC(), why -> {}, queue);
+        run = new WorkRun(store, record, Clock.systemUTC(), why -> {}, queue);
+        reported();
 
-        assertThat(catchThrowable(() -> held.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the first idea is held, nothing of it written")
-                .isInstanceOf(StoreException.Busy.class);
-        // Harm: the held group stays in the outbox for the owner account to resend, so a retry of
-        // the same offer would make the idea twice.
-        assertThat(record.value.ideas())
-                .as("the offer stays pending while its group is held")
-                .containsKey(OFFER);
-        assertThat(catchThrowable(() -> held.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("a retry of the held offer is refused, never saved a second time")
-                .isInstanceOf(WorkRefusal.class);
+        assertThat(take().unread()).as("the first idea is held, not taken").hasSize(1);
+        assertThat(record.value.ideas().get(KEY).status())
+                .as("pending while its group is held")
+                .isEqualTo(HandedIdeas.PENDING);
+        porelo.report(TASK, "idea", "good");
+        final ReportTaking.Outcome next = take();
 
-        assertThat(
-                        held.idea(
-                                "5f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f",
-                                NewIdeasTest.idea(),
-                                List.of()))
-                .as("a later idea is saved")
-                .isEqualTo("ST1");
+        assertThat(next.refused()).as("the held one taken as refused").hasSize(1);
+        assertThat(next.stories()).as("the later idea saved").containsExactly(TASK + "#2 ST1");
     }
 
     @Test
-    void aStoreRefusalBeforeAnyPushLeavesTheOfferFreeForARetry() {
-        // A refusal kept as pending would refuse the corrected retry for good.
+    void aStoreThatCannotWriteTheIdeaIsTakenAsRefused() {
+        // Harm: an idea the store refuses for good read again every minute, blocking the task's
+        // later reports.
         store.failures.add(new StoreException.NotSavable("", "no prefix"));
+        reported();
 
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the store's refusal is answered")
-                .isInstanceOf(StoreException.NotSavable.class);
-        assertThat(record.value.ideas()).as("the offer is not kept").isEmpty();
-        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
-                .as("a retry saves")
-                .isEqualTo("ST1");
+        final ReportTaking.Outcome outcome = take();
+
+        assertThat(outcome.refused()).as("refused and taken").hasSize(1);
+        assertThat(record.value.ideas()).as("its key is not kept").isEmpty();
+        assertThat(record.value.reports().get(TASK).seq()).isEqualTo(1);
     }
 
     @Test
-    void aRefusalThatMayHaveWrittenKeepsTheOfferPendingSoAResendMakesNoSecondIdea() {
-        // Harm: a resent hand-in saves the idea once more after a save whose story may stand.
+    void aRefusalThatMayHaveWrittenKeepsTheReportPendingSoAReadAgainMakesNoSecondIdea() {
+        // Harm: a report read again saves the idea once more after a save whose story may stand.
         store.failures.add(new StoreException.Unreachable("alpha", "timed out"));
+        reported();
 
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the store's refusal is answered")
-                .isInstanceOf(StoreException.Unreachable.class);
-        assertThat(record.value.ideas())
-                .as("the offer kept pending")
-                .hasEntrySatisfying(OFFER, kept -> assertThat(kept.status()).isEqualTo("PENDING"));
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the resend refused")
-                .isInstanceOf(WorkRefusal.class);
+        assertThat(take().unread()).as("not taken").hasSize(1);
+        assertThat(record.value.ideas().get(KEY).status()).isEqualTo("PENDING");
+        assertThat(take().refused()).as("read again, refused and taken").hasSize(1);
         assertThat(store.attempts).as("the store asked once").isEqualTo(1);
     }
 
     @Test
-    void anIdeaItsOwnCheckRefusesWhereTheStoreSavesLeavesTheOfferFree() {
-        // Harm: an idea refused for good by a check that runs before the store writes anything.
+    void anIdeaItsOwnCheckRefusesWhereTheStoreSavesIsTakenAsRefused() {
+        // Harm: an idea refused by a check that runs before the store writes anything is read
+        // again forever.
         store.failures.add(
                 WorkRefusal.ideaRefused("The idea is refused.", List.of("title: taken"), null));
+        reported();
 
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the check's refusal is answered")
-                .isInstanceOf(WorkRefusal.class);
-        assertThat(record.value.ideas()).as("the offer is not kept").isEmpty();
-        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
-                .as("a retry saves")
-                .isEqualTo("ST1");
+        final ReportTaking.Outcome outcome = take();
+
+        assertThat(outcome.refused())
+                .as("said with its fault")
+                .singleElement()
+                .asString()
+                .contains("title: taken");
+        assertThat(record.value.ideas()).as("its key is not kept").isEmpty();
     }
 
     @Test
-    void theOfferIsRecordedAsPendingBeforeTheStoreSaves() {
-        // A save that is not preceded by its record cannot be told from a fresh offer after a stop.
-        store.during = () -> record.value.ideas().get(OFFER).status();
+    void theReportIsRecordedAsPendingBeforeTheStoreSaves() {
+        // A save that is not preceded by its record cannot be told from a fresh report after a
+        // stop.
+        store.during = () -> record.value.ideas().get(KEY).status();
+        reported();
 
-        run.idea(OFFER, NewIdeasTest.idea(), List.of());
+        take();
 
         assertThat(store.seen).as("the record during the save").containsExactly("PENDING");
     }
 
     @Test
-    void anOfferThatIsNoCanonicalUuidIsRefusedBeforeTheRecord() {
-        // An offer of another form would be kept under a key no check of the record accepts.
-        for (final String offer :
-                List.of("4F2C1D7E-8A3B-4C5D-9E6F-0A1B2C3D4E5F", "1-2-3-4-5", "", "offer")) {
-            final WorkRefusal refused =
-                    catchThrowableOfType(
-                            WorkRefusal.class,
-                            () -> run.idea(offer, NewIdeasTest.idea(), List.of()));
-            assertThat(refused).as("the offer %s is refused", offer).isNotNull();
-            assertThat(refused.name()).as("its name").isEqualTo("IdeaRefused");
+    void aKeyIsATaskNameAndANumber() {
+        // A key of another form would be kept under a key no check of the record accepts.
+        assertThat(HandedIdeas.key(TASK, 7)).isEqualTo(TASK + "#7");
+        for (final String name : List.of("-p", "", "a b", "a#b")) {
+            assertThat(catchThrowable(() -> HandedIdeas.key(name, 1)))
+                    .as("the name %s", name)
+                    .isInstanceOf(IllegalArgumentException.class);
         }
-        assertThat(store.attempts).as("nothing is saved").isZero();
+        assertThat(catchThrowable(() -> HandedIdeas.key(TASK, 0)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void theRecordKeepsAThousandDoneOffersDroppingTheOldest() {
+    void theRecordKeepsAThousandDoneReportsDroppingTheOldest() {
         // A record growing with every idea would one day refuse all work as full.
         final Map<String, HandedIdeas.Handed> done = new HashMap<>();
         for (int index = 0; index < HandedIdeas.MOST_DONE; index++) {
             done.put(
-                    String.format("00000000-0000-4000-8000-%012d", index),
+                    "porelo-proj_old#" + (index + 1),
                     new HandedIdeas.Handed(HandedIdeas.DONE, "ST" + (index + 1), List.of(), index));
         }
         record.value = new WorkRun.Snapshot(5000, Map.of(), done);
+        reported();
 
-        run.idea(OFFER, NewIdeasTest.idea(), List.of());
+        take();
 
         assertThat(record.value.ideas())
-                .as("a thousand done offers, the newest kept and the oldest dropped")
+                .as("a thousand done reports, the newest kept and the oldest dropped")
                 .hasSize(HandedIdeas.MOST_DONE)
-                .containsKey(OFFER)
-                .doesNotContainKey("00000000-0000-4000-8000-000000000000")
-                .containsKey("00000000-0000-4000-8000-000000000001");
+                .containsKey(KEY)
+                .doesNotContainKey("porelo-proj_old#1")
+                .containsKey("porelo-proj_old#2");
     }
 
     @Test
-    void aRecordedOfferThatFailsItsCheckIsRefused() {
+    void aRecordedReportThatFailsItsCheckIsRefused() {
         // A record edited by hand must not hand a made-up story id to the window.
         assertThat(
                         List.of(
@@ -283,25 +286,41 @@ class HandedIdeasTest {
                 .as("each record that fails its check")
                 .allSatisfy(
                         handed ->
-                                assertThat(
-                                                catchThrowable(
-                                                        () -> HandedIdeas.validate(OFFER, handed)))
+                                assertThat(catchThrowable(() -> HandedIdeas.validate(KEY, handed)))
                                         .as("%s", handed)
                                         .isInstanceOf(IllegalArgumentException.class));
-        assertThat(
-                        catchThrowable(
-                                () ->
-                                        HandedIdeas.validate(
-                                                OFFER.toUpperCase(java.util.Locale.ROOT),
-                                                new HandedIdeas.Handed(
-                                                        HandedIdeas.DONE, "ST1", List.of(), 1))))
-                .as("an offer in upper case")
-                .isInstanceOf(IllegalArgumentException.class);
+        for (final String key :
+                List.of(
+                        OFFER,
+                        TASK,
+                        TASK + "#0",
+                        TASK + "#01",
+                        "-p#1",
+                        "#1",
+                        TASK + "#9223372036854775808")) {
+            assertThat(
+                            catchThrowable(
+                                    () ->
+                                            HandedIdeas.validate(
+                                                    key,
+                                                    new HandedIdeas.Handed(
+                                                            HandedIdeas.DONE,
+                                                            "ST1",
+                                                            List.of(),
+                                                            1))))
+                    .as("the key %s", key)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
         HandedIdeas.validate(
-                OFFER, new HandedIdeas.Handed(HandedIdeas.PARTLY, null, List.of("porelo-x"), 0));
+                KEY, new HandedIdeas.Handed(HandedIdeas.PARTLY, null, List.of("porelo-x"), 0));
+        // Harm: a report number the key accepts but the record check refuses writes cleanly and
+        // makes the work record unreadable on the next start.
+        HandedIdeas.validate(
+                HandedIdeas.key(TASK, Long.MAX_VALUE),
+                new HandedIdeas.Handed(HandedIdeas.DONE, "ST1", List.of(), 0));
         // Harm: a tracker's new story recorded as handed makes the whole work record unreadable.
         HandedIdeas.validate(
-                OFFER, new HandedIdeas.Handed(HandedIdeas.DONE, "porelo-x#12", List.of(), 0));
+                KEY, new HandedIdeas.Handed(HandedIdeas.DONE, "porelo-x#12", List.of(), 0));
     }
 
     @Test
@@ -322,10 +341,11 @@ class HandedIdeasTest {
                         WorkRunTest.ended("Built")));
         record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
         assertThat(record.value.runs()).as("the old run of ST1").containsKey("ST1");
+        reported();
 
-        assertThat(run.idea(OFFER, NewIdeasTest.idea(), List.of()))
+        assertThat(take().stories())
                 .as("the idea is saved under the old run's id")
-                .isEqualTo("ST1");
+                .containsExactly(KEY + " ST1");
 
         assertThat(record.value.runs()).as("the new ST1 has no run").doesNotContainKey("ST1");
         assertThat(run.work("ST1")).as("its work reads as none").isNull();
@@ -338,45 +358,41 @@ class HandedIdeasTest {
         f.order();
         record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
         store.failures.add(new StoreException.NotSavable("", "no prefix"));
+        reported();
 
-        assertThat(catchThrowable(() -> run.idea(OFFER, NewIdeasTest.idea(), List.of())))
-                .as("the store refuses the save")
-                .isInstanceOf(StoreException.NotSavable.class);
+        take();
 
         assertThat(record.value.runs()).as("the gone story's run is dropped").isEmpty();
     }
 
     @Test
-    void aHandInIsRefusedWhileATaskOfAGoneStorysRunStillWorks() {
+    void aReportIsNotTakenWhileATaskOfAGoneStorysRunStillWorks() {
         // Dropping that run would leave its task unstoppable; keeping it would hand it the new
-        // story.
+        // story; taking the report would lose its idea.
         final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
         final var offer = f.order().tasks().getFirst();
         f.run.report(
                 "task",
                 new WorkRun.Report(offer.offer(), WorkRun.Event.STARTED, "box", "box", null));
-        final WorkRun.Snapshot before = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
-        record.value = before;
+        record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
+        reported();
+        final Map<String, WorkRun.Run> runs = record.value.runs();
 
-        final WorkRefusal refused =
-                catchThrowableOfType(
-                        WorkRefusal.class, () -> run.idea(OFFER, NewIdeasTest.idea(), List.of()));
+        final ReportTaking.Outcome outcome = take();
 
-        assertThat(refused).as("the hand-in is refused").isNotNull();
-        assertThat(refused.name()).as("as work still running").isEqualTo("WorkRunning");
-        assertThat(refused.parameters())
-                .as("naming the old story and its task")
-                .containsEntry("story", "ST1")
-                .containsEntry("tasks", List.of("task"));
+        assertThat(outcome.unread())
+                .as("said as work still running")
+                .singleElement()
+                .asString()
+                .contains("WorkRunning");
         assertThat(store.attempts).as("nothing is saved").isZero();
-        assertThat(record.value)
-                .as("the record is untouched, the task stays stoppable")
-                .isEqualTo(before);
+        assertThat(record.value.runs()).as("the task stays stoppable").isEqualTo(runs);
+        assertThat(record.value.reports()).as("the report not taken").doesNotContainKey(TASK);
     }
 
     @Test
     void aRunWhoseStoryIsStillOnTheBoardIsKeptWhenAnIdeaIsSaved() {
-        // A hand-in that dropped the runs of stories still shown would lose their work.
+        // An idea saved that dropped the runs of stories still shown would lose their work.
         final WorkRunTest.Fixture f = new WorkRunTest.Fixture();
         f.order();
         record.value = new WorkRun.Snapshot(7, f.record.value.runs(), Map.of());
@@ -390,8 +406,9 @@ class HandedIdeasTest {
                         bare.work(),
                         bare.repositories(),
                         bare.faults());
+        reported();
 
-        run.idea(OFFER, NewIdeasTest.idea(), List.of());
+        take();
 
         assertThat(record.value.runs())
                 .as("the run of ST1, still on the board")

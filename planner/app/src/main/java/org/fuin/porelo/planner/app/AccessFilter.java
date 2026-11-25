@@ -84,9 +84,9 @@ public final class AccessFilter implements Filter {
     private static final Pattern RESULT_PATH =
             Pattern.compile("/projects/[^/?#;%]+/tasks/[^/?#;%]+/result");
 
-    /** The raw paths that create an idea, a story or an issue. */
+    /** The raw paths that create a story or an issue. */
     private static final Pattern CREATION_PATH =
-            Pattern.compile("/projects/[^/?#;%]+/(ideas|stories|issues)");
+            Pattern.compile("/projects/[^/?#;%]+/(stories|issues)");
 
     /** The largest body a proof's request may have. */
     static final int MOST_PROOF = 128;
@@ -199,8 +199,8 @@ public final class AccessFilter implements Filter {
 
     /**
      * The most bytes the request's operation can legally carry, by its method and raw path: a
-     * stage's result {@link #MOST_RESULT}, a new idea, story or issue {@link #MOST_LARGE_BODY},
-     * every other request {@link #MOST_TEXT_BODY}; never more than {@link #MOST_BODY}.
+     * stage's result {@link #MOST_RESULT}, a new story or issue {@link #MOST_LARGE_BODY}, every
+     * other request {@link #MOST_TEXT_BODY}; never more than {@link #MOST_BODY}.
      */
     static int most(final HttpServletRequest request) {
         if (!"POST".equals(request.getMethod())) {

@@ -180,6 +180,7 @@ class AccessFilterTest {
                 "POST /projects/p/issues/I1/comments",
                 "PUT /projects/p/issues/I1/text",
                 "POST /projects/p/ideas/discussion",
+                "POST /projects/p/ideas",
                 "POST /projects/p/ideas/",
                 "POST /projects/p/tasks/a/b/result",
                 "POST /projects/p%2fother/issues",
@@ -246,7 +247,6 @@ class AccessFilterTest {
     @ParameterizedTest
     @ValueSource(
             strings = {
-                "POST /projects/p/ideas 1048576",
                 "POST /projects/p/stories 1048576",
                 "POST /projects/p/issues 1048576",
                 "POST /projects/p/tasks/analyze/result 1052672",

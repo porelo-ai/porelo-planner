@@ -869,7 +869,6 @@ public final class HandedResults {
                     .map(Map.Entry::getKey)
                     .ifPresent(results::remove);
         }
-        return new WorkRun.Snapshot(
-                snapshot.generation() + 1, snapshot.runs(), snapshot.ideas(), results);
+        return snapshot.withResults(snapshot.generation() + 1, results);
     }
 }

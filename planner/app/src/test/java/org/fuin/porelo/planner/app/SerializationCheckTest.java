@@ -80,6 +80,18 @@ class SerializationCheckTest {
     }
 
     @Test
+    void theWorkRecordWrittenHoldsAFollowedOfferAndAMark() {
+        // Harm: a native image that cannot read back the reports taken, so a planner after a
+        // restart reads every report again and saves its idea twice.
+        final WorkRecord.Document sample =
+                (WorkRecord.Document) SerializationCheck.sample(WorkRecord.Document.class);
+
+        assertThat(sample.followed()).as("a followed offer").isNotEmpty();
+        assertThat(sample.reports()).as("a mark").isNotEmpty();
+        assertThat(sample.ideas()).as("a report's idea").isNotEmpty();
+    }
+
+    @Test
     void theOutboxReadBackHoldsEveryRefusalKindAndEveryState() {
         // Harm: a native image that cannot read back an outbox holding a kind the check never
         // wrote, so a planner after a restart cannot open its saves.

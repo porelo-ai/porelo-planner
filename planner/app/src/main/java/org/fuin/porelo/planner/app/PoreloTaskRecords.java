@@ -48,6 +48,50 @@ public final class PoreloTaskRecords implements TaskRecords {
     static final List<String> PASSED =
             List.of("PATH", "HOME", "LANG", "XDG_STATE_HOME", "XDG_RUNTIME_DIR");
 
+    /**
+     * What Windows also needs to find its state and run: the profile and application folders, the
+     * system root and the temporary folders. Never a token or secret.
+     */
+    static final List<String> PASSED_ON_WINDOWS =
+            List.of("LOCALAPPDATA", "APPDATA", "USERPROFILE", "SYSTEMROOT", "TEMP", "TMP");
+
+    private static final boolean WINDOWS =
+            !java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
+
+    /**
+     * The part of the planner's environment a child of Porelo gets.
+     *
+     * @param source the planner's environment
+     * @return the named variables found; on Windows also its own, each found in any case, as
+     *     Windows reads a variable's name
+     */
+    static Map<String, String> passed(final Map<String, String> source) {
+        return passed(source, WINDOWS);
+    }
+
+    static Map<String, String> passed(final Map<String, String> source, final boolean windows) {
+        final Map<String, String> passed = new LinkedHashMap<>();
+        final List<String> names = new java.util.ArrayList<>(PASSED);
+        if (windows) {
+            names.addAll(PASSED_ON_WINDOWS);
+        }
+        for (final String name : names) {
+            String value = source.get(name);
+            if (value == null && windows) {
+                for (final Map.Entry<String, String> variable : source.entrySet()) {
+                    if (variable.getKey().equalsIgnoreCase(name)) {
+                        value = variable.getValue();
+                        break;
+                    }
+                }
+            }
+            if (value != null) {
+                passed.put(name, value);
+            }
+        }
+        return Map.copyOf(passed);
+    }
+
     /** How long one run of Porelo may take, before the factor {@code services}. */
     private static final Duration LIMIT = Duration.ofSeconds(60);
 
@@ -147,14 +191,7 @@ public final class PoreloTaskRecords implements TaskRecords {
         }
         this.executable = executable;
         this.runner = runner;
-        final Map<String, String> passed = new LinkedHashMap<>();
-        for (final String name : PASSED) {
-            final String value = source.get(name);
-            if (value != null) {
-                passed.put(name, value);
-            }
-        }
-        this.environment = Map.copyOf(passed);
+        this.environment = passed(source);
         this.limits = limits;
     }
 
@@ -272,6 +309,7 @@ public final class PoreloTaskRecords implements TaskRecords {
             final RunRole role = PoreloPlaces.role(record, "role", "role", this::refused);
             final RunPlace place = PoreloPlaces.place(record, "place", "place", this::refused);
             final Integer held = heldOrNull();
+            final String callerKey = callerKey();
             try {
                 return new TaskRecord(
                         task,
@@ -284,7 +322,8 @@ public final class PoreloTaskRecords implements TaskRecords {
                         calls,
                         role,
                         place,
-                        held);
+                        held,
+                        callerKey);
             } catch (final IllegalArgumentException ex) {
                 throw new Unanswered(
                         where() + " cannot be a task's record: " + ex.getMessage(), ex);
@@ -355,6 +394,28 @@ public final class PoreloTaskRecords implements TaskRecords {
                 throw refused("held", "is no whole number of at least zero");
             }
             return value.intValue();
+        }
+
+        /**
+         * The key the task's start was given, absent or null when it was given none: at most
+         * {@value TaskRecord#MOST_CALLER_KEY} characters with no control character, as Porelo keeps
+         * it; any other caller's key is read too, and only the planner's own are used.
+         */
+        private @Nullable String callerKey() {
+            if (!record.has("callerKey")) {
+                return null;
+            }
+            final String key = textOrNull(record, "callerKey", "callerKey");
+            if (key != null
+                    && (key.length() > TaskRecord.MOST_CALLER_KEY
+                            || key.codePoints().anyMatch(Character::isISOControl))) {
+                throw refused(
+                        "callerKey",
+                        "is longer than "
+                                + TaskRecord.MOST_CALLER_KEY
+                                + " characters or holds a control character");
+            }
+            return key;
         }
 
         private void totals() {
@@ -539,13 +600,19 @@ public final class PoreloTaskRecords implements TaskRecords {
             final ProcessBuilder builder = new ProcessBuilder(command);
             builder.environment().clear();
             builder.environment().putAll(environment);
-            builder.redirectInput(ProcessBuilder.Redirect.from(Path.of("/dev/null").toFile()));
             final Process process;
             try {
                 process = builder.start();
             } catch (final IOException ex) {
                 throw new Unanswered(
                         "Porelo's executable cannot be started at " + command.getFirst(), ex);
+            }
+            try {
+                // Porelo reads nothing: its input is closed at once, on every platform.
+                process.getOutputStream().close();
+            } catch (final IOException ex) {
+                kill(process);
+                throw new Unanswered("Porelo's input could not be closed", ex);
             }
             final long deadline = System.nanoTime() + limit.toNanos();
             final CompletableFuture<Capture> out = drain(process.getInputStream(), ANSWER_LIMIT);
@@ -554,9 +621,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                 if (!process.waitFor(limit.toNanos(), TimeUnit.NANOSECONDS)) {
                     kill(process);
                     throw new Unanswered(
-                            "Porelo's task records gave no answer within "
-                                    + Seconds.of(limit)
-                                    + " s");
+                            "Porelo gave no answer within " + Seconds.of(limit) + " s");
                 }
                 final long left = Math.max(0, deadline - System.nanoTime());
                 final Capture answer = out.get(left, TimeUnit.NANOSECONDS);
@@ -570,12 +635,11 @@ public final class PoreloTaskRecords implements TaskRecords {
             } catch (final InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 kill(process);
-                throw new Unanswered("Reading Porelo's task records was interrupted", ex);
+                throw new Unanswered("Reading Porelo's answer was interrupted", ex);
             } catch (final TimeoutException ex) {
                 kill(process);
                 throw new Unanswered(
-                        "Porelo's task records gave no answer within " + Seconds.of(limit) + " s",
-                        ex);
+                        "Porelo gave no answer within " + Seconds.of(limit) + " s", ex);
             } catch (final ExecutionException ex) {
                 kill(process);
                 throw new Unanswered("Porelo's answer could not be read", ex);

@@ -12,8 +12,6 @@ final _issueName = RegExp(
   r'^([A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$',
 );
 const _modes = {'SHELL', 'AGENT', 'UNATTENDED'};
-// A plain file name: the window takes it from the task's result directory, so it must not leave that directory.
-final _resultName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
 const _stageResults = {'analysis.json', 'estimate.json', 'readiness.json'};
 
 Never _invalid(String reason) => throw FormatException(reason);
@@ -335,8 +333,8 @@ class PlanningTaskOrder {
       // A discussion reads every repository of the project; one named here would narrow or redirect its Start.
       if (map.containsKey('repository')) _invalid('A discussion names no repository.');
       if (mode != 'AGENT' || issues.isNotEmpty) _invalid('A discussion is an agent task over no issue.');
-      result = _text(map, 'result');
-      if (!_resultName.hasMatch(result)) _invalid('The task result is not a plain file name.');
+      // A discussion reports its idea back through Porelo's Report; a file it handed back would be read by nobody.
+      if (map.containsKey('result')) _invalid('A discussion hands back no result file.');
     } else {
       repository = _text(map, 'repository');
       if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
@@ -436,8 +434,8 @@ class PlanningTaskOrder {
   /// The complete prompt as served, preserved without trimming or rewriting.
   final String prompt;
 
-  /// The plain file name a discussion, or a stage that hands back its result, writes in its result directory;
-  /// null for work that pushes.
+  /// The plain file name a stage that hands back its result writes in its result directory; null for work that
+  /// pushes and for a discussion, which reports its idea back.
   final String? result;
 
   /// The issues' texts a stage's task reads, read only, as the planner holds them now; empty for work that pushes.
@@ -458,8 +456,6 @@ class PlanningTaskOrder {
       // The effort the person confirmed, none included, is the one the window may start.
       effort == other.effort &&
       mode == other.mode &&
-      // A story's stage result is the planner's rule, which the person's request does not name.
-      (role != 'DISCUSSION' || result == other.result) &&
       // An expected reader names no build; the planner's names one, which reading it refuses otherwise.
       (role == 'READER' && other.reads.isEmpty || listEquals(reads, other.reads));
 }

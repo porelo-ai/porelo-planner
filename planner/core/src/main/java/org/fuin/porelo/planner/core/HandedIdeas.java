@@ -21,28 +21,28 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Saves a discussed idea once per offer: the offer is written as pending before the store saves and
- * as done with the story's id after, so neither a repeated hand-in nor a planner stopped mid-save
- * makes a second story.
+ * Saves an idea a task reported once per report, keyed by the task's name and the report's number:
+ * the key is written as pending before the store saves and as done with the story's id after, so
+ * neither a report read again nor a planner stopped mid-save makes a second story.
  */
 public final class HandedIdeas {
 
-    /** An offer whose save began and has not ended. */
+    /** A report whose idea's save began and has not ended. */
     public static final String PENDING = "PENDING";
 
-    /** An offer whose idea is saved as its story. */
+    /** A report whose idea is saved as its story. */
     public static final String DONE = "DONE";
 
-    /** An offer whose idea reached some repositories but not all. */
+    /** A report whose idea reached some repositories but not all. */
     public static final String PARTLY = "PARTLY";
 
-    /** The most done offers kept; a new one drops the oldest. */
+    /** The most done reports kept; a new one drops the oldest. */
     public static final int MOST_DONE = 1000;
 
     private HandedIdeas() {}
 
     /**
-     * A discussion's offer whose idea was handed in.
+     * A report whose idea was taken.
      *
      * @param status {@value #PENDING}, {@value #DONE} or {@value #PARTLY}
      * @param story the story's id once done, else null
@@ -58,35 +58,62 @@ public final class HandedIdeas {
     }
 
     /**
-     * Checks an offer's form: a canonical lowercase UUID, as every offer of the record is.
+     * The key of a report: the task's container name and the report's number.
      *
-     * @param offer the offer
-     * @return the offer
-     * @throws WorkRefusal {@code IdeaRefused} for any other text
+     * @param container the task's container name
+     * @param seq the report's number, 1 or more
+     * @return {@code <container>#<seq>}
+     * @throws IllegalArgumentException when the name is no task's name or the number is below 1
      */
-    public static String offer(final String offer) {
-        try {
-            if (UUID.fromString(offer).toString().equals(offer)) {
-                return offer;
-            }
-        } catch (final IllegalArgumentException invalid) {
-            // Refused below in fixed words.
+    public static String key(final String container, final long seq) {
+        Ids.task(container);
+        if (seq < 1) {
+            throw new IllegalArgumentException("A report's number is 1 or more");
         }
-        throw WorkRefusal.ideaRefused(
-                "The body is no hand-in of an idea.",
-                List.of("offer: The offer must be a lowercase UUID."),
-                null);
+        return container + "#" + seq;
     }
 
     /**
-     * Checks a handed offer as the record keeps it.
+     * Whether a key is a discussion's offer, the key ideas were kept under before they were taken
+     * from reports: a canonical lowercase UUID.
      *
-     * @param offer the offer
+     * @param key the key
+     * @return whether it is one
+     */
+    public static boolean offerKey(final String key) {
+        try {
+            return UUID.fromString(key).toString().equals(key);
+        } catch (final IllegalArgumentException notOne) {
+            return false;
+        }
+    }
+
+    /** Whether a text is a report's number as {@link #key} writes it: 1 up to a long's most. */
+    private static boolean isNumber(final String text) {
+        if (!text.matches("[1-9][0-9]{0,18}")) {
+            return false;
+        }
+        try {
+            Long.parseLong(text);
+            return true;
+        } catch (final NumberFormatException overflow) {
+            return false;
+        }
+    }
+
+    /**
+     * Checks a report's idea as the record keeps it.
+     *
+     * @param key the report's key
      * @param handed what the record keeps of it
      * @throws IllegalArgumentException when a part fails its check
      */
-    public static void validate(final String offer, final Handed handed) {
-        if (!UUID.fromString(offer).toString().equals(offer) || handed.order() < 0) {
+    public static void validate(final String key, final Handed handed) {
+        final int hash = key.lastIndexOf('#');
+        if (hash < 0
+                || !Ids.isTask(key.substring(0, hash))
+                || !isNumber(key.substring(hash + 1))
+                || handed.order() < 0) {
             throw new IllegalArgumentException("a handed idea fails its check");
         }
         final String story = handed.story();
@@ -110,26 +137,31 @@ public final class HandedIdeas {
     }
 
     /**
-     * Saves an idea under the record's lock.
+     * Saves a report's idea under the record's lock.
      *
      * @param store the project's store
      * @param queue the project's command queue, which writes the idea
      * @param session the locked record
      * @param snapshot the record as read under the lock
-     * @param offer the discussion's offer, checked
+     * @param key the report's key, checked
      * @param idea the idea
      * @param shape the faults of the idea's shape its reader found
+     * @param taken what else the write that records the saved story changes, so the report is taken
+     *     in the same write
      * @return the story's id
+     * @throws WorkRefusal {@code IdeaRefused} for an idea its check refuses, or a report whose save
+     *     is pending or partly pushed; others as the record or the store refuse
      */
     static String save(
             final PlanningStore store,
             final CommandQueue queue,
             final WorkRun.Session session,
             final WorkRun.Snapshot snapshot,
-            final String offer,
+            final String key,
             final NewIdeas.Idea idea,
-            final List<String> shape) {
-        final Handed known = snapshot.ideas().get(offer);
+            final List<String> shape,
+            final java.util.function.UnaryOperator<WorkRun.Snapshot> taken) {
+        final Handed known = snapshot.ideas().get(key);
         if (known != null) {
             return known(known);
         }
@@ -140,7 +172,7 @@ public final class HandedIdeas {
         final WorkRun.Snapshot pending =
                 with(
                         WorkRun.withoutGoneRuns(snapshot, board),
-                        offer,
+                        key,
                         new Handed(PENDING, null, List.of(), next(snapshot)));
         session.preflight(pending);
         session.write(pending);
@@ -158,12 +190,14 @@ public final class HandedIdeas {
                                 Set.of(),
                                 Set.of(),
                                 dependencies -> NewIdeas.check(dependencies.board(), idea, shape)));
-        // A queue that fails to answer may have written the idea: the offer stays pending, so a
-        // resent hand-in is refused rather than saved a second time.
+        // A queue that fails to answer may have written the idea: the report stays pending, so a
+        // report read again is refused rather than saved a second time.
         final CommandOutcome outcome = queue.submit(new CommandGroup(group, List.of(create)));
         if (outcome instanceof CommandOutcome.Done done) {
             final String story = Objects.requireNonNull(done.created().get(create.id())).item();
-            session.write(with(pending, offer, new Handed(DONE, story, List.of(), next(pending))));
+            session.write(
+                    taken.apply(
+                            with(pending, key, new Handed(DONE, story, List.of(), next(pending)))));
             return story;
         }
         final Throwable refused;
@@ -173,19 +207,19 @@ public final class HandedIdeas {
             // The idea's own check runs where the store saves it, before anything is written.
             unwritten = !refusal.mayHaveWritten() || refused instanceof WorkRefusal;
         } else {
-            // A held group stays for the owner account to resend, so its offer stays pending and a
-            // retried hand-in never makes the idea a second time.
+            // A held group stays for the owner account to resend, so its report stays pending and
+            // a report read again never makes the idea a second time.
             refused = new StoreException.Busy("");
             unwritten = false;
         }
         if (refused instanceof StoreException.PartlySaved partly) {
             session.write(
-                    with(pending, offer, new Handed(PARTLY, null, partly.pushed(), next(pending))));
+                    with(pending, key, new Handed(PARTLY, null, partly.pushed(), next(pending))));
         } else if (unwritten) {
-            session.write(without(pending, offer));
+            session.write(without(pending, key));
         }
-        // A refusal that may have written keeps the offer pending, so no resend makes a second
-        // idea.
+        // A refusal that may have written keeps the report pending, so no read again makes a
+        // second idea.
         throw WorkRun.passedOn(refused);
     }
 
@@ -196,9 +230,9 @@ public final class HandedIdeas {
         }
         final String reason =
                 PARTLY.equals(known.status())
-                        ? "The idea of this offer was saved only in part and is not saved again."
-                        : "The save of this offer's idea did not end and is not made again.";
-        throw WorkRefusal.ideaRefused(reason, List.of("offer: " + reason), known.pushed());
+                        ? "The idea of this report was saved only in part and is not saved again."
+                        : "The save of this report's idea did not end and is not made again.";
+        throw WorkRefusal.ideaRefused(reason, List.of("report: " + reason), known.pushed());
     }
 
     private static long next(final WorkRun.Snapshot snapshot) {
@@ -206,9 +240,9 @@ public final class HandedIdeas {
     }
 
     private static WorkRun.Snapshot with(
-            final WorkRun.Snapshot snapshot, final String offer, final Handed handed) {
+            final WorkRun.Snapshot snapshot, final String key, final Handed handed) {
         final Map<String, Handed> ideas = new LinkedHashMap<>(snapshot.ideas());
-        ideas.put(offer, handed);
+        ideas.put(key, handed);
         while (ideas.values().stream().filter(h -> DONE.equals(h.status())).count() > MOST_DONE) {
             ideas.entrySet().stream()
                     .filter(entry -> DONE.equals(entry.getValue().status()))
@@ -216,12 +250,12 @@ public final class HandedIdeas {
                     .map(Map.Entry::getKey)
                     .ifPresent(ideas::remove);
         }
-        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas, snapshot.results());
+        return snapshot.withIdeas(next(snapshot), ideas);
     }
 
-    private static WorkRun.Snapshot without(final WorkRun.Snapshot snapshot, final String offer) {
+    private static WorkRun.Snapshot without(final WorkRun.Snapshot snapshot, final String key) {
         final Map<String, Handed> ideas = new LinkedHashMap<>(snapshot.ideas());
-        ideas.remove(offer);
-        return new WorkRun.Snapshot(next(snapshot), snapshot.runs(), ideas, snapshot.results());
+        ideas.remove(key);
+        return snapshot.withIdeas(next(snapshot), ideas);
     }
 }

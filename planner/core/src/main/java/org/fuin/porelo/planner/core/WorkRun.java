@@ -190,14 +190,24 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * The current runs, the discussions' offers whose ideas were handed in and the stage offers
-     * whose results were handed in, with a monotonically increasing local generation.
+     * The current runs, the ideas taken from reports by task and number, the stage offers whose
+     * results were handed in, the offers whose tasks' reports are read and the last report taken of
+     * each task's name, with a monotonically increasing local generation.
+     *
+     * @param generation the record's generation
+     * @param runs the runs, by story
+     * @param ideas the ideas saved or being saved, by {@link HandedIdeas#key}
+     * @param results the stages' results, by offer
+     * @param followed the offers whose tasks' reports are read, by offer
+     * @param reports the last report taken, by the task's container name
      */
     public record Snapshot(
             long generation,
             Map<String, Run> runs,
             Map<String, HandedIdeas.Handed> ideas,
-            Map<String, HandedResults.Handed> results) {
+            Map<String, HandedResults.Handed> results,
+            Map<String, ReportTaking.Followed> followed,
+            Map<String, ReportTaking.Mark> reports) {
         /** Prevents actions from mutating an already published generation. */
         public Snapshot {
             if (generation < 0) {
@@ -206,6 +216,77 @@ public final class WorkRun implements RefusedEventResave {
             runs = Map.copyOf(runs);
             ideas = Map.copyOf(ideas);
             results = Map.copyOf(results);
+            followed = Map.copyOf(followed);
+            reports = Map.copyOf(reports);
+        }
+
+        /** A snapshot that follows no offer's reports and has taken none. */
+        public Snapshot(
+                final long generation,
+                final Map<String, Run> runs,
+                final Map<String, HandedIdeas.Handed> ideas,
+                final Map<String, HandedResults.Handed> results) {
+            this(generation, runs, ideas, results, Map.of(), Map.of());
+        }
+
+        /**
+         * This record at another generation with other runs, all else kept.
+         *
+         * @param generation the generation
+         * @param runs the runs
+         * @return the record
+         */
+        public Snapshot withRuns(final long generation, final Map<String, Run> runs) {
+            return new Snapshot(generation, runs, ideas, results, followed, reports);
+        }
+
+        /**
+         * This record at another generation with other ideas, all else kept.
+         *
+         * @param generation the generation
+         * @param ideas the ideas
+         * @return the record
+         */
+        public Snapshot withIdeas(
+                final long generation, final Map<String, HandedIdeas.Handed> ideas) {
+            return new Snapshot(generation, runs, ideas, results, followed, reports);
+        }
+
+        /**
+         * This record at another generation with other results, all else kept.
+         *
+         * @param generation the generation
+         * @param results the results
+         * @return the record
+         */
+        public Snapshot withResults(
+                final long generation, final Map<String, HandedResults.Handed> results) {
+            return new Snapshot(generation, runs, ideas, results, followed, reports);
+        }
+
+        /**
+         * This record at another generation with other followed offers and report marks.
+         *
+         * @param generation the generation
+         * @param followed the followed offers
+         * @param reports the report marks
+         * @return the record
+         */
+        public Snapshot withReading(
+                final long generation,
+                final Map<String, ReportTaking.Followed> followed,
+                final Map<String, ReportTaking.Mark> reports) {
+            return new Snapshot(generation, runs, ideas, results, followed, reports);
+        }
+
+        /**
+         * This record at another generation, all else kept.
+         *
+         * @param generation the generation
+         * @return the record
+         */
+        public Snapshot withGeneration(final long generation) {
+            return new Snapshot(generation, runs, ideas, results, followed, reports);
         }
 
         /** A snapshot of runs and handed-in ideas without a handed-in result. */
@@ -1344,8 +1425,7 @@ public final class WorkRun implements RefusedEventResave {
         final Run reverted = draft.freeze();
         final Map<String, Run> runs = new LinkedHashMap<>(snapshot.runs());
         runs.put(run.story(), reverted);
-        final Snapshot base =
-                new Snapshot(snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
+        final Snapshot base = snapshot.withRuns(snapshot.generation(), runs);
         final Board board = store.board();
         final Judged judged = judge(base, reverted, before, task, report, board);
         return step(saved(session, snapshot, judged, board), judged.following(), false);
@@ -2052,7 +2132,7 @@ public final class WorkRun implements RefusedEventResave {
                 runs.put(run.story(), draft.freeze());
             }
         }
-        Snapshot snapshot = new Snapshot(read.generation(), runs, read.ideas(), read.results());
+        Snapshot snapshot = read.withRuns(read.generation(), runs);
         for (final Map.Entry<String, HandedResults.Handed> result : read.results().entrySet()) {
             final HandedResults.Handed known = result.getValue();
             if (HandedResults.PENDING.equals(known.status())) {
@@ -2069,11 +2149,8 @@ public final class WorkRun implements RefusedEventResave {
         }
         if (!snapshot.equals(read)) {
             session.write(
-                    new Snapshot(
-                            Math.max(snapshot.generation(), read.generation() + 1),
-                            snapshot.runs(),
-                            snapshot.ideas(),
-                            snapshot.results()));
+                    snapshot.withGeneration(
+                            Math.max(snapshot.generation(), read.generation() + 1)));
         }
     }
 
@@ -2522,24 +2599,38 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Saves the idea a discussion wrote, once per offer: checked first, then saved under the
-     * record's lock with the offer recorded before and after the store's save. Unlike a run's save
-     * it holds the lock while the store writes, so a resent hand-in waits for the save's end and
-     * answers its story, where outside the lock it would meet the offer pending and be refused.
+     * Follows a discussion's offer, so the reports of the task started with it are read and its
+     * idea saved once Porelo records that task.
      *
-     * @param offer the discussion's offer
-     * @param idea the idea
-     * @param shape the faults of the idea's shape its reader found
-     * @return the story's id, the one an earlier hand-in of the offer saved too
-     * @throws WorkRefusal {@code IdeaRefused} for a malformed idea or an offer whose save was
-     *     pending or partly pushed
+     * @param offer the discussion's offer, a canonical lowercase UUID
+     * @throws WorkRefusal {@code WorkRecordUnavailable} when the record cannot be written
      */
-    public String idea(final String offer, final NewIdeas.Idea idea, final List<String> shape) {
-        HandedIdeas.offer(offer);
-        NewIdeas.check(store.board(), idea, shape);
-        return record.locked(
-                session ->
-                        HandedIdeas.save(store, queue, session, read(session), offer, idea, shape));
+    public void discussed(final String offer) {
+        record.locked(
+                session -> {
+                    ReportTaking.follow(session, offer, clock.instant());
+                    return Boolean.TRUE;
+                });
+    }
+
+    /**
+     * Reads and takes the reports of every task the planner started that it still follows: a report
+     * of kind {@value TaskReport#IDEA} becomes a story with its issues once per task name and
+     * number, an idea its check refuses is taken and said, any other report is left to the window.
+     *
+     * @param project the project's name
+     * @param records Porelo's task records
+     * @param reports Porelo's reports
+     * @param ideas reads an idea from a report's text
+     * @return what was taken, in fixed words
+     * @throws TaskRecords.Unanswered when Porelo cannot answer its task records
+     */
+    public ReportTaking.Outcome takeReports(
+            final String project,
+            final TaskRecords records,
+            final TaskReports reports,
+            final ReportTaking.IdeaText ideas) {
+        return new ReportTaking(store, queue, record, clock).take(project, records, reports, ideas);
     }
 
     /**
@@ -3887,11 +3978,9 @@ public final class WorkRun implements RefusedEventResave {
         } else {
             runs.put(story, run);
         }
-        return new Snapshot(
-                now.generation() + 1,
-                runs,
-                now.ideas(),
-                results.apply(new LinkedHashMap<>(now.results())));
+        return now.withRuns(now.generation() + 1, runs)
+                .withResults(
+                        now.generation() + 1, results.apply(new LinkedHashMap<>(now.results())));
     }
 
     /**
@@ -4392,7 +4481,7 @@ public final class WorkRun implements RefusedEventResave {
         }
         return runs.size() == snapshot.runs().size()
                 ? snapshot
-                : new Snapshot(snapshot.generation(), runs, snapshot.ideas(), snapshot.results());
+                : snapshot.withRuns(snapshot.generation(), runs);
     }
 
     /**
@@ -4409,7 +4498,7 @@ public final class WorkRun implements RefusedEventResave {
         if (snapshot.generation() == Long.MAX_VALUE) {
             throw WorkRefusal.invalidSettings();
         }
-        return new Snapshot(snapshot.generation() + 1, runs, snapshot.ideas(), snapshot.results());
+        return snapshot.withRuns(snapshot.generation() + 1, runs);
     }
 
     /**

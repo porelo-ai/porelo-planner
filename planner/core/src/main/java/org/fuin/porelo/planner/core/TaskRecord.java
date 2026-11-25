@@ -22,6 +22,8 @@ import org.jspecify.annotations.Nullable;
  * @param place where its last run worked, or null when Porelo recorded none
  * @param held how many review items at that place are held back from its run, or null when Porelo
  *     recorded no count
+ * @param callerKey the key its start was given by whoever started it, or null when it was given
+ *     none; the planner's keys are its offers
  */
 public record TaskRecord(
         String task,
@@ -34,7 +36,47 @@ public record TaskRecord(
         List<Call> calls,
         @Nullable RunRole role,
         @Nullable RunPlace place,
-        @Nullable Integer held) {
+        @Nullable Integer held,
+        @Nullable String callerKey) {
+
+    /** The most characters of a caller's key, as Porelo keeps it. */
+    public static final int MOST_CALLER_KEY = 200;
+
+    /**
+     * A record whose start was given no caller's key.
+     *
+     * @param task Porelo's id of the task
+     * @param project the project the task belongs to
+     * @param repository the repository it ran in, or null
+     * @param issues the issues it was started for
+     * @param startedAt when it started
+     * @param endedAt when it ended, or null while it runs
+     * @param end how it ended, or null while it runs
+     * @param calls its calls
+     */
+    public TaskRecord(
+            final String task,
+            final String project,
+            final @Nullable String repository,
+            final List<String> issues,
+            final Instant startedAt,
+            final @Nullable Instant endedAt,
+            final @Nullable End end,
+            final List<Call> calls) {
+        this(
+                task,
+                project,
+                repository,
+                issues,
+                startedAt,
+                endedAt,
+                end,
+                calls,
+                null,
+                null,
+                null,
+                null);
+    }
 
     /** How a task ended, as Porelo records it. */
     public enum End {
@@ -77,9 +119,61 @@ public record TaskRecord(
             throw new IllegalArgumentException("Task " + task + " ends before it starts");
         }
         calls = List.copyOf(calls);
+        if (callerKey != null
+                && (callerKey.length() > MOST_CALLER_KEY
+                        || callerKey.codePoints().anyMatch(Character::isISOControl))) {
+            throw new IllegalArgumentException(
+                    "Task "
+                            + task
+                            + " carries a caller's key longer than "
+                            + MOST_CALLER_KEY
+                            + " characters or with a control character");
+        }
         if (held != null && held < 0) {
             throw new IllegalArgumentException("Task " + task + " holds fewer than no items");
         }
+    }
+
+    /**
+     * A record whose start was given no caller's key.
+     *
+     * @param task Porelo's id of the task
+     * @param project the project the task belongs to
+     * @param repository the repository it ran in, or null
+     * @param issues the issues it was started for
+     * @param startedAt when it started
+     * @param endedAt when it ended, or null while it runs
+     * @param end how it ended, or null while it runs
+     * @param calls its calls
+     * @param role its last run's role, or null
+     * @param place where its last run worked, or null
+     * @param held its held items, or null
+     */
+    public TaskRecord(
+            final String task,
+            final String project,
+            final @Nullable String repository,
+            final List<String> issues,
+            final Instant startedAt,
+            final @Nullable Instant endedAt,
+            final @Nullable End end,
+            final List<Call> calls,
+            final @Nullable RunRole role,
+            final @Nullable RunPlace place,
+            final @Nullable Integer held) {
+        this(
+                task,
+                project,
+                repository,
+                issues,
+                startedAt,
+                endedAt,
+                end,
+                calls,
+                role,
+                place,
+                held,
+                null);
     }
 
     /**
@@ -94,6 +188,7 @@ public record TaskRecord(
      * @param endedAt when it ended, or null while it runs
      * @param end how it ended, or null while it runs
      * @param calls its calls
+     * @param callerKey the key its start was given, or null
      */
     public TaskRecord(
             final String task,
@@ -103,8 +198,21 @@ public record TaskRecord(
             final Instant startedAt,
             final @Nullable Instant endedAt,
             final @Nullable End end,
-            final List<Call> calls) {
-        this(task, project, repository, issues, startedAt, endedAt, end, calls, null, null, null);
+            final List<Call> calls,
+            final @Nullable String callerKey) {
+        this(
+                task,
+                project,
+                repository,
+                issues,
+                startedAt,
+                endedAt,
+                end,
+                calls,
+                null,
+                null,
+                null,
+                callerKey);
     }
 
     /**

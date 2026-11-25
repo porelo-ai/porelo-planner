@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.ReportTaking;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
 import org.fuin.porelo.planner.core.RunRole;
@@ -1402,10 +1403,16 @@ class WorkRecordTest {
     }
 
     @Test
-    void handedIdeasSurviveRestartAndARecordWrittenBeforeThemReads() throws Exception {
-        // A lost offer would save a repeated hand-in as a second story; an older record must open.
+    void takenReportsSurviveRestartAndARecordWrittenBeforeThemReads() throws Exception {
+        // Harm: a lost mark or key saves a report's idea a second time after a restart; an older
+        // record that no longer opens stops all work.
         final String offer = "4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f";
-        final String story = String.format("ST%d", 7);
+        final String key = "porelo-project_talk#3";
+        final HandedIdeas.Handed done =
+                new HandedIdeas.Handed(HandedIdeas.DONE, "ST7", List.of(), 1);
+        final ReportTaking.Followed followed =
+                new ReportTaking.Followed("2026-11-25T08:00:00Z", 2, false);
+        final ReportTaking.Mark mark = new ReportTaking.Mark(3, 3);
         final var environment = Map.of("XDG_STATE_HOME", directory.toString());
         try (WorkRecord records = new WorkRecord(environment, false)) {
             records.open("project", "https://example.org/store.git", null)
@@ -1415,54 +1422,117 @@ class WorkRecordTest {
                                         new WorkRun.Snapshot(
                                                 1,
                                                 Map.of(),
-                                                Map.of(
-                                                        offer,
-                                                        new HandedIdeas.Handed(
-                                                                HandedIdeas.DONE,
-                                                                story,
-                                                                List.of(),
-                                                                1))));
+                                                Map.of(key, done),
+                                                Map.of(),
+                                                Map.of(offer, followed),
+                                                Map.of("porelo-project_talk", mark)));
                                 return true;
                             });
         }
         final Path file = directory.resolve("porelo-planner/project/work.json");
         try (WorkRecord records = new WorkRecord(environment, false)) {
-            final HandedIdeas.Handed restored =
+            final WorkRun.Snapshot restored =
                     records.open("project", "https://example.org/store.git", null)
-                            .locked(session -> session.read().ideas().get(offer));
-            assertThat(restored)
-                    .as("the offer's story after a restart")
-                    .isEqualTo(new HandedIdeas.Handed(HandedIdeas.DONE, story, List.of(), 1));
+                            .locked(session -> session.read());
+            assertThat(restored.ideas())
+                    .as("the report's story")
+                    .containsExactly(Map.entry(key, done));
+            assertThat(restored.followed())
+                    .as("the followed offer")
+                    .containsExactly(Map.entry(offer, followed));
+            assertThat(restored.reports())
+                    .as("the mark")
+                    .containsExactly(Map.entry("porelo-project_talk", mark));
         }
         final JsonMapper json = JsonMapper.builder().build();
         final ObjectNode document = (ObjectNode) json.readTree(Files.readString(file));
-        assertThat(document.has("ideas")).as("the record holds the handed ideas").isTrue();
-        document.remove("ideas");
-        Files.writeString(file, json.writeValueAsString(document));
-        try (WorkRecord records = new WorkRecord(environment, false)) {
-            final Map<String, HandedIdeas.Handed> ideas =
-                    records.open("project", "https://example.org/store.git", null)
-                            .locked(session -> session.read().ideas());
-            assertThat(ideas)
-                    .as("a record written before ideas were handed in holds none")
-                    .isEmpty();
-        }
+        assertThat(document.has("followed")).as("the record holds the followed offers").isTrue();
+        document.remove(List.of("ideas", "followed", "reports"));
         document.putObject("ideas")
                 .putObject(offer)
                 .put("status", HandedIdeas.DONE)
-                .put("story", "../" + story)
+                .put("story", "ST7")
                 .put("order", 1)
                 .putArray("pushed");
         Files.writeString(file, json.writeValueAsString(document));
         try (WorkRecord records = new WorkRecord(environment, false)) {
-            final WorkRefusal refused =
-                    catchThrowableOfType(
-                            WorkRefusal.class,
-                            () ->
-                                    records.open("project", "https://example.org/store.git", null)
-                                            .locked(session -> session.read()));
-            assertThat(refused).as("a handed idea that fails its check is refused").isNotNull();
-            assertThat(reason(refused)).as("its words").doesNotContain("../" + story);
+            final WorkRun.Snapshot read =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read());
+            assertThat(read.ideas())
+                    .as("an idea kept under a discussion's offer, from the hand-in, is dropped")
+                    .isEmpty();
+            assertThat(read.followed()).as("a record from before follows nothing").isEmpty();
+            assertThat(read.reports()).as("and has taken no report").isEmpty();
+        }
+        final Map<String, java.util.function.Consumer<ObjectNode>> forgeries =
+                new java.util.LinkedHashMap<>();
+        forgeries.put(
+                "an idea whose story fails its check",
+                forged ->
+                        forged.putObject("ideas")
+                                .putObject(key)
+                                .put("status", HandedIdeas.DONE)
+                                .put("story", "../ST7")
+                                .put("order", 1)
+                                .putArray("pushed"));
+        forgeries.put(
+                "an idea under a key of no report",
+                forged ->
+                        forged.putObject("ideas")
+                                .putObject("../escape")
+                                .put("status", HandedIdeas.DONE)
+                                .put("story", "ST7")
+                                .put("order", 1)
+                                .putArray("pushed"));
+        forgeries.put(
+                "a followed offer that is no offer",
+                forged ->
+                        forged.putObject("followed")
+                                .putObject("../escape")
+                                .put("since", "2026-11-25T08:00:00Z")
+                                .put("order", 1)
+                                .put("closed", false));
+        forgeries.put(
+                "a followed offer since a time of no zone",
+                forged ->
+                        forged.putObject("followed")
+                                .putObject(offer)
+                                .put("since", "2026-11-25T08:00:00")
+                                .put("order", 1)
+                                .put("closed", false));
+        forgeries.put(
+                "a mark of no task's name",
+                forged ->
+                        forged.putObject("reports")
+                                .putObject("../escape")
+                                .put("seq", 1)
+                                .put("order", 1));
+        forgeries.put(
+                "a mark below one",
+                forged ->
+                        forged.putObject("reports")
+                                .putObject("porelo-project_talk")
+                                .put("seq", 0)
+                                .put("order", 1));
+        for (final Map.Entry<String, java.util.function.Consumer<ObjectNode>> forgery :
+                forgeries.entrySet()) {
+            final ObjectNode forged = document.deepCopy();
+            forgery.getValue().accept(forged);
+            Files.writeString(file, json.writeValueAsString(forged));
+            try (WorkRecord records = new WorkRecord(environment, false)) {
+                final WorkRefusal refused =
+                        catchThrowableOfType(
+                                WorkRefusal.class,
+                                () ->
+                                        records.open(
+                                                        "project",
+                                                        "https://example.org/store.git",
+                                                        null)
+                                                .locked(session -> session.read()));
+                assertThat(refused).as("%s is refused", forgery.getKey()).isNotNull();
+                assertThat(reason(refused)).as("its words").doesNotContain("escape");
+            }
         }
     }
 
@@ -2327,6 +2397,79 @@ class WorkRecordTest {
             assertThat(record.latest().generation())
                     .as("the write comes after the steps")
                     .isGreaterThan(settled);
+        }
+    }
+
+    private static final String OFFER = "4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f";
+
+    private static WorkRun.Snapshot withReading(final WorkRun.Snapshot snapshot) {
+        return snapshot.withReading(
+                snapshot.generation() + 1,
+                Map.of(OFFER, new ReportTaking.Followed("2026-11-25T08:00:00Z", 1, false)),
+                Map.of("porelo-project_talk", new ReportTaking.Mark(3, 1)));
+    }
+
+    private static java.util.function.UnaryOperator<WorkRun.Snapshot> runOnly(
+            final WorkRun.Run run) {
+        return snapshot -> {
+            final Map<String, WorkRun.Run> runs = new java.util.HashMap<>(snapshot.runs());
+            runs.put(run.story(), run);
+            return snapshot.withRuns(snapshot.generation(), runs);
+        };
+    }
+
+    @Test
+    void aRunSavedAfterReportsWereTakenKeepsTheFollowedOffersAndMarks() throws Exception {
+        // Harm: a save of a run drops the followed offers and report marks, so reported ideas
+        // are read again and an offer's task is never read.
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200))) {
+            final WorkRecord.Entry record = entry(records);
+            record.locked(
+                    session -> {
+                        session.write(withReading(session.read()));
+                        return null;
+                    });
+
+            final WorkRecord.Mark mark = record.mark("save-1", runOnly(run("ST1", true)));
+            record.outcome(mark, runOnly(run("ST1", false)));
+
+            assertThat(record.latest().followed()).as("the offer").containsKey(OFFER);
+            assertThat(record.latest().reports()).as("the mark").containsKey("porelo-project_talk");
+            assertThat(record.latest().runs()).as("and the run").containsKey("ST1");
+        }
+    }
+
+    @Test
+    void aReportTakingsWriteStandsBesideARunSavedWhileItWasJudged() throws Exception {
+        // Harm: the followed offers and marks a reading wrote are lost to a run's save made while
+        // it read, or the run's save is lost to the reading's write.
+        final var entered = new CountDownLatch(1);
+        final var release = new CountDownLatch(1);
+        try (WorkRecord records = new WorkRecord(Map.of(), true, Duration.ofMillis(200));
+                var executor = Executors.newFixedThreadPool(2)) {
+            final WorkRecord.Entry record = entry(records);
+            final var reading =
+                    executor.submit(
+                            () ->
+                                    record.locked(
+                                            session -> {
+                                                final WorkRun.Snapshot read = session.read();
+                                                entered.countDown();
+                                                await(release);
+                                                session.write(withReading(read));
+                                                return null;
+                                            }));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            final WorkRecord.Mark mark = record.mark("save-1", runOnly(run("ST1", true)));
+            record.outcome(mark, runOnly(run("ST1", false)));
+            release.countDown();
+            reading.get(5, TimeUnit.SECONDS);
+
+            assertThat(record.latest().runs()).as("the run saved meanwhile").containsKey("ST1");
+            assertThat(record.latest().followed()).as("the offer written").containsKey(OFFER);
+            assertThat(record.latest().reports())
+                    .as("the mark written")
+                    .containsKey("porelo-project_talk");
         }
     }
 

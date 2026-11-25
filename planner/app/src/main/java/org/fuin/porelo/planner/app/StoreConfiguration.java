@@ -21,6 +21,8 @@ import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.fuin.porelo.planner.store.git.CloneUrl;
 import org.fuin.porelo.planner.store.git.ForgeTokens;
 import org.fuin.porelo.planner.store.git.GitProjects;
+import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.planner.store.git.PoreloProgram;
 import org.fuin.porelo.planner.store.github.ConditionalReads;
 import org.fuin.porelo.planner.store.github.GitHubChanges;
 import org.fuin.porelo.planner.store.github.GitHubStoreOpener;
@@ -48,6 +50,9 @@ import org.springframework.http.HttpStatus;
 @Configuration(proxyBeanMethods = false)
 @ImportRuntimeHints(BoundTypes.Hints.class)
 public class StoreConfiguration {
+
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(StoreConfiguration.class);
 
     /**
      * Opens projects over the person's cache directory with the planner's own environment.
@@ -256,6 +261,65 @@ public class StoreConfiguration {
                         Thread.ofVirtual().name("poll-", 0).factory()),
                 factors.polling(ChangesRegistry.LONGEST_WAIT),
                 held);
+    }
+
+    /**
+     * Reads the reports of the planner's own tasks through Porelo's executable, the one {@code
+     * PORELO_EXECUTABLE} names once its check passes it; none in the mock mode, which reaches no
+     * Porelo, and none without the variable or when the check refuses it, said once at start.
+     *
+     * @param mode present only in the mock mode
+     * @param projects the projects the window has given
+     * @param changes names the followed projects and is told of a save
+     * @param limits the factors from the command line; the read's interval follows {@code polling}
+     * @return the reading, idle when none is done
+     */
+    @Bean(destroyMethod = "close")
+    public ReportReading reportReading(
+            final ObjectProvider<MockMode> mode,
+            final Projects projects,
+            final ChangesRegistry changes,
+            final ObjectProvider<LimitFactors> limits) {
+        final LimitFactors factors = limits.getIfAvailable(() -> LimitFactors.DEFAULT);
+        return reading(
+                mode.getIfAvailable() != null,
+                () -> PoreloProgram.of(System.getenv(), factors),
+                projects,
+                changes,
+                factors);
+    }
+
+    /** The reading for an executable the program gives; idle in the mock mode and without one. */
+    static ReportReading reading(
+            final boolean mock,
+            final java.util.function.Supplier<java.nio.file.@Nullable Path> program,
+            final Projects projects,
+            final ChangesRegistry changes,
+            final LimitFactors factors) {
+        if (mock) {
+            return ReportReading.idle();
+        }
+        final java.nio.file.Path executable;
+        try {
+            executable = program.get();
+        } catch (final IllegalStateException refused) {
+            LOG.warn(
+                    "No task's reports are read, so no reported idea is saved: {}",
+                    LogText.of(refused.getMessage()));
+            return ReportReading.idle();
+        }
+        if (executable == null) {
+            LOG.warn(
+                    "No task's reports are read, so no reported idea is saved: PORELO_EXECUTABLE"
+                            + " names no Porelo executable");
+            return ReportReading.idle();
+        }
+        return new ReportReading(
+                projects,
+                changes,
+                new PoreloTaskRecords(executable, factors),
+                new PoreloTaskReports(executable, factors),
+                factors.polling(ReportReading.EVERY));
     }
 
     /**

@@ -382,9 +382,9 @@ planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/SaveFilesTest.
 planner/store/git/src/test/java/org/fuin/porelo/planner/store/git/stories/StoryHeadTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/LogLinesTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/WorkAnswersTest.java
-# The idea hand-in tests use made-up issue ids to check their links.
+# The tests of ideas taken from reports use made-up issue ids to check their links.
 planner/core/src/test/java/org/fuin/porelo/planner/core/HandedIdeasTest.java
-planner/app/src/test/java/org/fuin/porelo/planner/app/IdeasEndpointTest.java
+planner/app/src/test/java/org/fuin/porelo/planner/app/IdeaReportsTest.java
 # The screen's copies of the planner's mock answers and the test that serves them: the mock board's made-up ids.
 planner/app/src/test/java/org/fuin/porelo/planner/app/MockAnswersTest.java
 planner/app/src/test/java/org/fuin/porelo/planner/app/PoreloTaskRecordsTest.java

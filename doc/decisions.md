@@ -122,10 +122,10 @@ A planner the window started ends when the window's end of its input pipe closes
 of an older install never keeps serving a newer window. A planner started by hand reads nothing on its input and runs
 until it is stopped.
 
-## A handed-in idea is saved once per offer, not per request
+## A reported idea is saved once per task and report number, not per read
 
-The window hands a discussion's idea in with the offer it belongs to, and the planner saves one story per offer, so a
-retried hand-in makes nothing twice. Accepted risk: an issue already pushed in another repository when the own
+The planner takes a discussion's idea from the reports its task makes, and saves one story per task name and report
+number, so a read made again or after a restart makes nothing twice. Accepted risk: an issue already pushed in another repository when the own
 repository's save is dropped stays there as an ordinary issue in the workflow's first state, with no story naming it. It costs a person one
 issue to reject, and stays because taking a pushed commit back is a force push; a store that saves all repositories
 at once would change the answer.

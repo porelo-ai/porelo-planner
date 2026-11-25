@@ -504,13 +504,12 @@ void main() {
       'model': 'idea-model',
       'mode': 'AGENT',
       'prompt': 'Discuss the idea.\n',
-      'result': 'idea.json',
     };
     planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, served);
     final task = await source.discussIdea('demo', 'A board that\nremembers.');
     expect(planner.targets.last, 'POST /projects/demo/ideas/discussion', reason: 'the contract names this call');
     expect(jsonDecode(planner.calls.last.body), {'idea': 'A board that\nremembers.'}, reason: 'the idea goes as typed');
-    expect([task.role, task.repository, task.result], ['DISCUSSION', null, 'idea.json'], reason: 'as served');
+    expect([task.role, task.repository, task.result], ['DISCUSSION', null, null], reason: 'as served');
     planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, servedFollowUp(1, role: 'MAIN'));
     expect(
       (await _refusal(source.discussIdea('demo', 'An idea'))).name,
@@ -521,44 +520,6 @@ void main() {
         _Reply.problem('NoDiscussion', {}, 'The project has no sound work rule.', 400);
     final refusal = await _refusal(source.discussIdea('demo', 'An idea'));
     expect([refusal.name, refusal.description], ['NoDiscussion', 'The project has no sound work rule.']);
-  });
-
-  // Harm: an idea sent with another body than the planner reads is never saved, a confirmation without a story id is
-  // taken as saved, and a refused idea loses the faults the person must see.
-  test('a hand-in posts exactly the offer and the idea and reads the story or the faults', () async {
-    final (planner, source) = await _started();
-    const offer = '4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f';
-    final idea = <String, Object?>{
-      'story': {'title': 'Tag stories', 'gain': 'G', 'test': 'T', 'priority': 'High'},
-      'issues': [
-        {'repository': 'repo', 'title': 'Tags', 'mustBeTrue': 'W', 'worker': 'Agent'},
-      ],
-    };
-    planner.routes['POST /projects/demo/ideas'] = () => _Reply(201, {'id': 'ST7'});
-    expect(await source.handIdea('demo', offer, idea), 'ST7', reason: 'the story the idea was saved as');
-    expect(planner.targets.last, 'POST /projects/demo/ideas', reason: 'the contract names this call');
-    expect(jsonDecode(planner.calls.last.body), {'offer': offer, 'idea': idea}, reason: 'the idea goes as written');
-    for (final answer in [
-      <String, dynamic>{},
-      {'id': 'PR3'},
-      {'id': 7},
-    ]) {
-      planner.routes['POST /projects/demo/ideas'] = () => _Reply(201, answer);
-      expect((await _refusal(source.handIdea('demo', offer, idea))).name, 'BadAnswer', reason: '$answer');
-    }
-    planner.routes['POST /projects/demo/ideas'] = () => _Reply.problem(
-      'IdeaRefused',
-      {
-        'faults': ['story.title: The title must be one line of 1 to 120 characters.'],
-      },
-      'The idea does not follow the idea format.',
-      422,
-    );
-    final refusal = await _refusal(source.handIdea('demo', offer, idea));
-    expect(refusal.name, 'IdeaRefused');
-    expect(refusal.parameters['faults'], [
-      'story.title: The title must be one line of 1 to 120 characters.',
-    ], reason: 'the faults reach the screen');
   });
 
   // Harm: default choices accept tasks that differ from the proposal the person reviewed.
@@ -2069,13 +2030,13 @@ void main() {
     addTearDown(planner.stop);
     final held = Completer<_Reply>();
     addTearDown(() => held.complete(_Reply(204)));
-    planner.routes['POST /projects/demo/ideas'] = () => held.future;
+    planner.routes['POST /projects/demo/moves'] = () => held.future;
 
     final unanswered = await _refusal(
       callPlanner(
         'POST',
-        const ['projects', 'demo', 'ideas'],
-        json: const {'idea': 'i'},
+        const ['projects', 'demo', 'moves'],
+        json: const {'move': 'm'},
         address: () async => PlannerAddress(planner.base.port, _token),
         timeout: limits.servicesOf(const Duration(milliseconds: 2200)),
         limits: limits,

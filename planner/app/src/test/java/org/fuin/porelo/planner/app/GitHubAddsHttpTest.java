@@ -356,23 +356,6 @@ class GitHubAddsHttpTest {
     }
 
     @Test
-    void aNewIdeaIsAnsweredByItsStorysTrackerReference() throws Exception {
-        // Harm: a project GitHub keeps answering the window that it adds no ideas.
-        mvc.perform(
-                        post("/projects/alpha/ideas")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(
-                                        "{\"offer\": \"4f2c1d7e-8a3b-4c5d-9e6f-0a1b2c3d4e5f\", \"idea\": "
-                                                + IDEA
-                                                + "}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value("porelo-store#1"));
-        assertThat(made)
-                .as("the issues GitHub made, the story first")
-                .containsExactly("porelo-store#1", "porelo-other#2");
-    }
-
-    @Test
     void aNewStoryIsAnsweredByItsAndItsIssuesTrackerReferences() throws Exception {
         // Harm: a project GitHub keeps answering the window that it makes no stories.
         mvc.perform(

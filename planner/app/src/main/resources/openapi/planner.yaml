@@ -7,7 +7,7 @@ info:
     same computer. No call carries the planner's token. Every call but the proof is signed in its Porelo-Signature
     header with an HMAC-SHA256 under the token's UTF-8 bytes; a request without one valid signature, with two, or with
     an Authorization header answers 401 with an empty body, and so does one whose body is larger than 267264 bytes,
-    the longest title and body GitHub takes with their JSON, 1048576 bytes for POST /projects/{project}/ideas,
+    the longest title and body GitHub takes with their JSON, 1048576 bytes for POST
     /projects/{project}/stories and /projects/{project}/issues, or 1052672 bytes for POST
     /projects/{project}/tasks/{task}/result.
     The signature is `porelo-planner-request-1;t=<time>;n=<nonce>;s=<hmac>`: the UTC time in seconds in decimal, no
@@ -335,7 +335,7 @@ paths:
         Makes a story in the project's own repository in one of two ways, told apart by the body's members. A
         StoryRequest saves an idea a person, or an agent acting for them, wrote without a discussion: one story in
         the workflow's first state and an issue in that state in each repository the idea names, in one save, as a
-        discussion's hand-in is saved; it changes no item that stands, so its `seen` may be empty and is not checked.
+        discussion's reported idea is saved; it changes no item that stands, so its `seen` may be empty and is not checked.
         The idea is checked against the idea format before
         anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
         stands answers PartlySaved, naming the repositories that hold their part; a run whose story is gone is dropped
@@ -580,11 +580,20 @@ paths:
       description: >-
         Answers one task for Porelo's Start that discusses an idea with the person: role DISCUSSION, no repository,
         no issues, mode AGENT, and as agent and model the first agent and model of the first sound work rule whose
-        names are 1 to 128 UTF-16 code units, as defaults the person may change. The window starts it with every
-        repository of the project read only, and the task hands back the file named by result, in the idea format
-        the brief carries. Records, saves and announces nothing, and no task events are taken for its offer. The
-        JSON body is at most 65536 bytes; the idea is 1 to 4000 characters and not blank, else InvalidSettings.
-        NoDiscussion (reason) when no sound work rule offers an agent or the brief would exceed 65536 UTF-8 bytes.
+        names are 1 to 128 UTF-16 code units, as defaults the person may change; it names no result file. The window
+        starts it with every repository of the project read only, passing the offer as Start's callerKey. The task
+        reports its idea back once through Porelo's Report, with the kind idea and as its text the idea as one JSON
+        object in the idea format the brief carries, at most 65536 characters; this needs Porelo's settings to allow
+        reports (limits.reports at least 1) and Report among the task's methods (mcp.methods), and a task without
+        them reports nothing. The planner records only the offer: it reads the reports of the task Porelo recorded
+        with that callerKey, every minute while a window follows the project, and saves each idea reported as one
+        story in the workflow's first state with an issue in each repository it names, once per task name and
+        report number; an idea it refuses is logged and not read again, and a report of another kind is left to the
+        window. A discussion Porelo never records is no longer followed after seven days. Saves and announces
+        nothing itself, and no task events are taken for its offer. The JSON body is at most 65536 bytes; the idea
+        is 1 to 4000 characters and not blank, else InvalidSettings. NoDiscussion (reason) when no sound work rule
+        offers an agent or the brief would exceed 65536 UTF-8 bytes. RecordUnavailable when the offer cannot be
+        recorded.
       tags: [work]
       requestBody:
         required: true
@@ -607,54 +616,10 @@ paths:
           $ref: '#/components/responses/NoSuchProject'
         '409':
           $ref: '#/components/responses/ItemsDirectoryRefused'
-        '502':
-          $ref: '#/components/responses/StoreRefused'
-        '504':
-          $ref: '#/components/responses/Unreachable'
-
-  /projects/{project}/ideas:
-    parameters:
-      - $ref: '#/components/parameters/Project'
-    post:
-      operationId: handIdea
-      summary: Hand in the idea a discussion wrote
-      description: >-
-        Saves the idea a discussion's task wrote, which the window hands in with the discussion's offer when the task
-        ends: one story in the workflow's first state in the project's own repository and an issue in that state in each repository the
-        idea names, in one save against the board the planner reads; the request carries no versions. The idea is
-        checked before anything is saved, and a malformed idea makes nothing. One offer makes one story: a second
-        hand-in of a saved offer answers the same story and writes nothing, even for another idea; a hand-in of an
-        offer whose save is still pending or was only partly pushed is refused (IdeaRefused, naming the repositories
-        already pushed) and writes nothing. The JSON body is at most 1048576 bytes. The changes stream announces the new
-        board as it does after any save.
-      tags: [board]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/IdeaRequest'
-      responses:
-        '201':
-          description: The story and its issues are saved, by this hand-in or an earlier one of the same offer.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IdeaAdded'
-        '400':
-          $ref: '#/components/responses/InvalidName'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NoSuchProject'
-        '409':
-          $ref: '#/components/responses/ItemsDirectoryRefused'
-        '422':
-          $ref: '#/components/responses/IdeaRefused'
         '501':
           $ref: '#/components/responses/NotOffered'
         '502':
-          $ref: '#/components/responses/SaveRefused'
+          $ref: '#/components/responses/StoreRefused'
         '503':
           $ref: '#/components/responses/RecordUnavailable'
         '504':
@@ -1930,7 +1895,7 @@ components:
     Unauthorized:
       description: >-
         The request carries no one valid signature, carries an Authorization header, or has a body larger than 267264
-        bytes (1048576 bytes for POST on ideas, new stories and new issues, 1052672 bytes for a stage's result); the
+        bytes (1048576 bytes for POST on new stories and new issues, 1052672 bytes for a stage's result); the
         body is empty, and the answer carries no Porelo-Answer header.
       headers:
         WWW-Authenticate:
@@ -2470,12 +2435,11 @@ components:
         issue's repository: the first such fault names the project's repositories allowed and each later one refers to
         them, and each names the value sent only when it
         is a well-formed repository name (at most 100 of a-z, 0-9, '.', '_' and '-', starting with a letter or digit).
-        The body is no hand-in or
-        no new story - larger than 1048576 bytes (65536 for a story from existing issues), not JSON, not an object, a member missing or unknown, offer no
-        lowercase UUID, or seen no object of versions by item id - with one fault; or the idea breaks the idea format, at most 100
+        The body is
+        no new story - larger than 1048576 bytes (65536 for a story from existing issues), not JSON, not an object, a member missing or unknown,
+        or seen no object of versions by item id - with one fault; or the idea breaks the idea format, at most 100
         faults, each starting with the field it names (story, story.title, issues, issues[0].repository, existing,
-        existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault, starting with the field that named the issue when it refuses one; or the offer's save is still pending or was only
-        partly pushed, with pushed naming the repositories already pushed (comma-joined, empty when none).
+        existing[0], counted from 0), an existing issue refused naming its id; or the store cannot write it, its words as the one fault, starting with the field that named the issue when it refuses one.
       content:
         application/problem+json:
           schema:
@@ -2491,16 +2455,6 @@ components:
                   faults:
                     - 'story.title: The title must be one line of 1 to 256 characters.'
                     - 'issues[1].worker: The worker must be Agent or Manual.'
-            PartlySaved:
-              value:
-                type: urn:porelo-planner:IdeaRefused
-                title: IdeaRefused
-                status: 422
-                detail: The idea of this offer was saved only in part and is not saved again.
-                parameters:
-                  pushed: porelo-other
-                  faults:
-                    - 'offer: The idea of this offer was saved only in part and is not saved again.'
     EditRefused:
       description: >-
         A change of an issue's fields, a story's issues, an issue's blockers or an item's title and text, or a
@@ -2631,11 +2585,11 @@ components:
               directory: /home/person/planning
     NotOffered:
       description: >-
-        This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no ideas or
+        This planner's store saves no moves, adds no issues, saves no workers, saves no priorities, adds no
         stories, sets no issue's fields, story's issues, issue's blockers or item's title and text, writes no comment,
         adds no issue made outside the project, saves no stage's result or offers no correction of the warning named,
         a repository's Labels by a store that holds no repository's labels among them; the Git store sets no item's
-        labels, on an edit or a new issue; the mock mode previews and saves moves, saves workers, adds ideas and
+        labels, on an edit or a new issue; the mock mode previews and saves moves, saves workers, adds
         stories and takes the edits by hand, labels among them, into its in-memory board, but adds no issues, adds no
         issue made outside the project and saves no priorities
         (NotOffered).
@@ -3695,22 +3649,9 @@ components:
           $ref: '#/components/schemas/IssueId'
         revision:
           $ref: '#/components/schemas/Revision'
-    IdeaRequest:
-      description: The idea a discussion's task wrote and the discussion's offer; no other member is taken.
-      type: object
-      additionalProperties: false
-      required: [offer, idea]
-      properties:
-        offer:
-          type: string
-          format: uuid
-          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-          description: The offer of the discussion's task, as the discussion answered it.
-        idea:
-          $ref: '#/components/schemas/Idea'
     Idea:
       description: >-
-        The idea format, as the task's result file holds it and the window hands it on unchanged: one story and an
+        The idea format, as a discussion's task reports it and a new story carries it: one story and an
         issue in each repository it concerns, each repository named once. One line means no control character or
         line break (U+0000 to U+001F, U+007F to U+009F, U+2028, U+2029); the spaces around a title, gain or test are
         dropped, and lengths count code points.
@@ -3998,14 +3939,6 @@ components:
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
-    IdeaAdded:
-      description: The id of the story the offer's idea was saved as.
-      type: object
-      required: [id]
-      properties:
-        id:
-          $ref: '#/components/schemas/StoryId'
-
     Refreshed:
       description: The revision after a fetch.
       type: object
@@ -4913,9 +4846,8 @@ components:
       type: object
       required: [offer, issues, role, agent, model, mode, prompt, reads]
       description: >-
-        repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present for
-        DISCUSSION and for MAIN or BUILDER of a stage that hands back its result instead of pushing, and given only for
-        the latter.
+        repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present only for
+        MAIN or BUILDER of a stage that hands back its result instead of pushing, and given only for them.
       properties:
         offer:
           type: string
@@ -4956,8 +4888,8 @@ components:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
           description: >-
-            The plain name of the file the task hands back, without a directory: idea.json for a DISCUSSION,
-            analysis.json, estimate.json or readiness.json for a stage that hands back its result.
+            The plain name of the file the task hands back, without a directory: analysis.json, estimate.json or
+            readiness.json for a stage that hands back its result.
         given:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array

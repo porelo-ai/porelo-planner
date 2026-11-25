@@ -66,6 +66,46 @@ class PoreloTaskRecordsTest {
                 return answer;
             };
 
+    // Harm: the planner reads the reports of a task another caller started, or misses its own
+    // discussion's task because the key Start was given is not read.
+    @Test
+    void theCallerKeyOfARecordedAnswerIsReadAndAbsentWhenStartGotNone() throws Exception {
+        try (var in =
+                PoreloTaskRecordsTest.class.getResourceAsStream(
+                        "/porelo/task-records-caller-key.json")) {
+            answer = new Result(0, java.util.Objects.requireNonNull(in).readAllBytes(), false, "");
+        }
+
+        final List<TaskRecord> records =
+                records().since("uc", Instant.parse("2026-11-25T07:00:00Z"));
+
+        assertThat(records)
+                .extracting(TaskRecord::task, TaskRecord::callerKey)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("porelo-uc-work", "offer-17"),
+                        org.assertj.core.groups.Tuple.tuple("porelo-uc-other", null));
+    }
+
+    // Harm: a key with a line break or past Porelo's bound forges a log line or a match.
+    @Test
+    void aCallerKeyPastItsBoundOrWithAControlCharacterIsRefused() throws Exception {
+        for (final String key : List.of("a\nb", "x".repeat(201))) {
+            final ObjectNode one = record();
+            one.put("callerKey", key);
+            answer(JSON.createArrayNode().add(one));
+            assertThat(refusal())
+                    .as("the key of %s characters", key.length())
+                    .contains("callerKey")
+                    .doesNotContain(key);
+        }
+        final ObjectNode bound = record();
+        bound.put("callerKey", "x".repeat(200));
+        answer(JSON.createArrayNode().add(bound));
+        assertThat(records().since("porelo-planner", SINCE).getFirst().callerKey())
+                .as("a key at its bound")
+                .hasSize(200);
+    }
+
     // Prevents the velocity from reading a task's times, end or issues other than Porelo recorded.
     @Test
     void aWholeRecordInPorelosFormIsReadWithEveryValue() throws Exception {
@@ -189,6 +229,38 @@ class PoreloTaskRecordsTest {
         assertThat(environments.getFirst())
                 .as("only PATH, HOME, LANG and the XDG directories")
                 .isEqualTo(Map.of("PATH", "/usr/bin", "HOME", "/home/user"));
+    }
+
+    @Test
+    void onWindowsPoreloAlsoGetsItsStateFoldersAndPathInAnyCaseButNeverASecret() {
+        // Harm: Porelo run with a cleared environment on Windows cannot find its state folder or
+        // start; or a token of the planner's environment reaches it.
+        final Map<String, String> source =
+                Map.of(
+                        "Path", "C:\\Windows",
+                        "LocalAppData", "C:\\Users\\p\\AppData\\Local",
+                        "APPDATA", "C:\\Users\\p\\AppData\\Roaming",
+                        "USERPROFILE", "C:\\Users\\p",
+                        "SystemRoot", "C:\\Windows",
+                        "TEMP", "C:\\Temp",
+                        "TMP", "C:\\Temp",
+                        "GITHUB_TOKEN", "ghp_SECRET123");
+
+        final Map<String, String> passed = PoreloTaskRecords.passed(source, true);
+
+        assertThat(passed)
+                .containsEntry("PATH", "C:\\Windows")
+                .containsEntry("LOCALAPPDATA", "C:\\Users\\p\\AppData\\Local")
+                .containsEntry("APPDATA", "C:\\Users\\p\\AppData\\Roaming")
+                .containsEntry("USERPROFILE", "C:\\Users\\p")
+                .containsEntry("SYSTEMROOT", "C:\\Windows")
+                .containsEntry("TEMP", "C:\\Temp")
+                .containsEntry("TMP", "C:\\Temp")
+                .doesNotContainKey("GITHUB_TOKEN")
+                .hasSize(7);
+        assertThat(PoreloTaskRecords.passed(source, false))
+                .as("elsewhere none of them, and the name is read as it is")
+                .isEmpty();
     }
 
     @Test

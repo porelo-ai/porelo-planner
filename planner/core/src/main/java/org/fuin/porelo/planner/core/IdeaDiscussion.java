@@ -17,7 +17,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * One task that discusses an idea with a person over every repository of the project, read only,
- * and hands back the idea in the planner's idea format; offering it records and writes nothing.
+ * and reports the idea back in the planner's idea format, through Porelo's {@code Report} with the
+ * kind {@value TaskReport#IDEA}; the planner reads the task's reports itself.
  *
  * @param agent the default agent, the first the first sound work rule names for ordinary work, as a
  *     discussion has no issue
@@ -34,9 +35,6 @@ public record IdeaDiscussion(
         String mode,
         String prompt,
         String basis) {
-
-    /** The name of the file the task hands back. */
-    public static final String RESULT = "idea.json";
 
     /** What stands in the idea format where a project's repositories' names go. */
     private static final String REPOSITORIES = "[\"{repositories}\"]";
@@ -133,9 +131,12 @@ public record IdeaDiscussion(
                 + " each issue ask whether an agent or the person works it, and write `Agent` or"
                 + " `Manual` as the person answers; never choose it yourself. Give a size only when"
                 + " it is known.\n\n"
-                + "When the person agrees, write the idea as this task's result, "
-                + RESULT
-                + ", at most 1 MiB of JSON valid against this schema:\n```json\n"
+                + "When the person agrees, report the idea back once through Porelo's Report,"
+                + " with the kind `"
+                + TaskReport.IDEA
+                + "` and as its text the idea as one JSON object, at most "
+                + TaskReport.MOST_TEXT
+                + " characters, valid against this schema:\n```json\n"
                 + format(board.names())
                 + "```\n";
     }

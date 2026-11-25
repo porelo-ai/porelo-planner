@@ -7,13 +7,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.NewIssues;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.ReportTaking;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -275,54 +275,30 @@ public final class WorkRequests {
                     "confirm",
                     "labels");
 
-    /**
-     * The idea a discussion wrote, as the window hands it in.
-     *
-     * @param offer the discussion's offer
-     * @param idea the idea, each member null where it is missing or no text
-     */
-    public record IdeaRequest(String offer, NewIdeas.Idea idea) {}
+    private static final String NO_IDEA = "The report's text is no idea.";
 
     /**
-     * A hand-in as read: the request and the faults of the idea's shape, each by its field.
+     * Reads the text of a task's idea report strictly: one JSON object in the idea format, read as
+     * {@link #idea(JsonNode, List)} reads it; a refusal names the field, never repeats the text.
      *
-     * @param request the request
-     * @param shape the members the idea format does not name, by where they stand
+     * @param text the report's text, checked as a report's text before
+     * @return the idea and the faults of its shape
+     * @throws WorkRefusal {@code IdeaRefused} for a text that is no JSON object
      */
-    record HandIn(IdeaRequest request, List<String> shape) {}
-
-    private static final String NO_HAND_IN = "The body is no hand-in of an idea.";
-
-    /**
-     * Reads a hand-in strictly: at most 1048576 bytes, one JSON object with exactly an offer and an
-     * idea object; a refusal never repeats what was sent.
-     *
-     * @param request the request
-     * @return the hand-in
-     * @throws WorkRefusal {@code IdeaRefused} for a body that is no hand-in
-     */
-    static HandIn handIn(final HttpServletRequest request) {
-        final JsonNode body;
+    static ReportTaking.Read ideaText(final String text) {
+        final JsonNode idea;
         try {
-            body = read(request, AccessFilter.MOST_LARGE_BODY);
-        } catch (final WorkRefusal invalid) {
-            throw noHandIn("body: " + NO_HAND_IN);
+            idea = JSON.readTree(text);
+        } catch (final JacksonException invalid) {
+            // The parser's words quote the text, so they are never passed on.
+            throw noIdea("text: The text must be one JSON object in the idea format.");
         }
-        if (!Set.of("offer", "idea").equals(Set.copyOf(body.propertyNames()))) {
-            throw noHandIn("body: The body must hold exactly an offer and an idea.");
-        }
-        final JsonNode offer = body.get("offer");
-        if (!offer.isString()) {
-            throw noHandIn("offer: The offer must be a lowercase UUID.");
-        }
-        HandedIdeas.offer(offer.asString());
-        final JsonNode idea = body.get("idea");
-        if (!idea.isObject()) {
-            throw noHandIn("idea: The idea must be an object with a story and issues.");
+        if (idea == null || !idea.isObject()) {
+            throw noIdea("text: The text must be one JSON object in the idea format.");
         }
         final List<String> shape = new ArrayList<>();
         final NewIdeas.Idea read = idea(idea, shape);
-        return new HandIn(new IdeaRequest(offer.asString(), read), shape);
+        return new ReportTaking.Read(read, shape);
     }
 
     /**
@@ -546,8 +522,8 @@ public final class WorkRequests {
         return lines;
     }
 
-    private static WorkRefusal noHandIn(final String fault) {
-        return WorkRefusal.ideaRefused(NO_HAND_IN, List.of(fault), null);
+    private static WorkRefusal noIdea(final String fault) {
+        return WorkRefusal.ideaRefused(NO_IDEA, List.of(fault), null);
     }
 
     // A member's name was sent, so the fault names only where it stands.

@@ -54,6 +54,7 @@ class StoryWorkHttpTest {
     private final AccessToken token = AccessToken.random();
     private @Nullable RuntimeException failure;
     private MockMvc mvc;
+    private Projects projects;
     private Board board;
 
     @BeforeEach
@@ -119,7 +120,7 @@ class StoryWorkHttpTest {
                         return board();
                     }
                 };
-        final Projects projects = new Projects((project, repository, branch) -> store);
+        projects = new Projects((project, repository, branch) -> store);
         projects.put("project", "https://example.org/p/project.git", null);
         mvc =
                 MockMvcBuilders.standaloneSetup(
@@ -245,7 +246,7 @@ class StoryWorkHttpTest {
     }
 
     @Test
-    void aDiscussionIsOneTaskOverEveryRepositoryThatNamesNoneAndHandsBackTheIdea()
+    void aDiscussionIsOneTaskOverEveryRepositoryThatNamesNoneAndReportsTheIdeaBack()
             throws Exception {
         // A discussion that named a repository would start in one checkout and miss the others.
         final JsonNode task =
@@ -256,7 +257,7 @@ class StoryWorkHttpTest {
                         200);
 
         assertThat(task.propertyNames())
-                .as("a Start argument record without a repository, with the file it hands back")
+                .as("a Start argument record without a repository or a file it hands back")
                 .containsExactlyInAnyOrder(
                         "offer",
                         "issues",
@@ -266,22 +267,46 @@ class StoryWorkHttpTest {
                         "chosenBy",
                         "mode",
                         "prompt",
-                        "result",
                         "reads");
         assertThat(
                         List.of(
                                 task.get("role").asString(),
                                 task.get("mode").asString(),
                                 task.get("agent").asString(),
-                                task.get("model").asString(),
-                                task.get("result").asString()))
-                .as("a conversation with the rule's agent, handing back the idea")
-                .containsExactly("DISCUSSION", "AGENT", "codex", "model-a", "idea.json");
+                                task.get("model").asString()))
+                .as("a conversation with the rule's agent")
+                .containsExactly("DISCUSSION", "AGENT", "codex", "model-a");
         assertThat(task.get("issues").size()).as("no issue is the discussion's").isZero();
         assertThat(task.get("prompt").asString())
                 .as("the brief names both repositories and the person's words")
                 .contains("/workspace/project/", "/workspace/alpha/", "Let people tag stories");
         assertThat(board.stories()).as("nothing on the board changes").hasSize(1);
+        // Harm: a discussion whose offer is not followed never has its reported idea read.
+        final List<String> asked = new java.util.ArrayList<>();
+        projects.work("project")
+                .takeReports(
+                        "project",
+                        (name, since) ->
+                                List.of(
+                                        new org.fuin.porelo.planner.core.TaskRecord(
+                                                "porelo-project_talk",
+                                                "project",
+                                                null,
+                                                List.of(),
+                                                java.time.Instant.now(),
+                                                null,
+                                                null,
+                                                List.of(),
+                                                task.get("offer").asString())),
+                        (container, after) -> {
+                            asked.add(container);
+                            return new org.fuin.porelo.planner.core.TaskReports.Page(
+                                    List.of(), 0, false);
+                        },
+                        WorkRequests::ideaText);
+        assertThat(asked)
+                .as("the reports of the task started with the offer answered are read")
+                .containsExactly("porelo-project_talk");
     }
 
     @Test

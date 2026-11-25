@@ -6,7 +6,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.function.Predicate;
 import org.fuin.porelo.planner.app.answers.Finding;
 import org.fuin.porelo.planner.app.answers.GivenFile;
@@ -45,9 +44,9 @@ public final class WorkAnswers {
 
     private WorkAnswers() {}
 
-    static PlanningStartTask discussion(final IdeaDiscussion discussion) {
+    static PlanningStartTask discussion(final String offer, final IdeaDiscussion discussion) {
         return new PlanningStartTask(
-                UUID.randomUUID().toString(),
+                offer,
                 null,
                 List.of(),
                 PlanningStartTask.RoleEnum.DISCUSSION,
@@ -57,7 +56,7 @@ public final class WorkAnswers {
                 said(discussion.basis()),
                 discussion.mode(),
                 discussion.prompt(),
-                IdeaDiscussion.RESULT,
+                null,
                 null,
                 List.of(),
                 null,

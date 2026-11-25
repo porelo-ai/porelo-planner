@@ -41,6 +41,63 @@ class StoreConfigurationTest {
             StoreConfiguration.fromGit(StoreConfiguration.gitProjects(Map.of()));
 
     @Test
+    void theReportReadingIsIdleInTheMockModeAndWhenNoExecutableIsGiven() {
+        // Harm: the mock mode, which reaches no Porelo, runs Porelo's executable every minute; or
+        // a refused or missing executable ends the start instead of leaving the reading idle.
+        final Projects projects = new Projects((p, r, b) -> null);
+        final ChangesRegistry changes =
+                new ChangesRegistry(
+                        projects,
+                        java.time.Duration.ofHours(1),
+                        java.util.concurrent.Executors.newSingleThreadScheduledExecutor());
+        final java.nio.file.Path porelo = Path.of("/opt/porelo/bin/porelo");
+        try {
+            try (ReportReading mock =
+                    StoreConfiguration.reading(
+                            true,
+                            () -> {
+                                throw new AssertionError("the mock mode asks for no executable");
+                            },
+                            projects,
+                            changes,
+                            org.fuin.porelo.wire.LimitFactors.DEFAULT)) {
+                assertThat(mock.scheduled()).as("mock mode").isFalse();
+            }
+            try (ReportReading refused =
+                    StoreConfiguration.reading(
+                            false,
+                            () -> {
+                                throw new IllegalStateException("refused");
+                            },
+                            projects,
+                            changes,
+                            org.fuin.porelo.wire.LimitFactors.DEFAULT)) {
+                assertThat(refused.scheduled()).as("refused executable").isFalse();
+            }
+            try (ReportReading none =
+                    StoreConfiguration.reading(
+                            false,
+                            () -> null,
+                            projects,
+                            changes,
+                            org.fuin.porelo.wire.LimitFactors.DEFAULT)) {
+                assertThat(none.scheduled()).as("no executable").isFalse();
+            }
+            try (ReportReading given =
+                    StoreConfiguration.reading(
+                            false,
+                            () -> porelo,
+                            projects,
+                            changes,
+                            org.fuin.porelo.wire.LimitFactors.DEFAULT)) {
+                assertThat(given.scheduled()).as("a checked executable").isTrue();
+            }
+        } finally {
+            changes.close();
+        }
+    }
+
+    @Test
     void theNativeImageKeepsEveryRecordACopyIsMadeOf() {
         // Harm: a copy the native executable cannot read or write, found only on a person's
         // computer, since Fory makes a record the image does not reflect on in the JVM alone.
