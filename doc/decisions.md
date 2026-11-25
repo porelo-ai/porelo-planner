@@ -16,7 +16,7 @@ What holds and why: one row per decision, and its full text below.
 | Access | [A lent login is Porelo's alone](#a-lent-login-is-porelos-alone) |
 | Access | [The planner ends with the window that started it](#the-planner-ends-with-the-window-that-started-it) |
 | Work | [A handed-in idea is saved once per offer, not per request](#a-handed-in-idea-is-saved-once-per-offer-not-per-request) |
-| Work | [A story's state follows its issues](#a-storys-state-follows-its-issues) |
+| Work | [A story is the sum of its issues](#a-story-is-the-sum-of-its-issues) |
 | Build | [Windows ships beside Linux, never holding it back](#windows-ships-beside-linux-never-holding-it-back) |
 | Work | [A move is saved at once, warned where it can do harm](#a-move-is-saved-at-once-warned-where-it-can-do-harm) |
 | Store | [A save answers once its commits stand locally](#a-save-answers-once-its-commits-stand-locally) |
@@ -130,11 +130,12 @@ repository's save is dropped stays there as an ordinary issue in the workflow's 
 issue to reject, and stays because taking a pushed commit back is a force push; a store that saves all repositories
 at once would change the answer.
 
-## A story's state follows its issues
+## A story is the sum of its issues
 
-A story shows the state the stories index gives it from its issues; the planner states none of its own. A person may
-give a story another state by a confirmed move, and the board then marks it as given and names each issue that does
-not fit. A story is set Finished only once every issue of it stands in Review, Finished or Rejected, and that move
+A story is only a convenient way not to move its issues one by one, and it stands for their sum. Its state, what a
+Start or a move of it allows, and what holds for it are always computed from its issues; the planner keeps no state
+of its own for an open story. An open story moves only through a Start, which moves its issues, or by hand to close
+it or to reopen it once closed. A story is set Finished only once every issue of it stands in Review, Finished or Rejected, and that move
 takes no issue along, so a story is never closed over open work; only a person sets it. An issue move in a story
 whose run has started is refused as `WorkRunning` unless the person confirms stopping that run.
 
