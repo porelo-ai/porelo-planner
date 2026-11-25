@@ -4360,6 +4360,145 @@ class WorkRunTest {
                 run.placeOffers());
     }
 
+    /** The fixture's board with a second issue AA2 of story ST1, in AA1's repository and state. */
+    private static Board withSiblingIssue(final Board board) {
+        final Issue first = board.issue("AA1").orElseThrow();
+        final Story story = board.stories().getFirst();
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                List.of(
+                        new Story(
+                                story.id(),
+                                story.title(),
+                                story.state(),
+                                story.priority(),
+                                null,
+                                List.of("AA1", "AA2"),
+                                story.description(),
+                                story.link())),
+                List.of(
+                        first,
+                        new Issue(
+                                "AA2",
+                                first.repository(),
+                                "Other",
+                                first.state(),
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "")),
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
+    void aReworkAtTheGateOfAnOfferOfTwoIssuesReworksOnlyTheIssueRead() {
+        // Harm: an issue whose place nobody read is sent back with another's points, or loses
+        // its own kept place.
+        final Fixture f = new Fixture();
+        f.store.current = withSiblingIssue(f.store.board());
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        assertThat(f.run.work("ST1").offers().getFirst().binding().issues())
+                .as("one offer builds both issues")
+                .containsExactly("AA1", "AA2");
+        f.start(build);
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+        final IssuePlace second = f.run.work("ST1").places().get("AA2");
+        assertThat(second).as("both keep the place").isNotNull();
+        final String state = f.store.board().issue("AA2").orElseThrow().state();
+        final int offers = f.run.work("ST1").offers().size();
+
+        assertThat(f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+
+        final List<WorkRun.Offer> added =
+                f.run.work("ST1").offers().subList(offers, f.run.work("ST1").offers().size());
+        assertThat(added).as("one rework offered").hasSize(1);
+        assertThat(added.getFirst().binding().issues())
+                .as("for the issue read alone")
+                .containsExactly("AA1");
+        assertThat(f.run.work("ST1").places().get("AA2"))
+                .as("the other issue's place stands")
+                .isEqualTo(second);
+        assertThat(f.store.board().issue("AA2").orElseThrow().state())
+                .as("and its state")
+                .isEqualTo(state);
+    }
+
+    @Test
+    void aTaskNameKeptAtAPlaceIsNeverBoundByAnotherStorysRun() {
+        // Harm: two stories' reports and ends read as one task's, so one story's work is taken
+        // as the other's, or the rework cannot resume at its place.
+        final Fixture f = new Fixture();
+        waiting(f);
+        final Board board = f.store.board();
+        final List<Story> stories = new java.util.ArrayList<>(board.stories());
+        stories.add(new Story("ST2", "Other", "Backlog", "High", null, List.of("AA2"), "", null));
+        final List<Issue> issues = new java.util.ArrayList<>(board.issues());
+        issues.add(
+                new Issue(
+                        "AA2",
+                        board.issue("AA1").orElseThrow().repository(),
+                        "Other",
+                        "Backlog",
+                        null,
+                        List.of(),
+                        null,
+                        null,
+                        ""));
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        stories,
+                        issues,
+                        board.work(),
+                        board.repositories());
+        final WorkRun.Offered other =
+                f.run.order(
+                                "ST2",
+                                "Building",
+                                new WorkOrder.Decision(
+                                        "AGENT", Basis.of(f.store.board()), null, "", 1, null),
+                                WorkRun.Start.NONE)
+                        .tasks()
+                        .getFirst();
+        assertThatThrownBy(() -> f.start(other))
+                .as("another story's task is never started under the name kept at the place")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("already bound");
+        assertThat(f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+        final WorkRun.Offer rework = f.run.work("ST1").offers().getLast();
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        rework.id(), WorkRun.Event.STARTED, "box2", "workstation", null));
+        assertThat(f.run.work("ST1").offers().getLast().status())
+                .as("the rework resumes under the kept name")
+                .isEqualTo("STARTED");
+        assertThat(
+                        f.run.work("ST2").offers().stream()
+                                .filter(o -> o.id().equals(other.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .status())
+                .as("the other story's offer still waits, bound to no task")
+                .isEqualTo("OFFERED");
+        assertThatThrownBy(() -> f.start(other))
+                .as("nor while the rework holds the name")
+                .isInstanceOf(WorkRefusal.class);
+    }
+
     private static WorkRun.Offered waiting(final Fixture f) {
         final WorkRun.Offered build = f.order().tasks().getFirst();
         f.start(build);
