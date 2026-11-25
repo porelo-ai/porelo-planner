@@ -1877,6 +1877,905 @@ class WorkRunTest {
     }
 
     @Test
+    void aBuildersEndWhoseWorkWaitsAtTheGateKeepsItsOwnPushAsTheIssuesPlaceOnce() {
+        // Harm: with no place kept, the issue's open review points cannot send its author back to
+        // the push it left; a resent end counting the run again would spend the author's rounds.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+
+        assertThat(f.run.work("ST1").places())
+                .as("the task's own push at the gate, by the name Start took, its author's")
+                .containsExactly(Map.entry("AA1", IssuePlace.atGate("task", build.offer())));
+        final int writes = f.record.writes;
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+        assertThat(f.run.work("ST1").places().get("AA1").authorRuns())
+                .as("a resent end counts its run once")
+                .containsExactly(build.offer());
+        assertThat(f.record.writes).as("a resent end saves nothing").isEqualTo(writes);
+    }
+
+    @Test
+    void aBuildersEndWhoseWorkLandedOrDidNotFinishAndAReadersEndKeepNoPlace() {
+        // Harm: work that left the gate, or never reached it, taken for work waiting there, so an
+        // author would be sent back to a push that is not there.
+        for (final WorkRun.Ended end :
+                List.of(
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z",
+                                true,
+                                "it is blocked",
+                                "",
+                                0,
+                                List.of(),
+                                WorkEnds.Declared.BLOCKED),
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z", true, "left unpushed", "", 1, List.of()),
+                        ended("Built"),
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z", false, "it broke", "", 0, List.of()))) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered build = f.order().tasks().getFirst();
+            f.start(build);
+            f.run.report(
+                    "task",
+                    new WorkRun.Report(
+                            build.offer(), WorkRun.Event.ENDED, "box", "workstation", end));
+            assertThat(f.run.work("ST1").places())
+                    .as("no place for an end whose work is not waiting: " + end.why())
+                    .isEmpty();
+        }
+        final Fixture staged = new Fixture();
+        final WorkRule building = staged.store.board().work().rules().get("Building");
+        staged.store.current =
+                NextStepTest.withRule(
+                        staged.store.board(),
+                        "Building",
+                        new WorkRule(
+                                building.from(),
+                                building.done(),
+                                null,
+                                null,
+                                building.per(),
+                                building.modes(),
+                                building.order(),
+                                building.models(),
+                                building.risks(),
+                                WorkRule.Result.ANALYSIS));
+        final WorkRun.Offered stage = staged.order().tasks().getFirst();
+        staged.start(stage);
+        staged.run.report(
+                "task",
+                new WorkRun.Report(
+                        stage.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Analyzed")));
+        assertThat(staged.run.work("ST1").places())
+                .as("a stage hands back its result and pushes no work, so it keeps no place")
+                .isEmpty();
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final WorkRun.Offered reader =
+                f.run.report("task", landed(build, "work/built")).tasks().getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Findings:\n")));
+        assertThat(f.run.work("ST1").places())
+                .as("a reader's end keeps no place of its own")
+                .containsExactly(Map.entry("AA1", IssuePlace.atGate("task", build.offer())));
+    }
+
+    @Test
+    void aBuildersEndAtAnotherTaskWhileTheKeptPushStillWaitsKeepsThePlaceMovesNothingAndAsks() {
+        // Harm: a second author's end takes the issue's place, or moves the issue on, while the
+        // first one's push still waits at the gate, so the points open on that push are never
+        // answered.
+        for (final WorkRun.Ended end : List.of(unlanded("Built"), ended("Built"))) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered build = f.order().tasks().getFirst();
+            f.start(build);
+            final IssuePlace earlier = earlierPlace(f, null);
+            final String before = f.store.board().issue("AA1").orElseThrow().state();
+            final int saves = f.store.saves;
+
+            final WorkRun.Answer answer =
+                    f.run.report(
+                            "task",
+                            new WorkRun.Report(
+                                    build.offer(), WorkRun.Event.ENDED, "box", "workstation", end));
+
+            final String which = end.landed().isEmpty() ? "waiting" : "landed";
+            final WorkRun.Run run = f.run.work("ST1");
+            assertThat(run.places().get("AA1"))
+                    .as("the kept place stands, " + which)
+                    .isEqualTo(earlier);
+            assertThat(List.of(f.store.board().issue("AA1").orElseThrow().state(), f.store.saves))
+                    .as("the issue takes no step from the other task's end, " + which)
+                    .containsExactly(before, saves);
+            assertThat(answer.tasks()).as("no reader is offered, " + which).isEmpty();
+            assertThat(
+                            run.offers().stream()
+                                    .filter(o -> o.id().equals(build.offer()))
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .deferred())
+                    .as("nothing follows for it, " + which)
+                    .isEmpty();
+            final NextStep.Progress progress = run.issues().get("AA1");
+            assertThat(List.of(progress.needsYou(), progress.reason()))
+                    .as("the issue asks the person why, " + which)
+                    .containsExactly(true, WorkRun.PLACE_CHANGED);
+            assertThat(f.told)
+                    .as("one line names both tasks, " + which)
+                    .anyMatch(
+                            line ->
+                                    line.contains("AA1")
+                                            && line.contains("task earlier")
+                                            && line.contains("task task"));
+        }
+    }
+
+    @Test
+    void aBuildersEndAtAnotherTaskTakesThePlaceOnceAnAnswerSaysTheKeptPushIsGone() {
+        // Harm: an issue held at a push the gate already forwarded, so its next author's push is
+        // never where its review points are read.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        final ReviewOpen approved =
+                new ReviewOpen(
+                        COMMIT,
+                        ReviewOpen.Decision.APPROVED,
+                        null,
+                        null,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        List.of(),
+                        0,
+                        0,
+                        true,
+                        null,
+                        "v9");
+        earlierPlace(f, approved);
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+
+        assertThat(f.run.work("ST1").places().get("AA1"))
+                .as("the new task's own push is the issue's place now")
+                .isEqualTo(IssuePlace.atGate("task", build.offer()));
+        assertThat(f.run.work("ST1").issues().get("AA1").needsYou()).as("nothing asked").isFalse();
+    }
+
+    @Test
+    void aBuildersEndAtAnotherTaskTakesThePlaceOnceTheKeptPushLanded() {
+        // Harm: an issue kept at a push that already left the gate, so a rework's own push is
+        // never where its review points are read.
+        final Fixture f = new Fixture();
+        Board board = f.store.board();
+        board =
+                NextStepTest.withRule(
+                        board,
+                        "Reading",
+                        rule(List.of("Building"), null, "Reworking", WorkRule.Per.STORY));
+        board =
+                NextStepTest.withRule(
+                        board,
+                        "Reworking",
+                        rule(List.of("Reading"), "Reading", null, WorkRule.Per.REPOSITORY));
+        f.store.current = board;
+        final WorkRun.Offered build = waiting(f);
+        final WorkRun.Offered reader =
+                f.run.report("task", landed(build, "work/built")).tasks().getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n1. blocking | - | - | Preserve data")));
+        final WorkRun.Offered rework =
+                f.run.choose(
+                                "ST1",
+                                "AA1",
+                                1,
+                                ReadingCycle.Choice.REWORK,
+                                "Rework it",
+                                Basis.of(f.store.board()),
+                                null)
+                        .tasks()
+                        .getFirst();
+        f.run.report(
+                "task-2",
+                new WorkRun.Report(
+                        rework.offer(), WorkRun.Event.STARTED, "box-2", "workstation", null));
+        f.run.report(
+                "task-2",
+                new WorkRun.Report(
+                        rework.offer(),
+                        WorkRun.Event.ENDED,
+                        "box-2",
+                        "workstation",
+                        unlanded("Reworked")));
+
+        assertThat(f.run.work("ST1").places())
+                .as("the rework's own push is the issue's place now")
+                .containsExactly(Map.entry("AA1", IssuePlace.atGate("task-2", rework.offer())));
+    }
+
+    @Test
+    void aParentsEndWaitingForItsChildKeepsItsOwnPushAsItsPlace() {
+        // Harm: a parent whose push waits at the gate while its child still works keeps no place,
+        // so its review points can never send it back.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final var tasks = f.order().tasks();
+        final var main =
+                tasks.stream()
+                        .filter(o -> o.task().role().equals("MAIN"))
+                        .findFirst()
+                        .orElseThrow();
+        f.start(main);
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        main.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(
+                        run.offers().stream()
+                                .filter(o -> o.id().equals(main.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .deferred())
+                .as("the parent follows its child")
+                .containsExactly("AA1");
+        assertThat(run.places().get("AA1"))
+                .as("its own push is kept as it waits")
+                .isEqualTo(IssuePlace.atGate("task", main.offer()));
+    }
+
+    @Test
+    void anAnswerReadAtTheKeptPlaceIsKeptOncePerVersionWithItsTimesAndAnIncompleteOneIsNot() {
+        // Harm: the times the people's waits are measured from are lost; every poll of an
+        // unchanged place writes the record again; open points cut without their count, so more
+        // stand open than the record says; or a partial read stands as what is open.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final ReviewOpen first = opened("v1", 2);
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", first)))
+                .as("a new answer is kept")
+                .isEqualTo(WorkRun.PlaceOutcome.KEPT);
+        assertThat(f.run.work("ST1").places().get("AA1"))
+                .as("the answer kept with its decision's and each point's time")
+                .isEqualTo(IssuePlace.atGate("task", build.offer()).read(first));
+        assertThat(f.run.work("ST1").places().get("AA1").last().points().getLast().lastAt())
+                .as("the last point's own time")
+                .isEqualTo(Instant.parse("2026-01-01T00:00:01Z"));
+        final int writes = f.record.writes;
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", first)))
+                .as("the same version")
+                .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        assertThat(f.record.writes).as("the same version writes nothing").isEqualTo(writes);
+
+        // A push naming the task's own repository is the task's own push.
+        f.run.placeRead(
+                "ST1",
+                "AA1",
+                new PlaceRead.Opened(
+                        RunPlace.gate(build.task().repository(), "task"),
+                        "task",
+                        opened("v2", 101)));
+        final IssuePlace kept = f.run.work("ST1").places().get("AA1");
+        assertThat(
+                        List.of(
+                                kept.last().version(),
+                                kept.last().points().size(),
+                                kept.last().pointsTotal(),
+                                kept.last().points().getLast().thread()))
+                .as("a new version kept, its first 100 points and the count of all")
+                .containsExactly("v2", 100, 101, "t99");
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Opened(
+                                        RunPlace.gate(null, "task"),
+                                        "task",
+                                        new ReviewOpen(
+                                                COMMIT,
+                                                ReviewOpen.Decision.OPEN,
+                                                null,
+                                                null,
+                                                null,
+                                                List.of(),
+                                                0,
+                                                0,
+                                                false,
+                                                "the forge did not answer",
+                                                "v3"))))
+                .as("an incomplete answer keeps nothing")
+                .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        assertThat(f.run.work("ST1").places().get("AA1"))
+                .as("an incomplete answer leaves the last complete one")
+                .isEqualTo(kept);
+        assertThat(f.run.work("ST1").issues().get("AA1").needsYou())
+                .as("nothing asked here")
+                .isFalse();
+    }
+
+    @Test
+    void anAnswerReadForAnotherTaskOrPlaceChangesNothingKeptAndAsksThePersonOnce() {
+        // Harm: a read of another place overwrites where the issue's work waits, so its author is
+        // sent back to work that is not its own; or every poll tells the person again.
+        for (final PlaceRead.Opened read :
+                List.of(
+                        new PlaceRead.Opened(
+                                RunPlace.gate(null, "task-2"), "task-2", opened("v1", 1)),
+                        new PlaceRead.Opened(
+                                RunPlace.gate("beta", "task"), "task", opened("v1", 1)),
+                        new PlaceRead.Opened(
+                                new RunPlace(null, "feature/x", null), "task", opened("v1", 1)))) {
+            final Fixture f = new Fixture();
+            final WorkRun.Offered build = waiting(f);
+            final int saves = f.store.saves;
+
+            assertThat(f.run.placeRead("ST1", "AA1", read))
+                    .as("the read's outcome: " + read)
+                    .isEqualTo(WorkRun.PlaceOutcome.PLACE_CHANGED);
+
+            final WorkRun.Run run = f.run.work("ST1");
+            assertThat(run.places().get("AA1"))
+                    .as("the kept place stands: " + read)
+                    .isEqualTo(IssuePlace.atGate("task", build.offer()));
+            assertThat(run.issues().get("AA1").reason())
+                    .as("the issue asks the person why")
+                    .isEqualTo(WorkRun.PLACE_CHANGED);
+            assertThat(f.store.saves).as("no issue moves").isEqualTo(saves);
+            assertThat(f.told)
+                    .as("one line names what was read and what is kept")
+                    .anyMatch(line -> line.contains("AA1") && line.contains("task task at"));
+            final int writes = f.record.writes;
+            final int told = f.told.size();
+            f.run.placeRead("ST1", "AA1", read);
+            assertThat(List.of(f.record.writes, f.told.size()))
+                    .as("asked once: nothing written or told again")
+                    .containsExactly(writes, told);
+        }
+    }
+
+    @Test
+    void aTaskRecordOfTheBoundContainerAtItsOwnPushMatchesAndAnyOtherAsksThePerson() {
+        // Harm: Porelo's default place, its own push named without or with its repository, taken
+        // for another place and stopping the issue; or another container's, role's or
+        // repository's record taken for it.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final String repository = build.task().repository();
+        final int writes = f.record.writes;
+        for (final TaskRecord same :
+                List.of(
+                        record("box", RunRole.AUTHOR, repository, null),
+                        record("box", null, null, RunPlace.gate(repository, "task")))) {
+            assertThat(f.run.placeRead("ST1", "AA1", new PlaceRead.Recorded(same)))
+                    .as("a matching record: " + same)
+                    .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        }
+        assertThat(f.record.writes).as("a matching record keeps nothing").isEqualTo(writes);
+        assertThat(f.run.work("ST1").issues().get("AA1").needsYou())
+                .as("a matching record asks nothing")
+                .isFalse();
+
+        final Map<TaskRecord, List<String>> others =
+                Map.of(
+                        record("box-9", RunRole.AUTHOR, repository, null),
+                        List.of("container box-9", "in container box"),
+                        record("box", RunRole.AUTHOR, repository, RunPlace.gate(null, "task-2")),
+                        List.of("the gate push task-2", "the gate push task"),
+                        record("box", RunRole.REVIEWER, repository, null),
+                        List.of("as REVIEWER", "as AUTHOR"),
+                        record("box", RunRole.AUTHOR, "beta", null),
+                        List.of("in repository beta", "in repository " + repository));
+        others.forEach(
+                (other, named) -> {
+                    final Fixture g = new Fixture();
+                    waiting(g);
+                    g.run.placeRead("ST1", "AA1", new PlaceRead.Recorded(other));
+                    assertThat(g.run.work("ST1").issues().get("AA1").reason())
+                            .as(
+                                    "another container, place, role or repository asks the"
+                                            + " person: "
+                                            + other)
+                            .isEqualTo(WorkRun.PLACE_CHANGED);
+                    assertThat(g.told)
+                            .as("the line names what differs on both sides: " + other)
+                            .anyMatch(line -> named.stream().allMatch(line::contains));
+                });
+    }
+
+    @Test
+    void aReadOfNoKeptPlaceIsRefusedAndOneMeetingASaveInFlightIsTriedAgainLater() {
+        // Harm: a read kept for an issue whose work waits nowhere; or one judged on a run whose
+        // save is still at GitHub, or held waiting for that save, stalling the record's lock.
+        final Fixture f = new Fixture();
+        final PlaceRead read =
+                new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", opened("v1", 0));
+        assertThat(catchThrowable(() -> f.run.placeRead("ST9", "AA1", read)))
+                .as("a story without a run")
+                .isInstanceOfSatisfying(
+                        WorkRefusal.class,
+                        e -> assertThat(e.name()).as("its name").isEqualTo("NoSuchStory"));
+        f.start(f.order().tasks().getFirst());
+        assertThat(catchThrowable(() -> f.run.placeRead("ST1", "AA1", read)))
+                .as("an issue whose run keeps no place")
+                .isInstanceOfSatisfying(
+                        WorkRefusal.class,
+                        e -> assertThat(e.name()).as("its name").isEqualTo("RunChanged"));
+
+        final Fixture g = new Fixture();
+        waiting(g);
+        g.record.value = withRun(g.record.value, marked(g.run.work("ST1"), pendingMark()));
+        final WorkRun.Snapshot before = g.record.value;
+        assertThat(g.run.placeRead("ST1", "AA1", read))
+                .as("a run whose save is in flight is read again later")
+                .isEqualTo(WorkRun.PlaceOutcome.WAITING);
+        assertThat(g.record.value).as("the record unchanged").isEqualTo(before);
+    }
+
+    @Test
+    void aReadOfAPlaceInAHaltedOrStoppedRunLeavesItsReasonAndWritesNothing() {
+        // Harm: a read replaces the reason a halted or stopped run asks with a changed place, so
+        // the run can no longer be passed over and started again.
+        final Fixture f = new Fixture();
+        final WorkRun.Run halted = f.halted();
+        f.record.value =
+                withPlace(
+                        f.record.value,
+                        "AA1",
+                        IssuePlace.atGate("task", halted.offers().getFirst().id()));
+        final Fixture g = new Fixture();
+        waiting(g);
+        g.run.stop("ST1");
+        for (final Fixture fixture : List.of(f, g)) {
+            final String reason = fixture.run.work("ST1").issues().get("AA1").reason();
+            final int writes = fixture.record.writes;
+            assertThat(
+                            fixture.run.placeRead(
+                                    "ST1",
+                                    "AA1",
+                                    new PlaceRead.Opened(
+                                            RunPlace.gate(null, "task-2"),
+                                            "task-2",
+                                            opened("v1", 1))))
+                    .as("a read of another place in a run asking " + reason)
+                    .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+            assertThat(
+                            List.of(
+                                    fixture.run.work("ST1").issues().get("AA1").reason(),
+                                    fixture.record.writes))
+                    .as("the reason stands and nothing is written: " + reason)
+                    .containsExactly(reason, writes);
+        }
+    }
+
+    @Test
+    void aParentStoppedForItsChangedPlaceIsNotMovedOnWhenItsChildEnds() {
+        // Harm: a parent the person was asked about is moved on in the store and offered its next
+        // step once its child ends, as if its place had not changed.
+        final Fixture f = new Fixture();
+        f.store.current = NextStepTest.board("Backlog", "Backlog");
+        final var tasks = f.order().tasks();
+        final var main =
+                tasks.stream()
+                        .filter(o -> o.task().role().equals("MAIN"))
+                        .findFirst()
+                        .orElseThrow();
+        final var child =
+                tasks.stream()
+                        .filter(o -> o.task().role().equals("BUILDER"))
+                        .findFirst()
+                        .orElseThrow();
+        f.start(main);
+        f.run.report(
+                "child",
+                new WorkRun.Report(
+                        child.offer(), WorkRun.Event.STARTED, "box-2", "workstation", null));
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        main.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+        f.run.placeRead(
+                "ST1",
+                "AA1",
+                new PlaceRead.Opened(RunPlace.gate(null, "task-2"), "task-2", opened("v1", 1)));
+        final String before = f.store.board().issue("AA1").orElseThrow().state();
+
+        final WorkRun.Answer answer =
+                f.run.report(
+                        "child",
+                        new WorkRun.Report(
+                                child.offer(),
+                                WorkRun.Event.ENDED,
+                                "box-2",
+                                "workstation",
+                                unlanded("Built")));
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the parent stands where it was")
+                .isEqualTo(before);
+        assertThat(answer.tasks())
+                .as("no step is offered for the parent")
+                .noneMatch(o -> o.task().issues().contains("AA1"));
+        assertThat(run.issues().get("AA1").reason())
+                .as("the parent still asks the person")
+                .isEqualTo(WorkRun.PLACE_CHANGED);
+        assertThat(
+                        run.offers().stream()
+                                .filter(o -> o.id().equals(main.offer()))
+                                .findFirst()
+                                .orElseThrow()
+                                .deferred())
+                .as("the parent still follows its child")
+                .containsExactly("AA1");
+    }
+
+    @Test
+    void aLandingOfAnIssueStoppedForItsChangedPlaceOffersNoReader() {
+        // Harm: a reader is offered for work whose place the person was asked about, so a reading
+        // goes on beside the question.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        f.run.placeRead(
+                "ST1",
+                "AA1",
+                new PlaceRead.Opened(RunPlace.gate(null, "task-2"), "task-2", opened("v1", 1)));
+
+        final WorkRun.Answer answer = f.run.report("task", landed(build, "work/built"));
+
+        assertThat(answer.tasks()).as("no reader is offered").isEmpty();
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("the issue still asks the person")
+                .isEqualTo(WorkRun.PLACE_CHANGED);
+    }
+
+    @Test
+    void aReadingStartedAgainAfterARunCarryingAnOlderPlaceReadsTheLastBuild() {
+        // Harm: an author run carried only to keep an older place is taken for the issue's last
+        // build, so a reading started again reads older work, or is refused as having none.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final WorkRun.Offered reader =
+                f.run.report("task", landed(build, "work/built")).tasks().getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n")));
+        final IssuePlace older = earlierPlace(f, null);
+        f.store.current = handReadable(f.store.current, null);
+        final WorkRun.Offered second = f.handReading().tasks().getFirst();
+        assertThat(f.run.work("ST1").offers().getFirst().id())
+                .as("the carried author run stands before the new run's offers")
+                .isEqualTo(older.authorRuns().getFirst());
+        f.run.report(
+                "reader-2",
+                new WorkRun.Report(
+                        second.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader-2",
+                new WorkRun.Report(
+                        second.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n")));
+
+        final WorkRun.Order again = f.handReading();
+
+        assertThat(again.tasks().getFirst().task().prompt())
+                .as("the reading reads the last build")
+                .contains("the work of Porelo task task:")
+                .doesNotContain("Porelo task earlier");
+    }
+
+    @Test
+    void aStartPassesOverNoChangedPlace() {
+        // Harm: a new start passes over an issue whose work waits at another place, and its
+        // author pushes work beside the push that waits there.
+        final Fixture f = new Fixture();
+        waiting(f);
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(
+                        catchThrowable(
+                                () ->
+                                        f.order(
+                                                new WorkRun.Start(
+                                                        run.id(),
+                                                        f.passOver(
+                                                                run,
+                                                                "AA1",
+                                                                WorkRun.PLACE_CHANGED)))))
+                .as("a start naming a changed place")
+                .isInstanceOfSatisfying(
+                        WorkRefusal.class,
+                        e -> assertThat(e.name()).as("its name").isEqualTo("InvalidSettings"));
+    }
+
+    @Test
+    void aStartThatReplacesTheRunCarriesItsPlacesWithTheirAuthorRunsVoid() {
+        // Harm: a new start forgets where an issue's work waits, or keeps a place whose author
+        // run it dropped, so the record no longer opens.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        final WorkRun.Offered reader =
+                f.run.report("task", landed(build, "work/built")).tasks().getFirst();
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        f.run.report(
+                "reader",
+                new WorkRun.Report(
+                        reader.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        ended("Findings:\n")));
+        final WorkRun.Run old = f.run.work("ST1");
+        f.store.current = handReadable(f.store.current, null);
+
+        // A reading started by hand replaces the run.
+        f.handReading();
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.id()).as("a new run").isNotEqualTo(old.id());
+        assertThat(run.places())
+                .as("the place carried")
+                .containsExactly(Map.entry("AA1", IssuePlace.atGate("task", build.offer())));
+        final WorkRun.Offer carried =
+                run.offers().stream()
+                        .filter(o -> o.id().equals(build.offer()))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(List.of(carried.status(), String.valueOf(carried.task())))
+                .as("its author run carried void, bound to its task")
+                .containsExactly("VOID", "task");
+    }
+
+    @Test
+    void aTaskOrderedWithARoleAndAPlaceKeepsThemAsItsStageGivesItItsFiles() {
+        // Harm: Start runs an author at its own push where the planner asked for a run at another
+        // place, because the copy that hands a stage's task its files dropped them.
+        final Fixture f = new Fixture();
+        final RunPlace place = RunPlace.gate(null, "cart");
+        final WorkOrder.Task task = f.order().tasks().getFirst().task().at(RunRole.REVIEWER, place);
+        final Board board = f.store.board();
+        final WorkRule plain = board.work().rules().get("Building");
+        final WorkRule analysis =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Analyze {story}: {issues}; {tasks}",
+                        Map.of("codex", "model"),
+                        Map.of(),
+                        WorkRule.Result.ANALYSIS);
+        for (final WorkRule rule : List.of(plain, analysis)) {
+            final WorkOrder.Task staged = StageOrder.staged(board, rule, "Building", task);
+            assertThat(List.of(staged.runRole(), staged.place()))
+                    .as("the role and place handed on, result file " + staged.result())
+                    .containsExactly(RunRole.REVIEWER, place);
+        }
+    }
+
+    /** A build ended with its work waiting at the gate, as task {@code task} in container box. */
+    private static WorkRun.Offered waiting(final Fixture f) {
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        unlanded("Built")));
+        return build;
+    }
+
+    /** A complete answer returning the push with the given count of open points. */
+    static ReviewOpen opened(final String version, final int points) {
+        final Instant since = Instant.parse("2026-01-01T00:00:00Z");
+        return new ReviewOpen(
+                COMMIT,
+                ReviewOpen.Decision.RETURNED,
+                null,
+                null,
+                since,
+                java.util.stream.IntStream.range(0, points)
+                        .mapToObj(
+                                i ->
+                                        new ReviewOpen.Point(
+                                                "t" + i, null, null, "owner", since.plusSeconds(i)))
+                        .toList(),
+                0,
+                0,
+                true,
+                null,
+                version);
+    }
+
+    /** Porelo's record of a run of AA1 in the container, role, repository and place given. */
+    private static TaskRecord record(
+            final String container,
+            final @Nullable RunRole role,
+            final @Nullable String repository,
+            final @Nullable RunPlace place) {
+        return new TaskRecord(
+                container,
+                "project",
+                repository,
+                List.of("AA1"),
+                Instant.parse("2026-01-01T00:00:00Z"),
+                null,
+                null,
+                List.of(),
+                role,
+                place,
+                0);
+    }
+
+    /**
+     * Puts a void author run of AA1 first among its run's offers, as a run that replaced an older
+     * one carries it: task earlier in container box-0, its work waiting at the gate. Keeps that
+     * push as AA1's place, with the answer given read there.
+     */
+    private static IssuePlace earlierPlace(final Fixture f, final @Nullable ReviewOpen answer) {
+        final WorkRun.Run run = f.run.work("ST1");
+        final WorkRun.Offer like =
+                run.offers().stream()
+                        .filter(
+                                o ->
+                                        o.binding().issues().contains("AA1")
+                                                && !o.binding().role().equals("READER"))
+                        .findFirst()
+                        .orElseThrow();
+        final WorkRun.Offer earlier =
+                new WorkRun.Offer(
+                        java.util.UUID.randomUUID().toString(),
+                        like.arguments(),
+                        like.binding(),
+                        "VOID",
+                        "earlier",
+                        "box-0",
+                        "workstation",
+                        "2026-01-01T00:00:00Z",
+                        unlanded("Built"),
+                        "earlier",
+                        List.of(),
+                        List.of(),
+                        null,
+                        false,
+                        "",
+                        null);
+        final List<WorkRun.Offer> offers = new java.util.ArrayList<>();
+        offers.add(earlier);
+        offers.addAll(run.offers());
+        final IssuePlace place =
+                answer == null
+                        ? IssuePlace.atGate("earlier", earlier.id())
+                        : IssuePlace.atGate("earlier", earlier.id()).read(answer);
+        f.record.value =
+                withPlace(
+                        withRun(
+                                f.record.value,
+                                new WorkRun.Run(
+                                        run.id(),
+                                        run.story(),
+                                        run.to(),
+                                        run.mode(),
+                                        run.comment(),
+                                        run.coordinator(),
+                                        run.readingRounds(),
+                                        run.issueReadingRounds(),
+                                        run.repositories(),
+                                        run.since(),
+                                        offers,
+                                        run.issues(),
+                                        run.stopped(),
+                                        run.halted(),
+                                        run.pending(),
+                                        run.places())),
+                        "AA1",
+                        place);
+        return place;
+    }
+
+    /** The record with the story's run keeping the place given for the issue. */
+    private static WorkRun.Snapshot withPlace(
+            final WorkRun.Snapshot record, final String issue, final IssuePlace place) {
+        final WorkRun.Run run = record.runs().get("ST1");
+        final Map<String, IssuePlace> places = new java.util.LinkedHashMap<>(run.places());
+        places.put(issue, place);
+        return withRun(
+                record,
+                new WorkRun.Run(
+                        run.id(),
+                        run.story(),
+                        run.to(),
+                        run.mode(),
+                        run.comment(),
+                        run.coordinator(),
+                        run.readingRounds(),
+                        run.issueReadingRounds(),
+                        run.repositories(),
+                        run.since(),
+                        run.offers(),
+                        run.issues(),
+                        run.stopped(),
+                        run.halted(),
+                        run.pending(),
+                        places));
+    }
+
+    @Test
     void aBuildEndedWithItsLandingOffersItsReaderAtOnceAndALandingAfterIsRefused() {
         // A landing after a reader was already offered would offer a second reader of one build.
         final Fixture f = new Fixture();

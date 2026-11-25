@@ -26,7 +26,9 @@ import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
+import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.StageOrder;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -960,6 +962,10 @@ public final class WorkRecord implements AutoCloseable {
                         marked.putNull("pending");
                     }
                 }
+                // A run written before issues' places were kept keeps none.
+                if (run instanceof ObjectNode placed && !placed.has("places")) {
+                    placed.putObject("places");
+                }
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
                     // A main recorded before the rule's offered agents were proposed names none.
@@ -1442,12 +1448,22 @@ public final class WorkRecord implements AutoCloseable {
                                             .contains(offer.status())) {
                                         present(offer.task(), offer.containerId(), offer.since());
                                     }
+                                    // A void offer keeps its end, if it had one, as a carried
+                                    // run does; every other bound offer has ended exactly when
+                                    // its status says so.
+                                    if (offer.task() != null
+                                            && !offer.status().equals("VOID")
+                                            && offer.status().equals("ENDED")
+                                                    != (offer.ended() != null)) {
+                                        throw new IllegalArgumentException(
+                                                "an offer fails its check");
+                                    }
                                     if (offer.task() != null) {
                                         WorkRun.checkedReport(
                                                 offer.task(),
                                                 new WorkRun.Report(
                                                         offer.id(),
-                                                        offer.status().equals("ENDED")
+                                                        offer.ended() != null
                                                                 ? WorkRun.Event.ENDED
                                                                 : WorkRun.Event.STARTED,
                                                         String.valueOf(offer.containerId()),
@@ -1455,7 +1471,38 @@ public final class WorkRecord implements AutoCloseable {
                                                         offer.ended()));
                                     }
                                 }
+                                run.places().forEach((id, place) -> checkedPlace(run, id, place));
                             });
+        }
+
+        /**
+         * Refuses a kept place of an issue the run does not hold, or one whose author run is no
+         * ended or void builder's offer of the run owning the issue that pushes its work as its
+         * author, bound to the place's task in a container.
+         */
+        private static void checkedPlace(
+                final WorkRun.Run run, final String issue, final IssuePlace place) {
+            Ids.issue(issue);
+            if (!run.issues().containsKey(issue)) {
+                throw new IllegalArgumentException("a place fails its check");
+            }
+            for (final String id : place.authorRuns()) {
+                if (run.offers().stream()
+                        .noneMatch(
+                                o ->
+                                        o.id().equals(id)
+                                                && o.binding().issues().contains(issue)
+                                                && Set.of("MAIN", "BUILDER")
+                                                        .contains(o.binding().role())
+                                                && o.binding().rule().result() == null
+                                                && o.arguments().runRole() != RunRole.REVIEWER
+                                                && Set.of("ENDED", "VOID").contains(o.status())
+                                                && o.ended() != null
+                                                && place.task().equals(o.task())
+                                                && o.containerId() != null)) {
+                    throw new IllegalArgumentException("a place fails its check");
+                }
+            }
         }
 
         /** Lets go of the file guard; called with no save that can still run. */

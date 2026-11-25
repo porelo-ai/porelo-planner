@@ -134,6 +134,21 @@ class WorkAnswersTest {
                     .as("the issue's attention %s", reason)
                     .isEqualTo(reason.name());
         }
+        // A read naming another place than the one kept stops the issue for this reason.
+        final String changed = org.fuin.porelo.planner.core.WorkRun.PLACE_CHANGED;
+        assertThat(
+                        List.of(
+                                org.fuin.porelo.planner.app.answers.PlanWorkIssue.ReasonEnum
+                                        .fromValue(changed)
+                                        .getValue(),
+                                org.fuin.porelo.planner.app.answers.Issue.AttentionEnum.fromValue(
+                                                changed)
+                                        .getValue(),
+                                org.fuin.porelo.planner.app.answers.IssueDetail.AttentionEnum
+                                        .fromValue(changed)
+                                        .getValue()))
+                .as("a changed place, in the run's reason, the issue's and its detail's attention")
+                .containsOnly(changed);
         for (final org.fuin.porelo.planner.core.WorkEnds.Severity severity :
                 org.fuin.porelo.planner.core.WorkEnds.Severity.values()) {
             assertThat(

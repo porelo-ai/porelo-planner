@@ -21,8 +21,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.HandedResults;
+import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
 import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkEnds;
@@ -842,6 +844,230 @@ class WorkRecordTest {
                     .as("a place naming two places is refused")
                     .isNotNull();
         }
+    }
+
+    @Test
+    void anIssuesKeptPlaceIsReadBackWithItsTimesAndARecordWithoutPlacesOpens() throws Exception {
+        // Harm: an upgrade makes a running story's record unreadable because it was written
+        // before places were kept; or a kept place comes back other than written, losing where
+        // the issue's work waits or the times the people's waits are measured from.
+        final WorkRun.Run written = writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(run(records).places())
+                    .as("the place read back as written, its answer's times included")
+                    .isEqualTo(written.places());
+            final var document = json.readTree(Files.readString(file));
+            ((ObjectNode) document.path("runs").iterator().next()).remove("places");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThat(run(records).places()).as("an older record keeps no place").isEmpty();
+        }
+    }
+
+    @Test
+    void aKeptPlaceThatDoesNotFitItsRunIsRefusedAsTheRecordOpens() throws Exception {
+        // Harm: a record changed on disk trusted: a place of an issue the run does not hold, an
+        // author run that is no ended or void builder's offer of the issue in a container under
+        // the place's task, one that stages a result or reviews, or a kept answer whose count says
+        // fewer points stand open than it keeps.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String sound = Files.readString(file);
+        final List<java.util.function.Consumer<ObjectNode>> tampers =
+                List.of(
+                        run -> {
+                            final ObjectNode places = (ObjectNode) run.get("places");
+                            places.set("AA9", places.remove("AA1"));
+                        },
+                        run ->
+                                place(run)
+                                        .putArray("authorRuns")
+                                        .add("00000000-0000-0000-0000-000000000009"),
+                        run -> place(run).put("task", "other"),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0).get("binding"))
+                                        .put("role", "READER"),
+                        run -> ((ObjectNode) run.get("offers").get(0)).putNull("containerId"),
+                        run -> ((ObjectNode) place(run).get("last")).put("pointsTotal", 0),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0))
+                                        .put("status", "VOID")
+                                        .putNull("containerId"),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0).get("binding").get("rule"))
+                                        .put("result", "ANALYSIS"),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0).get("arguments"))
+                                        .put("runRole", "REVIEWER"),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0))
+                                        .put("status", "VOID")
+                                        .putNull("ended"),
+                        run ->
+                                ((ObjectNode) run.get("offers").get(0))
+                                        .put("status", "STARTED")
+                                        .putNull("ended"),
+                        run -> {
+                            final ObjectNode offer = (ObjectNode) run.get("offers").get(0);
+                            ((ObjectNode) offer.get("binding")).putArray("issues").add("AA2");
+                            ((ObjectNode) offer.get("arguments")).putArray("issues").add("AA2");
+                        });
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            for (int i = 0; i < tampers.size(); i++) {
+                final var document = json.readTree(sound);
+                tampers.get(i).accept((ObjectNode) document.path("runs").iterator().next());
+                Files.writeString(file, json.writeValueAsString(document));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records))
+                        .as("tamper " + i)
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    @Test
+    void aCarriedVoidAuthorRunWithItsEndOpensAgainAndAnOfferEndsAsItsStatusSays() throws Exception {
+        // Harm: a run that replaced another carries that one's author run void with its end, and
+        // the project's work record no longer opens after a restart; or an offer whose end
+        // contradicts its status is trusted.
+        final WorkRun.Run written = writePlaceRecord("VOID");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String sound = Files.readString(file);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(run(records))
+                    .as("the run with its void author run read back as written")
+                    .isEqualTo(written);
+            final List<java.util.function.Consumer<ObjectNode>> tampers =
+                    List.of(
+                            offer -> offer.put("status", "STARTED"),
+                            offer -> offer.put("status", "ENDED").putNull("ended"));
+            for (int i = 0; i < tampers.size(); i++) {
+                final var document = json.readTree(sound);
+                final ObjectNode run = (ObjectNode) document.path("runs").iterator().next();
+                // No place holds the offer to its status here, only the offer's own check.
+                run.putObject("places");
+                tampers.get(i).accept((ObjectNode) run.get("offers").get(0));
+                Files.writeString(file, json.writeValueAsString(document));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records))
+                        .as("tamper " + i)
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    private static ObjectNode place(final ObjectNode run) {
+        return (ObjectNode) run.get("places").get("AA1");
+    }
+
+    private static WorkRun.Run run(final WorkRecord records) {
+        return records.open("project", "https://example.org/store.git", null)
+                .locked(session -> session.read().runs().values().iterator().next());
+    }
+
+    /** A run whose builder of AA1 ended with its work waiting, kept with an answer read there. */
+    private WorkRun.Run writePlaceRecord() {
+        return writePlaceRecord("ENDED");
+    }
+
+    /**
+     * A run whose builder of AA1, its offer in the status given, ended with its work waiting, kept
+     * with an answer read there.
+     */
+    private WorkRun.Run writePlaceRecord(final String status) {
+        final String story = "ST1";
+        final var rule =
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Build",
+                        Map.of("codex", "model"));
+        final String id = "00000000-0000-0000-0000-000000000002";
+        final var offer =
+                new WorkRun.Offer(
+                        id,
+                        new WorkOrder.Task(
+                                "alpha",
+                                List.of("AA1"),
+                                "MAIN",
+                                "codex",
+                                "model",
+                                null,
+                                "AGENT",
+                                "Build"),
+                        new NextStep.Binding(
+                                story, "alpha", List.of("AA1"), "MAIN", "Building", "AGENT", rule),
+                        status,
+                        "task",
+                        "box",
+                        "workstation",
+                        java.time.Instant.EPOCH.toString(),
+                        new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", "Built", 0),
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final java.time.Instant since = java.time.Instant.parse("2026-01-01T00:00:00Z");
+        final IssuePlace place =
+                IssuePlace.atGate("task", id)
+                        .read(
+                                new ReviewOpen(
+                                        "0123456789abcdef0123456789abcdef01234567",
+                                        ReviewOpen.Decision.RETURNED,
+                                        null,
+                                        null,
+                                        since,
+                                        List.of(
+                                                new ReviewOpen.Point(
+                                                        "thread",
+                                                        "a.txt",
+                                                        3,
+                                                        "owner",
+                                                        since.plusSeconds(5))),
+                                        0,
+                                        0,
+                                        true,
+                                        null,
+                                        "v1"));
+        final var run =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        story,
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        2,
+                        List.of(),
+                        List.of(),
+                        java.time.Instant.EPOCH.toString(),
+                        List.of(offer),
+                        Map.of("AA1", NextStep.Progress.start(2)),
+                        false,
+                        false,
+                        null,
+                        Map.of("AA1", place));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            records.open("project", "https://example.org/store.git", null)
+                    .locked(
+                            session -> {
+                                session.write(new WorkRun.Snapshot(1, Map.of(story, run)));
+                                return true;
+                            });
+        }
+        return run;
     }
 
     private static WorkOrder.Task arguments(final WorkRecord records) {

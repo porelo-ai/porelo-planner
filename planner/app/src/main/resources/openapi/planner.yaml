@@ -1623,6 +1623,9 @@ paths:
       - name: task
         in: path
         required: true
+        description: >-
+          The task's name within the project, as Start took it and Porelo lists it in a task's task field; never its
+          container, which the body's container names.
         schema:
           $ref: '#/components/schemas/TaskLabel'
     post:
@@ -4299,11 +4302,13 @@ components:
             by a commit or moved by hand beside a run that ended; it is shown, not raised.
         attention:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED]
           description: >-
             Why the person must act, the reason the run reported; NONE when needsYou is false. INVALID_FINDINGS says a
             reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
-            FAILED and BLOCKED of a reader stop its reading the same way.
+            FAILED and BLOCKED of a reader stop its reading the same way. PLACE_CHANGED says what was read where the
+            issue's work waits, or another author's end, named another task or place than the one the run keeps: the
+            kept place stands and nothing moved.
         findings:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
@@ -5417,7 +5422,7 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, MANUAL]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, MANUAL]
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
@@ -5429,6 +5434,8 @@ components:
             work blocked; the issue stays in its state and the task's why says what went wrong. A reader's FAILED or
             BLOCKED stops its reading as INVALID_FINDINGS does, readingStopped true, with a round counted, roundsMost
             raised by one without using up the limit, and no findings kept.
+            PLACE_CHANGED says what was read where the issue's work waits, or another author's end, named another task
+            or place than the run keeps; the kept place stands and nothing moved.
             A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer

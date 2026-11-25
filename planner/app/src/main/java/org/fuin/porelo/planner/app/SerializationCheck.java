@@ -24,6 +24,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.fuin.porelo.planner.core.IssuePlace;
+import org.fuin.porelo.planner.core.NextStep;
+import org.fuin.porelo.planner.core.ReviewOpen;
+import org.fuin.porelo.planner.core.RunPlace;
+import org.fuin.porelo.planner.core.RunRole;
+import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ForyEncoding;
 import org.jspecify.annotations.Nullable;
@@ -112,16 +118,114 @@ final class SerializationCheck {
 
     /** Writes a filled instance of the planner's own as the work record does, and reads it back. */
     private static int own(final Class<?> type) {
-        final Object sample =
-                type == CommandOutbox.Document.class
-                        ? outbox()
-                        : Objects.requireNonNull(fill(type, 0), type.getName());
+        final Object sample = sample(type);
         final String written = WorkRecord.JSON.writerFor(type).writeValueAsString(sample);
         final Object read = WorkRecord.JSON.readerFor(type).readValue(written);
         if (!sample.equals(read)) {
             throw new IllegalStateException("written " + written + ", read back differently");
         }
         return WorkRecord.JSON.readTree(written).size();
+    }
+
+    /**
+     * The instance of the planner's own type the check writes and reads back: the outbox and the
+     * work record as the planner writes them, any other type filled.
+     *
+     * @param type the type
+     * @return its sample
+     */
+    static Object sample(final Class<?> type) {
+        return type == CommandOutbox.Document.class
+                ? outbox()
+                : type == WorkRecord.Document.class
+                        ? workRecord()
+                        : Objects.requireNonNull(fill(type, 0), type.getName());
+    }
+
+    /**
+     * A work record as the planner writes it, its runs filled and one keeping an issue's place with
+     * the answer read there and its times, which the filled runs cannot hold: a place takes exactly
+     * one member, and an answer's commits and times their own forms.
+     *
+     * @return the record
+     */
+    static WorkRecord.Document workRecord() {
+        final WorkRecord.Document filled =
+                (WorkRecord.Document)
+                        Objects.requireNonNull(fill(WorkRecord.Document.class, 0), "work record");
+        final ReviewOpen answer =
+                new ReviewOpen(
+                        "0123456789abcdef0123456789abcdef01234567",
+                        ReviewOpen.Decision.RETURNED,
+                        null,
+                        null,
+                        WHEN,
+                        List.of(new ReviewOpen.Point("thread", "a.txt", 3, "owner", WHEN)),
+                        1,
+                        0,
+                        true,
+                        null,
+                        "v1");
+        final IssuePlace place =
+                new IssuePlace(
+                        RunPlace.gate("sample", "task"),
+                        RunRole.AUTHOR,
+                        "task",
+                        List.of("00000000-0000-0000-0000-000000000002"),
+                        IssuePlace.Review.of(answer));
+        // A forwarded push names the branch its commit landed on, not a commit.
+        final IssuePlace forwarded =
+                new IssuePlace(
+                        RunPlace.gate(null, "task"),
+                        RunRole.AUTHOR,
+                        "task",
+                        List.of("00000000-0000-0000-0000-000000000003"),
+                        IssuePlace.Review.of(
+                                new ReviewOpen(
+                                        "0123456789abcdef0123456789abcdef01234567",
+                                        ReviewOpen.Decision.APPROVED,
+                                        "89abcdef0123456789abcdef0123456789abcdef",
+                                        "main",
+                                        WHEN,
+                                        List.of(),
+                                        0,
+                                        0,
+                                        true,
+                                        null,
+                                        "v2")));
+        final Map<String, WorkRun.Run> runs = new LinkedHashMap<>(filled.runs());
+        runs.put(
+                "ST1",
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        "ST1",
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        2,
+                        List.of(),
+                        List.of(),
+                        WHEN.toString(),
+                        List.of(),
+                        Map.of(
+                                "AA1",
+                                NextStep.Progress.start(2),
+                                "AA2",
+                                NextStep.Progress.start(2)),
+                        false,
+                        false,
+                        null,
+                        Map.of("AA1", place, "AA2", forwarded)));
+        return new WorkRecord.Document(
+                filled.version(),
+                filled.project(),
+                filled.repository(),
+                filled.branch(),
+                filled.generation(),
+                runs,
+                filled.ideas(),
+                filled.results());
     }
 
     /**

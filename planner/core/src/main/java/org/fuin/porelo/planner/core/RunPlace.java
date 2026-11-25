@@ -18,7 +18,7 @@ public record RunPlace(
         @Nullable Boolean ownPullRequest) {
 
     /** A task's name as Start takes it, Porelo's task label. */
-    private static final Pattern TASK = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
+    static final Pattern TASK = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
 
     /** A repository's name. */
     private static final Pattern REPOSITORY = Pattern.compile("[a-z0-9][a-z0-9._-]{0,99}");

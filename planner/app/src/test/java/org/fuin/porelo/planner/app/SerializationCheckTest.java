@@ -46,6 +46,40 @@ class SerializationCheckTest {
     }
 
     @Test
+    void theWorkRecordReadBackHoldsAKeptPlaceWithItsAnswerAndTimes() {
+        // Harm: a native image that cannot read back an issue's kept place, its answer's points
+        // or their times, which a filled sample leaves empty, so a planner after a restart cannot
+        // open its work record.
+        final Object sample = SerializationCheck.sample(WorkRecord.Document.class);
+        final WorkRecord.Document record =
+                WorkRecord.JSON.readValue(
+                        WorkRecord.JSON.writeValueAsString(sample), WorkRecord.Document.class);
+
+        assertThat(record).as("the record the check writes reads back as it was").isEqualTo(sample);
+        assertThat(
+                        record.runs().values().stream()
+                                .flatMap(run -> run.places().values().stream())
+                                .filter(
+                                        place ->
+                                                place.place().gatePush() != null
+                                                        && place.last() != null
+                                                        && !place.last().points().isEmpty())
+                                .count())
+                .as("one place at a gate push, with an answer holding a point and its time")
+                .isEqualTo(1);
+        assertThat(
+                        record.runs().values().stream()
+                                .flatMap(run -> run.places().values().stream())
+                                .filter(
+                                        place ->
+                                                place.last() != null
+                                                        && "main".equals(place.last().mergedHead()))
+                                .count())
+                .as("one place whose push was forwarded, naming the branch its commit landed on")
+                .isEqualTo(1);
+    }
+
+    @Test
     void theOutboxReadBackHoldsEveryRefusalKindAndEveryState() {
         // Harm: a native image that cannot read back an outbox holding a kind the check never
         // wrote, so a planner after a restart cannot open its saves.
