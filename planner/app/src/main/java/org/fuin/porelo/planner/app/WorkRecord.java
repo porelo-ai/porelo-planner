@@ -990,6 +990,15 @@ public final class WorkRecord implements AutoCloseable {
                             ended.putNull("outcome");
                         }
                     }
+                    // A record written before runs named a role and a place names neither, so
+                    // Start's defaults hold for it.
+                    if (offer.path("arguments") instanceof ObjectNode arguments) {
+                        for (final String newer : List.of("runRole", "place")) {
+                            if (!arguments.has(newer)) {
+                                arguments.putNull(newer);
+                            }
+                        }
+                    }
                     // A record written before the risks names no effort and no rule's risks.
                     if (offer.path("arguments") instanceof ObjectNode arguments
                             && !arguments.has("effort")) {

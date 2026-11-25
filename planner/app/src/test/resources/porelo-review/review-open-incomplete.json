@@ -1,0 +1,18 @@
+{
+  "head": "3f1c2a9b7d4e5f60718293a4b5c6d7e8f9012345",
+  "decision": "OPEN",
+  "points": [
+    {
+      "thread": "t-7f3a",
+      "path": "src/main/java/shop/Cart.java",
+      "line": 42,
+      "lastBy": "owner account",
+      "lastAt": "2026-11-25T07:10:04Z"
+    }
+  ],
+  "findings": 0,
+  "held": 0,
+  "complete": false,
+  "reason": "TimeMissing",
+  "version": "ffba366d905e3e8d7216c02a7038406288fa4650089826a250efb9f24b3548eb"
+}

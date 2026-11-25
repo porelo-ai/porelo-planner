@@ -23,6 +23,8 @@ import org.fuin.porelo.planner.core.HandedIdeas;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
+import org.fuin.porelo.planner.core.RunPlace;
+import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -780,6 +782,74 @@ class WorkRecordTest {
                     .as("work naming an issue the task does not work is refused")
                     .isInstanceOf(WorkRefusal.class);
         }
+    }
+
+    @Test
+    void aTasksRunRoleAndPlaceAreReadBackAndARecordWithoutThemOpens() throws Exception {
+        // Harm: an upgrade makes a running story's record unreadable because its tasks were
+        // recorded before runs named a role and a place; or a kept role and place come back
+        // other than written, so a run is started at the wrong place.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode arguments =
+                (ObjectNode)
+                        document.path("runs")
+                                .iterator()
+                                .next()
+                                .path("offers")
+                                .get(0)
+                                .get("arguments");
+        arguments.remove("runRole");
+        arguments.remove("place");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(arguments(records).place())
+                    .as("an older record's task names no place")
+                    .isNull();
+            assertThat(arguments(records).runRole()).isNull();
+            arguments.put("runRole", "REVIEWER");
+            // As the planner writes a place: every member, the unused ones null.
+            final ObjectNode place = arguments.putObject("place");
+            place.putObject("gatePush").put("repository", "docs").put("name", "cart");
+            place.putNull("pullRequest");
+            place.putNull("ownPullRequest");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThat(arguments(records).runRole()).isEqualTo(RunRole.REVIEWER);
+            assertThat(arguments(records).place()).isEqualTo(RunPlace.gate("docs", "cart"));
+            arguments
+                    .putObject("place")
+                    .put("ownPullRequest", true)
+                    .putNull("gatePush")
+                    .putNull("pullRequest");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThat(arguments(records).place()).isEqualTo(new RunPlace(null, null, true));
+            arguments
+                    .putObject("place")
+                    .put("ownPullRequest", true)
+                    .putNull("gatePush")
+                    .put("pullRequest", "b");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a place naming two places is refused")
+                    .isNotNull();
+        }
+    }
+
+    private static WorkOrder.Task arguments(final WorkRecord records) {
+        return records.open("project", "https://example.org/store.git", null)
+                .locked(session -> session.read().runs().values().iterator().next())
+                .offers()
+                .getFirst()
+                .arguments();
     }
 
     private static WorkOrder.@Nullable Tracked work(final WorkRecord records) {

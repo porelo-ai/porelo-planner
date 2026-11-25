@@ -25,6 +25,8 @@ import java.util.stream.Stream;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.ProcessRunner;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.Result;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.Runner;
+import org.fuin.porelo.planner.core.RunPlace;
+import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords.Unanswered;
 import org.fuin.porelo.wire.LimitFactors;
@@ -91,6 +93,78 @@ class PoreloTaskRecordsTest {
                                                 "EX13",
                                                 Instant.parse("2026-11-02T11:00:00Z"),
                                                 null))));
+    }
+
+    // Prevents the planner from losing where a run works and in which role, or the items held
+    // back from it, as Porelo's record names them.
+    @Test
+    void aRunsRolePlaceAndHeldItemsAreReadAsTheContractNamesThem() throws Exception {
+        final ObjectNode record = record();
+        record.put("role", "AUTHOR");
+        record.set("place", JSON.readTree("{\"gatePush\": {\"name\": \"cart\"}}"));
+        record.put("held", 2);
+        final ObjectNode other = record();
+        other.put("task", "t-2");
+        other.put("role", "REVIEWER");
+        other.set(
+                "place",
+                JSON.readTree("{\"gatePush\": {\"repository\": \"shop\", \"name\": \"cart\"}}"));
+        final ObjectNode own = record();
+        own.put("task", "t-3");
+        own.set("place", JSON.readTree("{\"ownPullRequest\": true}"));
+        own.putNull("held");
+        answer(JSON.createArrayNode().add(record).add(other).add(own));
+
+        final List<TaskRecord> records = records().since("porelo-planner", SINCE);
+
+        assertThat(records.get(0).role()).isEqualTo(RunRole.AUTHOR);
+        assertThat(records.get(0).place()).isEqualTo(RunPlace.gate(null, "cart"));
+        assertThat(records.get(0).held()).isEqualTo(2);
+        assertThat(records.get(1).role()).isEqualTo(RunRole.REVIEWER);
+        assertThat(records.get(1).place()).isEqualTo(RunPlace.gate("shop", "cart"));
+        assertThat(records.get(2).role()).as("absent in the record").isNull();
+        assertThat(records.get(2).place()).isEqualTo(new RunPlace(null, null, true));
+        assertThat(records.get(2).held()).as("null in the record").isNull();
+    }
+
+    // Prevents an older record, which names no role, place or held items, from failing the read.
+    @Test
+    void aRecordWithoutRoleOrPlaceIsReadWithNone() throws Exception {
+        answer(JSON.createArrayNode().add(record()));
+
+        final TaskRecord read = records().since("porelo-planner", SINCE).getFirst();
+
+        assertThat(read.role()).isNull();
+        assertThat(read.place()).isNull();
+        assertThat(read.held()).isNull();
+    }
+
+    // Prevents a place the contract does not describe from being guessed at: none or two places,
+    // an unknown member, a gate push without its name, a false own pull request, an unknown role
+    // and a negative count each fail the whole answer, naming the field.
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "place={}",
+                "place={\"gatePush\":{\"name\":\"cart\"},\"pullRequest\":\"b\"}",
+                "place={\"pullRequest\":\"b\",\"forge\":\"x\"}",
+                "place={\"gatePush\":{\"repository\":\"shop\"}}",
+                "place={\"gatePush\":{\"name\":\"cart\",\"head\":\"x\"}}",
+                "place={\"ownPullRequest\":false}",
+                "place=\"gate\"",
+                "role=\"OWNER\"",
+                "role=1",
+                "held=-1",
+                "held=1.5"
+            })
+    void aRoleOrPlaceOutsideTheContractFailsTheAnswerNamingIt(final String member)
+            throws Exception {
+        final String name = member.substring(0, member.indexOf('='));
+        final ObjectNode record = record();
+        record.set(name, JSON.readTree(member.substring(member.indexOf('=') + 1)));
+        answer(JSON.createArrayNode().add(record));
+
+        assertThat(refusal()).contains("field " + name);
     }
 
     // Prevents a secret of the planner's environment, or a shell, from reaching Porelo.

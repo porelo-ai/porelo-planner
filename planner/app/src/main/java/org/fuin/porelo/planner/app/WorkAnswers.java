@@ -27,6 +27,8 @@ import org.fuin.porelo.planner.app.answers.TrackedWork;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.OpenWork;
+import org.fuin.porelo.planner.core.RunPlace;
+import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -58,6 +60,8 @@ public final class WorkAnswers {
                 IdeaDiscussion.RESULT,
                 null,
                 List.of(),
+                null,
+                null,
                 null);
     }
 
@@ -119,6 +123,8 @@ public final class WorkAnswers {
                         offer -> {
                             final WorkOrder.Task task = offer.task();
                             final WorkOrder.Tracked work = task.work();
+                            final RunRole runRole = task.runRole();
+                            final RunPlace place = task.place();
                             return new PlanningStartTask(
                                     offer.offer(),
                                     task.repository(),
@@ -143,9 +149,26 @@ public final class WorkAnswers {
                                     task.reads(),
                                     work == null
                                             ? null
-                                            : new TrackedWork(work.issue(), work.phase()));
+                                            : new TrackedWork(work.issue(), work.phase()),
+                                    runRole == null
+                                            ? null
+                                            : PlanningStartTask.RunRoleEnum.fromValue(
+                                                    runRole.name()),
+                                    place == null ? null : place(place));
                         })
                 .toList();
+    }
+
+    /** Answers a run's place as Start is handed it, its one member present and no other. */
+    static org.fuin.porelo.planner.app.answers.RunPlace place(final RunPlace place) {
+        final RunPlace.GatePush gate = place.gatePush();
+        return new org.fuin.porelo.planner.app.answers.RunPlace(
+                gate == null
+                        ? null
+                        : new org.fuin.porelo.planner.app.answers.GatePush(
+                                gate.repository(), gate.name()),
+                place.pullRequest(),
+                place.ownPullRequest());
     }
 
     static @Nullable PlanWork work(final Board board, final WorkRun.@Nullable Run run) {

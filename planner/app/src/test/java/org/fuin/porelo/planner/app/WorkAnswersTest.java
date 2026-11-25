@@ -51,6 +51,70 @@ class WorkAnswersTest {
                         null);
     }
 
+    // Harm: the window hands Start no role or place, or one the planner did not offer, so a run
+    // works at the wrong place; an offer without them must name none, so Start takes its defaults.
+    @Test
+    void aStartHandsTheWindowTheRunsRoleAndPlaceOnlyWhereTheOfferNamesThem() throws Exception {
+        final org.fuin.porelo.planner.core.WorkOrder.Task task =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                        "alpha",
+                        List.of("alpha#2"),
+                        "MAIN",
+                        "codex",
+                        "model",
+                        null,
+                        "AGENT",
+                        "Build.");
+        final List<org.fuin.porelo.planner.app.answers.PlanningStartTask> starts =
+                WorkAnswers.starts(
+                        List.of(
+                                new WorkRun.Offered("o-1", task),
+                                new WorkRun.Offered(
+                                        "o-2",
+                                        task.at(
+                                                org.fuin.porelo.planner.core.RunRole.AUTHOR,
+                                                org.fuin.porelo.planner.core.RunPlace.gate(
+                                                        "docs", "cart"))),
+                                new WorkRun.Offered(
+                                        "o-3",
+                                        task.at(
+                                                org.fuin.porelo.planner.core.RunRole.REVIEWER,
+                                                new org.fuin.porelo.planner.core.RunPlace(
+                                                        null, "feature/x", null)))));
+        final com.fasterxml.jackson.databind.ObjectMapper json =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("runRole"))
+                .as("no role written where the offer names none")
+                .isFalse();
+        assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("place")).isFalse();
+        assertThat(json.readTree(json.writeValueAsString(starts.get(1))).get("place").toString())
+                .as("the gate push alone, with its repository")
+                .isEqualTo("{\"gatePush\":{\"repository\":\"docs\",\"name\":\"cart\"}}");
+        assertThat(starts.get(1).runRole())
+                .isEqualTo(
+                        org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.AUTHOR);
+        assertThat(json.readTree(json.writeValueAsString(starts.get(2))).get("place").toString())
+                .isEqualTo("{\"pullRequest\":\"feature/x\"}");
+        assertThat(
+                        json.readTree(
+                                        json.writeValueAsString(
+                                                WorkAnswers.place(
+                                                        org.fuin.porelo.planner.core.RunPlace.gate(
+                                                                null, "cart"))))
+                                .toString())
+                .as("a gate push of the task's own repository names none")
+                .isEqualTo("{\"gatePush\":{\"name\":\"cart\"}}");
+        assertThat(
+                        json.writeValueAsString(
+                                WorkAnswers.place(
+                                        new org.fuin.porelo.planner.core.RunPlace(
+                                                null, null, true))))
+                .isEqualTo("{\"ownPullRequest\":true}");
+        assertThat(starts.get(2).runRole())
+                .isEqualTo(
+                        org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.REVIEWER);
+    }
+
     // Harm: a value the core can give that the answer's enum lacks fails every board read with a
     // 500.
     @Test

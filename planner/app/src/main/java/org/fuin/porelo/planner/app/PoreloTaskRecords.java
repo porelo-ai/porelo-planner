@@ -23,6 +23,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import org.fuin.porelo.planner.core.RunPlace;
+import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.store.Ids;
@@ -267,6 +269,9 @@ public final class PoreloTaskRecords implements TaskRecords {
             totals();
             oneOf(record, "toolCallsAsked", "toolCallsAsked", ASKED);
             final List<TaskRecord.Call> calls = calls();
+            final RunRole role = PoreloPlaces.role(record, "role", "role", this::refused);
+            final RunPlace place = PoreloPlaces.place(record, "place", "place", this::refused);
+            final Integer held = heldOrNull();
             try {
                 return new TaskRecord(
                         task,
@@ -276,7 +281,10 @@ public final class PoreloTaskRecords implements TaskRecords {
                         startedAt,
                         endedAt,
                         end == null ? null : TaskRecord.End.valueOf(end.toUpperCase(Locale.ROOT)),
-                        calls);
+                        calls,
+                        role,
+                        place,
+                        held);
             } catch (final IllegalArgumentException ex) {
                 throw new Unanswered(
                         where() + " cannot be a task's record: " + ex.getMessage(), ex);
@@ -333,6 +341,20 @@ public final class PoreloTaskRecords implements TaskRecords {
                         "is no phase (one line that is not blank, at most 64 characters)");
             }
             return issue;
+        }
+
+        /**
+         * The count of held items, absent or null in a record Porelo kept before it counted them.
+         */
+        private @Nullable Integer heldOrNull() {
+            final JsonNode value = record.get("held");
+            if (value == null || value.isNull()) {
+                return null;
+            }
+            if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 0) {
+                throw refused("held", "is no whole number of at least zero");
+            }
+            return value.intValue();
         }
 
         private void totals() {

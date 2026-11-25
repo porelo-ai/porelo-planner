@@ -57,6 +57,8 @@ public record WorkOrder(
      *     empty for work that pushes
      * @param work the tracker's issue and the stage's phase Start is handed, for a planned stage's
      *     task of a project a tracker keeps; null for any other
+     * @param runRole the run's role Start is handed, or null for an author, Start's default
+     * @param place where the run works, or null for the task's own gate push, Start's default
      */
     public record Task(
             String repository,
@@ -72,7 +74,9 @@ public record WorkOrder(
             @Nullable String used,
             @Nullable String result,
             List<Given> given,
-            @Nullable Tracked work) {
+            @Nullable Tracked work,
+            @Nullable RunRole runRole,
+            @Nullable RunPlace place) {
         /**
          * Copies issue identities to preserve the accepted scope, and refuses a tracker's issue the
          * task does not work.
@@ -108,7 +112,89 @@ public record WorkOrder(
                     used,
                     result,
                     given,
-                    tracked);
+                    tracked,
+                    runRole,
+                    place);
+        }
+
+        /**
+         * Answers the task run in the role and at the place given.
+         *
+         * @param role the run's role, or null for Start's default, an author
+         * @param at where it works, or null for Start's default, the task's own gate push
+         * @return the task
+         */
+        public Task at(final @Nullable RunRole role, final @Nullable RunPlace at) {
+            return new Task(
+                    repository,
+                    issues,
+                    this.role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    reads,
+                    basis,
+                    used,
+                    result,
+                    given,
+                    work,
+                    role,
+                    at);
+        }
+
+        /**
+         * A task Start is handed no role and no place, so it runs as an author at its own gate
+         * push.
+         *
+         * @param repository the repository the task works in
+         * @param issues the issues it owns
+         * @param role its role
+         * @param agent its agent
+         * @param model the agent's model
+         * @param effort the effort Start is handed, null for none
+         * @param mode its mode
+         * @param prompt its order
+         * @param reads the Porelo tasks whose work it reads
+         * @param basis where the rule's choice came from, empty when unknown
+         * @param used the effort the window said the task starts with, null while nobody said
+         * @param result the file a stage's task hands back, or null for work that pushes
+         * @param given the files the task is given to read
+         * @param work the tracker's issue and phase Start is handed, or null
+         */
+        public Task(
+                final String repository,
+                final List<String> issues,
+                final String role,
+                final String agent,
+                final String model,
+                final @Nullable String effort,
+                final String mode,
+                final String prompt,
+                final List<String> reads,
+                final String basis,
+                final @Nullable String used,
+                final @Nullable String result,
+                final List<Given> given,
+                final @Nullable Tracked work) {
+            this(
+                    repository,
+                    issues,
+                    role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    reads,
+                    basis,
+                    used,
+                    result,
+                    given,
+                    work,
+                    null,
+                    null);
         }
 
         /** A task that pushes its work, given no file and handing back none. */

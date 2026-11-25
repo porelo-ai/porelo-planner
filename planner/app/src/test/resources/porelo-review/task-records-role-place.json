@@ -1,0 +1,30 @@
+[
+  {
+    "task": "porelo-shop_cart",
+    "project": "shop",
+    "repository": "shop",
+    "work": [
+      {
+        "issue": "acme/shop#12",
+        "phase": "Implementing"
+      }
+    ],
+    "agent": "claude",
+    "modelFrom": "agent default",
+    "startedAt": "2026-11-25T06:55:00Z",
+    "updatedAt": "2026-11-25T07:01:00Z",
+    "totals": {
+      "note": "as Usage answers it; unchanged by this contract"
+    },
+    "toolCallsAsked": "ASKED",
+    "toolCalls": [],
+    "runs": 1,
+    "role": "AUTHOR",
+    "place": {
+      "gatePush": {
+        "name": "cart"
+      }
+    },
+    "held": 0
+  }
+]

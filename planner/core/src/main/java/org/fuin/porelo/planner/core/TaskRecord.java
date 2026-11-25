@@ -18,6 +18,10 @@ import org.jspecify.annotations.Nullable;
  * @param endedAt when it ended, or null while it runs
  * @param end how it ended, or null while it runs
  * @param calls its calls, in Porelo's order
+ * @param role its last run's role, or null when Porelo recorded none
+ * @param place where its last run worked, or null when Porelo recorded none
+ * @param held how many review items at that place are held back from its run, or null when Porelo
+ *     recorded no count
  */
 public record TaskRecord(
         String task,
@@ -27,7 +31,10 @@ public record TaskRecord(
         Instant startedAt,
         @Nullable Instant endedAt,
         @Nullable End end,
-        List<Call> calls) {
+        List<Call> calls,
+        @Nullable RunRole role,
+        @Nullable RunPlace place,
+        @Nullable Integer held) {
 
     /** How a task ended, as Porelo records it. */
     public enum End {
@@ -70,6 +77,34 @@ public record TaskRecord(
             throw new IllegalArgumentException("Task " + task + " ends before it starts");
         }
         calls = List.copyOf(calls);
+        if (held != null && held < 0) {
+            throw new IllegalArgumentException("Task " + task + " holds fewer than no items");
+        }
+    }
+
+    /**
+     * A record without a run's role, place or held items, as Porelo kept it before it recorded
+     * them.
+     *
+     * @param task Porelo's id of the task
+     * @param project the project the task belongs to
+     * @param repository the repository it ran in, or null
+     * @param issues the issues it was started for
+     * @param startedAt when it started
+     * @param endedAt when it ended, or null while it runs
+     * @param end how it ended, or null while it runs
+     * @param calls its calls
+     */
+    public TaskRecord(
+            final String task,
+            final String project,
+            final @Nullable String repository,
+            final List<String> issues,
+            final Instant startedAt,
+            final @Nullable Instant endedAt,
+            final @Nullable End end,
+            final List<Call> calls) {
+        this(task, project, repository, issues, startedAt, endedAt, end, calls, null, null, null);
     }
 
     /**

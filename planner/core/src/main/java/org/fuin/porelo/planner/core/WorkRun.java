@@ -842,17 +842,18 @@ public final class WorkRun implements RefusedEventResave {
                                         rule,
                                         to,
                                         new WorkOrder.Task(
-                                                task.repository(),
-                                                owned,
-                                                task.role(),
-                                                task.agent(),
-                                                task.model(),
-                                                task.effort(),
-                                                task.mode(),
-                                                prompt,
-                                                task.reads(),
-                                                task.basis(),
-                                                task.used()));
+                                                        task.repository(),
+                                                        owned,
+                                                        task.role(),
+                                                        task.agent(),
+                                                        task.model(),
+                                                        task.effort(),
+                                                        task.mode(),
+                                                        prompt,
+                                                        task.reads(),
+                                                        task.basis(),
+                                                        task.used())
+                                                .at(task.runRole(), task.place()));
                         offers.add(
                                 offer(
                                         new NextStep.Planned(scoped, to, rule, task.basis()),
@@ -3937,7 +3938,9 @@ public final class WorkRun implements RefusedEventResave {
                                     arguments.used(),
                                     arguments.result(),
                                     arguments.given(),
-                                    arguments.work())));
+                                    arguments.work(),
+                                    arguments.runRole(),
+                                    arguments.place())));
         }
         return changed ? draft.freeze() : run;
     }
@@ -4653,7 +4656,9 @@ public final class WorkRun implements RefusedEventResave {
                                         arguments.used(),
                                         arguments.result(),
                                         List.of(),
-                                        arguments.work()),
+                                        arguments.work(),
+                                        arguments.runRole(),
+                                        arguments.place()),
                                 o.binding(),
                                 o.status(),
                                 o.task(),

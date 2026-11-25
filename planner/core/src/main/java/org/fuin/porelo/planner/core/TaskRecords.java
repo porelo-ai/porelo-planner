@@ -18,7 +18,7 @@ public interface TaskRecords {
     List<TaskRecord> since(String project, Instant since);
 
     /** Porelo could not answer the records, or answered what cannot be trusted. */
-    final class Unanswered extends RuntimeException {
+    class Unanswered extends RuntimeException {
 
         private static final long serialVersionUID = 1L;
 

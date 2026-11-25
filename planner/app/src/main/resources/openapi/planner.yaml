@@ -4974,6 +4974,52 @@ components:
             stage's task of a project a tracker keeps, never on a discussion's, and absent, never null, otherwise.
           allOf:
             - $ref: '#/components/schemas/TrackedWork'
+        runRole:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          enum: [AUTHOR, REVIEWER]
+          description: >-
+            The run's role Start is handed as its `role`: AUTHOR for one that writes the work, REVIEWER for one that
+            reviews another's. Absent for an author at its own task's gate push, which Start takes as the default.
+        place:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            Where the run works, handed to Start as its `place` unchanged; absent for the task's own gate push, which
+            Start takes as the default.
+          allOf:
+            - $ref: '#/components/schemas/RunPlace'
+
+    RunPlace:
+      type: object
+      additionalProperties: false
+      description: Where a run works. Exactly one member is present.
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        gatePush:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          $ref: '#/components/schemas/GatePush'
+        pullRequest:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          $ref: '#/components/schemas/RefName'
+          description: A pull request at the forge, named by the branch it comes from.
+        ownPullRequest:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: The task's own pull request, the one its pushes opened; present only as true.
+
+    GatePush:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: A push waiting at Porelo's gate, named by its task's name within the project.
+      properties:
+        repository:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          $ref: '#/components/schemas/Name'
+          description: The project's repository; absent for the task's own.
+        name:
+          $ref: '#/components/schemas/TaskLabel'
 
     TrackedWork:
       type: object

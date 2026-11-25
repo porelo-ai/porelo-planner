@@ -130,7 +130,9 @@ public final class StageOrder {
                 task.used(),
                 result.file(),
                 given,
-                working.work());
+                working.work(),
+                task.runRole(),
+                task.place());
     }
 
     /**
