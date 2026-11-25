@@ -545,6 +545,9 @@ class PlanningBoard extends ChangeNotifier {
   PlanningStartTask? startTask;
   PlanningTaskChanges? taskChanges;
 
+  /// The window's start of the offers the planner made without its asking; none starts them while it is null.
+  PlanningStartTask? startOffered;
+
   /// What a start from a Needs you row of this board asks of the window; null until the window handed it.
   PlanningStartHooks? startHooks;
 
@@ -565,6 +568,7 @@ class PlanningBoard extends ChangeNotifier {
     final run = PlanningRun.on(backend, project, story);
     if (startTask != null) run.startTask = startTask;
     if (taskChanges != null) run.changes = taskChanges;
+    if (startOffered != null) run.startOffered = startOffered;
     return run;
   }
 
@@ -3242,6 +3246,7 @@ class PlanningBoards extends ChangeNotifier {
     PlanningWizards? wizards,
     this.seen,
     this.taskChanges,
+    this.startOffered,
   }) {
     if (startTask != null && agents != null) {
       startHooks = PlanningStartHooks(
@@ -3268,6 +3273,10 @@ class PlanningBoards extends ChangeNotifier {
 
   /// The window's task changes, which stop a story's work, handed to each board this makes; null without them.
   final PlanningTaskChanges? taskChanges;
+
+  /// The window's start of the offers the planner made without its asking, an author sent back to the push its work
+  /// waits at; each board it makes starts its runs' `starts` through it, and none without it.
+  final PlanningStartTask? startOffered;
 
   /// Every board of [board]'s project, by its machine.
   Map<PlanningBoard, String> machinesOf(PlanningBoard board) => {
@@ -3322,6 +3331,7 @@ class PlanningBoards extends ChangeNotifier {
       );
       board.startHooks = startHooks;
       if (taskChanges case final changes?) board.taskChanges = changes;
+      board.startOffered = startOffered;
       board.rowSeen = (row) => _seenRow(board, row);
       board.addListener(_changed);
       _boards[entry.key] = board;

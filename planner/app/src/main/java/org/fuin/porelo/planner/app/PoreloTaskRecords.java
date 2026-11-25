@@ -604,8 +604,8 @@ public final class PoreloTaskRecords implements TaskRecords {
             try {
                 process = builder.start();
             } catch (final IOException ex) {
-                throw new Unanswered(
-                        "Porelo's executable cannot be started at " + command.getFirst(), ex);
+                // The executable's path is local and stays out of every message.
+                throw new Unanswered("Porelo's executable cannot be started", ex);
             }
             try {
                 // Porelo reads nothing: its input is closed at once, on every platform.

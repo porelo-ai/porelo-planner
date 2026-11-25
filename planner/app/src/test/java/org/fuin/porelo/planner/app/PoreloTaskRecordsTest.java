@@ -811,9 +811,10 @@ class PoreloTaskRecordsTest {
                 .hasMessageContaining("cut off");
     }
 
-    // Prevents a missing executable from being taken as no records.
+    // Prevents a missing executable from being taken as no records, and its local path from
+    // reaching a message that a person's line or the log repeats.
     @Test
-    void aMissingExecutableFailsNamingIt() {
+    void aMissingExecutableFailsWithoutNamingItsPath() {
         final Path missing = dir.resolve("porelo");
 
         assertThatThrownBy(
@@ -825,7 +826,9 @@ class PoreloTaskRecordsTest {
                                         .since("porelo-planner", SINCE))
                 .as("not started")
                 .isInstanceOf(Unanswered.class)
-                .hasMessageContaining("cannot be started at " + missing);
+                .hasMessageContaining("cannot be started")
+                .message()
+                .doesNotContain(dir.toString());
     }
 
     private PoreloTaskRecords records() {

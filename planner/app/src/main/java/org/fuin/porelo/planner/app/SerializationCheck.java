@@ -29,6 +29,7 @@ import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
 import org.fuin.porelo.planner.core.RunRole;
+import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ForyEncoding;
@@ -210,7 +211,7 @@ final class SerializationCheck {
                         List.of(),
                         List.of(),
                         WHEN.toString(),
-                        List.of(),
+                        List.of(rework()),
                         Map.of(
                                 "AA1",
                                 NextStep.Progress.start(2),
@@ -219,7 +220,8 @@ final class SerializationCheck {
                         false,
                         false,
                         null,
-                        Map.of("AA1", place, "AA2", forwarded)));
+                        Map.of("AA1", place, "AA2", forwarded),
+                        List.of(REWORK)));
         return new WorkRecord.Document(
                 filled.version(),
                 filled.project(),
@@ -231,6 +233,59 @@ final class SerializationCheck {
                 filled.results(),
                 filled.followed(),
                 filled.reports());
+    }
+
+    /** The id of the author's rework a read of its kept push offered. */
+    static final String REWORK = "00000000-0000-0000-0000-000000000004";
+
+    /** An author's rework offered at its kept push, as a read of that place offers it. */
+    private static WorkRun.Offer rework() {
+        final WorkOrder.Task task =
+                new WorkOrder.Task(
+                                "sample",
+                                List.of("AA1"),
+                                "BUILDER",
+                                "agent",
+                                "model",
+                                null,
+                                "AGENT",
+                                "Answer each point open at the gate push task.",
+                                List.of(),
+                                "",
+                                null,
+                                null,
+                                List.of(),
+                                null)
+                        .at(RunRole.AUTHOR, RunPlace.gate(null, "task"));
+        return new WorkRun.Offer(
+                REWORK,
+                task,
+                new NextStep.Binding(
+                        "ST1",
+                        "sample",
+                        List.of("AA1"),
+                        "BUILDER",
+                        "Reworking",
+                        "AGENT",
+                        new org.fuin.porelo.planner.store.WorkRule(
+                                List.of("Reading"),
+                                "Review",
+                                "Reading",
+                                null,
+                                org.fuin.porelo.planner.store.WorkRule.Per.REPOSITORY,
+                                List.of("AGENT"),
+                                "Rework {issues}",
+                                Map.of("agent", "model"))),
+                "OFFERED",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "",
+                List.of(),
+                List.of(),
+                null);
     }
 
     /**

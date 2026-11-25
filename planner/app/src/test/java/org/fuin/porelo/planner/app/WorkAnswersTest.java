@@ -149,6 +149,26 @@ class WorkAnswersTest {
                                         .getValue()))
                 .as("a changed place, in the run's reason, the issue's and its detail's attention")
                 .containsOnly(changed);
+        // A read where an issue's work waits at the gate stops it for one of these.
+        for (final String stop :
+                List.of(
+                        org.fuin.porelo.planner.core.WorkRun.REJECTED_WITHOUT_POINTS,
+                        org.fuin.porelo.planner.core.WorkRun.REVIEW_ROUNDS_USED,
+                        org.fuin.porelo.planner.core.WorkRun.PLACE_UNREADABLE)) {
+            assertThat(
+                            List.of(
+                                    org.fuin.porelo.planner.app.answers.PlanWorkIssue.ReasonEnum
+                                            .fromValue(stop)
+                                            .getValue(),
+                                    org.fuin.porelo.planner.app.answers.Issue.AttentionEnum
+                                            .fromValue(stop)
+                                            .getValue(),
+                                    org.fuin.porelo.planner.app.answers.IssueDetail.AttentionEnum
+                                            .fromValue(stop)
+                                            .getValue()))
+                    .as("the stop %s, in the run's reason and both attentions", stop)
+                    .containsOnly(stop);
+        }
         for (final org.fuin.porelo.planner.core.WorkEnds.Severity severity :
                 org.fuin.porelo.planner.core.WorkEnds.Severity.values()) {
             assertThat(
@@ -351,5 +371,70 @@ class WorkAnswersTest {
                 List.of(AGENTS, MANUAL),
                 new Work(Map.of("Building", build), List.of()),
                 org.fuin.porelo.planner.store.ProjectRepository.named(List.of("alpha")));
+    }
+
+    @Test
+    void theWorkAnswersAReadsReworkInStartsAndNoOrdersOwnOffer() {
+        // Harm: a window starts nothing for a rework offered on a poll, or starts an order's own
+        // offer beside the form that starts it.
+        final org.fuin.porelo.planner.core.WorkRun.Run sample =
+                SerializationCheck.workRecord().runs().get("ST1");
+        final org.fuin.porelo.planner.core.WorkRun.Offer rework = sample.offers().getFirst();
+        final org.fuin.porelo.planner.core.WorkRun.Offer author =
+                new org.fuin.porelo.planner.core.WorkRun.Offer(
+                        "00000000-0000-0000-0000-000000000002",
+                        rework.arguments().at(null, null),
+                        rework.binding(),
+                        "ENDED",
+                        "task",
+                        "box",
+                        "workstation",
+                        "2026-01-01T00:00:00Z",
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final org.fuin.porelo.planner.core.WorkRun.Offer order =
+                new org.fuin.porelo.planner.core.WorkRun.Offer(
+                        "00000000-0000-0000-0000-000000000005",
+                        rework.arguments(),
+                        rework.binding(),
+                        "OFFERED",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final org.fuin.porelo.planner.core.WorkRun.Run run =
+                new org.fuin.porelo.planner.core.WorkRun.Run(
+                        sample.id(),
+                        sample.story(),
+                        sample.to(),
+                        sample.mode(),
+                        sample.comment(),
+                        sample.coordinator(),
+                        sample.readingRounds(),
+                        sample.issueReadingRounds(),
+                        sample.repositories(),
+                        sample.since(),
+                        List.of(author, rework, order),
+                        sample.issues(),
+                        false,
+                        false,
+                        null,
+                        sample.places(),
+                        sample.placeOffers());
+        final var starts = WorkAnswers.knownWork(run, issue -> false).starts();
+        assertThat(starts.stream().map(s -> s.offer()).toList())
+                .as("the rework alone")
+                .containsExactly(rework.id());
+        assertThat(String.valueOf(starts.getFirst().runRole()) + " " + starts.getFirst().place())
+                .as("with its role and place")
+                .contains("AUTHOR", "task");
     }
 }

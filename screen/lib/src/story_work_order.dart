@@ -266,6 +266,63 @@ class PlanningGivenFile {
 /// The plain name of an issue's given file without `.md`: its id, a tracker's `#` as `-`, so no mounted name holds one.
 String _givenName(String issue) => issue.replaceAll('#', '-');
 
+/// Where a run works, as Start is handed it: exactly one of a push at the gate, a pull request by the branch it comes
+/// from, or the task's own pull request.
+@immutable
+class PlanningRunPlace {
+  const PlanningRunPlace._({this.gatePush, this.gateRepository, this.pullRequest, this.ownPullRequest = false});
+
+  /// Reads the planner's `place` object, refusing one naming not exactly one place.
+  factory PlanningRunPlace.fromJson(Object? value) {
+    if (value is! Map<String, dynamic> || value.length != 1) _invalid('The task place names not one place.');
+    if (value['gatePush'] case final Map<String, dynamic> gate) {
+      if (gate.keys.any((key) => key != 'name' && key != 'repository')) _invalid('The gate push is invalid.');
+      final name = gate['name'];
+      if (name is! String || !validTaskLabel(name)) _invalid('The gate push names no task.');
+      final repository = gate['repository'];
+      if (repository != null && (repository is! String || !_repositoryName.hasMatch(repository))) {
+        _invalid('The gate push names an invalid repository.');
+      }
+      return PlanningRunPlace._(gatePush: name, gateRepository: repository as String?);
+    }
+    if (value['pullRequest'] case final String branch when branch.trim().isNotEmpty && branch.length <= 255) {
+      return PlanningRunPlace._(pullRequest: branch);
+    }
+    if (value['ownPullRequest'] == true) return const PlanningRunPlace._(ownPullRequest: true);
+    _invalid('The task place is invalid.');
+  }
+
+  /// The task whose push waits at the gate, by its name within the project; null for another place.
+  final String? gatePush;
+
+  /// The push's repository; null for the task's own.
+  final String? gateRepository;
+
+  /// The branch a pull request comes from; null for another place.
+  final String? pullRequest;
+
+  /// Whether the place is the task's own pull request.
+  final bool ownPullRequest;
+
+  /// The planner's `place` object, as Start takes it.
+  Map<String, dynamic> toJson() => {
+    if (gatePush != null) 'gatePush': {'name': gatePush, if (gateRepository != null) 'repository': gateRepository},
+    if (pullRequest != null) 'pullRequest': pullRequest,
+    if (ownPullRequest) 'ownPullRequest': true,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanningRunPlace &&
+      other.gatePush == gatePush &&
+      other.gateRepository == gateRepository &&
+      other.pullRequest == pullRequest &&
+      other.ownPullRequest == ownPullRequest;
+
+  @override
+  int get hashCode => Object.hash(gatePush, gateRepository, pullRequest, ownPullRequest);
+}
+
 /// The tracker's issue a planned stage's task works and the stage's phase, as Start is handed them.
 class PlanningWork {
   /// The issue [issue], `<owner>/<repository>#<number>`, worked in [phase].
@@ -315,6 +372,8 @@ class PlanningTaskOrder {
     this.chosenBy,
     this.given = const [],
     this.work,
+    this.runRole,
+    this.place,
   });
 
   /// Reads one served offer without inventing missing Start arguments.
@@ -381,7 +440,17 @@ class PlanningTaskOrder {
       chosenBy: _chosenBy(map),
       given: given,
       work: work,
+      runRole: _runRole(map),
+      place: map.containsKey('place') ? PlanningRunPlace.fromJson(map['place']) : null,
     );
+  }
+
+  /// Reads the run's role Start is handed, absent for an author at its own push.
+  static String? _runRole(Map<String, dynamic> map) {
+    if (!map.containsKey('runRole')) return null;
+    final role = map['runRole'];
+    if (role != 'AUTHOR' && role != 'REVIEWER') _invalid('The task run role is invalid.');
+    return role as String;
   }
 
   /// Reads the given files: each owned issue's text once, by its id, within what one task is given.
@@ -446,6 +515,13 @@ class PlanningTaskOrder {
 
   /// The tracker's issue and phase Start is handed; null for a project no tracker keeps and for a discussion.
   final PlanningWork? work;
+
+  /// The run's role Start is handed as its `role`, `AUTHOR` or `REVIEWER`; null for an author at its own push.
+  final String? runRole;
+
+  /// Where the run works, handed to Start as its `place`; null for the task's own push. An author's gate push names
+  /// the task it resumes, the name Start is given.
+  final PlanningRunPlace? place;
 
   bool _matches(PlanningTaskOrder other) =>
       repository == other.repository &&

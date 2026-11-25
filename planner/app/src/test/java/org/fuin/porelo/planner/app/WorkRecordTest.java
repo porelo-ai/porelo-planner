@@ -869,6 +869,58 @@ class WorkRecordTest {
     }
 
     @Test
+    void theOffersAReadOfAPlaceMadeAreReadBackAndARecordWithoutThemOpens() throws Exception {
+        // Harm: after a restart the planner no longer knows which offer a read made, so the
+        // window never starts the author's rework; an upgrade makes an older record unreadable;
+        // or a record changed on disk names an offer no read made, which the window then starts.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String rework = "00000000-0000-0000-0000-000000000003";
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode run = (ObjectNode) document.path("runs").iterator().next();
+        final ObjectNode offer = ((ObjectNode) run.get("offers").get(0)).deepCopy();
+        offer.put("id", rework).put("status", "OFFERED");
+        for (final String unbound : List.of("task", "containerId", "machine", "since", "ended")) {
+            offer.putNull(unbound);
+        }
+        final ObjectNode arguments = (ObjectNode) offer.get("arguments");
+        arguments.put("runRole", "AUTHOR");
+        final ObjectNode place = arguments.putObject("place");
+        place.putObject("gatePush").putNull("repository").put("name", "task");
+        place.putNull("pullRequest");
+        place.putNull("ownPullRequest");
+        ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
+        run.putArray("placeOffers").add(rework);
+        final String sound = json.writeValueAsString(document);
+        Files.writeString(file, sound);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThat(run(records).placeOffers()).as("read back").containsExactly(rework);
+            run.remove("placeOffers");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThat(run(records).placeOffers()).as("an older record names none").isEmpty();
+            final String main = "00000000-0000-0000-0000-000000000002";
+            for (final List<String> named :
+                    List.of(
+                            List.of(rework, rework),
+                            List.of("00000000-0000-0000-0000-000000000009"),
+                            List.of(main))) {
+                final var tampered = json.readTree(sound);
+                final ObjectNode at = (ObjectNode) tampered.path("runs").iterator().next();
+                final var list = at.putArray("placeOffers");
+                named.forEach(list::add);
+                Files.writeString(file, json.writeValueAsString(tampered));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records))
+                        .as("refused: " + named)
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    @Test
     void aKeptPlaceThatDoesNotFitItsRunIsRefusedAsTheRecordOpens() throws Exception {
         // Harm: a record changed on disk trusted: a place of an issue the run does not hold, an
         // author run that is no ended or void builder's offer of the issue in a container under

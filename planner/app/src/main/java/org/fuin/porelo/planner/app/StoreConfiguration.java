@@ -323,6 +323,63 @@ public class StoreConfiguration {
     }
 
     /**
+     * Reads from Porelo where each issue's work waits, on each task event and every minute while a
+     * window follows the project; in the mock mode, which reaches no Porelo, nothing. Without a
+     * Porelo executable {@code PORELO_EXECUTABLE} names and its check passes, every place where
+     * work waits reads as unreadable, saying why.
+     *
+     * @param mode present only in the mock mode
+     * @param projects the projects the window has given
+     * @param changes the projects followed, which start and stop the reads
+     * @param limits the factors from the command line
+     * @return the watch
+     */
+    @Bean(destroyMethod = "close")
+    public PlaceWatch placeWatch(
+            final ObjectProvider<MockMode> mode,
+            final Projects projects,
+            final ChangesRegistry changes,
+            final ObjectProvider<LimitFactors> limits) {
+        final PlaceWatch watch;
+        if (mode.getIfAvailable() != null) {
+            watch = PlaceWatch.none();
+        } else {
+            final LimitFactors factors = limits.getIfAvailable(() -> LimitFactors.DEFAULT);
+            final var scheduler =
+                    Executors.newSingleThreadScheduledExecutor(
+                            Thread.ofVirtual().name("place-poll-", 0).factory());
+            PlaceWatch made;
+            try {
+                final Path porelo = PoreloProgram.checked(System.getenv(), factors);
+                made =
+                        new PlaceWatch(
+                                project -> PlaceWatch.Places.of(projects.work(project)),
+                                new PoreloTaskRecords(porelo, factors),
+                                new PoreloReviewOpen(porelo, factors),
+                                changes::saved,
+                                scheduler,
+                                factors.polling(PlaceWatch.INTERVAL));
+            } catch (final IllegalStateException refused) {
+                org.slf4j.LoggerFactory.getLogger(PlaceWatch.class)
+                        .warn(
+                                "Where work waits cannot be read from Porelo: {}",
+                                org.fuin.porelo.planner.store.git.LogText.of(
+                                        PoreloProgram.scrubbed(refused.getMessage())));
+                made =
+                        new PlaceWatch(
+                                project -> PlaceWatch.Places.of(projects.work(project)),
+                                "Porelo's executable is missing or refused",
+                                changes::saved,
+                                scheduler,
+                                factors.polling(PlaceWatch.INTERVAL));
+            }
+            watch = made;
+        }
+        changes.addFollower(watch);
+        return watch;
+    }
+
+    /**
      * The saves each project's outbox keeps for the owner account: a GitHub project's, and none of
      * a Git, local or mock project, whose saves go through no outbox.
      *

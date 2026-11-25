@@ -354,7 +354,41 @@ class PlanWork {
       comment = _planText(map, 'comment'),
       readingRounds = map['readingRounds'] is int ? map['readingRounds'] as int : null,
       issueReadingRounds = _planList(map['issueReadingRounds'], PlanIssueReadingRounds.from),
-      issues = _planList(map['issues'], PlanWorkIssue.from);
+      issues = _planList(map['issues'], PlanWorkIssue.from),
+      starts = _starts(map['starts'], _planList(map['repositories'], PlanRepositoryWork.from));
+
+  /// Reads the offers the window starts without asking, each once by its offer; one that cannot be read, or that is
+  /// no builder of one issue the run works in its repository, is left out and never started.
+  static List<PlanningTaskOrder> _starts(Object? value, List<PlanRepositoryWork> repositories) {
+    if (value is! List) return const [];
+    final starts = <PlanningTaskOrder>[];
+    final offers = <String>{};
+    for (final entry in value.whereType<Map<String, dynamic>>()) {
+      try {
+        final order = PlanningTaskOrder.from(entry);
+        final repository = repositories.where((repo) => repo.repository == order.repository).firstOrNull;
+        // Only an author sent back to a place it resumes starts without the person: a builder of one issue of
+        // the run's, which pushes its work.
+        if (order.runRole == 'AUTHOR' &&
+            order.place?.gatePush != null &&
+            order.role == 'BUILDER' &&
+            order.result == null &&
+            order.issues.length == 1 &&
+            repository != null &&
+            order.issues.every(repository.issues.contains) &&
+            offers.add(order.offer!)) {
+          starts.add(order);
+        }
+      } on FormatException {
+        continue;
+      }
+    }
+    return List.unmodifiable(starts);
+  }
+
+  /// The run's offers made without a request of the window's, which the window starts through the hook it gives for
+  /// them: an author sent back to the push its work waits at.
+  final List<PlanningTaskOrder> starts;
 
   /// The run the planner drew when the work started, compared only for equality; null from a planner without it.
   final String? run;

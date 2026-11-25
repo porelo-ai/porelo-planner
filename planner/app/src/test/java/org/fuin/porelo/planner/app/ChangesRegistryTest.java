@@ -70,6 +70,46 @@ class ChangesRegistryTest {
     }
 
     @Test
+    void aFollowerIsToldWhileAWindowFollowsAProjectAndOfItsTasksEvents() throws Exception {
+        // Harm: where work waits is read for a project no window follows any more, or never
+        // read while one does; or a task's event is not followed by a read.
+        final java.util.List<String> told = new java.util.concurrent.CopyOnWriteArrayList<>();
+        registry.addFollower(
+                new ChangesRegistry.Follower() {
+                    @Override
+                    public void followed(final String project) {
+                        told.add("followed " + project);
+                    }
+
+                    @Override
+                    public void left(final String project) {
+                        told.add("left " + project);
+                    }
+
+                    @Override
+                    public void reported(final String project) {
+                        told.add("reported " + project);
+                    }
+                });
+        projects.put("alpha", "one", null);
+        final Changes.Subscription one = registry.subscribe("alpha");
+        final Changes.Subscription two = registry.subscribe("alpha");
+        registry.taskReported("alpha");
+        one.close();
+        assertThat(told)
+                .as("followed once, a second window changes nothing")
+                .containsExactly("followed alpha", "reported alpha");
+        two.close();
+        assertThat(told).as("the last window left").endsWith("left alpha");
+        final Changes.Subscription three = registry.subscribe("alpha");
+        projects.forgetAll();
+        assertThat(told)
+                .as("followed again, left when the project is forgotten")
+                .endsWith("followed alpha", "left alpha");
+        assertThat(three.open()).isFalse();
+    }
+
+    @Test
     void aForgottenProjectEndsItsStreams() throws Exception {
         projects.put("alpha", "one", null);
         final Changes.Subscription one = registry.subscribe("alpha");

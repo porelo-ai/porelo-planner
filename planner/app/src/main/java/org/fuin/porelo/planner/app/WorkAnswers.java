@@ -241,7 +241,8 @@ public final class WorkAnswers {
                                             !person && p.rounds().stopped(),
                                             findings(p.findings()));
                                 })
-                        .toList());
+                        .toList(),
+                starts(WorkRun.placeStarts(run)));
     }
 
     private static boolean manual(final Board board, final String issue) {

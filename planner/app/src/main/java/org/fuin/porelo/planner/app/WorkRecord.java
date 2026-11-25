@@ -988,6 +988,10 @@ public final class WorkRecord implements AutoCloseable {
                 if (run instanceof ObjectNode placed && !placed.has("places")) {
                     placed.putObject("places");
                 }
+                // A run written before reads of kept places offered work holds none of theirs.
+                if (run instanceof ObjectNode placed && !placed.has("placeOffers")) {
+                    placed.putArray("placeOffers");
+                }
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
                     // A main recorded before the rule's offered agents were proposed names none.
@@ -1508,6 +1512,7 @@ public final class WorkRecord implements AutoCloseable {
                                     }
                                 }
                                 run.places().forEach((id, place) -> checkedPlace(run, id, place));
+                                checkedPlaceOffers(run);
                             });
         }
 
@@ -1537,6 +1542,27 @@ public final class WorkRecord implements AutoCloseable {
                                                 && place.task().equals(o.task())
                                                 && o.containerId() != null)) {
                     throw new IllegalArgumentException("a place fails its check");
+                }
+            }
+        }
+
+        /**
+         * Refuses an offer a read of a kept place made that is named twice, or that is no author's
+         * offer of the run at a gate push.
+         */
+        private static void checkedPlaceOffers(final WorkRun.Run run) {
+            if (Set.copyOf(run.placeOffers()).size() != run.placeOffers().size()) {
+                throw new IllegalArgumentException("a place's offer fails its check");
+            }
+            for (final String id : run.placeOffers()) {
+                if (run.offers().stream()
+                        .noneMatch(
+                                o ->
+                                        o.id().equals(id)
+                                                && o.arguments().runRole() == RunRole.AUTHOR
+                                                && o.arguments().place() != null
+                                                && o.arguments().place().gatePush() != null)) {
+                    throw new IllegalArgumentException("a place's offer fails its check");
                 }
             }
         }

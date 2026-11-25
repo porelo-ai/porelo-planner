@@ -63,6 +63,10 @@ class PlanningRun {
   final String project, story;
   int epoch = 0;
   PlanningStartTask? startTask;
+
+  /// The window's start of the offers the planner made without its asking, the work's `starts`; none starts them
+  /// while it is null.
+  PlanningStartTask? startOffered;
   PlanningTaskChanges? changes;
   Future<void> Function(PlanningSource, String, String, List<(PlanningTaskOrder, PlanningTaskStarted)>)? onStarted;
 
@@ -75,18 +79,59 @@ class PlanningRun {
   /// Whether a start of this run is in flight that the planner does not report yet.
   bool get starting => _unreported.isNotEmpty;
 
-  /// A recorded stop cannot leave an earlier batch authorized to start.
+  /// A recorded stop cannot leave an earlier batch authorized to start; the offers the planner made without the
+  /// window's asking are started through [startOffered].
   void observe(PlanWork? work) {
-    if (work?.issues.any((issue) => issue.reason == 'STOPPED') == true) cancel();
+    if (work?.issues.any((issue) => issue.reason == 'STOPPED') == true) {
+      // A stopped run starts nothing more, not even what the planner offered before the stop.
+      cancel();
+      return;
+    }
+    final starts = work?.starts ?? const <PlanningTaskOrder>[];
+    if (starts.isNotEmpty && startOffered != null) unawaited(startOfferedOnce(starts));
+  }
+
+  /// The refusals of a start that the next read tries again, quietly: the machine or its watch is not ready yet.
+  static const retriedStarts = {'NoMachine', 'NotWatchedYet'};
+
+  /// Starts each offer the planner made without the window's asking once: one already handed to Start, or refused as
+  /// consumed, runs; one refused for a machine not ready is tried again on the next read, saying nothing; any other
+  /// refusal stands and is not tried again.
+  Future<void> startOfferedOnce(List<PlanningTaskOrder> starts) async {
+    final hook = startOffered;
+    if (hook == null) return;
+    final expected = epoch;
+    for (final order in starts) {
+      final offer = order.offer;
+      if (offer == null || (_offers[source]?.containsKey(offer) ?? false)) continue;
+      if (epoch != expected) return;
+      final PlanningTaskStarted started;
+      try {
+        started = await start(order, hook, expected, remember: false);
+      } catch (error) {
+        if (retriedStarts.any((name) => planningRefused(error, name))) {
+          // Not reserved: the next read's starts ask again.
+          _offers[source]?.remove(offer);
+        }
+        continue;
+      }
+      try {
+        await confirmed([(order, started)], expected, onStarted: onStarted);
+      } catch (_) {
+        // The task started and stays reserved; the planner's next read says how it stands.
+      }
+    }
   }
 
   /// Reserves an offer permanently before Start; failure never permits replaying it. [asked] is told right before
-  /// the window's Start is asked.
+  /// the window's Start is asked. The hook given becomes the one a reply's follow-ups start through unless
+  /// [remember] is false, as for the offers the planner made without the window's asking.
   Future<PlanningTaskStarted> start(
     PlanningTaskOrder order,
     PlanningStartTask startTask,
     int expected, {
     void Function()? asked,
+    bool remember = true,
   }) async {
     if (epoch != expected) throw const PlanningRefusal('Cancelled');
     final offer = order.offer;
@@ -94,7 +139,7 @@ class PlanningRun {
     if (offer == null || offers.containsKey(offer)) {
       throw const PlanningRefusal('OfferConsumed', {}, 'This offer has already been handed to Start.');
     }
-    this.startTask = startTask;
+    if (remember) this.startTask = startTask;
     final binding = _Offer(this);
     offers[offer] = binding;
     _unreported.add(offer);

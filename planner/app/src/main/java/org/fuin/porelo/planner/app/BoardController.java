@@ -1696,6 +1696,8 @@ public class BoardController {
             throw notOffered(name);
         } finally {
             changes.saved(name);
+            // Where an issue's work waits is read again after each event of the project's tasks.
+            changes.taskReported(name);
         }
     }
 

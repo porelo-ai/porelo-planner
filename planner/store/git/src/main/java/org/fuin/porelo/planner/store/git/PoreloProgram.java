@@ -39,4 +39,46 @@ public final class PoreloProgram {
                     "Porelo's executable is refused: " + GitRunner.scrubbed(e.getMessage()), e);
         }
     }
+
+    /**
+     * Takes every secret form and every local path out of a text about a run of Porelo, such as its
+     * executable's path in a failure to start it, before the text is logged.
+     *
+     * @param text the text, if any
+     * @return the text, each secret and local path replaced
+     */
+    public static String scrubbed(final @Nullable String text) {
+        return GitRunner.scrubbed(text);
+    }
+
+    /**
+     * Answers the executable the variable names, checked.
+     *
+     * @param environment the planner's environment
+     * @param limits the factors
+     * @return the executable's path
+     * @throws IllegalStateException without the variable, or when the check refuses the program or
+     *     cannot run, saying why in words free of secrets
+     */
+    public static Path checked(final Map<String, String> environment, final LimitFactors limits) {
+        return checked(environment, PoreloExecutable.of(environment, LentLogin.WINDOWS, limits));
+    }
+
+    /**
+     * Answers the executable the variable names, checked by the check given.
+     *
+     * @param environment the planner's environment
+     * @param check the check
+     * @return the executable's path
+     * @throws IllegalStateException without the variable, or when the check refuses the program or
+     *     cannot run
+     */
+    static Path checked(final Map<String, String> environment, final PoreloExecutable check) {
+        final Path program = of(environment, check);
+        if (program == null) {
+            throw new IllegalStateException(
+                    LentLogin.VARIABLE + " is not set, so Porelo cannot be asked");
+        }
+        return program;
+    }
 }

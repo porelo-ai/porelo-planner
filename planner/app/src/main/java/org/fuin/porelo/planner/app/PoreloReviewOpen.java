@@ -62,6 +62,10 @@ public final class PoreloReviewOpen implements PlaceReviews {
                     "ForgeAdapterMissing",
                     "Unreachable");
 
+    /** A name as Porelo's contract gives one, such as why an answer is incomplete. */
+    private static final java.util.regex.Pattern NAME =
+            java.util.regex.Pattern.compile("[A-Z][A-Za-z]{0,63}");
+
     private static final Set<String> POINT = Set.of("thread", "path", "line", "lastBy", "lastAt");
 
     private static final ObjectMapper JSON =
@@ -247,6 +251,11 @@ public final class PoreloReviewOpen implements PlaceReviews {
             throw refused("complete", "is no boolean");
         }
         final String since = textOrNull(root, "decisionSince", "decisionSince");
+        final String reason = textOrNull(root, "reason", "reason");
+        if (reason != null && !NAME.matcher(reason).matches()) {
+            // Only Porelo's name for why an answer is incomplete is taken, never free text.
+            throw refused("reason", "is no name of Porelo's");
+        }
         try {
             return new ReviewOpen(
                     textOrNull(root, "head", "head"),
@@ -258,7 +267,7 @@ public final class PoreloReviewOpen implements PlaceReviews {
                     count(root, "findings", "findings"),
                     count(root, "held", "held"),
                     complete.booleanValue(),
-                    textOrNull(root, "reason", "reason"),
+                    reason,
                     text(root, "version", "version"));
         } catch (final IllegalArgumentException ex) {
             throw new Unanswered(

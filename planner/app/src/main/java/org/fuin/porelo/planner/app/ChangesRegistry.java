@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.app;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -45,6 +46,61 @@ public final class ChangesRegistry implements AutoCloseable {
     private final HeldSavesOf held;
 
     private boolean closed;
+
+    /** What else follows a project while a window does, told as the registry starts and stops. */
+    public interface Follower {
+
+        /**
+         * A window began to follow a project no window followed.
+         *
+         * @param project the project's checked name
+         */
+        void followed(String project);
+
+        /**
+         * The last window left a project, or the project is followed no more.
+         *
+         * @param project the project's checked name
+         */
+        void left(String project);
+
+        /**
+         * A task of a project reported an event.
+         *
+         * @param project the project's checked name
+         */
+        default void reported(final String project) {}
+    }
+
+    private final List<Follower> followers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Adds a follower, told of the projects followed from now on.
+     *
+     * @param follower the follower
+     */
+    public void addFollower(final Follower follower) {
+        followers.add(follower);
+    }
+
+    /**
+     * Tells the followers that a task of a project reported an event.
+     *
+     * @param project the project's checked name
+     */
+    public void taskReported(final String project) {
+        tell(f -> f.reported(project));
+    }
+
+    private void tell(final java.util.function.Consumer<Follower> told) {
+        for (final Follower follower : followers) {
+            try {
+                told.accept(follower);
+            } catch (final RuntimeException e) {
+                LOG.warn("A follower of the projects failed: {}", LogText.of(e.getMessage()));
+            }
+        }
+    }
 
     private record Followed(Changes changes, Polling polling) {}
 
@@ -199,6 +255,7 @@ public final class ChangesRegistry implements AutoCloseable {
         followed.put(project, new Followed(changes, polling));
         // At once first: the store may answer its clones as an earlier run left them.
         polling.schedule(Duration.ZERO);
+        tell(f -> f.followed(project));
         return subscription;
     }
 
@@ -328,12 +385,12 @@ public final class ChangesRegistry implements AutoCloseable {
             all = Map.copyOf(followed);
             followed.clear();
         }
-        all.values()
-                .forEach(
-                        each -> {
-                            each.polling().cancel();
-                            each.changes().closeAll();
-                        });
+        all.forEach(
+                (project, each) -> {
+                    each.polling().cancel();
+                    tell(f -> f.left(project));
+                    each.changes().closeAll();
+                });
         scheduler.shutdownNow();
     }
 
@@ -345,6 +402,7 @@ public final class ChangesRegistry implements AutoCloseable {
         if (known != null) {
             // Its windows reconnect and read the project from its new store, or learn it is gone.
             known.polling().cancel();
+            tell(f -> f.left(project));
             known.changes().closeAll();
         }
     }
@@ -359,6 +417,7 @@ public final class ChangesRegistry implements AutoCloseable {
             followed.remove(project);
         }
         known.polling().cancel();
+        tell(f -> f.left(project));
         known.changes().closeAll();
     }
 
@@ -368,6 +427,7 @@ public final class ChangesRegistry implements AutoCloseable {
         if (known != null && known.changes().subscribers() == 0) {
             known.polling().cancel();
             followed.remove(project);
+            tell(f -> f.left(project));
         }
     }
 

@@ -4238,13 +4238,17 @@ components:
             by a commit or moved by hand beside a run that ended; it is shown, not raised.
         attention:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE]
           description: >-
             Why the person must act, the reason the run reported; NONE when needsYou is false. INVALID_FINDINGS says a
             reader's findings could not be read: its reading stops, readingStopped true, for Read again or Review anyway.
             FAILED and BLOCKED of a reader stop its reading the same way. PLACE_CHANGED says what was read where the
             issue's work waits, or another author's end, named another task or place than the one the run keeps: the
             kept place stands and nothing moved.
+            REJECTED_WITHOUT_POINTS says the push where the issue's work waits was rejected with nothing open, so no
+            rework can say what to change. REVIEW_ROUNDS_USED says points stand open there after as many reworks at
+            that place as the issue's readings allowed. PLACE_UNREADABLE says what is open there could not be read,
+            wholly or in part; nothing moved, and it is read again.
         findings:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
@@ -4925,7 +4929,8 @@ components:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           description: >-
             Where the run works, handed to Start as its `place` unchanged; absent for the task's own gate push, which
-            Start takes as the default.
+            Start takes as the default. An AUTHOR's gate push names the task it resumes: Start is given that name as
+            its task.
           allOf:
             - $ref: '#/components/schemas/RunPlace'
 
@@ -5292,7 +5297,7 @@ components:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanWork:
       type: object
-      required: [run, tasks, coordinator, since, atWork, repositories, comment, readingRounds, issueReadingRounds, issues]
+      required: [run, tasks, coordinator, since, atWork, repositories, comment, readingRounds, issueReadingRounds, issues, starts]
       properties:
         run:
           $ref: '#/components/schemas/RunId'
@@ -5322,6 +5327,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlanWorkIssue'
+        starts:
+          type: array
+          maxItems: 64
+          description: >-
+            The run's offers made without a request of the window's, which wait for their Start: an author sent back
+            to answer the points open at the gate push its work waits at, with runRole AUTHOR and that push as its
+            place, started under that push's name. The window starts each once, through the callback it gives for
+            offers it did not ask for; empty when none waits, and for a stopped or halted run.
+          items:
+            $ref: '#/components/schemas/PlanningStartTask'
     PlanWorkTask:
       type: object
       required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, effort, role, since, atWork, ended]
@@ -5379,7 +5394,7 @@ components:
           $ref: '#/components/schemas/IssueId'
         reason:
           type: string
-          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, MANUAL]
+          enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, MANUAL]
           description: >-
             Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
             of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
@@ -5393,6 +5408,10 @@ components:
             raised by one without using up the limit, and no findings kept.
             PLACE_CHANGED says what was read where the issue's work waits, or another author's end, named another task
             or place than the run keeps; the kept place stands and nothing moved.
+            REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED and PLACE_UNREADABLE stop an issue whose push waits at the gate:
+            rejected with nothing open, its reworks there used up, or what is open there unreadable; nothing moved.
+            Points or findings open there, with nothing held and no task of the issue offered or at work, send the
+            issue back to its rework instead, its author offered again in starts.
             A move of the issue by hand clears its reason and its stop.
         rounds:
           type: integer

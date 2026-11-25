@@ -80,6 +80,43 @@ class SerializationCheckTest {
     }
 
     @Test
+    void theWorkRecordReadBackHoldsAReworkAReadOfferedAtItsPlaceAndItsStart() throws Exception {
+        // Harm: a native image that cannot read back the author's role and place of a rework a
+        // read offered, or which offers a read made, so a planner after a restart offers the
+        // window no start of it, or starts the author at a push of its own.
+        final Object sample = SerializationCheck.sample(WorkRecord.Document.class);
+        final WorkRecord.Document record =
+                WorkRecord.JSON.readValue(
+                        WorkRecord.JSON.writeValueAsString(sample), WorkRecord.Document.class);
+        final org.fuin.porelo.planner.core.WorkRun.Run run = record.runs().get("ST1");
+
+        assertThat(run.placeOffers())
+                .as("the read's offer")
+                .containsExactly(SerializationCheck.REWORK);
+        final org.fuin.porelo.planner.core.WorkRun.Offer rework =
+                run.offers().stream()
+                        .filter(o -> o.id().equals(SerializationCheck.REWORK))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(List.of(rework.arguments().runRole(), rework.arguments().place()))
+                .as("its role and place")
+                .containsExactly(
+                        org.fuin.porelo.planner.core.RunRole.AUTHOR,
+                        org.fuin.porelo.planner.core.RunPlace.gate(null, "task"));
+        assertThat(run.places().values().stream().flatMap(place -> place.authorRuns().stream()))
+                .as("no kept place counts the offered rework as an author run")
+                .doesNotContain(SerializationCheck.REWORK);
+        final var work = WorkAnswers.knownWork(run, issue -> false);
+        assertThat(work.starts()).as("the window's start of it").hasSize(1);
+        assertThat(
+                        WorkRecord.JSON.writeValueAsString(
+                                new org.fuin.porelo.planner.app.answers.TaskEventReply(
+                                        "", work, List.of())))
+                .as("the work answer with its start is written")
+                .contains(SerializationCheck.REWORK);
+    }
+
+    @Test
     void theWorkRecordWrittenHoldsAFollowedOfferAndAMark() {
         // Harm: a native image that cannot read back the reports taken, so a planner after a
         // restart reads every report again and saves its idea twice.
