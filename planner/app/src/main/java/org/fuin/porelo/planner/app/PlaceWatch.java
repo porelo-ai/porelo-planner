@@ -316,6 +316,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         if (scheduler == null || closed) {
             return Map.of();
         }
+        final long began = System.nanoTime();
         final Places work = works.apply(project);
         // A stop for a place that could not be read ends once nothing waits there, even when
         // nothing of the project waits any more.
@@ -331,11 +332,13 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     logged(e));
         }
         final List<WorkRun.Waits> waiting = work.waiting();
+        final long waitingNanos = System.nanoTime() - began;
         final Map<String, WorkRun.PlaceOutcome> outcomes = new LinkedHashMap<>();
         if (waiting.isEmpty()) {
             if (left) {
                 saved.accept(project);
             }
+            measured(project, 0, waitingNanos, began);
             return outcomes;
         }
         final TaskRecords recordsRead = records;
@@ -381,7 +384,25 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         if (changed) {
             saved.accept(project);
         }
+        measured(project, waiting.size(), waitingNanos, began);
         return outcomes;
+    }
+
+    /**
+     * Logs what one read of a project's places took, so the cost of the minute's board reads is
+     * seen in a real run: the issues waiting, the time listing them, the time of the whole read.
+     */
+    private static void measured(
+            final String project, final int waiting, final long waitingNanos, final long began) {
+        if (LOG.isDebugEnabled()) {
+            LOG.debug(
+                    "Read of the places of project {}: {} issues waiting, listing took {} ms, the"
+                            + " read {} ms",
+                    LogText.of(project),
+                    waiting,
+                    TimeUnit.NANOSECONDS.toMillis(waitingNanos),
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began));
+        }
     }
 
     private static WorkRun.PlaceOutcome read(

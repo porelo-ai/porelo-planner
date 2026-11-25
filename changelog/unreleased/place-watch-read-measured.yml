@@ -1,0 +1,2 @@
+title: The place watch's debug log tells, for each read of a project's places, how many issues waited and how long listing them and the whole read took.
+type: changed

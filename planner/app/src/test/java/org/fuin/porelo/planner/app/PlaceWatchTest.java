@@ -2,6 +2,10 @@ package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +29,7 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class PlaceWatchTest {
 
@@ -44,6 +49,41 @@ class PlaceWatchTest {
     @AfterEach
     void stop() {
         scheduler.shutdownNow();
+    }
+
+    @Test
+    void aReadLogsHowManyIssuesWaitedAndHowLongItTook() {
+        // Harm: the cost of the minute's board reads cannot be seen in a real run, so no one can
+        // tell whether a bound is needed.
+        final Logger logger = (Logger) LoggerFactory.getLogger(PlaceWatch.class);
+        final Level level = logger.getLevel();
+        final ListAppender<ILoggingEvent> lines = new ListAppender<>();
+        lines.start();
+        logger.addAppender(lines);
+        logger.setLevel(Level.DEBUG);
+        try {
+            new PlaceWatch(
+                            p -> new Fake(WorkRun.PlaceOutcome.KEPT),
+                            (project, from) -> List.of(record("box")),
+                            (project, place, role, task) -> answer(),
+                            saved::add,
+                            scheduler,
+                            Duration.ofMinutes(1))
+                    .readAll("logged-project");
+        } finally {
+            logger.detachAppender(lines);
+            logger.setLevel(level);
+        }
+
+        assertThat(lines.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(
+                        line ->
+                                assertThat(line)
+                                        .contains("logged-project")
+                                        .contains("1 issues waiting")
+                                        .contains("listing took")
+                                        .contains("the read"));
     }
 
     @Test
