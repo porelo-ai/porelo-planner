@@ -97,6 +97,58 @@ class StageResultTest {
                 List.of());
     }
 
+    // Prevents a readiness check saved with a size and plan it never gave, an analysis moving an
+    // issue back, one issue moved twice, or a reason a store refuses only after others are written.
+    @Test
+    void aReadinessCheckGivesVerdictsAloneEachOnceWithAReasonAStoreKeeps() {
+        final StageResult.Verdict ready = verdict("AB1", null);
+        final StageResult.Verdict back = verdict("AB2", "Not ready: it lacks a plan. None.");
+
+        assertThat(
+                        new StageResult(WorkRule.Result.READINESS, List.of(), List.of(ready, back))
+                                .ids())
+                .as("the ids of the verdicts")
+                .containsExactly("AB1", "AB2");
+        assertThatThrownBy(
+                        () ->
+                                new StageResult(
+                                        WorkRule.Result.READINESS,
+                                        List.of(issue(null, List.of(), List.of(), "Why.")),
+                                        List.of(ready)))
+                .as("a readiness check with an issue's result")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                new StageResult(
+                                        WorkRule.Result.ANALYSIS,
+                                        List.of(issue(null, List.of(), List.of(), "Why.")),
+                                        List.of(verdict("AB2", null))))
+                .as("an analysis with a verdict")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(
+                        () ->
+                                new StageResult(
+                                        WorkRule.Result.READINESS,
+                                        List.of(),
+                                        List.of(ready, ready)))
+                .as("one issue twice")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new StageResult(WorkRule.Result.READINESS, List.of(), List.of()))
+                .as("no issue")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> verdict("AB1", "r".repeat(281)))
+                .as("a reason over its bound")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> verdict("AB1", "Odd \u202E sign."))
+                .as("a reason with a direction character")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static StageResult.Verdict verdict(final String id, final @Nullable String reason) {
+        return new StageResult.Verdict(
+                id, "Preparing", reason == null ? "Backlog" : "Estimated", reason);
+    }
+
     private static StageResult.ForIssue issue(
             final @Nullable String plan,
             final List<String> toBeChecked,

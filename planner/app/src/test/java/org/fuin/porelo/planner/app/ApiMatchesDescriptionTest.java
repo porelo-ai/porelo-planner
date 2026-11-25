@@ -816,9 +816,7 @@ class ApiMatchesDescriptionTest {
         }
         final Set<String> required = new TreeSet<>();
         schemas.at("/StageResultIssue/required").forEach(field -> required.add(field.asText()));
-        assertThat(required)
-                .as("the members every kind of result needs")
-                .isEqualTo(Set.of("id", "size", "sizeWhy"));
+        assertThat(required).as("the members every kind of result needs").isEqualTo(Set.of("id"));
     }
 
     private static void wireType(

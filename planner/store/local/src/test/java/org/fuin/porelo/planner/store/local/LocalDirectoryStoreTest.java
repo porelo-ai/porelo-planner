@@ -346,6 +346,48 @@ class LocalDirectoryStoreTest {
     }
 
     @Test
+    void aReadinessCheckMovesTheIssueAndAddsWhyItIsNotReadyOnceToItsFindings() throws Exception {
+        // Harm: a readiness check sizes an issue or rewrites its body, loses why it went back, or
+        // adds the reason again when the same save is sent after a move by hand.
+        final LocalDirectoryStore store = store();
+        final NewIssue.Added added = issue(store);
+        final NewIssue.Added ready = issue(store);
+        store.save(
+                store.board().revision(),
+                new Writes(Map.of(added.id(), "Analyzing", ready.id(), "Analyzing"), Map.of()));
+        final String before = Files.readString(items.resolve("engine-1.md"));
+        final String why = "Not ready: it lacks a plan. None.";
+        final StageResult back =
+                new StageResult(
+                        WorkRule.Result.READINESS,
+                        List.of(),
+                        List.of(
+                                new StageResult.Verdict(added.id(), "Analyzing", "Idea", why),
+                                new StageResult.Verdict(ready.id(), "Analyzing", "Backlog", null)));
+
+        store.saveResult(back);
+        store.save(
+                store.board().revision(),
+                new Writes(Map.of(added.id(), "Analyzing", ready.id(), "Analyzing"), Map.of()));
+        store.saveResult(back);
+
+        final Issue read = store().issue(added.id());
+        assertThat(read.state()).as("moved back").isEqualTo("Idea");
+        assertThat(read.size()).as("its size as it was").isEqualTo("S");
+        final String text = Files.readString(items.resolve("engine-1.md"));
+        assertThat(text).as("the reason under the findings").contains("## Findings", "- " + why);
+        assertThat(text.split(java.util.regex.Pattern.quote(why), -1))
+                .as("the reason kept once")
+                .hasSize(2);
+        assertThat(before).as("the file had no findings before").doesNotContain("## Findings");
+        final Issue moved = store().issue(ready.id());
+        assertThat(moved.state()).as("the ready one moved on").isEqualTo("Backlog");
+        assertThat(Files.readString(items.resolve("engine-2.md")))
+                .as("the ready one's file holds no finding")
+                .doesNotContain("## Findings", "Not ready");
+    }
+
+    @Test
     void badFieldsStayOnTheBoardWithWarnings() throws Exception {
         // Harm: a broken field or link makes a named item vanish from planning.
         final LocalDirectoryStore store = store();

@@ -14,7 +14,7 @@ final _issueName = RegExp(
 const _modes = {'SHELL', 'AGENT', 'UNATTENDED'};
 // A plain file name: the window takes it from the task's result directory, so it must not leave that directory.
 final _resultName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
-const _stageResults = {'analysis.json', 'estimate.json'};
+const _stageResults = {'analysis.json', 'estimate.json', 'readiness.json'};
 
 Never _invalid(String reason) => throw FormatException(reason);
 
@@ -341,10 +341,12 @@ class PlanningTaskOrder {
       repository = _text(map, 'repository');
       if (!_repositoryName.hasMatch(repository)) _invalid('The task repository is invalid.');
       if (map.containsKey('result')) {
-        // A stage that hands back its result writes one of the planner's two files, never an idea.
+        // A stage that hands back its result writes one of the planner's three files, never an idea.
         if (role == 'READER') _invalid('A reader hands back no result.');
         result = _text(map, 'result');
-        if (!_stageResults.contains(result)) _invalid('A stage hands back analysis.json or estimate.json.');
+        if (!_stageResults.contains(result)) {
+          _invalid('A stage hands back analysis.json, estimate.json or readiness.json.');
+        }
       }
     }
     final given = map.containsKey('given') ? _given(map['given'], issues) : const <PlanningGivenFile>[];

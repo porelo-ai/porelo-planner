@@ -163,7 +163,10 @@ public final class WorkReader {
         return switch (result) {
             case "ANALYSIS" -> WorkRule.Result.ANALYSIS;
             case "ESTIMATE" -> WorkRule.Result.ESTIMATE;
-            default -> throw new Fault("result '" + result + "' is neither ANALYSIS nor ESTIMATE");
+            case "READINESS" -> WorkRule.Result.READINESS;
+            default ->
+                    throw new Fault(
+                            "result '" + result + "' is none of ANALYSIS, ESTIMATE and READINESS");
         };
     }
 

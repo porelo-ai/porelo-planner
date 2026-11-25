@@ -124,7 +124,12 @@ public record WorkRule(
         /** An analysis: each issue's plan, size and what is still to be checked. */
         ANALYSIS("analysis.json"),
         /** An estimate: each issue's size and minutes. */
-        ESTIMATE("estimate.json");
+        ESTIMATE("estimate.json"),
+        /**
+         * A readiness check: whether each issue names a plan, a size and its blockers; a ready
+         * issue moves to the rule's done state, one not ready back to the rule's one from state.
+         */
+        READINESS("readiness.json");
 
         private final String file;
 

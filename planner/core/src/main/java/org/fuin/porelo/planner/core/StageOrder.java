@@ -89,7 +89,11 @@ public final class StageOrder {
         for (final String id : owned) {
             WorkRefusal.unlessFree(board, id, "", to);
             final Issue issue = board.issue(id).orElseThrow();
-            final int bytes = issue.text().getBytes(StandardCharsets.UTF_8).length;
+            final String text =
+                    result == WorkRule.Result.READINESS
+                            ? fields(issue) + issue.text()
+                            : issue.text();
+            final int bytes = text.getBytes(StandardCharsets.UTF_8).length;
             if (bytes > MOST_TEXT) {
                 throw WorkRefusal.notAllowed(
                         issue.state(),
@@ -100,7 +104,7 @@ public final class StageOrder {
                                 + " UTF-8 bytes, more than a task is given.");
             }
             all += bytes;
-            given.add(new WorkOrder.Given(given(id), issue.text()));
+            given.add(new WorkOrder.Given(given(id), text));
         }
         if (given.size() > MOST_FILES || all > MOST_ALL) {
             throw WorkRefusal.notAllowed(
@@ -163,33 +167,78 @@ public final class StageOrder {
         }
     }
 
+    /**
+     * The board's fields a readiness check needs beside an issue's text, which a tracker keeps
+     * apart from it: its size, what it is blocked by and what it waits on outside the project.
+     *
+     * @param issue the issue
+     * @return the lines, ending in an empty line
+     */
+    static String fields(final Issue issue) {
+        final String size = issue.size();
+        final List<String> waits = new ArrayList<>();
+        for (final org.fuin.porelo.planner.store.Wait wait : issue.waitsOn()) {
+            final String reference = wait.reference();
+            waits.add(
+                    (reference == null ? "an issue outside the project" : reference)
+                            + (Boolean.TRUE.equals(wait.done()) ? " (done)" : ""));
+        }
+        return "The board's fields of "
+                + issue.id()
+                + ", beside its text below:\n"
+                + "- Size: "
+                + (size == null ? "none" : size)
+                + "\n- Blocked by: "
+                + (issue.blockedBy().isEmpty() ? "none" : String.join(", ", issue.blockedBy()))
+                + "\n- Waits on: "
+                + (waits.isEmpty() ? "none" : String.join(", ", waits))
+                + "\n\n";
+    }
+
     /** Closes the prompt, after every quoted text, so no issue's text can reword it. */
     private static String instructions(
             final WorkRule.Result result, final List<WorkOrder.Given> given) {
         final String fields =
-                result == WorkRule.Result.ANALYSIS
-                        ? "plan (Markdown, the base design read in today's code), size, sizeWhy,"
-                                + " toBeChecked and findings"
-                        : "size, sizeWhy, estimateMinutes (whole minutes from 1 to "
-                                + StageResult.MOST_MINUTES
-                                + "), and optionally plan, toBeChecked and findings";
+                switch (result) {
+                    case ANALYSIS ->
+                            "plan (Markdown, the base design read in today's code), size, sizeWhy,"
+                                    + " toBeChecked and findings";
+                    case ESTIMATE ->
+                            "size, sizeWhy, estimateMinutes (whole minutes from 1 to "
+                                    + StageResult.MOST_MINUTES
+                                    + "), and optionally plan, toBeChecked and findings";
+                    case READINESS ->
+                            "ready (true or false: whether the issue names a plan, a size and its"
+                                    + " blockers, or that it has none), and for an issue not ready"
+                                    + " lacks (a list of "
+                                    + String.join(", ", HandedResults.LACKS)
+                                    + ", each once) and why (one line why)";
+                };
         final String bounds =
-                ". The size is one of "
-                        + String.join(", ", StageResult.SIZES)
-                        + ". sizeWhy is one line of at most "
-                        + HandedResults.MOST_LINE
-                        + " characters. The plan has at most "
-                        + HandedResults.MOST_PLAN
-                        + " characters; it stands under the issue's own Plan section, so it holds"
-                        + " no first- or second-level heading and starts at ###, and each code"
-                        + " block opens with three backticks and a plain language name and closes"
-                        + " with three backticks alone. toBeChecked and findings are lists of at"
-                        + " most "
-                        + HandedResults.MOST_ITEMS
-                        + " items, each item one line of at most "
-                        + HandedResults.MOST_ITEM
-                        + " characters that does not start with #. No text holds a control or"
-                        + " direction character, nor a line break outside the plan";
+                result == WorkRule.Result.READINESS
+                        ? ". Each given file opens with the board's fields of its issue: its size,"
+                                + " what blocks it and what it waits on, which count as named. A"
+                                + " ready issue names no lacks and no why. why is one line of at"
+                                + " most "
+                                + HandedResults.MOST_WHY
+                                + " characters. No other member is named, and no text holds a"
+                                + " control or direction character"
+                        : ". The size is one of "
+                                + String.join(", ", StageResult.SIZES)
+                                + ". sizeWhy is one line of at most "
+                                + HandedResults.MOST_LINE
+                                + " characters. The plan has at most "
+                                + HandedResults.MOST_PLAN
+                                + " characters; it stands under the issue's own Plan section, so it holds"
+                                + " no first- or second-level heading and starts at ###, and each code"
+                                + " block opens with three backticks and a plain language name and closes"
+                                + " with three backticks alone. toBeChecked and findings are lists of at"
+                                + " most "
+                                + HandedResults.MOST_ITEMS
+                                + " items, each item one line of at most "
+                                + HandedResults.MOST_ITEM
+                                + " characters that does not start with #. No text holds a control or"
+                                + " direction character, nor a line break outside the plan";
         return "\n\nThis stage hands back its result; the planner saves it and moves the issues."
                 + " Read each issue as the planner holds it now from its given file, read only,"
                 + " in Porelo's given directory: "

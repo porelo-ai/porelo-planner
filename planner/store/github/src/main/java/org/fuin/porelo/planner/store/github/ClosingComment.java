@@ -52,7 +52,7 @@ final class ClosingComment {
     }
 
     /** The first twelve hexadecimal characters of the text's SHA-256. */
-    private static String hash(final String text) {
+    static String hash(final String text) {
         try {
             final byte[] digest =
                     MessageDigest.getInstance("SHA-256")

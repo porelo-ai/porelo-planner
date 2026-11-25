@@ -67,6 +67,12 @@ public final class HandedResults {
     /** The most items of a list. */
     public static final int MOST_ITEMS = 20;
 
+    /** The most code points of why an issue is not ready, so its kept reason stays in bounds. */
+    public static final int MOST_WHY = 200;
+
+    /** What an issue not ready may lack, in the order its reason names them. */
+    public static final List<String> LACKS = List.of("PLAN", "SIZE", "BLOCKERS");
+
     private static final String NOT_A_RESULT = "The result does not follow the result format.";
 
     private HandedResults() {}
@@ -105,7 +111,7 @@ public final class HandedResults {
      * text or zero, which its check refuses.
      *
      * @param format the format's name
-     * @param kind ANALYSIS or ESTIMATE
+     * @param kind ANALYSIS, ESTIMATE or READINESS
      * @param issues one entry per issue, null for an entry that is no object
      */
     public record File(
@@ -117,7 +123,7 @@ public final class HandedResults {
          * Keeps the entries as handed in.
          *
          * @param format the format's name
-         * @param kind ANALYSIS or ESTIMATE
+         * @param kind ANALYSIS, ESTIMATE or READINESS
          * @param issues one entry per issue
          */
         // Declared in full, since a compact constructor's parameters carry no nullness that the
@@ -145,6 +151,9 @@ public final class HandedResults {
      * @param estimateMinutes the minutes, or null when absent
      * @param toBeChecked what is still to be checked, or null when absent
      * @param findings what the stage found, or null when absent
+     * @param ready whether a readiness check found the issue ready, or null when absent
+     * @param lacks what an issue not ready lacks, each one of {@link #LACKS}, or null when absent
+     * @param why one line why an issue is not ready, or null when absent
      */
     public record Entry(
             @Nullable String id,
@@ -153,7 +162,72 @@ public final class HandedResults {
             @Nullable String sizeWhy,
             @Nullable Long estimateMinutes,
             @Nullable List<String> toBeChecked,
-            @Nullable List<String> findings) {}
+            @Nullable List<String> findings,
+            @Nullable Boolean ready,
+            @Nullable List<String> lacks,
+            @Nullable String why) {
+
+        /**
+         * Keeps the entry as handed in.
+         *
+         * @param id the issue's id
+         * @param plan the plan
+         * @param size the size
+         * @param sizeWhy why it has that size
+         * @param estimateMinutes the minutes
+         * @param toBeChecked what is still to be checked
+         * @param findings what the stage found
+         * @param ready whether it is ready
+         * @param lacks what it lacks
+         * @param why why it is not ready
+         */
+        // Declared in full, since a compact constructor's parameters carry no nullness that the
+        // app's NullAway reads from the compiled class.
+        public Entry(
+                final @Nullable String id,
+                final @Nullable String plan,
+                final @Nullable String size,
+                final @Nullable String sizeWhy,
+                final @Nullable Long estimateMinutes,
+                final @Nullable List<String> toBeChecked,
+                final @Nullable List<String> findings,
+                final @Nullable Boolean ready,
+                final @Nullable List<String> lacks,
+                final @Nullable String why) {
+            this.id = id;
+            this.plan = plan;
+            this.size = size;
+            this.sizeWhy = sizeWhy;
+            this.estimateMinutes = estimateMinutes;
+            this.toBeChecked = toBeChecked;
+            this.findings = findings;
+            this.ready = ready;
+            this.lacks = lacks;
+            this.why = why;
+        }
+
+        /**
+         * An entry of an analysis or an estimate, which says nothing of readiness.
+         *
+         * @param id the issue's id
+         * @param plan the plan
+         * @param size the size
+         * @param sizeWhy why it has that size
+         * @param estimateMinutes the minutes
+         * @param toBeChecked what is still to be checked
+         * @param findings what the stage found
+         */
+        public Entry(
+                final @Nullable String id,
+                final @Nullable String plan,
+                final @Nullable String size,
+                final @Nullable String sizeWhy,
+                final @Nullable Long estimateMinutes,
+                final @Nullable List<String> toBeChecked,
+                final @Nullable List<String> findings) {
+            this(id, plan, size, sizeWhy, estimateMinutes, toBeChecked, findings, null, null, null);
+        }
+    }
 
     /**
      * A hand-in: the result, or why it is missing, and the faults of its shape the reader found.
@@ -291,7 +365,7 @@ public final class HandedResults {
         if (faults.isEmpty()) {
             final String from = "Working";
             try {
-                result(kind, from, "Done", file);
+                result(kind, from, "Done", "Back", file);
             } catch (final IllegalArgumentException unsound) {
                 faults.add("issues: " + bound(String.valueOf(unsound.getMessage())));
             }
@@ -304,6 +378,13 @@ public final class HandedResults {
             final Entry entry,
             final String at,
             final List<String> faults) {
+        if (kind == WorkRule.Result.READINESS) {
+            readiness(entry, at, faults);
+            return;
+        }
+        if (entry.ready() != null || entry.lacks() != null || entry.why() != null) {
+            faults.add(at + ": Only a readiness check names ready, lacks and why.");
+        }
         final String plan = entry.plan();
         if (plan == null) {
             if (kind == WorkRule.Result.ANALYSIS) {
@@ -339,6 +420,82 @@ public final class HandedResults {
         }
         items(entry.toBeChecked(), at + ".toBeChecked", faults);
         items(entry.findings(), at + ".findings", faults);
+    }
+
+    /**
+     * Checks a readiness entry: ready, or not ready with what it lacks and why, and nothing an
+     * analysis or an estimate gives.
+     */
+    private static void readiness(final Entry entry, final String at, final List<String> faults) {
+        if (entry.plan() != null
+                || entry.size() != null
+                || entry.sizeWhy() != null
+                || entry.estimateMinutes() != null
+                || entry.toBeChecked() != null
+                || entry.findings() != null) {
+            faults.add(at + ": A readiness check names only id, ready, lacks and why.");
+        }
+        final Boolean ready = entry.ready();
+        if (ready == null) {
+            faults.add(at + ".ready: Each issue must say whether it is ready, true or false.");
+            return;
+        }
+        final List<String> lacks = entry.lacks();
+        final String why = entry.why();
+        if (ready) {
+            if (lacks != null || why != null) {
+                faults.add(at + ": A ready issue names no lacks and no why.");
+            }
+            return;
+        }
+        if (lacks == null
+                || lacks.isEmpty()
+                || !LACKS.containsAll(lacks)
+                || new HashSet<>(lacks).size() != lacks.size()) {
+            faults.add(
+                    at
+                            + ".lacks: An issue not ready lacks one to three of "
+                            + String.join(", ", LACKS)
+                            + ", each once.");
+        }
+        if (why == null) {
+            faults.add(at + ".why: An issue not ready needs one line why.");
+        } else {
+            line(why, at + ".why", "why it is not ready", MOST_WHY, faults);
+            // Held to what a kept reason may hold, so the reason is never refused at the store.
+            if (why.codePoints().anyMatch(org.fuin.porelo.planner.store.Writes.Reason::unshown)) {
+                faults.add(at + ".why: Why it is not ready holds a character a reason may not.");
+            }
+        }
+    }
+
+    /**
+     * The reason kept with an issue not ready: fixed words naming what it lacks, in the order of
+     * {@link #LACKS}, then why.
+     *
+     * @param lacks what it lacks
+     * @param why why it is not ready
+     * @return the reason
+     */
+    static String reason(final List<String> lacks, final String why) {
+        final List<String> named = new ArrayList<>();
+        for (final String lack : LACKS) {
+            if (lacks.contains(lack)) {
+                named.add(
+                        switch (lack) {
+                            case "PLAN" -> "a plan";
+                            case "SIZE" -> "a size";
+                            default -> "its blockers";
+                        });
+            }
+        }
+        final String joined =
+                named.size() == 1
+                        ? named.getFirst()
+                        : String.join(", ", named.subList(0, named.size() - 1))
+                                + " and "
+                                + named.getLast();
+        return "Not ready: it lacks " + joined + ". " + why.strip();
     }
 
     private static void items(
@@ -427,13 +584,36 @@ public final class HandedResults {
      *
      * @param kind what the rule hands back
      * @param from the working state the issues stand in
-     * @param to the state they move to
+     * @param to the state they move to, for a readiness check the ready ones
+     * @param back the state a readiness check returns an issue not ready to
      * @param file the checked result file
      * @return the stage's result
      * @throws IllegalArgumentException when the store could not save it as it stands
      */
     static StageResult result(
-            final WorkRule.Result kind, final String from, final String to, final File file) {
+            final WorkRule.Result kind,
+            final String from,
+            final String to,
+            final String back,
+            final File file) {
+        if (kind == WorkRule.Result.READINESS) {
+            final List<StageResult.Verdict> verdicts = new ArrayList<>();
+            for (final Entry entry : java.util.Objects.requireNonNull(file.issues())) {
+                final Entry e = java.util.Objects.requireNonNull(entry);
+                final String id = java.util.Objects.requireNonNull(e.id());
+                verdicts.add(
+                        Boolean.TRUE.equals(e.ready())
+                                ? new StageResult.Verdict(id, from, to, null)
+                                : new StageResult.Verdict(
+                                        id,
+                                        from,
+                                        back,
+                                        reason(
+                                                java.util.Objects.requireNonNull(e.lacks()),
+                                                java.util.Objects.requireNonNull(e.why()))));
+            }
+            return new StageResult(kind, List.of(), verdicts);
+        }
         final List<StageResult.ForIssue> issues = new ArrayList<>();
         for (final Entry entry : java.util.Objects.requireNonNull(file.issues())) {
             final Entry e = repaired(java.util.Objects.requireNonNull(entry));
@@ -499,7 +679,10 @@ public final class HandedResults {
                 entry.sizeWhy(),
                 entry.estimateMinutes(),
                 repaired(entry.toBeChecked()),
-                repaired(entry.findings()));
+                repaired(entry.findings()),
+                entry.ready(),
+                entry.lacks(),
+                entry.why());
     }
 
     private static @Nullable List<String> repaired(final @Nullable List<String> items) {

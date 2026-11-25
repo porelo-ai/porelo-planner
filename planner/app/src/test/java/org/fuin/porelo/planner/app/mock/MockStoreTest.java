@@ -338,6 +338,48 @@ class MockStoreTest {
         assertThat(after.revision().value()).as("the next revision").isEqualTo("mock@2");
     }
 
+    // Harm: the window's tests of a readiness check pass against a mock that sizes the issue,
+    // drops why it went back, keeps that reason twice when the save is sent again, or keeps a
+    // reason for the ready one.
+    @Test
+    void aReadinessCheckMovesTheIssueAloneAndKeepsWhyItIsNotReadyOnce() {
+        final String why = "Not ready: it lacks a plan. None.";
+        final StageResult back =
+                new StageResult(
+                        WorkRule.Result.READINESS,
+                        List.of(),
+                        List.of(
+                                new StageResult.Verdict("B542", "Backlog", "Estimated", why),
+                                new StageResult.Verdict("B543", "Backlog", "Implementing", null)));
+        final Issue before = store.board().issue("B542").orElseThrow();
+        final Issue readyBefore = store.board().issue("B543").orElseThrow();
+
+        final Board after = store.saveResult(back);
+        store.save(after.revision(), moves(Map.of("B542", "Backlog", "B543", "Backlog")));
+        store.saveResult(back);
+
+        assertThat(store.board().issue("B542").orElseThrow())
+                .as("moved back, its size and text as they were")
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.state()).as("state").isEqualTo("Estimated");
+                            assertThat(issue.size()).as("size").isEqualTo(before.size());
+                            assertThat(issue.text()).as("text").isEqualTo(before.text());
+                        });
+        assertThat(store.reasons("B542"))
+                .as("the reason kept once")
+                .containsExactly(new Writes.Reason("Estimated", why));
+        assertThat(store.board().issue("B543").orElseThrow())
+                .as("the ready one moved on, its size and text as they were")
+                .satisfies(
+                        issue -> {
+                            assertThat(issue.state()).as("state").isEqualTo("Implementing");
+                            assertThat(issue.size()).as("size").isEqualTo(readyBefore.size());
+                            assertThat(issue.text()).as("text").isEqualTo(readyBefore.text());
+                        });
+        assertThat(store.reasons("B543")).as("no reason kept for the ready one").isEmpty();
+    }
+
     // Prevents the window's tests from reading a mock issue holding two plans or sizes after an
     // estimate follows an analysis, which the Git store would have replaced.
     @Test

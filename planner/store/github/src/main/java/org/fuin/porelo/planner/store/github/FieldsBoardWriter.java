@@ -733,6 +733,28 @@ public final class FieldsBoardWriter implements BoardWriter {
             final Snapshot current, final StageResult result, final @Nullable StageEntry stage) {
         final Workflow workflow = current.config().workflow();
         final Plan plan = new Plan(current, Against.NONE);
+        for (final StageResult.Verdict verdict : result.verdicts()) {
+            // A readiness check moves the issue alone and keeps why it is not ready.
+            final String id = verdict.id();
+            final ItemView item = issueItem(current, id);
+            final Issue issue =
+                    current.board().issue(id).orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            if (!issue.state().equals(verdict.from())) {
+                throw new StoreException.NotSavable(
+                        id,
+                        "it stands in " + issue.state() + ", not in the state the stage completes");
+            }
+            if (!workflow.states().contains(verdict.to())
+                    || workflow.closed().contains(verdict.to())) {
+                throw new StoreException.NotSavable(
+                        id, "a result moves it to an open state of the workflow only");
+            }
+            plan.state(id, item, verdict.to(), false);
+            final String reason = verdict.reason();
+            if (reason != null) {
+                plan.notReady(id, item, new Writes.Reason(verdict.to(), reason));
+            }
+        }
         for (final StageResult.ForIssue given : result.issues()) {
             final String id = given.id();
             final ItemView item = issueItem(current, id);
@@ -768,8 +790,8 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
         }
         final String token = tokens.token(current.config().forge());
-        if (stage != null && result.issues().size() == 1) {
-            final String id = result.issues().get(0).id();
+        if (stage != null && result.ids().size() == 1) {
+            final String id = result.ids().getFirst();
             plan.stage(id, issueItem(current, id), stage);
         }
         plan.write(token);
@@ -1132,6 +1154,11 @@ public final class FieldsBoardWriter implements BoardWriter {
         /** The reasons to keep as comments, by item, after every other change but the stage. */
         private final Map<String, Writes.Reason> closings = new LinkedHashMap<>();
 
+        /**
+         * Why a readiness check found each item not ready, kept as a comment after the closings.
+         */
+        private final Map<String, Writes.Reason> notReady = new LinkedHashMap<>();
+
         /** The links to change, in their order, after every field value. */
         private final List<Link> links = new ArrayList<>();
 
@@ -1336,7 +1363,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                     && topics.isEmpty()
                     && links.isEmpty()
                     && stage == null
-                    && closings.isEmpty();
+                    && closings.isEmpty()
+                    && notReady.isEmpty();
         }
 
         /** Keeps a reason with an item as a comment; the item is read and checked unchanged. */
@@ -1349,6 +1377,21 @@ public final class FieldsBoardWriter implements BoardWriter {
             items.putIfAbsent(id, item);
             targets.add(id);
             closings.put(id, reason);
+        }
+
+        /**
+         * Keeps why a readiness check found an item not ready as a comment of its own kind; the
+         * item is read and checked unchanged.
+         */
+        void notReady(final String id, final ItemView item, final Writes.Reason reason) {
+            try {
+                ReadinessComment.write(reason);
+            } catch (final IllegalArgumentException e) {
+                throw new StoreException.NotSavable(id, "its reason " + e.getMessage());
+            }
+            items.putIfAbsent(id, item);
+            targets.add(id);
+            notReady.put(id, reason);
         }
 
         private String idOf(final ItemView item) {
@@ -1520,6 +1563,18 @@ public final class FieldsBoardWriter implements BoardWriter {
                             toClose.put(id, reason);
                         }
                     });
+            // Nor why an issue is not ready, kept by an earlier try of the same save.
+            final Map<String, Writes.Reason> toTell = new LinkedHashMap<>();
+            notReady.forEach(
+                    (id, reason) -> {
+                        if (!holds(
+                                token,
+                                id,
+                                body -> ReadinessComment.keeps(body, reason),
+                                "whether its reason stands")) {
+                            toTell.put(id, reason);
+                        }
+                    });
             try {
                 unchanged(token);
                 preparePriorities(token);
@@ -1648,6 +1703,20 @@ public final class FieldsBoardWriter implements BoardWriter {
                             item.repository(),
                             item.number(),
                             ClosingComment.write(closing.getValue()));
+                } catch (final RuntimeException e) {
+                    throw failed(e, item.repository(), written, token);
+                }
+                written.add(item.repository());
+            }
+            for (final Map.Entry<String, Writes.Reason> told : toTell.entrySet()) {
+                final ItemView item = Objects.requireNonNull(items.get(told.getKey()));
+                try {
+                    github.createIssueComment(
+                            token,
+                            current.config().project().owner(),
+                            item.repository(),
+                            item.number(),
+                            ReadinessComment.write(told.getValue()));
                 } catch (final RuntimeException e) {
                     throw failed(e, item.repository(), written, token);
                 }

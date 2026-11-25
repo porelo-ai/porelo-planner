@@ -476,14 +476,20 @@ class ProjectFileTest {
                 .as("the workflow the planner carries, at a head without stories/workflow.yml")
                 .startsWith("New", "Accepted")
                 .endsWith("Finished", "Rejected")
-                .hasSize(14);
+                .hasSize(15)
+                .contains("Preparing for Backlog");
         assertThat(again.current().work().faults())
                 .as("the work rules the planner carries, at a head without stories/work.yml")
                 .isEmpty();
         assertThat(again.current().work().rules())
                 .as("the working states the carried rules start")
                 .containsKeys(
-                        "In analysis", "Under estimation", "Implementing", "Reading", "Reworking");
+                        "In analysis",
+                        "Under estimation",
+                        "Preparing for Backlog",
+                        "Implementing",
+                        "Reading",
+                        "Reworking");
 
         remote.commit = "c4";
         remote.files.put("porelo-project@c4:project.yml", "project: [");

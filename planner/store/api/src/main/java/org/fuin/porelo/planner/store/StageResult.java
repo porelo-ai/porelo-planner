@@ -8,12 +8,14 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What a stage hands back for its issues, which the store saves with each issue's new state in one
- * save, so no task writes the store's format itself.
+ * save, so no task writes the store's format itself: an analysis or an estimate writes each issue's
+ * result, a readiness check only moves each issue and keeps why one is not ready.
  *
  * @param kind what the stage hands back
- * @param issues each issue's result, one per issue
+ * @param issues each issue's result, one per issue; none for a readiness check
+ * @param verdicts each issue's verdict, one per issue, for a readiness check alone
  */
-public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
+public record StageResult(WorkRule.Result kind, List<ForIssue> issues, List<Verdict> verdicts) {
 
     /** The sizes a stage may give; a dash means none was given and is no result. */
     public static final List<String> SIZES = List.of("XS", "S", "M", "L", "XL");
@@ -28,13 +30,22 @@ public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
     private static final Pattern OPENING = Pattern.compile("```[A-Za-z0-9_+.-]*");
 
     /**
-     * Copies the issues and refuses none, one issue twice, and an estimate without minutes.
+     * Copies the issues and the verdicts and refuses none, one issue twice, an estimate without
+     * minutes, a readiness check with a result of an issue and any other kind with a verdict.
      *
      * @throws IllegalArgumentException when the result is not one the store can save
      */
     public StageResult {
         issues = List.copyOf(issues);
-        if (issues.isEmpty()) {
+        verdicts = List.copyOf(verdicts);
+        final boolean readiness = kind == WorkRule.Result.READINESS;
+        if (readiness ? !issues.isEmpty() : !verdicts.isEmpty()) {
+            throw new IllegalArgumentException(
+                    readiness
+                            ? "A readiness check gives verdicts, no issue's result"
+                            : "Only a readiness check gives verdicts");
+        }
+        if (issues.isEmpty() && verdicts.isEmpty()) {
             throw new IllegalArgumentException("The result names no issue");
         }
         final Set<String> ids = new HashSet<>();
@@ -45,6 +56,62 @@ public record StageResult(WorkRule.Result kind, List<ForIssue> issues) {
             if (kind == WorkRule.Result.ESTIMATE && issue.estimateMinutes() == null) {
                 throw new IllegalArgumentException(
                         "The estimate of " + issue.id() + " names no minutes");
+            }
+        }
+        for (final Verdict verdict : verdicts) {
+            if (!ids.add(verdict.id())) {
+                throw new IllegalArgumentException("The result names " + verdict.id() + " twice");
+            }
+        }
+    }
+
+    /**
+     * A result of an analysis or an estimate, which gives no verdict.
+     *
+     * @param kind what the stage hands back
+     * @param issues each issue's result, one per issue
+     */
+    public StageResult(final WorkRule.Result kind, final List<ForIssue> issues) {
+        this(kind, issues, List.of());
+    }
+
+    /**
+     * Answers every issue the result names, in its order.
+     *
+     * @return the issues' ids
+     */
+    public List<String> ids() {
+        return java.util.stream.Stream.concat(
+                        issues.stream().map(ForIssue::id), verdicts.stream().map(Verdict::id))
+                .toList();
+    }
+
+    /**
+     * One issue's verdict of a readiness check: the state it moves to, and why when it is not
+     * ready.
+     *
+     * @param id the issue's id
+     * @param from the working state the check completes, in which the issue must still stand
+     * @param to the open state it moves to: the rule's done state when ready, else the state it
+     *     came from
+     * @param reason why it is not ready, kept with the issue; null when it is ready
+     */
+    public record Verdict(String id, String from, String to, @Nullable String reason) {
+
+        /**
+         * Checks the id, the states and the reason, which is held to what a kept reason may be.
+         *
+         * @throws IllegalArgumentException for a value the store cannot write as it stands
+         */
+        public Verdict {
+            Ids.issue(id);
+            line(from, "Its from state");
+            line(to, "Its to state");
+            if (reason != null) {
+                final String refused = Writes.Reason.refusal(reason);
+                if (refused != null) {
+                    throw new IllegalArgumentException(id + ": " + refused);
+                }
             }
         }
     }

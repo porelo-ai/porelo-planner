@@ -1,0 +1,2 @@
+title: A readiness check before the backlog moves each estimated issue that names a plan, a size and its blockers to Backlog, and sends one that lacks any back to Estimated with one line why.
+type: added

@@ -2819,6 +2819,73 @@ class FieldsBoardWriterTest {
     }
 
     @Test
+    void aReadinessCheckMovesEachIssueAloneAndKeepsWhyOneIsNotReadyInOneCommentOnce() {
+        // Harm: a readiness check writes a size or a body it never gave, loses why an issue went
+        // back, or adds the reason again each time the same save is sent.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final ItemView two = item("PL2", "example-project", 2, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one, two);
+        final StageResult checked =
+                new StageResult(
+                        WorkRule.Result.READINESS,
+                        List.of(),
+                        List.of(
+                                new StageResult.Verdict("PL1", "Analysis", "Backlog", null),
+                                new StageResult.Verdict(
+                                        "PL2",
+                                        "Analysis",
+                                        "Idea",
+                                        "Not ready: it lacks a plan. None.")));
+
+        for (int again = 0; again < 2; again++) {
+            github.writer().saveResult(snapshot(one, two), checked, null);
+        }
+
+        assertThat(github.mutations)
+                .as("the states written, nothing else")
+                .flatExtracting(values -> values)
+                .extracting(FieldValue::fieldId)
+                .containsOnly("F_Status");
+        assertThat(github.mutations)
+                .as("each issue's own state: the ready one in the backlog, the other back")
+                .flatExtracting(values -> values)
+                .containsOnly(
+                        FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"),
+                        FieldValue.option("PVTI_PL2", "F_Status", "O_Idea"));
+        assertThat(github.bodies).as("no body written").isEmpty();
+        assertThat(github.commented.get(1)).as("the ready issue's comments").isNull();
+        assertThat(github.commented.get(2))
+                .as("the reason, written once, under a marker of its own")
+                .singleElement()
+                .asString()
+                .matches(
+                        "<!-- porelo:readiness Idea [0-9a-f]{12} -->\n"
+                                + "Idea: ` Not ready: it lacks a plan. None. `");
+    }
+
+    @Test
+    void aReadinessCheckOfOneIssueWritesItsStageCommentAndItsState() {
+        // Harm: a readiness check of one issue loses the stage its task spent, so the issue's
+        // record shows no check, or its minutes counted in sums that count an agent's work only.
+        final ItemView one = item("PL1", "example-project", 1, true, BODY, state("Analysis"));
+        final GitHub github = new GitHub().holding(one);
+        final StageResult checked =
+                new StageResult(
+                        WorkRule.Result.READINESS,
+                        List.of(),
+                        List.of(new StageResult.Verdict("PL1", "Analysis", "Backlog", null)));
+
+        github.writer().saveResult(snapshot(one), checked, stage("task-1:4", "check"));
+
+        assertThat(github.comments).as("the stage comment written").hasSize(1);
+        assertThat(github.mutations)
+                .as("the state written, no figures")
+                .flatExtracting(values -> values)
+                .containsExactly(FieldValue.option("PVTI_PL1", "F_Status", "O_Backlog"));
+        assertThat(github.bodies).as("no body written").isEmpty();
+    }
+
+    @Test
     void aStageOfAKindNotMeasuredIsCommentedButAddsNoFigures() {
         // Harm: a pause's minutes and tokens added to the issue's sums, which count an agent's
         // work only.

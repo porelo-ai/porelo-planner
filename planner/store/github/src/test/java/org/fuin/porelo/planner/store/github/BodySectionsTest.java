@@ -58,6 +58,29 @@ class BodySectionsTest {
     }
 
     @Test
+    void aFindingIsAddedBelowThoseThatStandAndNeverTwice() {
+        // Harm: why an issue went back lost, a finding that stood overwritten, or the reason added
+        // again each time the same save is sent.
+        final String reason = "Not ready: it lacks a size. Thin.";
+        final String created = BodySections.read(BODY).withFinding(reason).text();
+        assertThat(created)
+                .as("the findings made, every other byte as it was")
+                .isEqualTo(BODY + "\n## Findings\n\n- " + reason + "\n");
+
+        final String appended = BodySections.read(ANALYZED).withFinding(reason).text();
+        assertThat(appended)
+                .as("the reason below the finding that stands")
+                .isEqualTo(ANALYZED + "- " + reason + "\n");
+
+        assertThat(BodySections.read(appended).withFinding(reason).text())
+                .as("sent again, the same body")
+                .isEqualTo(appended);
+        assertThat(BodySections.read(created).withFinding(" " + reason + " ").text())
+                .as("the same finding with spaces around it is the same")
+                .isEqualTo(created);
+    }
+
+    @Test
     void whatMustBeTrueWrittenAsASectionIsReadWhole() {
         // Harm: a text of several paragraphs read back as nothing or cut to its first one.
         final BodySections body =

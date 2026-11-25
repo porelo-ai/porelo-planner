@@ -262,4 +262,58 @@ class ResultTextTest {
                 toBeChecked,
                 List.of("Found one."));
     }
+
+    // Harm: why an issue went back lost, a finding that stood overwritten, the reason added again
+    // each time the same save is sent, or a file with CRLF lines turned into a mixed one.
+    @Test
+    void aVerdictMovesTheHeadAndAddsWhyOnceBelowTheFindingsThatStand() {
+        final StageResult.Verdict back =
+                new StageResult.Verdict(ID, "Backlog", "Idea", "Not ready: it lacks a size. Thin.");
+        final String once = ResultText.verdict(ISSUE, back, WORKFLOW, java.util.Set.of());
+
+        assertThat(once)
+                .as("the state moved and the reason added as the first finding at the end")
+                .isEqualTo(
+                        ISSUE.replace("\"state\": \"Backlog\"", "\"state\": \"Idea\"")
+                                + "\n## Findings\n\n- Not ready: it lacks a size. Thin.\n");
+        assertThat(ResultText.verdict(once, back, WORKFLOW, java.util.Set.of()))
+                .as("sent again, the same file")
+                .isEqualTo(once);
+
+        final String found = ISSUE + "\n## Findings\n\n- An earlier one.\n";
+        assertThat(ResultText.verdict(found, back, WORKFLOW, java.util.Set.of()))
+                .as("the standing finding kept, the reason below it")
+                .endsWith(
+                        "## Findings\n\n- An earlier one.\n- Not ready: it lacks a size. Thin.\n");
+
+        final String crlf = ISSUE.replace("\n", "\r\n");
+        assertThat(ResultText.verdict(crlf, back, WORKFLOW, java.util.Set.of()))
+                .as("CRLF kept throughout")
+                .isEqualTo(once.replace("\n", "\r\n"));
+
+        final StageResult.Verdict ready = new StageResult.Verdict(ID, "Backlog", "Review", null);
+        assertThat(ResultText.verdict(ISSUE, ready, WORKFLOW, java.util.Set.of()))
+                .as("a ready issue's file changes in its state alone")
+                .isEqualTo(ISSUE.replace("\"state\": \"Backlog\"", "\"state\": \"Review\""));
+    }
+
+    // Harm: a finding written straight under an empty Findings heading, without the blank line
+    // every other section's first line has, so the file differs from one written fresh.
+    @Test
+    void aVerdictUnderAnEmptyFindingsHeadingLeavesTheBlankLineBelowIt() {
+        final StageResult.Verdict back =
+                new StageResult.Verdict(ID, "Backlog", "Idea", "Not ready: it lacks a size. Thin.");
+        final String fresh = ResultText.verdict(ISSUE, back, WORKFLOW, java.util.Set.of());
+
+        assertThat(
+                        ResultText.verdict(
+                                ISSUE + "\n## Findings\n", back, WORKFLOW, java.util.Set.of()))
+                .as("a heading with nothing below it")
+                .isEqualTo(fresh);
+        assertThat(
+                        ResultText.verdict(
+                                ISSUE + "\n## Findings\n\n", back, WORKFLOW, java.util.Set.of()))
+                .as("a heading with only a blank line below it")
+                .isEqualTo(fresh);
+    }
 }

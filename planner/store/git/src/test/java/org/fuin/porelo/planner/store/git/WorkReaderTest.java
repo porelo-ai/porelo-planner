@@ -90,11 +90,40 @@ class WorkReaderTest {
         assertThat(work.faults())
                 .as("its fault named")
                 .containsExactly(
-                        "stories/work.yml: Under estimation: result 'GUESS' is neither ANALYSIS"
-                                + " nor ESTIMATE");
+                        "stories/work.yml: Under estimation: result 'GUESS' is none of ANALYSIS,"
+                                + " ESTIMATE and READINESS");
         assertThat(WorkReader.read(SOUND).rules().get("Implementing").result())
                 .as("a rule without result pushes its work")
                 .isNull();
+    }
+
+    // Prevents a readiness check from being dropped as an unknown result, or one in other case
+    // from being read as it.
+    @Test
+    void aReadinessResultIsReadAndOneInLowerCaseDropsItsRule() {
+        final String rule =
+                """
+                work:
+                  Preparing for Backlog:
+                    from: [Estimated]
+                    done: Backlog
+                    per: repository
+                    modes: [UNATTENDED]
+                    order: "Check {issues}."
+                    models: {claude-code: claude-opus-5-5}
+                    result: %s
+                """;
+
+        assertThat(
+                        WorkReader.read(rule.formatted("READINESS"))
+                                .rules()
+                                .get("Preparing for Backlog"))
+                .as("the readiness check")
+                .extracting(WorkRule::result)
+                .isEqualTo(WorkRule.Result.READINESS);
+        assertThat(WorkReader.read(rule.formatted("readiness")).rules())
+                .as("a lower-case kind is none")
+                .isEmpty();
     }
 
     @Test

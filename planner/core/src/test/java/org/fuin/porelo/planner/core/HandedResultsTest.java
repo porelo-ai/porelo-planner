@@ -1011,8 +1011,15 @@ class HandedResultsTest {
                     throw new StoreException.NotSavable(issue.id(), "moved");
                 }
             }
+            for (final StageResult.Verdict verdict : result.verdicts()) {
+                if (!state(verdict.id()).equals(verdict.from())) {
+                    throw new StoreException.NotSavable(verdict.id(), "moved");
+                }
+            }
             results.add(result);
             result.issues().forEach(issue -> change(issue.id(), i -> inState(i, issue.to())));
+            result.verdicts()
+                    .forEach(verdict -> change(verdict.id(), i -> inState(i, verdict.to())));
             return current;
         }
 

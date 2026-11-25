@@ -483,9 +483,25 @@ public final class WorkRequests {
 
     private static HandedResults.Entry resultEntry(
             final JsonNode item, final String at, final List<String> shape) {
-        if (!Set.of("id", "plan", "size", "sizeWhy", "estimateMinutes", "toBeChecked", "findings")
+        if (!Set.of(
+                        "id",
+                        "plan",
+                        "size",
+                        "sizeWhy",
+                        "estimateMinutes",
+                        "toBeChecked",
+                        "findings",
+                        "ready",
+                        "lacks",
+                        "why")
                 .containsAll(item.propertyNames())) {
             shape.add(at + ": It holds a member the result format does not name.");
+        }
+        final JsonNode ready = item.get("ready");
+        if (ready != null && !ready.isBoolean()) {
+            // Said once here: the entry is taken as not ready, so the check names no second fault
+            // of ready; the shape fault refuses the result.
+            shape.add(at + ".ready: It must be true or false.");
         }
         final JsonNode minutes = item.get("estimateMinutes");
         return new HandedResults.Entry(
@@ -499,7 +515,10 @@ public final class WorkRequests {
                                 ? minutes.asLong()
                                 : 0L,
                 lines(item, "toBeChecked", at, shape),
-                lines(item, "findings", at, shape));
+                lines(item, "findings", at, shape),
+                ready == null ? null : ready.isBoolean() ? ready.asBoolean() : Boolean.FALSE,
+                lines(item, "lacks", at, shape),
+                anyText(item, "why"));
     }
 
     /** A text member as sent, an empty text for any other value, or null when absent. */

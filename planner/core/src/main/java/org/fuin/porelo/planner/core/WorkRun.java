@@ -2544,8 +2544,9 @@ public final class WorkRun implements RefusedEventResave {
 
     /**
      * Takes the result a stage's task handed in for its offer, once per offer: a sound result is
-     * saved through the store, which moves its issues to the rule's done state, and the offer's
-     * outcome is recorded, so a repeated hand-in answers the first outcome and writes nothing.
+     * saved through the store, which moves its issues to the rule's done state, those a readiness
+     * check finds not ready back to the rule's from state, and the offer's outcome is recorded, so
+     * a repeated hand-in answers the first outcome and writes nothing.
      *
      * @param task the task's name, as the offer was bound to it when it started
      * @param offer the offer
@@ -2732,6 +2733,8 @@ public final class WorkRun implements RefusedEventResave {
                         kind,
                         binding.state(),
                         binding.rule().done(),
+                        // A readiness check's rule names its one from state, checked by WorkRules.
+                        binding.rule().from().getFirst(),
                         java.util.Objects.requireNonNull(handIn.result()));
         final String save = UUID.randomUUID().toString();
         final HandedResults.@Nullable Handed before = snapshot.results().get(offer);

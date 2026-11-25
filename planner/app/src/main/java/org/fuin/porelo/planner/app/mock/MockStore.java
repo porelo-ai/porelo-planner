@@ -447,7 +447,8 @@ public final class MockStore implements PlanningStore {
 
     /**
      * Saves a stage's result into the board in memory: each issue's state, size and a text built
-     * from the result, refused as a whole when an issue no longer stands in the state the stage
+     * from the result, or for a readiness check each issue's state and why one is not ready kept as
+     * its reason; refused as a whole when an issue no longer stands in the state the stage
      * completes or would move to a closed state.
      */
     @Override
@@ -455,6 +456,25 @@ public final class MockStore implements PlanningStore {
         final Board board = current;
         final Map<String, StageResult.ForIssue> given = new LinkedHashMap<>();
         final Map<String, String> states = new LinkedHashMap<>();
+        // A readiness check moves its issues alone and keeps why one is not ready.
+        final Map<String, Writes.Reason> notReady = new LinkedHashMap<>();
+        for (final StageResult.Verdict verdict : result.verdicts()) {
+            final Issue known = issueOf(board, verdict.id());
+            if (!known.state().equals(verdict.from())) {
+                throw new StoreException.NotSavable(
+                        verdict.id(),
+                        "It stands in " + known.state() + ", not in " + verdict.from());
+            }
+            if (!board.workflow().states().contains(verdict.to())
+                    || board.workflow().closed().contains(verdict.to())) {
+                throw new StoreException.NotSavable(verdict.id(), "It moves to no open state");
+            }
+            states.put(verdict.id(), verdict.to());
+            final String reason = verdict.reason();
+            if (reason != null) {
+                notReady.put(verdict.id(), new Writes.Reason(verdict.to(), reason));
+            }
+        }
         for (final StageResult.ForIssue issue : result.issues()) {
             final Issue known = issueOf(board, issue.id());
             if (!known.state().equals(issue.from())) {
@@ -503,6 +523,7 @@ public final class MockStore implements PlanningStore {
                         board.repositories(),
                         board.faults());
         current = saved(sized, new Writes(states, Map.of()));
+        keep(notReady);
         return current;
     }
 

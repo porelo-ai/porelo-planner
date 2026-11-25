@@ -278,6 +278,7 @@ public final class ProjectFile {
               - {name: Analyzed, closed: false}
               - {name: Under estimation, closed: false}
               - {name: Estimated, closed: false}
+              - {name: Preparing for Backlog, closed: false}
               - {name: Backlog, closed: false}
               - {name: Implementing, closed: false, measured: true}
               - {name: Reading, closed: false, measured: true}
@@ -290,7 +291,7 @@ public final class ProjectFile {
               - {name: Ideas, states: [New, Accepted]}
               - {name: Analysis, states: [In analysis, Analyzed]}
               - {name: Estimation, states: [Under estimation, Estimated]}
-              - {name: Backlog, states: [Backlog]}
+              - {name: Backlog, states: [Preparing for Backlog, Backlog]}
               - {name: Build, states: [Implementing, Reading, Reworking, Review, Rework]}
               - {name: Done, states: [Finished, Rejected]}
             """;
@@ -321,6 +322,16 @@ public final class ProjectFile {
                 order: >-
                   Estimate the issue of {story} given below: read its plan and the code it names, give its size (XS to XL) against
                   the measured velocity, name what makes it uncertain; then end with your outcome.
+                models: {claude: claude-opus-5-5, codex: gpt-6.1-sol}
+              Preparing for Backlog:
+                from: [Estimated]
+                done: Backlog
+                per: repository
+                modes: [UNATTENDED, AGENT]
+                result: READINESS
+                order: >-
+                  Check whether each issue of {story} given below is ready for the backlog: whether it names a plan, a size
+                  and its blockers, or that it has none; then end with your outcome.
                 models: {claude: claude-opus-5-5, codex: gpt-6.1-sol}
               Implementing:
                 from: [Backlog, Rework]

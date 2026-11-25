@@ -500,6 +500,7 @@ public final class GitStore implements PlanningStore {
     public Board saveResult(final StageResult result) {
         final Map<String, String> moves = new LinkedHashMap<>();
         result.issues().forEach(issue -> moves.put(issue.id(), issue.to()));
+        result.verdicts().forEach(verdict -> moves.put(verdict.id(), verdict.to()));
         final Writes writes = new Writes(moves, Map.of());
         final String own = repositories.get(0).name();
         for (int attempt = 1; ; attempt++) {
@@ -632,6 +633,8 @@ public final class GitStore implements PlanningStore {
         final String own = repositories.get(0).name();
         final Map<String, Map<String, StageResult.ForIssue>> results =
                 result == null ? Map.of() : results(snapshot, result);
+        final Map<String, Map<String, StageResult.Verdict>> verdicts =
+                result == null ? Map.of() : verdicts(snapshot, result);
         final Map<String, Map<String, String>> issues = byRepository(snapshot, writes);
         final Map<String, String> stories = storyHeads(snapshot, writes);
         final Map<String, Map<String, Worker>> workers = workerHeads(snapshot, writes);
@@ -653,7 +656,16 @@ public final class GitStore implements PlanningStore {
         try {
             return commitLocally(
                     snapshot,
-                    new Edits(writes, ideas, story, issues, stories, workers, priorities, results),
+                    new Edits(
+                            writes,
+                            ideas,
+                            story,
+                            issues,
+                            stories,
+                            workers,
+                            priorities,
+                            results,
+                            verdicts),
                     scratch);
         } catch (final GitFailure | UncheckedIOException e) {
             throw new StoreException.Unreadable(own, local(e, scratch));
@@ -792,6 +804,7 @@ public final class GitStore implements PlanningStore {
      * @param workers each changed worker's issue file and worker, by repository
      * @param priorities each changed priority's story file and priority
      * @param results each result's issue file and result, by repository
+     * @param verdicts each readiness verdict's issue file and verdict, by repository
      */
     private record Edits(
             Writes writes,
@@ -801,7 +814,44 @@ public final class GitStore implements PlanningStore {
             Map<String, String> stories,
             Map<String, Map<String, Worker>> workers,
             Map<String, String> priorities,
-            Map<String, Map<String, StageResult.ForIssue>> results) {}
+            Map<String, Map<String, StageResult.ForIssue>> results,
+            Map<String, Map<String, StageResult.Verdict>> verdicts) {}
+
+    /**
+     * Each readiness verdict's issue file and verdict, by repository; every issue checked on the
+     * board, in the state the check completes and moving to an open state before anything is
+     * written.
+     */
+    private Map<String, Map<String, StageResult.Verdict>> verdicts(
+            final Snapshot snapshot, final StageResult result) {
+        final org.fuin.porelo.planner.store.git.stories.Workflow workflow =
+                project(of(snapshot.parts(), repositories.get(0).name()));
+        final Map<String, Map<String, StageResult.Verdict>> files = new LinkedHashMap<>();
+        for (final StageResult.Verdict verdict : result.verdicts()) {
+            final String id = verdict.id();
+            final Issue issue =
+                    snapshot.board()
+                            .issue(id)
+                            .orElseThrow(() -> new StoreException.NoSuchIssue(id));
+            if (!issue.state().equals(verdict.from())) {
+                throw new StoreException.NotSavable(
+                        id,
+                        "it stands in " + issue.state() + ", not in the state the stage completes");
+            }
+            if (!workflow.states().contains(verdict.to()) || workflow.closed(verdict.to())) {
+                throw new StoreException.NotSavable(
+                        id, "a result moves it to an open state of the workflow only");
+            }
+            final String path = of(snapshot.parts(), issue.repository()).paths().get(id);
+            if (path == null) {
+                throw new StoreException.NotSavable(
+                        id, "its file is gone and only its index row is left");
+            }
+            files.computeIfAbsent(issue.repository(), key -> new LinkedHashMap<>())
+                    .put(path, verdict);
+        }
+        return files;
+    }
 
     /**
      * Each result's issue file and result, by repository; every issue checked on the board, in the
@@ -979,19 +1029,27 @@ public final class GitStore implements PlanningStore {
             final Path root = scratch.resolve(name);
             final Map<String, StageResult.ForIssue> results =
                     edits.results().getOrDefault(name, Map.of());
+            final Map<String, StageResult.Verdict> verdicts =
+                    edits.verdicts().getOrDefault(name, Map.of());
             final Set<String> numbers =
-                    results.isEmpty() ? Set.of() : indexed(root, name, workflow);
+                    results.isEmpty() && verdicts.isEmpty()
+                            ? Set.of()
+                            : indexed(root, name, workflow);
             for (final Map.Entry<String, String> head : moved.entrySet()) {
                 final StageResult.ForIssue result = results.get(head.getKey());
+                final StageResult.Verdict verdict = verdicts.get(head.getKey());
                 edit(
                         snapshot,
                         name,
                         root,
                         head.getKey(),
                         text ->
-                                result == null
-                                        ? HeadEdit.issueState(text, head.getValue())
-                                        : ResultText.apply(text, result, workflow, numbers));
+                                result != null
+                                        ? ResultText.apply(text, result, workflow, numbers)
+                                        : verdict != null
+                                                ? ResultText.verdict(
+                                                        text, verdict, workflow, numbers)
+                                                : HeadEdit.issueState(text, head.getValue()));
             }
             final List<String> heads = written(moved.keySet(), added, name);
             heads.addAll(workers.getOrDefault(name, Map.of()).keySet());
@@ -1131,6 +1189,7 @@ public final class GitStore implements PlanningStore {
                 }
                 workersReadBack(snapshot, name, part, workers.getOrDefault(name, Map.of()));
                 resultsReadBack(name, part, edits.results().getOrDefault(name, Map.of()));
+                verdictsReadBack(name, part, edits.verdicts().getOrDefault(name, Map.of()));
                 after.put(name, part);
                 made.put(name, commit);
             } catch (final GitFailure e) {
@@ -1356,6 +1415,22 @@ public final class GitStore implements PlanningStore {
                 throw new StoreException.Unreadable(
                         name,
                         "the result of " + result.id() + " does not read back from its commit");
+            }
+        }
+    }
+
+    /** A verdict is pushed only once its commit reads each issue back in its new state. */
+    private static void verdictsReadBack(
+            final String name, final Part part, final Map<String, StageResult.Verdict> verdicts) {
+        for (final StageResult.Verdict verdict : verdicts.values()) {
+            if (part.issues().stream()
+                    .noneMatch(
+                            issue ->
+                                    issue.id().equals(verdict.id())
+                                            && issue.state().equals(verdict.to()))) {
+                throw new StoreException.Unreadable(
+                        name,
+                        "the result of " + verdict.id() + " does not read back from its commit");
             }
         }
     }

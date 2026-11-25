@@ -95,6 +95,15 @@ public final class WorkRules {
         if (rule.result() != null && (rule.then() != null || rule.blocked() != null)) {
             faults.add(at + "a rule with a result names no then and no blocked");
         }
+        // An issue not ready goes back where it came from, so there is one place, open and idle.
+        if (rule.result() == WorkRule.Result.READINESS) {
+            if (rule.from().size() != 1) {
+                faults.add(at + "a readiness check names exactly one from state");
+            } else if (workflow.closed().contains(rule.from().getFirst())
+                    || rule.from().getFirst().equals(state)) {
+                faults.add(at + "a readiness check's from state is open and no working state");
+            }
+        }
         return faults;
     }
 
@@ -108,6 +117,10 @@ public final class WorkRules {
         final List<String> faults = new ArrayList<>();
         if (sound.containsKey(rule.done())) {
             faults.add(at + "done '" + rule.done() + "' is a working state");
+        }
+        if (rule.result() == WorkRule.Result.READINESS
+                && sound.containsKey(rule.from().getFirst())) {
+            faults.add(at + "from '" + rule.from().getFirst() + "' is a working state");
         }
         working(work, sound, at, "then", rule.then(), faults);
         working(work, sound, at, "blocked", rule.blocked(), faults);

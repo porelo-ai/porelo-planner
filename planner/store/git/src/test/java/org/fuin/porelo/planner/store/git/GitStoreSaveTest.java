@@ -1968,6 +1968,47 @@ class GitStoreSaveTest {
     }
 
     @Test
+    void aReadinessCheckMovesEachIssueAndKeepsWhyOneIsNotReadyInItsFindingsOnly() throws Exception {
+        // Harm: a readiness check pushes a size or rewrites a body it never gave, or loses why an
+        // issue went back, in a save nobody reviews.
+        writeRich();
+        final GitStore store = store();
+        store.board();
+        final String why = "Not ready: it lacks a size. Thin.";
+
+        final Board saved =
+                store.saveResult(
+                        new StageResult(
+                                WorkRule.Result.READINESS,
+                                List.of(),
+                                List.of(
+                                        new StageResult.Verdict("AB01", "Backlog", "New", why),
+                                        new StageResult.Verdict(
+                                                "AB02", "Backlog", "Review", null))));
+
+        assertThat(read(OWN, "issues/AB02-Kept.md"))
+                .as("the ready issue's head moved, no finding written")
+                .isEqualTo(issue("AB02", "Review"));
+        assertThat(saved.issue("AB02").orElseThrow().state())
+                .as("the ready issue on the board after the save")
+                .isEqualTo("Review");
+        assertThat(read(OWN, "issues/AB01-Own.md"))
+                .as("the head's state and one finding, the rest as it was")
+                .isEqualTo(
+                        issue("AB01", "New").replace("\n**What must be true.** Something.\n", "")
+                                + RICH_BODY
+                                + "\n## Findings\n\n- "
+                                + why
+                                + "\n");
+        assertThat(saved.issue("AB01").orElseThrow().state())
+                .as("the board after the save")
+                .isEqualTo("New");
+        assertThat(indexFaults())
+                .as("what is pushed is what the repositories' index check accepts")
+                .isEmpty();
+    }
+
+    @Test
     void anEstimateWritesItsMinutesRightAfterTheSizeLine() throws Exception {
         // Prevents an estimate from being lost while the issue moves on as if it had one.
         writeRich();

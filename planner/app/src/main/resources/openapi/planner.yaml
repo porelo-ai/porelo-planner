@@ -1687,8 +1687,8 @@ paths:
       operationId: handStageResult
       summary: Hand in the result a stage's task wrote
       description: >-
-        Takes the result file an analysis or estimation task wrote, which the window hands in unchanged with the
-        task's offer while the task is at work, before its ENDED; or, when the task left no readable file, one line
+        Takes the result file an analysis, estimation or readiness task wrote, which the window hands in unchanged
+        with the task's offer while the task is at work, before its ENDED; or, when the task left no readable file, one line
         why it is missing. Only a started offer of the project's run, bound to this task, whose rule hands back a
         result is taken; an unknown, void or foreign offer is refused as TaskNotAnswered, and an offer whose task
         hands back no result (a reader's, or one of work that pushes) or is not at work as ResultRefused, both
@@ -1696,7 +1696,9 @@ paths:
         names exactly the offer's issues, each once, every member follows the result format, and no text holds a
         control or direction character but a newline in a plan. Each issue must still belong to the offer, stand in
         the state the stage works in and be worked by an agent. A sound result is saved through the store in one save
-        on the store as it stands, each issue moving from that state to the rule's done state; a result refused, or
+        on the store as it stands, each issue moving from that state to the rule's done state, and for a readiness
+        check each issue not ready back to the rule's one from state instead, with why kept beside it; a result
+        refused, or
         one missing, saves nothing and its issues stay where they stand, under Needs you once the task ended. One
         offer has one outcome: the first hand-in's - saved, missing, or the refusal with its faults - is recorded,
         and a second hand-in of the same offer answers it again and writes nothing, whatever it holds; a save that
@@ -4955,7 +4957,7 @@ components:
           pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
           description: >-
             The plain name of the file the task hands back, without a directory: idea.json for a DISCUSSION,
-            analysis.json or estimate.json for a stage that hands back its result.
+            analysis.json, estimate.json or readiness.json for a stage that hands back its result.
         given:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           type: array
@@ -5235,9 +5237,11 @@ components:
             One line why the task left no result: no file, one too large or one unreadable. Length in code points.
     StageResultFile:
       description: >-
-        The result format porelo-stage-result-1, as the task wrote it to analysis.json or estimate.json, within a
-        hand-in of at most 1052672 bytes including its envelope: one entry per issue the order named. ANALYSIS needs plan, size and sizeWhy and takes no
-        estimateMinutes; ESTIMATE needs size, sizeWhy and estimateMinutes, and plan corrects the plan. No text holds a
+        The result format porelo-stage-result-1, as the task wrote it to analysis.json, estimate.json or readiness.json,
+        within a hand-in of at most 1052672 bytes including its envelope: one entry per issue the order named. ANALYSIS
+        needs plan, size and sizeWhy and takes no estimateMinutes; ESTIMATE needs size, sizeWhy and estimateMinutes, and
+        plan corrects the plan; neither takes ready, lacks or why. READINESS needs ready and takes nothing else for a
+        ready issue, and lacks and why for an issue not ready, never a member of the other kinds. No text holds a
         control or direction character, but a plan its newlines; lengths are in code points. Unknown members are
         refused, so a later format changes format.
       type: object
@@ -5249,16 +5253,18 @@ components:
           const: porelo-stage-result-1
         kind:
           type: string
-          enum: [ANALYSIS, ESTIMATE]
+          enum: [ANALYSIS, ESTIMATE, READINESS]
         issues:
           type: array
           minItems: 1
           items:
             $ref: '#/components/schemas/StageResultIssue'
     StageResultIssue:
+      description: >-
+        One issue's entry. size and sizeWhy are required of ANALYSIS and ESTIMATE, ready of READINESS.
       type: object
       additionalProperties: false
-      required: [id, size, sizeWhy]
+      required: [id]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
@@ -5292,10 +5298,28 @@ components:
             type: string
             minLength: 1
             maxLength: 500
+        ready:
+          type: boolean
+          description: Whether the issue names a plan, a size and its blockers, or that it has none.
+        lacks:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          description: What an issue not ready lacks.
+          items:
+            type: string
+            enum: [PLAN, SIZE, BLOCKERS]
+        why:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: One line why the issue is not ready, kept beside it.
     StageResultReply:
       description: >-
-        The offer's outcome - SAVED, its issues moved to the rule's done state, or MISSING, its issues left where they
-        stand - and the offer's issues as the board shows them now.
+        The offer's outcome - SAVED, its issues moved to the rule's done state, those a readiness check found not ready
+        back to the rule's from state, or MISSING, its issues left where they stand - and the offer's issues as the
+        board shows them now.
       type: object
       required: [outcome, revision, issues]
       properties:

@@ -119,6 +119,20 @@ void main() {
     }
   });
 
+  // Harm: a readiness check cannot start because the window refuses its result file, or a stage writes a file the
+  // planner never reads.
+  test('a stage hands back each of the planner\'s three result files and no other', () {
+    Map<String, dynamic> stage(String result) => servedFollowUp(1, role: 'MAIN')
+      ..['result'] = result
+      ..['given'] = [
+        {'name': 'PR1.md', 'text': '# PR1\n'},
+      ];
+    for (final result in ['analysis.json', 'estimate.json', 'readiness.json']) {
+      expect(PlanningTaskOrder.from(stage(result)).result, result, reason: result);
+    }
+    expect(() => PlanningTaskOrder.from(stage('other.json')), throwsFormatException, reason: 'other.json');
+  });
+
   // Harm: a stage over a tracker's issue cannot start, or Porelo mounts a file whose name holds a '#'.
   test('a tracker issue\'s given file is named with a dash in place of the hash', () {
     Map<String, dynamic> stage(String name) => servedFollowUp(1, role: 'MAIN')

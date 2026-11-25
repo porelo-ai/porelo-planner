@@ -151,6 +151,62 @@ class WorkRulesTest {
                 .doesNotContainKeys("Implementing", "Reading");
     }
 
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> readinessFrom() {
+        return java.util.stream.Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of(
+                        List.of("Backlog", "Finished"),
+                        "stories/work.yml: Rework: a readiness check names exactly one from state"),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        List.of("Finished"),
+                        "stories/work.yml: Rework: a readiness check's from state is open and no"
+                                + " working state"),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        List.of("Rework"),
+                        "stories/work.yml: Rework: a readiness check's from state is open and no"
+                                + " working state"),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        List.of("Implementing"),
+                        "stories/work.yml: Rework: from 'Implementing' is a working state"));
+    }
+
+    // Prevents an issue found not ready sent back to a state it never came from, to a closed one,
+    // or to one where an agent would start on it again at once.
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("readinessFrom")
+    void aReadinessCheckWithoutOneOpenIdleFromStateIsNamedAndDropped(
+            final List<String> from, final String fault) {
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Rework", readiness(from));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.faults()).as("the fault named").contains(fault);
+        assertThat(checked.rules()).as("the check dropped").doesNotContainKey("Rework");
+    }
+
+    // Prevents a sound readiness check refused, so no issue reaches the backlog checked.
+    @Test
+    void aReadinessCheckFromOneOpenIdleStateIsKept() {
+        final Map<String, WorkRule> rules = sound();
+        rules.put("Rework", readiness(List.of("Backlog")));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.faults()).as("no fault").isEmpty();
+        assertThat(checked.rules()).as("the check kept").containsKey("Rework");
+    }
+
+    /** A readiness check that sends an issue not ready back to its one from state. */
+    private static WorkRule readiness(final List<String> from) {
+        return new WorkRule(
+                from,
+                "Review",
+                null,
+                null,
+                WorkRule.Per.REPOSITORY,
+                List.of("UNATTENDED"),
+                "Check {issues} of {story}.",
+                Map.of("claude-code", "claude-opus-5-5"),
+                Map.of(),
+                WorkRule.Result.READINESS);
+    }
+
     /** The rule handing back an analysis instead of pushing. */
     private static WorkRule resulting(final WorkRule rule) {
         return new WorkRule(

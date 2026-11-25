@@ -1712,7 +1712,8 @@ public class BoardController {
 
     /**
      * Takes the result a stage's task wrote, or why it left none, once per offer: a sound result is
-     * saved and moves its issues to the rule's done state.
+     * saved and moves its issues to the rule's done state, those a readiness check found not ready
+     * back to the rule's from state.
      *
      * @param project the project's name
      * @param task the task's name

@@ -816,6 +816,24 @@ public final class BodySections {
         return body;
     }
 
+    /**
+     * Adds one finding under the findings, after those that stand; one that stands already as a
+     * bullet is not added twice, so a save sent again leaves the body as it is.
+     *
+     * @param finding the finding, one line
+     * @return the body with the finding
+     * @throws Ambiguous when the body's sections cannot be told apart for certain
+     * @throws IllegalArgumentException as {@link #with(Part, String)} refuses a text
+     */
+    public BodySections withFinding(final String finding) {
+        final String bullet = "- " + finding.strip();
+        final String standing = part(Part.FINDINGS).orElse("");
+        if (standing.lines().anyMatch(line -> line.strip().equals(bullet))) {
+            return this;
+        }
+        return with(Part.FINDINGS, standing.isEmpty() ? bullet : standing + "\n" + bullet);
+    }
+
     private static String bullets(final List<String> items) {
         final StringBuilder text = new StringBuilder();
         items.forEach(item -> text.append("- ").append(item.strip()).append('\n'));

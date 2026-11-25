@@ -567,6 +567,9 @@ public final class LocalDirectoryStore implements PlanningStore {
                         null,
                         plan -> {
                             final Workflow workflow = plan.now.board().workflow();
+                            for (final StageResult.Verdict verdict : result.verdicts()) {
+                                verdict(plan, workflow, verdict);
+                            }
                             for (final StageResult.ForIssue given : result.issues()) {
                                 final String id = given.id();
                                 final LocalItem item = issue(plan.now, id);
@@ -605,8 +608,8 @@ public final class LocalDirectoryStore implements PlanningStore {
                                             "its body cannot hold the result: " + e.getMessage());
                                 }
                             }
-                            if (result.issues().size() == 1) {
-                                final String id = result.issues().getFirst().id();
+                            if (result.ids().size() == 1) {
+                                final String id = result.ids().getFirst();
                                 final Optional<StageEntry> stage = metrics.stage(id, result);
                                 if (stage.isPresent()) {
                                     staged(plan.edit(issue(plan.now, id)), id, stage.get());
@@ -615,6 +618,37 @@ public final class LocalDirectoryStore implements PlanningStore {
                             return "";
                         })
                 .board();
+    }
+
+    /**
+     * Moves an issue as a readiness check found it, and keeps why it is not ready as one finding of
+     * its body, added once; a body whose sections cannot be told apart refuses the save, so no
+     * reason is lost.
+     */
+    private void verdict(
+            final Plan plan, final Workflow workflow, final StageResult.Verdict verdict) {
+        final String id = verdict.id();
+        final LocalItem item = issue(plan.now, id);
+        final Issue issue = plan.now.board().issue(id).orElseThrow();
+        if (!issue.state().equals(verdict.from())) {
+            throw new StoreException.NotSavable(
+                    id, "it stands in " + issue.state() + ", not in the state the stage completes");
+        }
+        if (!workflow.states().contains(verdict.to()) || workflow.closed().contains(verdict.to())) {
+            throw new StoreException.NotSavable(
+                    id, "a result moves it to an open state of the workflow only");
+        }
+        final LocalItem changed = plan.edit(item);
+        changed.choice(FieldNames.STATUS, verdict.to());
+        final String reason = verdict.reason();
+        if (reason != null) {
+            try {
+                changed.body(BodySections.read(item.body()).withFinding(reason).text());
+            } catch (final IllegalArgumentException e) {
+                throw new StoreException.NotSavable(
+                        id, "its body cannot keep why it is not ready: " + e.getMessage());
+            }
+        }
     }
 
     /**

@@ -155,19 +155,7 @@ public final class ResultText {
         final List<String> lines = List.of(text.split("\n", -1));
         final List<String> preamble = new ArrayList<>();
         final List<Section> sections = new ArrayList<>();
-        boolean fenced = false;
-        for (final String line : lines.subList(head, lines.size())) {
-            if (line.startsWith("```")) {
-                fenced = !fenced;
-            }
-            if (!fenced && line.startsWith("## ")) {
-                sections.add(new Section(line, new ArrayList<>(), false));
-            } else if (sections.isEmpty()) {
-                preamble.add(line);
-            } else {
-                sections.getLast().body.add(line);
-            }
-        }
+        split(lines.subList(head, lines.size()), preamble, sections);
         sizeLines(preamble, result);
         final String plan = result.plan();
         if (plan != null) {
@@ -188,7 +176,31 @@ public final class ResultText {
                     QUESTIONS,
                     CHECKED);
         }
-        final List<String> out = new ArrayList<>(lines.subList(0, head));
+        return joined(lines.subList(0, head), preamble, sections);
+    }
+
+    /** The lines below the head split into those before the first section and the sections. */
+    private static void split(
+            final List<String> lines, final List<String> preamble, final List<Section> sections) {
+        boolean fenced = false;
+        for (final String line : lines) {
+            if (line.startsWith("```")) {
+                fenced = !fenced;
+            }
+            if (!fenced && line.startsWith("## ")) {
+                sections.add(new Section(line, new ArrayList<>(), false));
+            } else if (sections.isEmpty()) {
+                preamble.add(line);
+            } else {
+                sections.getLast().body.add(line);
+            }
+        }
+    }
+
+    /** The head, the lines before the first section and the sections joined again. */
+    private static String joined(
+            final List<String> head, final List<String> preamble, final List<Section> sections) {
+        final List<String> out = new ArrayList<>(head);
         out.addAll(preamble);
         for (final Section section : sections) {
             // An added section needs a blank line above it to read as a heading.
@@ -199,6 +211,75 @@ public final class ResultText {
             out.addAll(section.body);
         }
         return String.join("\n", out);
+    }
+
+    /**
+     * Writes a readiness check's verdict into the issue's file: its new state in the head and, for
+     * an issue not ready, why as one finding added below those that stand, never twice, every bare
+     * number of the repository's index written as the link to its row.
+     *
+     * @param text the issue's file
+     * @param verdict the issue's verdict
+     * @param workflow the project's workflow, which the written head is checked against
+     * @param numbers the issue numbers of the repository's index
+     * @return the file with the verdict
+     * @throws IllegalArgumentException when the file mixes line endings, opens with no head the
+     *     state can be written into, or its head would fail the work format's check
+     */
+    static String verdict(
+            final String text,
+            final StageResult.Verdict verdict,
+            final Workflow workflow,
+            final java.util.Set<String> numbers) {
+        final boolean crlf = text.contains("\r\n");
+        final String lf = crlf ? text.replace("\r\n", "\n") : text;
+        if (lf.indexOf('\r') >= 0 || crlf && text.replace("\r\n", "").indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("the file mixes line endings");
+        }
+        String edited = HeadEdit.issueState(lf, verdict.to());
+        final String reason = verdict.reason();
+        if (reason != null) {
+            final int head = IssueHead.lines(edited);
+            if (head == 0) {
+                throw new IllegalArgumentException("the file does not open with its JSON head");
+            }
+            final List<String> lines = List.of(edited.split("\n", -1));
+            final List<String> preamble = new ArrayList<>();
+            final List<Section> sections = new ArrayList<>();
+            split(lines.subList(head, lines.size()), preamble, sections);
+            final String bullet = "- " + linkedAs("- ", reason.strip(), numbers);
+            final int at = index(sections, FINDINGS);
+            if (at < 0) {
+                putAfter(
+                        sections,
+                        FINDINGS,
+                        block(List.of(bullet)),
+                        PLAN,
+                        ACCEPTANCE,
+                        QUESTIONS,
+                        CHECKED);
+            } else if (sections.get(at).body.stream().noneMatch(line -> line.equals(bullet))) {
+                final List<String> body = sections.get(at).body;
+                int end = body.size();
+                while (end > 0 && body.get(end - 1).isBlank()) {
+                    end--;
+                }
+                if (end == 0) {
+                    // An empty heading: the finding goes in as a fresh section's first, with the
+                    // blank line below the heading.
+                    body.clear();
+                    body.addAll(block(List.of(bullet)));
+                } else {
+                    body.add(end, bullet);
+                }
+            }
+            edited = joined(lines.subList(0, head), preamble, sections);
+        }
+        final IssueHead read = IssueHead.read(edited, workflow);
+        if (read == null || !read.state().equals(verdict.to())) {
+            throw new IllegalArgumentException("its head does not read back with the verdict");
+        }
+        return crlf ? edited.replace("\n", "\r\n") : edited;
     }
 
     /** Writes the size line, and the estimate's right after it when the result gives one. */

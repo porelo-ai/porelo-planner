@@ -203,6 +203,73 @@ class GitHubStoreTest {
                 .satisfies(ids -> assertThat(ids.issues()).containsExactly("I_one"));
     }
 
+    @Test
+    void aReadinessVerdictOfOneIssueReadsOnlyThatIssueAndCarriesItsStage() {
+        // Harm: a readiness check's verdicts, which name no issue in the result's issues, read the
+        // whole board or none of it again, or a check of one issue loses its stage's minutes and
+        // tokens.
+        final List<Touched.Ids> rereads = new java.util.ArrayList<>();
+        final List<String> asked = new java.util.ArrayList<>();
+        final List<@org.jspecify.annotations.Nullable StageEntry> written =
+                new java.util.ArrayList<>();
+        final AtomicInteger wholeReads = new AtomicInteger();
+        final Snapshot board = withIssue("PL1", "I_one");
+        final StageEntry entry =
+                new StageEntry(
+                        "task-1:4", "check", "done", "agent", null, null, 2.0, 0.0, Map.of());
+        final GitHubStore store =
+                store(
+                        GitHubStore.Parts.reading(
+                                        new BoardReader() {
+                                            @Override
+                                            public Snapshot read(final ProjectConfig config) {
+                                                wholeReads.incrementAndGet();
+                                                return board;
+                                            }
+
+                                            @Override
+                                            public Snapshot reread(
+                                                    final ProjectConfig config,
+                                                    final Snapshot held,
+                                                    final Touched.Ids touched) {
+                                                rereads.add(touched);
+                                                return held;
+                                            }
+                                        },
+                                        states -> null)
+                                .writer(
+                                        new BoardWriter() {
+                                            @Override
+                                            public void saveResult(
+                                                    final Snapshot current,
+                                                    final StageResult result,
+                                                    final @org.jspecify.annotations.Nullable
+                                                            StageEntry stage) {
+                                                written.add(stage);
+                                            }
+                                        })
+                                .metrics(
+                                        (issue, result) -> {
+                                            asked.add(issue);
+                                            return java.util.Optional.of(entry);
+                                        }));
+        store.refresh();
+
+        store.saveResult(
+                new StageResult(
+                        WorkRule.Result.READINESS,
+                        List.of(),
+                        List.of(new StageResult.Verdict("PL1", "Idea", "Finished", null))));
+
+        assertThat(wholeReads.get()).as("whole reads after the board was read").isEqualTo(1);
+        assertThat(rereads)
+                .as("the verdict's issue read again before the result is written")
+                .first()
+                .satisfies(ids -> assertThat(ids.issues()).containsExactly("I_one"));
+        assertThat(asked).as("the stage's numbers asked for the one issue").containsExactly("PL1");
+        assertThat(written).as("the stage written with the verdict").containsExactly(entry);
+    }
+
     private static Snapshot withIssue(final String id, final String node) {
         final Board board =
                 new Board(

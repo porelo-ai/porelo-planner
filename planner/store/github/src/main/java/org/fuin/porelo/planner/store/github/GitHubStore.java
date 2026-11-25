@@ -1206,20 +1206,16 @@ public final class GitHubStore implements PlanningStore {
                                     // A stage runs for minutes, so its issues are read as they
                                     // stand now before the result is written into them.
                                     final Snapshot now = withResultsIssues(result);
-                                    for (final StageResult.ForIssue issue : result.issues()) {
+                                    for (final String id : result.ids()) {
                                         now.board()
-                                                .issue(issue.id())
+                                                .issue(id)
                                                 .orElseThrow(
-                                                        () ->
-                                                                new StoreException.NoSuchIssue(
-                                                                        issue.id()));
+                                                        () -> new StoreException.NoSuchIssue(id));
                                     }
                                     final StageEntry stage =
-                                            result.issues().size() == 1
+                                            result.ids().size() == 1
                                                     ? parts.metrics()
-                                                            .stage(
-                                                                    result.issues().get(0).id(),
-                                                                    result)
+                                                            .stage(result.ids().getFirst(), result)
                                                             .orElse(null)
                                                     : null;
                                     parts.writer().saveResult(now, result, stage);
@@ -2390,8 +2386,8 @@ public final class GitHubStore implements PlanningStore {
             return readWhole(configNow(), WholeRead.FIRST);
         }
         final Set<String> issues = new LinkedHashSet<>();
-        for (final StageResult.ForIssue issue : result.issues()) {
-            final ItemView item = held.items().get(issue.id());
+        for (final String id : result.ids()) {
+            final ItemView item = held.items().get(id);
             if (item == null) {
                 // An issue the board held does not know may be new on GitHub: read it all.
                 return readWhole(configNow(), WholeRead.RESULT);
