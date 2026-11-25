@@ -959,6 +959,12 @@ public final class WorkRecord implements AutoCloseable {
             if (tree instanceof ObjectNode root && !root.has("followed")) {
                 root.putObject("followed");
             }
+            // An offer followed before its task names were kept names none.
+            for (final JsonNode followed : tree.path("followed")) {
+                if (followed instanceof ObjectNode offer && !offer.has("names")) {
+                    offer.putArray("names");
+                }
+            }
             if (tree instanceof ObjectNode root && !root.has("reports")) {
                 root.putObject("reports");
             }

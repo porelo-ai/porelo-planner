@@ -216,6 +216,56 @@ class ReportTakingTest {
     }
 
     @Test
+    void aFollowedDiscussionsMarkOutlivesTheBoundSoNoReportIsTakenTwice() {
+        // Harm: past the mark bound a running discussion's mark is dropped, so its reports are
+        // read from the start again and each idea is saved a second time.
+        run.discussed(OFFER);
+        porelo.task(TASK, OFFER, false);
+        porelo.report(TASK, "idea", "good");
+        take();
+        assertThat(store.saved).as("its idea saved once").hasSize(1);
+        assertThat(record.value.followed().get(OFFER).names())
+                .as("the name Porelo recorded its task under")
+                .containsExactly(TASK);
+
+        WorkRun.Snapshot snapshot = record.value;
+        for (int i = 0; i <= ReportTaking.MOST_MARKS; i++) {
+            snapshot = ReportTaking.marked(snapshot, "t-" + i, 1);
+        }
+        record.value = snapshot;
+        assertThat(record.value.reports())
+                .as("the discussion's mark kept, the oldest other dropped")
+                .containsKey(TASK)
+                .doesNotContainKey("t-0")
+                .hasSize(ReportTaking.MOST_MARKS);
+
+        take();
+        assertThat(store.saved).as("no idea saved twice").hasSize(1);
+    }
+
+    @Test
+    void aFollowedDiscussionsTaskRecordedUnderNoTasksNameStopsNoOtherTaskOfIt() {
+        // Harm: one record of a discussion under a name that is no task's name makes every take
+        // of the project fail, so no idea of any task is saved again.
+        run.discussed(OFFER);
+        porelo.task(TASK, OFFER, false);
+        porelo.report(TASK, "idea", "good");
+        take();
+        porelo.task("no task\u202ename", OFFER, false);
+        porelo.report(TASK, "idea", "good");
+
+        final ReportTaking.Outcome outcome = take();
+
+        assertThat(outcome.stories()).as("the named task's new idea saved").hasSize(1);
+        assertThat(outcome.unread())
+                .as("the record without a task's name said")
+                .containsExactly("A task record names no task's name; its reports are not read.");
+        assertThat(record.value.followed().get(OFFER).names())
+                .as("only a task's name kept")
+                .containsExactly(TASK);
+    }
+
+    @Test
     void aDiscussionPoreloNeverRecordedIsDroppedAfterAWeek() {
         // Harm: an offer the person never started is followed, and Porelo asked, forever.
         run.discussed(OFFER);

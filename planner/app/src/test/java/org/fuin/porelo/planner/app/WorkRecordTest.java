@@ -1611,7 +1611,8 @@ class WorkRecordTest {
         final HandedIdeas.Handed done =
                 new HandedIdeas.Handed(HandedIdeas.DONE, "ST7", List.of(), 1);
         final ReportTaking.Followed followed =
-                new ReportTaking.Followed("2026-11-25T08:00:00Z", 2, false);
+                new ReportTaking.Followed(
+                        "2026-11-25T08:00:00Z", 2, false, List.of("porelo-project_talk"));
         final ReportTaking.Mark mark = new ReportTaking.Mark(3, 3);
         final var environment = Map.of("XDG_STATE_HOME", directory.toString());
         try (WorkRecord records = new WorkRecord(environment, false)) {
@@ -1647,6 +1648,19 @@ class WorkRecordTest {
         final JsonMapper json = JsonMapper.builder().build();
         final ObjectNode document = (ObjectNode) json.readTree(Files.readString(file));
         assertThat(document.has("followed")).as("the record holds the followed offers").isTrue();
+        ((ObjectNode) document.get("followed").get(offer)).remove("names");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records = new WorkRecord(environment, false)) {
+            assertThat(
+                            records.open("project", "https://example.org/store.git", null)
+                                    .locked(session -> session.read())
+                                    .followed())
+                    .as("an offer followed before its names were kept names none")
+                    .containsExactly(
+                            Map.entry(
+                                    offer,
+                                    new ReportTaking.Followed("2026-11-25T08:00:00Z", 2, false)));
+        }
         document.remove(List.of("ideas", "followed", "reports"));
         document.putObject("ideas")
                 .putObject(offer)

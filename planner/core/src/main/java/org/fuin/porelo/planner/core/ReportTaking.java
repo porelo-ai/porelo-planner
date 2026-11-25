@@ -53,15 +53,50 @@ public final class ReportTaking {
      * @param order the record's generation when it was written, the oldest the lowest
      * @param closed whether its task ended and every report was read; a run's offer stays closed
      *     while its run holds it, a discussion's is dropped
+     * @param names the names Porelo recorded its tasks under, whose marks stand while it is
+     *     followed open; none before Porelo recorded one
      */
-    public record Followed(String since, long order, boolean closed) {
+    public record Followed(String since, long order, boolean closed, List<String> names) {
 
-        /** Refuses a time that is no UTC instant and a negative order. */
+        /** The most task names kept of one offer. */
+        public static final int MOST_NAMES = 16;
+
+        /** Refuses a time that is no UTC instant, a negative order and a name that is none. */
         public Followed {
             instant(since);
-            if (order < 0) {
+            if (order < 0 || names.size() > MOST_NAMES) {
                 throw new IllegalArgumentException("a followed offer fails its check");
             }
+            names = List.copyOf(names);
+            names.forEach(Ids::task);
+        }
+
+        /**
+         * An offer followed before Porelo recorded a task of it.
+         *
+         * @param since when it was offered or its task started
+         * @param order the record's generation when it was written
+         * @param closed whether its task ended and every report was read
+         */
+        public Followed(final String since, final long order, final boolean closed) {
+            this(since, order, closed, List.of());
+        }
+
+        /**
+         * The same offer with the names Porelo recorded its tasks under, the newest kept.
+         *
+         * @param recorded the names read
+         * @return the offer
+         */
+        Followed naming(final Set<String> recorded) {
+            final LinkedHashSet<String> all = new LinkedHashSet<>(names);
+            all.addAll(recorded);
+            final List<String> kept = new ArrayList<>(all);
+            return new Followed(
+                    since,
+                    order,
+                    closed,
+                    kept.subList(Math.max(0, kept.size() - MOST_NAMES), kept.size()));
         }
     }
 
@@ -240,6 +275,18 @@ public final class ReportTaking {
                 boolean drained = true;
                 final Set<String> names = new LinkedHashSet<>();
                 tasks.forEach(task -> names.add(task.task()));
+                final Followed kept = changed.get(offer.getKey());
+                if (kept != null && !kept.closed()) {
+                    // Its names hold their marks between reads, so no report is taken twice.
+                    changed.put(
+                            offer.getKey(),
+                            kept.naming(
+                                    names.stream()
+                                            .filter(Ids::isTask)
+                                            .collect(
+                                                    java.util.stream.Collectors.toCollection(
+                                                            LinkedHashSet::new))));
+                }
                 for (final String name : names) {
                     drained &= drain(name, reports, ideas);
                 }
@@ -273,7 +320,10 @@ public final class ReportTaking {
                                         written.put(
                                                 offer,
                                                 new Followed(
-                                                        followed.since(), next, followed.closed()));
+                                                        followed.since(),
+                                                        next,
+                                                        followed.closed(),
+                                                        followed.names()));
                                     }
                                 });
                         final WorkRun.Snapshot written1 =
@@ -522,9 +572,12 @@ public final class ReportTaking {
         return snapshot.withReading(next, snapshot.followed(), marks);
     }
 
-    /** The task names of run offers still read, whose marks are never dropped. */
+    /** The task names of offers still read, whose marks are never dropped. */
     private static Set<String> heldNames(final WorkRun.Snapshot snapshot) {
         final Set<String> held = new LinkedHashSet<>();
+        snapshot.followed().values().stream()
+                .filter(followed -> !followed.closed())
+                .forEach(followed -> held.addAll(followed.names()));
         for (final WorkRun.Run run : snapshot.runs().values()) {
             for (final WorkRun.Offer offer : run.offers()) {
                 final Followed followed = snapshot.followed().get(offer.id());

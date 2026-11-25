@@ -82,8 +82,10 @@ class HandedIdeasTest {
 
         assertThat(store.seen).as("not yet taken while the store saves").containsExactly("null");
         assertThat(record.writes - before)
-                .as("one write before the save, one after it with the mark")
-                .isEqualTo(2);
+                .as(
+                        "one write before the save, one after it with the mark, and one keeping"
+                                + " the name Porelo recorded the discussion's task under")
+                .isEqualTo(3);
         assertThat(record.value.reports().get(TASK).seq()).isEqualTo(1);
     }
 
