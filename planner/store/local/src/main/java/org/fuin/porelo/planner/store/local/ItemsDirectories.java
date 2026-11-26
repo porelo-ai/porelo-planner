@@ -1,7 +1,6 @@
 package org.fuin.porelo.planner.store.local;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -21,6 +20,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.planner.store.files.PrivateFiles;
 import org.jspecify.annotations.Nullable;
 
@@ -281,7 +281,7 @@ public final class ItemsDirectories {
         if (text.isEmpty()
                 || !plain(text)
                 || blank(text.codePointBefore(text.length()))
-                || (File.separatorChar == '\\' && !DRIVE.matcher(text).matches())) {
+                || (HostSystem.WINDOWS && !DRIVE.matcher(text).matches())) {
             return NOT_NORMAL;
         }
         final Path directory;

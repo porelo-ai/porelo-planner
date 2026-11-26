@@ -100,7 +100,7 @@ final class LinuxFiles {
 
     /** Its value differs by architecture; -1 where the system is not known here. */
     private static final int O_NOFOLLOW =
-            !"Linux".equals(System.getProperty("os.name"))
+            !HostSystem.LINUX
                     ? -1
                     : switch (System.getProperty("os.arch", "")) {
                         case "amd64", "x86_64" -> 0400000;

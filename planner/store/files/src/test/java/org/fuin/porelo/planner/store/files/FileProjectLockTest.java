@@ -6,6 +6,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** The lock of one project's clones, as two stores of one project in one process take it. */
 class FileProjectLockTest {
@@ -28,6 +31,33 @@ class FileProjectLockTest {
             };
 
     @TempDir Path dir;
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void theLockTakesTheSystemAsTheHostSystemTellsItWhateverTheSystemsNameSays() {
+        // Harm: the lock is taken one way while the account's files are checked another, since
+        // two readers judge the system apart.
+        final boolean linux = HostSystem.LINUX;
+        final boolean windows = HostSystem.WINDOWS;
+        final String name = System.getProperty("os.name");
+        System.setProperty("os.name", windows ? "Linux" : "Windows 11");
+        try {
+            final FileProjectLock.Platform told =
+                    linux
+                            ? FileProjectLock.Platform.LINUX
+                            : windows
+                                    ? FileProjectLock.Platform.WINDOWS
+                                    : FileProjectLock.Platform.OTHER;
+            assertThat(
+                            List.of(
+                                    FileProjectLock.Platform.current(),
+                                    FileProjectLock.Platform.CURRENT))
+                    .as("told now and as the lock keeps it")
+                    .containsExactly(told, told);
+        } finally {
+            System.setProperty("os.name", name);
+        }
+    }
 
     @Test
     @Tag("linux")

@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.ConcurrentHashMap;
@@ -106,19 +105,20 @@ public final class FileProjectLock implements ProjectLock {
      * The system's own lock, which Java's own file lock also keeps to: an open file's {@code fcntl}
      * lock on Linux, {@code LockFileEx} on Windows.
      */
-    private enum Platform {
+    enum Platform {
         LINUX,
         WINDOWS,
         OTHER;
 
-        private static final Platform CURRENT = current();
+        /** The system the lock is taken on, told once. */
+        static final Platform CURRENT = current();
 
-        private static Platform current() {
-            final String name = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-            if (name.equals("linux")) {
+        /** The system as {@link HostSystem} tells it, as every other reader asks. */
+        static Platform current() {
+            if (HostSystem.LINUX) {
                 return LINUX;
             }
-            return name.startsWith("windows") ? WINDOWS : OTHER;
+            return HostSystem.WINDOWS ? WINDOWS : OTHER;
         }
 
         /** The lock's token, or none while another holds it and no wait was asked. */
