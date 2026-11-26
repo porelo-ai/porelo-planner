@@ -2660,6 +2660,31 @@ class PlanningStartRefusal {
 
   /// The exact fields Porelo supplied.
   Map<String, dynamic> toMap() => {'name': name, 'parameters': parameters, 'detail': detail};
+
+  /// Whether this refusal lies within the planner's own bounds: a name of 1 to 64 ASCII letters and digits, at most 16
+  /// parameters, each key 1 to 64 and each value at most 500 code points, a detail of at most 1000, and no control
+  /// character nor line or paragraph separator, but for a line break in the detail.
+  bool get fitsPlanner {
+    if (!RegExp(r'^[A-Za-z0-9]{1,64}$').hasMatch(name) ||
+        parameters.length > 16 ||
+        !_fits(detail, 0, 1000, lines: true)) {
+      return false;
+    }
+    return parameters.entries.every((each) => _fits(each.key, 1, 64) && _fits(each.value, 0, 500));
+  }
+
+  /// Whether [text] counts [least] to [most] code points, as Java counts them, and holds no ISO control character,
+  /// U+2028 or U+2029; [lines] lets `\n` and `\r` pass.
+  static bool _fits(String text, int least, int most, {bool lines = false}) {
+    final points = text.runes.toList();
+    return points.length >= least &&
+        points.length <= most &&
+        !points.any(
+          (point) =>
+              !(lines && (point == 0x0a || point == 0x0d)) &&
+              (point <= 0x1f || (point >= 0x7f && point <= 0x9f) || point == 0x2028 || point == 0x2029),
+        );
+  }
 }
 
 /// Porelo's original end record, sent without interpreting or rewriting any field.

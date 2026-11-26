@@ -2791,6 +2791,79 @@ void main() {
     expect(planner.calls.length, calls, reason: 'a refused report reaches no planner');
   });
 
+  // Harm: a refusal the planner refuses by its bounds is sent anyway, so every report of the offer answers 400 and the
+  // issue never says why nothing ran.
+  test('a refusal beyond the planner\'s bounds is refused before it is sent, and one within them travels', () async {
+    final (planner, source) = await _started();
+    planner.routes['POST /projects/demo/tasks/main-task/events'] = () =>
+        _Reply(200, {'revision': 'r1', 'work': servedContinuationWork(), 'tasks': <dynamic>[]});
+    Future<void> report(PlanningStartRefusal refusal) => source.taskEvent(
+      'demo',
+      'main-task',
+      PlanningTaskEvent.refused,
+      offer: servedOffer(1),
+      container: '',
+      machine: 'Machine',
+      refusal: refusal,
+    );
+    const astral = '\u{1F600}';
+    final refused = <String, PlanningStartRefusal>{
+      'a name with a dash': const PlanningStartRefusal(name: 'a-b'),
+      'an empty name': const PlanningStartRefusal(name: ''),
+      '17 parameters': PlanningStartRefusal(name: 'Refused', parameters: {for (var i = 0; i < 17; i++) 'k$i': 'v'}),
+      'an empty key': const PlanningStartRefusal(name: 'Refused', parameters: {'': 'v'}),
+      'a 501-rune value': PlanningStartRefusal(name: 'Refused', parameters: {'k': astral * 501}),
+      'a 1001-rune detail': PlanningStartRefusal(name: 'Refused', detail: 'x' * 1001),
+      'a control character': const PlanningStartRefusal(name: 'Refused', detail: 'a\u0007b'),
+      'a line break in a value': const PlanningStartRefusal(name: 'Refused', parameters: {'k': 'a\nb'}),
+      'a paragraph separator': const PlanningStartRefusal(name: 'Refused', detail: 'a\u2029b'),
+    };
+    final calls = planner.calls.length;
+    for (final MapEntry(:key, :value) in refused.entries) {
+      await expectLater(
+        report(value),
+        throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'InvalidSettings')),
+        reason: '$key, refused as the planner answers it',
+      );
+    }
+    expect(planner.calls.length, calls, reason: 'none reaches the planner');
+
+    await report(PlanningStartRefusal(name: 'Refused', parameters: {'k': astral * 500}, detail: 'Line one.\r\nTwo.'));
+    expect(
+      planner.calls.skip(calls).map((call) => call.target),
+      contains('/projects/demo/tasks/main-task/events'),
+      reason: '500 code points and a line break in the detail travel',
+    );
+  });
+
+  // Harm: a refusal at the planner's own bounds is refused here and never reported, or one past them is sent and every
+  // report of the offer answers 400.
+  test('a start refusal is taken up to the planner\'s own bounds and refused one past them', () {
+    const astral = '\u{1F600}';
+    final taken = <String, PlanningStartRefusal>{
+      'a 64-character name': PlanningStartRefusal(name: 'N' * 64),
+      'a 64-character key': PlanningStartRefusal(name: 'Refused', parameters: {'k' * 64: 'v'}),
+      'a 64-code-point key': PlanningStartRefusal(name: 'Refused', parameters: {astral * 64: 'v'}),
+      'a 1000-code-point detail': PlanningStartRefusal(name: 'Refused', detail: astral * 1000),
+      '16 parameters': PlanningStartRefusal(name: 'Refused', parameters: {for (var i = 0; i < 16; i++) 'k$i': 'v'}),
+    };
+    final refused = <String, PlanningStartRefusal>{
+      'a 65-character name': PlanningStartRefusal(name: 'N' * 65),
+      'a 65-character key': PlanningStartRefusal(name: 'Refused', parameters: {'k' * 65: 'v'}),
+      'a 1001-code-point detail': PlanningStartRefusal(name: 'Refused', detail: astral * 1001),
+      'a delete': const PlanningStartRefusal(name: 'Refused', detail: 'a\u007fb'),
+      'a C1 control': const PlanningStartRefusal(name: 'Refused', parameters: {'k': 'a\u009fb'}),
+      'a line separator': const PlanningStartRefusal(name: 'Refused', detail: 'a b'),
+      'a non-ASCII letter in the name': const PlanningStartRefusal(name: 'Refusé'),
+    };
+    for (final MapEntry(:key, :value) in taken.entries) {
+      expect(value.fitsPlanner, isTrue, reason: key);
+    }
+    for (final MapEntry(:key, :value) in refused.entries) {
+      expect(value.fitsPlanner, isFalse, reason: key);
+    }
+  });
+
   // Harm: the refusal the planner answers an issue with is read away, so the screen cannot say why nothing ran.
   test('an issue the planner answers refused reads Porelo\'s name, parameters and words', () {
     final issue = PlanWorkIssue.from({

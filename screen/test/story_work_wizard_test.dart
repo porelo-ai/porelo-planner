@@ -249,6 +249,9 @@ void main() {
       expect(source.asked, 2, reason: 'Retry asked again');
       expect(work.problem, isNull, reason: 'the new answer stands: ${work.problem}');
       expect(work.proposal, isNotNull, reason: 'proposed on the board as it stands');
+      expect(work.proposal!.revision, 'r2', reason: 'on the moved board');
+      expect(work.current, isTrue, reason: 'the proposal is current');
+      expect(work.canStart, isTrue, reason: 'the person can start it');
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -283,6 +286,40 @@ void main() {
     );
     await settle(tester);
     expect(find.text(_stale), findsOneWidget, reason: 'the step says the board changed');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // Harm: a proposal with a problem of its own that the board then passes names only one of the two, so the person
+  // either starts on a stale proposal or never learns what was wrong with it.
+  testWidgets('a proposal with a problem that the board then passed names the problem first, then the stale line', (
+    tester,
+  ) async {
+    final (source, board) = await _open(tester);
+    final agents = FakeAgents(const [PlanningAgent('codex')])..failures = {'claude': 'Its models could not be read.'};
+    final work = planningStoryWork(board, board.stories.single, 'Implementing', agents: agents);
+    addTearDown(work.dispose);
+    final wizards = _Wizards();
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (each) {
+            context = each;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    unawaited(showStoryWork(context, work, wizards: wizards));
+    await _answered(tester);
+    expect(work.proposal, isNotNull, reason: 'the proposal was read');
+    final problem = work.problem!;
+    expect(problem, contains('claude'), reason: 'the agent that could not be read');
+    expect(wizards.steps.first.check(), problem, reason: 'a current proposal names its problem alone');
+    source.push('demo', _board()..['revision'] = 'r2');
+    await _answered(tester);
+    expect(work.current, isFalse, reason: 'the board moved past the proposal');
+    expect(wizards.steps.first.check(), '$problem\n$_stale', reason: 'the problem first, then the stale line');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

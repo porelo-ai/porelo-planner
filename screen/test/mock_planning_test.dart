@@ -647,6 +647,14 @@ void main() {
       refusal: PlanningStartRefusal(name: name, parameters: refusal.parameters, detail: refusal.detail),
     );
 
+    final calls = source.work.calls.length;
+    await expectLater(
+      refused('a-b'),
+      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'InvalidSettings')),
+      reason: 'a name the planner refuses is never taken, and refused as the planner answers it',
+    );
+    expect(source.work.calls, hasLength(calls), reason: 'nor reaches the stand-in');
+
     final answered = await refused();
 
     final raised = answered.work.issues.where((issue) => offer.issues.contains(issue.issue));

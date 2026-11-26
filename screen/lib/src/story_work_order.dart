@@ -6,7 +6,16 @@ import 'models.dart';
 import 'work_reply.dart';
 
 final _repositoryName = RegExp(r'^[a-z0-9][a-z0-9._-]{0,99}$');
-final _pullRequestAddress = RegExp(r'^https://[!-~]+$');
+// A pull request's address in the grammar the planner's `java.net.URI` reads a host from: https, an IPv4 address or a
+// host name of letter, digit and inner `-` labels whose last starts with a letter when there are several, an optional
+// port, and a path of the URI's own characters and `%` escapes; no user info, query or fragment.
+final _pullRequestAddress = RegExp(
+  r'^https://(?:(?<ipv4>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
+  r'|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.?'
+  r'|(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.?)'
+  r'(?::(?<port>[0-9]*))?'
+  r"(?:/(?:[A-Za-z0-9\-_.!~*'();:@&=+$,/]|%[0-9A-Fa-f]{2})*)?$",
+);
 // An issue id in the Git store's form or a tracker's reference within the project, as the description gives them.
 final _trackedIssue = RegExp(r'^(?![^#]*\.\.)[A-Za-z0-9][A-Za-z0-9._-]*/[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8}$');
 final _issueName = RegExp(
@@ -264,6 +273,19 @@ class PlanningGivenFile {
   final String text;
 }
 
+/// Whether a pull request's address is one the planner takes: at most 2048 characters in [_pullRequestAddress], each
+/// part of an IPv4 address at most 255 and a port within Java's `int`. An IPv6 address, which the planner takes, is
+/// refused here.
+bool _pullRequestTaken(String address) {
+  if (address.length > 2048) return false;
+  final match = _pullRequestAddress.firstMatch(address);
+  if (match == null) return false;
+  final ipv4 = match.namedGroup('ipv4');
+  final port = match.namedGroup('port');
+  return (ipv4 == null || ipv4.split('.').every((part) => (int.tryParse(part) ?? 256) <= 255)) &&
+      (port == null || port.isEmpty || (int.tryParse(port) ?? 0x80000000) <= 0x7fffffff);
+}
+
 /// The plain name of an issue's given file without `.md`: its id, a tracker's `#` as `-`, so no mounted name holds one.
 String _givenName(String issue) => issue.replaceAll('#', '-');
 
@@ -286,8 +308,7 @@ class PlanningRunPlace {
       }
       return PlanningRunPlace._(gatePush: name, gateRepository: repository as String?);
     }
-    if (value['pullRequest'] case final String address
-        when _pullRequestAddress.hasMatch(address) && address.length <= 2048) {
+    if (value['pullRequest'] case final String address when _pullRequestTaken(address)) {
       return PlanningRunPlace._(pullRequest: address);
     }
     if (value['ownPullRequest'] == true) return const PlanningRunPlace._(ownPullRequest: true);

@@ -364,6 +364,22 @@ void main() {
     await work.ended;
     const refusal = PlanningStartRefusal(name: 'UnknownForge', parameters: {'forge': 'x'}, detail: 'No forge.');
 
+    // A refusal beyond the planner's own bounds is refused as the planner answers it, sent nowhere, and leaves the offer
+    // to be reported.
+    await expectLater(
+      client.taskEvent(
+        'demo',
+        'task-1',
+        PlanningTaskEvent.refused,
+        offer: servedOffer(1),
+        container: '',
+        machine: 'Machine',
+        refusal: const PlanningStartRefusal(name: 'Unknown-Forge'),
+      ),
+      throwsA(isA<PlanningRefusal>().having((refusal) => refusal.name, 'name', 'InvalidSettings')),
+    );
+    expect(source.reports, isEmpty);
+
     await client.taskEvent(
       'demo',
       'task-1',

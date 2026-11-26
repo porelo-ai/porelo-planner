@@ -49,6 +49,80 @@ void main() {
     );
   });
 
+  // Harm: a place the planner refuses is started, or one it takes is refused, so the review never runs there.
+  test('a pull request address is taken only as the planner takes it', () {
+    expect(
+      PlanningRunPlace.fromJson({'pullRequest': 'https://github.com/owner/shop/pull/7'}).pullRequest,
+      'https://github.com/owner/shop/pull/7',
+    );
+    for (final address in [
+      'https://u@h/x',
+      'https://@h/x',
+      'https://@/x',
+      'https:///x',
+      'https://h/x?',
+      'https://h/x#',
+      'https://h/x?a=1',
+      'https://h/x#top',
+    ]) {
+      expect(() => PlanningRunPlace.fromJson({'pullRequest': address}), throwsFormatException, reason: address);
+    }
+  });
+
+  // Harm: an address Java's URI reads no host from, or refuses outright, is started, and the planner refuses every
+  // report of the run; or one it takes is refused here, so the review never runs there. Each verdict was read from
+  // `java.net.URI` as the planner checks a place.
+  test('a pull request address follows the host, port and path grammar of the planner\'s URI', () {
+    String taken(String address) => PlanningRunPlace.fromJson({'pullRequest': address}).pullRequest!;
+    final exact = 'https://example.com/${'a' * (2048 - 'https://example.com/'.length)}';
+    for (final address in [
+      'https://example.com',
+      'https://example.com:8443/o/r/pull/1',
+      'https://example.com:/x',
+      'https://example.com:0000000000000000080/x',
+      'https://example.com:2147483647/x',
+      'https://git-hub.example.com/x',
+      'https://192.168.1.20:3000/x',
+      'https://0001.2.3.4/x',
+      'https://999/x',
+      'https://1.2.3.a/x',
+      'https://example.com1/x',
+      'https://a./x',
+      'https://example.com./x',
+      'https://EXAMPLE.com/x',
+      "https://example.com/a;b,c:d@e&f=g+h\$i!j~k*l'm(n)o_p.q-r",
+      'https://example.com/a%2Fb%e4',
+      'https://example.com//x',
+      exact,
+    ]) {
+      expect(taken(address), address, reason: address);
+    }
+    for (final address in [
+      'https://exa_mple.com/x',
+      'https://a..b/x',
+      'https://.a/x',
+      'https://-a.com/x',
+      'https://a-.com/x',
+      'https://a.-b.com/x',
+      'https://example.com.1/x',
+      'https://example.1com/x',
+      'https://1.2.3/x',
+      'https://1.2.3.4./x',
+      'https://1.2.3.256/x',
+      'https://1.2.3.4.5/x',
+      'https://example.com:x/x',
+      'https://example.com:2147483648/x',
+      'https://ex%41mple.com/x',
+      for (final c in ['"', '<', '>', r'\', '^', '`', '{', '|', '}', '[', ']']) 'https://example.com/a${c}b',
+      'https://example.com/a%zz',
+      'https://example.com/a%2',
+      'https://example.com/%',
+      '${exact}a',
+    ]) {
+      expect(() => taken(address), throwsFormatException, reason: address);
+    }
+  });
+
   // Harm: an address from outside, however long, fills the card or carries characters that reorder its text.
   test('a pull request address is cut to a bounded length', () {
     final long = 'https://github.com/owner/shop/pull/${'1' * 1500}';

@@ -101,6 +101,11 @@ void checkRefused(PlanningTaskEvent event, String container, PlanningStartRefusa
   if (refused != container.isEmpty) {
     throw ArgumentError.value(container, 'container', 'A refused report names no container, every other one does');
   }
+  // A refusal beyond the planner's own bounds is refused as the planner answers it, so each caller takes the path a
+  // refusal of the planner takes and none sends it.
+  if (refusal != null && !refusal.fitsPlanner) {
+    throw const PlanningRefusal('InvalidSettings', {}, 'The refusal exceeds the planner\'s own bounds.');
+  }
 }
 
 /// Where the planning screen reads and writes: the providers of planning and what the window tells them.
