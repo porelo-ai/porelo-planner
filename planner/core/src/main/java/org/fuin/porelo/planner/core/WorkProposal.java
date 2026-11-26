@@ -594,7 +594,7 @@ public record WorkProposal(
      * so it is named but never worked. A warning that holds work holds under every rule; a blocker
      * or an outside wait only under the building rule ({@link #blockersHold}).
      */
-    private static List<Issue> free(
+    static List<Issue> free(
             final Board board,
             final String to,
             final List<Issue> open,

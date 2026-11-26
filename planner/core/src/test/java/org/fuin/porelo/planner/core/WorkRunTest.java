@@ -33,6 +33,7 @@ import org.fuin.porelo.planner.store.Warning;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
+import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -10272,6 +10273,731 @@ class WorkRunTest {
 
     static String conflictOf(final Throwable refused) {
         return ((WorkRefusal) refused).name();
+    }
+
+    @Test
+    void anIssueItsStartHeldBackIsOfferedOnceWhenItsBlockerReachesReviewAndItsStartMovesIt() {
+        // Harm: an issue held back by a blocker never starts once the blocker is done, so the story
+        // stalls; or it is offered twice and built twice.
+        final Fixture f = heldBack();
+        assertThat(f.order().tasks())
+                .as("the Start offers only the free issue")
+                .allSatisfy(o -> assertThat(o.task().issues()).doesNotContain("AA2"));
+        assertThat(f.run.work("ST1").heldBack())
+                .as("the run holds AA2 back")
+                .containsExactly("AA2");
+        assertThat(f.run.freed()).as("nothing while AA1 is not done").isEmpty();
+
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        assertThat(f.run.freed()).as("AA2 offered in its story's run").containsExactly("ST1");
+
+        final WorkRun.Run run = f.run.work("ST1");
+        final List<WorkRun.Offered> starts = WorkRun.placeStarts(run, f.store.board());
+        assertThat(starts).as("one start served").hasSize(1);
+        final WorkOrder.Task task = starts.getFirst().task();
+        assertThat(List.of(task.issues(), task.role(), task.runRole()))
+                .as("an author building AA2")
+                .containsExactly(List.of("AA2"), "BUILDER", RunRole.AUTHOR);
+        assertThat(task.place()).as("at no place").isNull();
+        assertThat(run.heldBack()).as("no longer held").isEmpty();
+        assertThat(run.repositories())
+                .as("listed in the run's repository, so the window finds it")
+                .anySatisfy(
+                        r ->
+                                assertThat(List.of(r.repository(), r.issues().contains("AA2")))
+                                        .containsExactly("alpha", true));
+        assertThat(run.issues()).as("its readings counted from the run's").containsKey("AA2");
+
+        final int offers = run.offers().size();
+        assertThat(f.run.freed()).as("the next minute offers nothing more").isEmpty();
+        assertThat(f.run.work("ST1").offers()).hasSize(offers);
+
+        f.start(starts.getFirst());
+        assertThat(f.store.board().issue("AA2").orElseThrow().state())
+                .as("its start moves AA2 into the building work")
+                .isEqualTo("Building");
+    }
+
+    @Test
+    void aBlockerNotDoneOrOnlyBackInReworkOffersNothingAndAServedOfferWaitsWhileItHolds() {
+        // Harm: work starts on an issue whose blocker is not done, or sent back to rework.
+        final Fixture f = heldBack();
+        f.order();
+        for (final String state : List.of("Building", "Reworking")) {
+            f.store.current = moved(f.store.current, "AA1", state);
+            assertThat(f.run.freed()).as("nothing while AA1 stands in %s", state).isEmpty();
+        }
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        f.run.freed();
+        f.store.current = moved(f.store.current, "AA1", "Reworking");
+        assertThat(WorkRun.placeStarts(f.run.work("ST1"), f.store.board()))
+                .as("not served once AA1 went back to rework")
+                .isEmpty();
+        f.store.current = moved(f.store.current, "AA1", "Finished");
+        assertThat(WorkRun.placeStarts(f.run.work("ST1"), f.store.board()))
+                .as("served again once AA1 is done again")
+                .extracting(o -> o.task().issues())
+                .containsExactly(List.of("AA2"));
+    }
+
+    @Test
+    void aServedOfferWaitsOnceItsIssueIsMovedOrAPersonsOrWarned() {
+        // Harm: an offer made while the issue was free starts it after it was moved on by hand,
+        // became a person's or was warned about.
+        final Fixture f = heldBack();
+        f.order();
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        f.run.freed();
+        final Board free = f.store.current;
+        final Map<String, Board> boards =
+                Map.of(
+                        "moved",
+                        moved(free, "AA2", "Reading"),
+                        "a person's",
+                        changed(free, "AA2", i -> i.withWorkerAndRisk(Worker.MANUAL, i.risk())),
+                        "warned",
+                        changed(
+                                free,
+                                "AA2",
+                                i -> i.withWarnings(List.of(Warning.parentOutsideProject()))));
+        boards.forEach(
+                (why, board) ->
+                        assertThat(WorkRun.placeStarts(f.run.work("ST1"), board))
+                                .as("not served once %s", why)
+                                .isEmpty());
+        assertThat(WorkRun.placeStarts(f.run.work("ST1"), free)).hasSize(1);
+    }
+
+    @Test
+    void aStoppedOrHaltedRunOffersNothingAndANewStartReplacesWhatItHeld() {
+        // Harm: work starts without the person in a run the person stopped, or one that halted on
+        // a save; or an issue a new Start offered itself is offered a second time.
+        final Fixture f = heldBack();
+        f.order();
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        final WorkRun.Snapshot before = f.record.value;
+        f.record.value = withRun(before, copied(before.runs().get("ST1"), true, false));
+        assertThat(f.run.freed()).as("a stopped run").isEmpty();
+        f.record.value = withRun(before, copied(before.runs().get("ST1"), false, true));
+        assertThat(f.run.freed()).as("a halted run").isEmpty();
+        assertThat(f.record.value.runs().get("ST1").heldBack()).containsExactly("AA2");
+
+        f.record.value = before;
+        final WorkRun.Run first = f.run.work("ST1");
+        f.order(new WorkRun.Start(first.id(), null));
+        final WorkRun.Run second = f.run.work("ST1");
+        assertThat(second.heldBack()).as("the new Start held nothing back").isEmpty();
+        final long offered =
+                second.offers().stream()
+                        .filter(o -> o.status().equals("OFFERED"))
+                        .filter(o -> o.binding().issues().contains("AA2"))
+                        .count();
+        assertThat(f.run.freed()).as("nothing more for AA2").isEmpty();
+        assertThat(
+                        f.run.work("ST1").offers().stream()
+                                .filter(o -> o.status().equals("OFFERED"))
+                                .filter(o -> o.binding().issues().contains("AA2"))
+                                .count())
+                .isEqualTo(offered);
+    }
+
+    @Test
+    void onlyAnIssueTheStartHeldBackIsOfferedNeverOneMovedInByHandOrAPersonsOrWarned() {
+        // Harm: a run starts an issue the person never started, one a person works, or one a
+        // warning holds.
+        final Fixture f = heldBack();
+        f.store.current = moved(f.store.current, "AA2", "Review");
+        f.order();
+        assertThat(f.run.work("ST1").heldBack())
+                .as("an issue not where the work takes from is not held back")
+                .isEmpty();
+        f.store.current = moved(moved(f.store.current, "AA2", "Backlog"), "AA1", "Review");
+        assertThat(f.run.freed()).as("moved into Backlog by hand").isEmpty();
+
+        final Fixture person = heldBack();
+        person.order();
+        person.store.current =
+                changed(
+                        moved(person.store.current, "AA1", "Review"),
+                        "AA2",
+                        i -> i.withWorkerAndRisk(Worker.MANUAL, i.risk()));
+        assertThat(person.run.freed()).as("a person's issue").isEmpty();
+        assertThat(person.run.work("ST1").heldBack()).as("still held").containsExactly("AA2");
+
+        final Fixture warned = heldBack();
+        warned.store.current =
+                changed(
+                        warned.store.current,
+                        "AA2",
+                        i -> i.withWarnings(List.of(Warning.parentOutsideProject())));
+        warned.order();
+        assertThat(warned.run.work("ST1").heldBack())
+                .as("one a warning holds is the person's to clear")
+                .isEmpty();
+    }
+
+    @Test
+    void anIssueAnotherRunOffersIsNotOfferedAgain() {
+        // Harm: two runs offer the same issue, so it is built twice.
+        final Fixture f = heldBack();
+        f.order();
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        final WorkRun.Snapshot before = f.record.value;
+        f.run.freed();
+        final WorkRun.Run offered = f.run.work("ST1");
+        final Map<String, WorkRun.Run> runs = new java.util.LinkedHashMap<>(before.runs());
+        runs.put("ST9", copied(offered, "ST9"));
+        f.record.value = before.withRuns(before.generation(), runs);
+
+        assertThat(f.run.freed()).as("ST9's run offers AA2 already").isEmpty();
+        assertThat(f.run.work("ST1").heldBack()).containsExactly("AA2");
+    }
+
+    @Test
+    void aFreedIssueTakesTheModelOfItsOwnRisk() {
+        // Harm: a freed issue of another risk is refused as invalid settings, so it never starts,
+        // or is built with a model chosen for a lighter risk.
+        final Fixture f = heldBack();
+        final WorkRule building = NextStepTest.rule("Building");
+        f.store.current =
+                NextStepTest.withRule(
+                        f.store.current,
+                        "Building",
+                        new WorkRule(
+                                building.from(),
+                                building.done(),
+                                building.then(),
+                                building.blocked(),
+                                building.per(),
+                                building.modes(),
+                                building.order(),
+                                building.models(),
+                                Map.of(
+                                        Risk.HARM,
+                                        new WorkRule.ForRisk(Map.of("codex", "careful"), "max"))));
+        f.order();
+        f.store.current =
+                changed(
+                        moved(f.store.current, "AA1", "Review"),
+                        "AA2",
+                        i -> i.withWorkerAndRisk(i.worker(), Risk.HARM));
+
+        assertThat(f.run.freed()).containsExactly("ST1");
+        final WorkOrder.Task task =
+                WorkRun.placeStarts(f.run.work("ST1"), f.store.board()).getFirst().task();
+        assertThat(List.of(task.model(), String.valueOf(task.effort())))
+                .as("harm's model and effort")
+                .containsExactly("careful", "max");
+        assertThat(f.told).as("nothing failed").isEmpty();
+    }
+
+    @Test
+    void onlyTheBuildingRuleHoldsBackOrFreesWhereTheWorkflowTellsNoBacklogState() {
+        // Harm: a stage or a reading's rework on a workflow without a backlog state holds issues
+        // back and later starts them without the person, as if it were the building work.
+        final Fixture f = heldBack();
+        f.store.current = unmeasured(f.store.current);
+        f.order();
+        assertThat(f.run.work("ST1").heldBack())
+                .as("the building rule holds AA2 back here too")
+                .containsExactly("AA2");
+        final WorkRule building = NextStepTest.rule("Building");
+        final Map<String, WorkRule> others =
+                Map.of(
+                        "a stage",
+                        new WorkRule(
+                                building.from(),
+                                building.done(),
+                                null,
+                                null,
+                                building.per(),
+                                building.modes(),
+                                building.order(),
+                                building.models(),
+                                Map.of(),
+                                WorkRule.Result.ESTIMATE),
+                        "a reading",
+                        new WorkRule(
+                                building.from(),
+                                building.done(),
+                                null,
+                                "Reworking",
+                                building.per(),
+                                building.modes(),
+                                building.order(),
+                                building.models()));
+        final Board free = moved(f.store.current, "AA1", "Finished");
+        others.forEach(
+                (what, rule) -> {
+                    f.store.current = NextStepTest.withRule(free, "Building", rule);
+                    assertThat(
+                                    WorkRules.check(
+                                                    f.store.current.workflow(),
+                                                    f.store.current.work())
+                                            .rules())
+                            .as("%s is a sound rule", what)
+                            .containsKey("Building");
+                    assertThat(f.run.freed()).as("nothing freed under %s", what).isEmpty();
+                });
+    }
+
+    @Test
+    void aStageStartedOnAWorkflowWithoutABacklogStateHoldsNothingBack() {
+        // Harm: an estimate holds back an issue a blocker holds and later starts it unasked.
+        final Fixture f = heldBack();
+        final WorkRule building = NextStepTest.rule("Building");
+        f.store.current =
+                NextStepTest.withRule(
+                        unmeasured(f.store.current),
+                        "Building",
+                        new WorkRule(
+                                building.from(),
+                                "Backlog",
+                                null,
+                                null,
+                                building.per(),
+                                building.modes(),
+                                building.order(),
+                                building.models(),
+                                Map.of(),
+                                WorkRule.Result.ESTIMATE));
+        f.order();
+        assertThat(f.run.work("ST1").heldBack()).as("nothing held back by a stage").isEmpty();
+    }
+
+    @Test
+    void aStartNamingIssuesKeepsWhatTheRunItReplacesHeldBack() {
+        // Harm: restarting one issue by hand forgets the issues the story's Start held back, so
+        // they never start once their blocker is done.
+        final Fixture f = heldBack();
+        f.store.current = withIssue(f.store.current, blocked("AA3", "AA1"));
+        f.order();
+        final WorkRun.Run first = f.run.work("ST1");
+        assertThat(first.heldBack()).containsExactly("AA2", "AA3");
+        f.run.order(
+                "ST1",
+                "Building",
+                new WorkOrder.Decision(
+                        "AGENT", Basis.of(f.store.board()), null, "", 1, null, List.of("AA1")),
+                new WorkRun.Start(first.id(), null));
+        assertThat(f.run.work("ST1").heldBack())
+                .as("kept, the issue named left out")
+                .containsExactly("AA2", "AA3");
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        f.run.freed();
+        assertThat(WorkRun.placeStarts(f.run.work("ST1"), f.store.board()))
+                .extracting(o -> o.task().issues().getFirst())
+                .containsExactlyInAnyOrder("AA2", "AA3");
+    }
+
+    @Test
+    void oneIssueWhoseWorkCannotBeBuiltLeavesTheOthersOffered() {
+        // Harm: one held issue whose task cannot be built keeps every other freed issue of the
+        // story from starting.
+        final Fixture f = heldBack();
+        f.store.current = withIssue(f.store.current, blocked("AA3", "AA1"));
+        f.order();
+        f.store.current =
+                changed(
+                        moved(f.store.current, "AA1", "Review"),
+                        "AA3",
+                        i ->
+                                new Issue(
+                                        i.id(),
+                                        i.repository(),
+                                        i.title(),
+                                        i.state(),
+                                        i.size(),
+                                        i.blockedBy(),
+                                        i.parent(),
+                                        i.link(),
+                                        "**What must be true.** " + "x".repeat(70_000)));
+
+        assertThat(f.run.freed()).containsExactly("ST1");
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(WorkRun.placeStarts(run, f.store.board()))
+                .extracting(o -> o.task().issues().getFirst())
+                .as("AA2 offered")
+                .containsExactly("AA2");
+        assertThat(run.heldBack()).as("AA3 stays held").containsExactly("AA3");
+        assertThat(f.told).as("AA3 told").anySatisfy(line -> assertThat(line).contains("AA3"));
+    }
+
+    @Test
+    void aFreedOfferNoLongerFreeIsTakenBackSoAStartGoesOnAndItsIdStartsNothing() {
+        // Harm: an offer hidden once its blocker went back to rework refuses every later Start of
+        // the story, or its old id still starts the issue after the person took it over.
+        final Fixture f = heldBack();
+        f.order();
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        f.run.freed();
+        final WorkRun.Offered first =
+                WorkRun.placeStarts(f.run.work("ST1"), f.store.board()).getFirst();
+
+        f.store.current = moved(f.store.current, "AA1", "Backlog");
+        assertThat(f.run.freed()).as("taken back").containsExactly("ST1");
+        final WorkRun.Run back = f.run.work("ST1");
+        assertThat(back.heldBack()).as("held back again").containsExactly("AA2");
+        assertThat(back.offers()).extracting(WorkRun.Offer::id).doesNotContain(first.offer());
+        assertThat(back.placeOffers()).doesNotContain(first.offer());
+        assertThatCode(() -> f.order(new WorkRun.Start(back.id(), null)))
+                .as("a Start of the story goes on")
+                .doesNotThrowAnyException();
+
+        final Fixture person = heldBack();
+        person.order();
+        person.store.current = moved(person.store.current, "AA1", "Review");
+        person.run.freed();
+        final WorkRun.Offered offered =
+                WorkRun.placeStarts(person.run.work("ST1"), person.store.board()).getFirst();
+        person.store.current =
+                changed(
+                        person.store.current,
+                        "AA2",
+                        i -> i.withWorkerAndRisk(Worker.MANUAL, i.risk()));
+        assertThat(person.run.freed()).as("a person's issue taken back").containsExactly("ST1");
+        assertThatThrownBy(() -> person.start(offered))
+                .as("its old id starts nothing")
+                .isInstanceOf(WorkRefusal.class);
+        assertThat(person.store.board().issue("AA2").orElseThrow().state())
+                .as("AA2 not moved")
+                .isEqualTo("Backlog");
+
+        person.store.current =
+                changed(
+                        person.store.current,
+                        "AA2",
+                        i -> i.withWorkerAndRisk(Worker.AGENT, i.risk()));
+        person.run.freed();
+        assertThat(WorkRun.placeStarts(person.run.work("ST1"), person.store.board()))
+                .extracting(WorkRun.Offered::offer)
+                .as("offered anew under a new id once free again")
+                .hasSize(1)
+                .doesNotContain(offered.offer());
+    }
+
+    @Test
+    void aRunWithASaveInFlightOrAWarnedStoryOffersNothing() {
+        // Harm: a freed offer is written over a save in flight, or starts in a story a warning
+        // holds.
+        final Fixture f = heldBack();
+        f.order();
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        final WorkRun.Snapshot before = f.record.value;
+        f.record.value = withRun(before, pending(before.runs().get("ST1"), pendingMark()));
+        assertThat(f.run.freed()).as("a save in flight").isEmpty();
+        assertThat(f.told).as("left alone, not failed on").isEmpty();
+
+        f.record.value = before;
+        final Board free = f.store.current;
+        f.store.current = warnedStory(free);
+        assertThat(f.store.current.holdsWork("ST1")).as("the story is held").isPresent();
+        assertThat(f.run.freed()).as("a warned story").isEmpty();
+        assertThat(f.run.work("ST1").heldBack()).containsExactly("AA2");
+    }
+
+    @Test
+    void aFreedIssueOfAnotherRepositoryIsListedInANewEntryInTheRunsMode() {
+        // Harm: the window drops a freed issue whose repository the run did not list, or builds it
+        // in another mode than the run's.
+        final Fixture f = heldBack();
+        final WorkRule building = NextStepTest.rule("Building");
+        final Board alpha = f.store.current;
+        final Board both =
+                new Board(
+                        alpha.revision(),
+                        alpha.workflow(),
+                        alpha.stories(),
+                        alpha.issues(),
+                        alpha.work(),
+                        org.fuin.porelo.planner.store.ProjectRepository.named(
+                                List.of("alpha", "beta")));
+        f.store.current =
+                NextStepTest.withRule(
+                        changed(
+                                both,
+                                "AA2",
+                                i ->
+                                        new Issue(
+                                                i.id(),
+                                                "beta",
+                                                i.title(),
+                                                i.state(),
+                                                i.size(),
+                                                i.blockedBy(),
+                                                i.parent(),
+                                                i.link(),
+                                                i.text())),
+                        "Building",
+                        new WorkRule(
+                                building.from(),
+                                building.done(),
+                                building.then(),
+                                building.blocked(),
+                                building.per(),
+                                List.of("UNATTENDED", "AGENT"),
+                                building.order(),
+                                building.models()));
+        f.order();
+        assertThat(f.run.work("ST1").repositories())
+                .extracting(WorkProposal.Repository::repository)
+                .containsExactly("alpha");
+        f.store.current = moved(f.store.current, "AA1", "Review");
+        f.run.freed();
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.repositories())
+                .as("a new entry for beta")
+                .anySatisfy(
+                        r ->
+                                assertThat(List.of(r.repository(), r.issues()))
+                                        .containsExactly("beta", List.of("AA2")));
+        final WorkOrder.Task task = WorkRun.placeStarts(run, f.store.board()).getFirst().task();
+        assertThat(List.of(task.repository(), task.mode()))
+                .as("built in beta in the run's mode, not the rule's first")
+                .containsExactly("beta", "AGENT");
+    }
+
+    /** The board with no measured state, so its workflow tells no backlog state. */
+    private static Board unmeasured(final Board board) {
+        return new Board(
+                board.revision(),
+                new Workflow(
+                        board.workflow().states(),
+                        board.workflow().phases(),
+                        board.workflow().closed(),
+                        List.of()),
+                board.stories(),
+                board.issues(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** An issue of alpha in Backlog that the given issue blocks. */
+    private static Issue blocked(final String id, final String by) {
+        return new Issue(
+                id,
+                "alpha",
+                "Held",
+                "Backlog",
+                null,
+                List.of(by),
+                null,
+                null,
+                "**What must be true.** Held.");
+    }
+
+    /** The board with an issue added to story ST1. */
+    private static Board withIssue(final Board board, final Issue issue) {
+        final List<Issue> issues = new java.util.ArrayList<>(board.issues());
+        issues.add(issue);
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories().stream()
+                        .map(
+                                s -> {
+                                    final List<String> ids = new java.util.ArrayList<>(s.issues());
+                                    ids.add(issue.id());
+                                    return new Story(
+                                            s.id(),
+                                            s.title(),
+                                            s.state(),
+                                            s.priority(),
+                                            s.size(),
+                                            ids,
+                                            s.description(),
+                                            s.link());
+                                })
+                        .toList(),
+                issues,
+                board.work(),
+                board.repositories());
+    }
+
+    /** The board with story ST1 warned about in a way that holds its work. */
+    private static Board warnedStory(final Board board) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories().stream()
+                        .map(
+                                s ->
+                                        new Story(
+                                                s.id(),
+                                                s.title(),
+                                                s.state(),
+                                                s.priority(),
+                                                s.size(),
+                                                s.issues(),
+                                                s.description(),
+                                                s.link(),
+                                                s.issuesWhole(),
+                                                s.closedAt(),
+                                                List.of(Warning.parentOutsideProject()),
+                                                s.version(),
+                                                s.labels()))
+                        .toList(),
+                board.issues(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** The run with a save's mark set, keeping what it holds back. */
+    private static WorkRun.Run pending(final WorkRun.Run run, final WorkRun.PendingSave mark) {
+        return new WorkRun.Run(
+                run.id(),
+                run.story(),
+                run.to(),
+                run.mode(),
+                run.comment(),
+                run.coordinator(),
+                run.readingRounds(),
+                run.issueReadingRounds(),
+                run.repositories(),
+                run.since(),
+                run.offers(),
+                run.issues(),
+                run.stopped(),
+                run.halted(),
+                mark,
+                run.places(),
+                run.placeOffers(),
+                run.heldBack());
+    }
+
+    /** ST1 with AA1 and AA2 in Backlog, AA2 blocked by AA1, its review state Review. */
+    private static Fixture heldBack() {
+        final Fixture f = new Fixture();
+        final Board source = f.store.current;
+        f.store.current =
+                new Board(
+                        source.revision(),
+                        new Workflow(
+                                source.workflow().states(),
+                                List.of(),
+                                source.workflow().closed(),
+                                List.of("Building", "Reading", "Review")),
+                        List.of(
+                                new Story(
+                                        "ST1",
+                                        "Story",
+                                        "Backlog",
+                                        "High",
+                                        null,
+                                        List.of("AA1", "AA2"),
+                                        "",
+                                        null)),
+                        List.of(
+                                new Issue(
+                                        "AA1",
+                                        "alpha",
+                                        "First",
+                                        "Backlog",
+                                        null,
+                                        List.of(),
+                                        null,
+                                        null,
+                                        "**What must be true.** First."),
+                                new Issue(
+                                        "AA2",
+                                        "alpha",
+                                        "Second",
+                                        "Backlog",
+                                        null,
+                                        List.of("AA1"),
+                                        null,
+                                        null,
+                                        "**What must be true.** Second.")),
+                        source.work(),
+                        source.repositories());
+        return f;
+    }
+
+    /** The board with one issue in another state. */
+    private static Board moved(final Board board, final String id, final String state) {
+        return changed(
+                board,
+                id,
+                i ->
+                        new Issue(
+                                i.id(),
+                                i.repository(),
+                                i.title(),
+                                state,
+                                i.size(),
+                                i.blockedBy(),
+                                i.parent(),
+                                i.link(),
+                                i.text(),
+                                i.worker(),
+                                i.risk(),
+                                i.estimate(),
+                                i.minutes(),
+                                i.priority(),
+                                i.warnings(),
+                                i.waitsOn()));
+    }
+
+    /** The board with one issue changed. */
+    private static Board changed(
+            final Board board,
+            final String id,
+            final java.util.function.UnaryOperator<Issue> change) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream().map(i -> i.id().equals(id) ? change.apply(i) : i).toList(),
+                board.work(),
+                board.repositories());
+    }
+
+    /** The run stopped or halted as given. */
+    private static WorkRun.Run copied(
+            final WorkRun.Run run, final boolean stopped, final boolean halted) {
+        return new WorkRun.Run(
+                run.id(),
+                run.story(),
+                run.to(),
+                run.mode(),
+                run.comment(),
+                run.coordinator(),
+                run.readingRounds(),
+                run.issueReadingRounds(),
+                run.repositories(),
+                run.since(),
+                run.offers(),
+                run.issues(),
+                stopped,
+                halted,
+                run.pending(),
+                run.places(),
+                run.placeOffers(),
+                run.heldBack());
+    }
+
+    /** The run as another story's into a reading, holding nothing back nor freeing anything. */
+    private static WorkRun.Run copied(final WorkRun.Run run, final String story) {
+        return new WorkRun.Run(
+                run.id(),
+                story,
+                "Reading",
+                run.mode(),
+                run.comment(),
+                run.coordinator(),
+                run.readingRounds(),
+                run.issueReadingRounds(),
+                run.repositories(),
+                run.since(),
+                run.offers(),
+                run.issues(),
+                false,
+                false,
+                null,
+                run.places(),
+                run.placeOffers(),
+                List.of());
     }
 
     static final class Memory implements WorkRun.Record {

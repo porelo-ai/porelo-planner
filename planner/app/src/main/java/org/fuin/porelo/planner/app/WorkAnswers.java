@@ -175,9 +175,13 @@ public final class WorkAnswers {
         return run == null ? null : knownWork(board, run, held);
     }
 
+    /**
+     * Answers the run as the board stands: a freed issue's building work is among its starts only
+     * while that issue is still free to be built.
+     */
     static PlanWork knownWork(
             final Board board, final WorkRun.Run run, final TaskHelds.Counts held) {
-        return knownWork(run, issue -> manual(board, issue), held);
+        return knownWork(run, issue -> manual(board, issue), held, WorkRun.placeStarts(run, board));
     }
 
     /** The run's work for a caller that knows no held items. */
@@ -186,11 +190,23 @@ public final class WorkAnswers {
     }
 
     /**
-     * Answers the run, a person's issue reported as theirs: no task takes it and it waits on no
-     * agent's choice, whatever the run recorded before the switch.
+     * Answers the run with every start it may serve, unchecked against the board, as a bound of its
+     * size.
      */
     static PlanWork knownWork(
             final WorkRun.Run run, final Predicate<String> manual, final TaskHelds.Counts held) {
+        return knownWork(run, manual, held, WorkRun.placeStarts(run));
+    }
+
+    /**
+     * Answers the run, a person's issue reported as theirs: no task takes it and it waits on no
+     * agent's choice, whatever the run recorded before the switch.
+     */
+    private static PlanWork knownWork(
+            final WorkRun.Run run,
+            final Predicate<String> manual,
+            final TaskHelds.Counts held,
+            final List<WorkRun.Offered> starts) {
         final List<PlanWorkTask> tasks =
                 run.offers().stream()
                         .filter(o -> o.task() != null)
@@ -259,7 +275,7 @@ public final class WorkAnswers {
                                             person ? null : startRefusal(run, entry.getKey(), p));
                                 })
                         .toList(),
-                starts(WorkRun.placeStarts(run)));
+                starts(starts));
     }
 
     /**

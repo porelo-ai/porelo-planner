@@ -171,6 +171,55 @@ class PlaceWatchTest {
     }
 
     @Test
+    void theFreedIssuesAreOfferedEveryReadEvenWithNothingWaitingAndAfterThePlacesRead() {
+        // Harm: an issue held back by a blocker never starts while no place of the project is
+        // kept, or waits a minute more because it is offered before its blocker's place is read.
+        final Fake idle = new Fake(WorkRun.PlaceOutcome.UNCHANGED);
+        idle.waits.clear();
+        idle.freed = java.util.Set.of("ST1");
+        final PlaceWatch watch =
+                new PlaceWatch(
+                        p -> idle,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> answer(),
+                        saved::add,
+                        helds,
+                        scheduler,
+                        Duration.ofMinutes(1));
+
+        assertThat(watch.readAll("project")).as("no place read").isEmpty();
+        assertThat(idle.steps).as("freed with no place waiting").containsExactly("freed");
+        assertThat(saved).as("the windows are told of the offer").containsExactly("project");
+        saved.clear();
+        watch.readAll("project");
+        assertThat(saved).as("nothing offered, nobody told").isEmpty();
+
+        final Fake waiting = new Fake(WorkRun.PlaceOutcome.UNCHANGED);
+        waiting.freed = java.util.Set.of("ST2");
+        new PlaceWatch(
+                        p -> waiting,
+                        (project, from) -> List.of(),
+                        (project, place, role, task) -> answer(),
+                        saved::add,
+                        helds,
+                        scheduler,
+                        Duration.ofMinutes(1))
+                .readAll("project");
+        assertThat(waiting.steps)
+                .as("freed after the waiting place was read")
+                .containsExactly("AA1", "freed");
+        assertThat(saved).as("the windows are told").containsExactly("project");
+
+        saved.clear();
+        idle.left = java.util.Set.of("ST1");
+        idle.freed = java.util.Set.of("ST3");
+        idle.steps.clear();
+        watch.readAll("project");
+        assertThat(idle.steps).as("freed even when a stop ended").containsExactly("freed");
+        assertThat(saved).as("told once").containsExactly("project");
+    }
+
+    @Test
     void theHeldItemsAReadFoundStandForTheirTaskAndForNoOther() {
         // Harm: the card shows no held items though Porelo counted some, those of another task or
         // another project's task of the same name, or 0 where Porelo gave no count.
@@ -744,6 +793,20 @@ class PlaceWatchTest {
             return ended;
         }
 
+        /** The stories whose runs the next call offers freed work in. */
+        java.util.Set<String> freed = java.util.Set.of();
+
+        /** What was done, in order: each place read by its issue, and "freed". */
+        final List<String> steps = new CopyOnWriteArrayList<>();
+
+        @Override
+        public java.util.Set<String> freed() {
+            steps.add("freed");
+            final java.util.Set<String> offered = freed;
+            freed = java.util.Set.of();
+            return offered;
+        }
+
         @Override
         public List<WorkRun.Waits> waiting() {
             listed.countDown();
@@ -767,6 +830,7 @@ class PlaceWatchTest {
                 throw new IllegalStateException("broken");
             }
             reads.add(found);
+            steps.add(issue);
             return found instanceof PlaceRead.Recorded ? WorkRun.PlaceOutcome.UNCHANGED : outcome;
         }
     }

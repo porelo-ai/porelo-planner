@@ -95,6 +95,14 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         java.util.Set<String> placesLeft();
 
         /**
+         * Offers the building work of each issue a run's Start held back, once nothing holds it
+         * back any more.
+         *
+         * @return the stories whose runs offered work
+         */
+        java.util.Set<String> freed();
+
+        /**
          * A project's work as the watch reads it.
          *
          * @param work the work
@@ -121,6 +129,11 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                 @Override
                 public java.util.Set<String> placesLeft() {
                     return work.placesLeft();
+                }
+
+                @Override
+                public java.util.Set<String> freed() {
+                    return work.freed();
                 }
             };
         }
@@ -344,7 +357,9 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
      * record of the task bound there, then what is open there. A read one issue cannot take leaves
      * the others read. The same read of the records gives the held items of each task started for
      * the project's runs that is still at work or whose count was never read, whether or not a
-     * place waits.
+     * place waits. After them, even with no place waiting, the building work of each issue a Start
+     * held back whose blockers are done is offered, so a blocker that reached review in this read
+     * frees its issue in the same one.
      *
      * @param project the project's checked name
      * @return each issue's outcome, by story and issue
@@ -412,7 +427,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
             }
         }
         if (waiting.isEmpty()) {
-            if (changed) {
+            if (freed(project, work) || changed) {
                 saved.accept(project);
             }
             measured(project, 0, waitingNanos, began);
@@ -445,11 +460,30 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                         logged(e));
             }
         }
+        changed |= freed(project, work);
         if (changed) {
             saved.accept(project);
         }
         measured(project, waiting.size(), waitingNanos, began);
         return outcomes;
+    }
+
+    /**
+     * Offers the freed issues of a project's runs; a failure is logged and leaves the windows told
+     * of a change, since a save that failed may have changed a run.
+     *
+     * @return whether a run may have changed
+     */
+    private static boolean freed(final String project, final Places work) {
+        try {
+            return !work.freed().isEmpty();
+        } catch (final RuntimeException e) {
+            LOG.warn(
+                    "Offering the freed issues of project {} failed: {}",
+                    LogText.of(project),
+                    logged(e));
+            return true;
+        }
     }
 
     /**

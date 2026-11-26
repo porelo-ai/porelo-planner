@@ -82,6 +82,30 @@ void main() {
     expect(work.starts.last.place?.pullRequest, 'https://github.com/acme/shop/pull/12');
   });
 
+  test('the work reads an author building an issue its run held back as a start, at no place, as a builder only', () {
+    // Harm: an issue freed of its blocker is never started, so the story stalls; or a reader, a reviewer, a stage
+    // handing back a result, or work beyond one issue the run lists starts at no place without the person.
+    final work = _work([
+      _rework(40)..remove('place'),
+      _rework(41, role: 'READER')..remove('place'),
+      _rework(42, runRole: 'REVIEWER')..remove('place'),
+      _rework(43, runRole: null)..remove('place'),
+      _rework(44)
+        ..remove('place')
+        ..['result'] = 'analysis.json',
+      _rework(45)
+        ..remove('place')
+        ..['issues'] = ['PR9'],
+      _rework(46)
+        ..remove('place')
+        ..['issues'] = ['PR1', 'PR1.1'],
+      _rework(47, role: 'MAIN')..remove('place'),
+    ]);
+    expect(work.starts.map((order) => order.offer), [servedOffer(40)]);
+    expect(work.starts.single.runRole, 'AUTHOR');
+    expect(work.starts.single.place, isNull);
+  });
+
   test('a start the planner offered is started once through its own hook, and only through it', () async {
     // Harm: the window's pressed start opens for an offer nobody pressed; a rework never starts; it starts twice; or
     // a machine not ready yet stops it for good.

@@ -1038,6 +1038,10 @@ public final class WorkRecord implements AutoCloseable {
                 if (run instanceof ObjectNode placed && !placed.has("placeOffers")) {
                     placed.putArray("placeOffers");
                 }
+                // A run written before Starts remembered the issues they held back holds none.
+                if (run instanceof ObjectNode placed && !placed.has("heldBack")) {
+                    placed.putArray("heldBack");
+                }
                 // A place kept before reviewers ran there names no head a reviewer was offered at.
                 for (final JsonNode place : run.path("places")) {
                     if (place instanceof ObjectNode kept && !kept.has("reviewed")) {
@@ -1585,6 +1589,7 @@ public final class WorkRecord implements AutoCloseable {
                                 }
                                 run.places().forEach((id, place) -> checkedPlace(run, id, place));
                                 checkedPlaceOffers(run);
+                                checkedHeldBack(run);
                             });
         }
 
@@ -1623,9 +1628,10 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         /**
-         * Refuses an offer a read of a kept place made that is named twice, or that is neither an
-         * author's offer of the run at a gate push or at its task's own pull request nor a
-         * reviewer's, as a reader, at a place.
+         * Refuses an offer a read of a kept place or a freed issue made that is named twice, or
+         * that is neither an author's offer of the run at a gate push or at its task's own pull
+         * request, nor a reviewer's, as a reader, at a place, nor an author's builder at no place
+         * of one issue of the run's, that hands back no result and reads nothing.
          */
         private static void checkedPlaceOffers(final WorkRun.Run run) {
             if (Set.copyOf(run.placeOffers()).size() != run.placeOffers().size()) {
@@ -1636,21 +1642,44 @@ public final class WorkRecord implements AutoCloseable {
                         .noneMatch(
                                 o ->
                                         o.id().equals(id)
-                                                && o.arguments().place() != null
-                                                && (o.arguments().runRole() == RunRole.AUTHOR
-                                                                && (o.arguments().place().gatePush()
-                                                                                != null
-                                                                        || o.arguments()
-                                                                                        .place()
-                                                                                        .ownPullRequest()
-                                                                                != null)
-                                                        || o.arguments().runRole()
-                                                                        == RunRole.REVIEWER
+                                                && (o.arguments().place() != null
+                                                                && (o.arguments().runRole()
+                                                                                        == RunRole
+                                                                                                .AUTHOR
+                                                                                && (o.arguments()
+                                                                                                        .place()
+                                                                                                        .gatePush()
+                                                                                                != null
+                                                                                        || o.arguments()
+                                                                                                        .place()
+                                                                                                        .ownPullRequest()
+                                                                                                != null)
+                                                                        || o.arguments().runRole()
+                                                                                        == RunRole
+                                                                                                .REVIEWER
+                                                                                && o.binding()
+                                                                                        .role()
+                                                                                        .equals(
+                                                                                                "READER"))
+                                                        || WorkRun.freedOffer(run, o)
                                                                 && o.binding()
-                                                                        .role()
-                                                                        .equals("READER")))) {
+                                                                        .story()
+                                                                        .equals(run.story())
+                                                                && run.issues()
+                                                                        .containsKey(
+                                                                                o.binding()
+                                                                                        .issues()
+                                                                                        .getFirst())))) {
                     throw new IllegalArgumentException("a place's offer fails its check");
                 }
+            }
+        }
+
+        /** Refuses an issue held back that is no issue's id, or is named twice. */
+        private static void checkedHeldBack(final WorkRun.Run run) {
+            run.heldBack().forEach(Ids::issue);
+            if (Set.copyOf(run.heldBack()).size() != run.heldBack().size()) {
+                throw new IllegalArgumentException("an issue held back fails its check");
             }
         }
 

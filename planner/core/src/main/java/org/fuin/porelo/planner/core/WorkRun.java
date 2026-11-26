@@ -685,8 +685,10 @@ public final class WorkRun implements RefusedEventResave {
 
     /**
      * One story's accepted order, task bindings and retained reading state, where each issue's work
-     * waits, by the issue's id, and the offers a read of a kept place made, by their ids: those
-     * follow no end, so no reply to a task's event names them.
+     * waits, by the issue's id, and the offers a read of a kept place or a freed issue's made, by
+     * their ids: those follow no end, so no reply to a task's event names them. It also names the
+     * issues of the story its Start held back from the building work by a blocker or a wait not
+     * done, each until its own building work is offered.
      */
     public record Run(
             String id,
@@ -705,7 +707,8 @@ public final class WorkRun implements RefusedEventResave {
             boolean halted,
             @Nullable PendingSave pending,
             Map<String, IssuePlace> places,
-            List<String> placeOffers) {
+            List<String> placeOffers,
+            List<String> heldBack) {
         /** Makes each published run a snapshot rather than a shared mutable object. */
         public Run {
             issueReadingRounds = List.copyOf(issueReadingRounds);
@@ -714,6 +717,47 @@ public final class WorkRun implements RefusedEventResave {
             issues = Map.copyOf(issues);
             places = Map.copyOf(places);
             placeOffers = List.copyOf(placeOffers);
+            heldBack = List.copyOf(heldBack);
+        }
+
+        /** A run that holds no issue back. */
+        public Run(
+                final String id,
+                final String story,
+                final String to,
+                final String mode,
+                final String comment,
+                final String coordinator,
+                final int readingRounds,
+                final List<WorkProposal.IssueRounds> issueReadingRounds,
+                final List<WorkProposal.Repository> repositories,
+                final String since,
+                final List<Offer> offers,
+                final Map<String, NextStep.Progress> issues,
+                final boolean stopped,
+                final boolean halted,
+                final @Nullable PendingSave pending,
+                final Map<String, IssuePlace> places,
+                final List<String> placeOffers) {
+            this(
+                    id,
+                    story,
+                    to,
+                    mode,
+                    comment,
+                    coordinator,
+                    readingRounds,
+                    issueReadingRounds,
+                    repositories,
+                    since,
+                    offers,
+                    issues,
+                    stopped,
+                    halted,
+                    pending,
+                    places,
+                    placeOffers,
+                    List.of());
         }
 
         /** A run no read of a kept place offered anything in. */
@@ -1120,6 +1164,10 @@ public final class WorkRun implements RefusedEventResave {
                                 "Every issue needs a participant in its own repository.");
                     }
                     final Map<String, IssuePlace> places = carriedPlaces(old, offers);
+                    final List<String> heldBack =
+                            decision.issues() == null
+                                    ? heldBack(board, to, proposal)
+                                    : stillHeld(earlier, to, decision.issues());
                     final Run run =
                             new Run(
                                     UUID.randomUUID().toString(),
@@ -1138,7 +1186,9 @@ public final class WorkRun implements RefusedEventResave {
                                     false,
                                     false,
                                     null,
-                                    places);
+                                    places,
+                                    List.of(),
+                                    heldBack);
                     final Snapshot next = replace(snapshot, run);
                     session.preflight(next);
                     session.write(next);
@@ -2326,9 +2376,11 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * The offers of a run a read of a kept place made, which wait for the window to start them: an
-     * author's rework at its place or a reviewer there, offered without any request of the window's
-     * and following no end; never an order's own offers, nor an end's.
+     * The offers of a run made without any request of the window's, which may wait for the window
+     * to start them, unchecked against the board: an author's rework at its kept place or a
+     * reviewer there, or the building work of an issue its Start held back, following no end; never
+     * an order's own offers, nor an end's. What the window is given is {@link #placeStarts(Run,
+     * Board)}; this answers at most as much, for a bound.
      *
      * @param run the run
      * @return those offers, none for a stopped or halted run
@@ -2342,16 +2394,297 @@ public final class WorkRun implements RefusedEventResave {
                         o ->
                                 o.status().equals("OFFERED")
                                         && run.placeOffers().contains(o.id())
-                                        && o.arguments().place() != null
-                                        && (o.arguments().runRole() == RunRole.REVIEWER
-                                                || o.arguments().runRole() == RunRole.AUTHOR
-                                                        && (o.arguments().place().gatePush() != null
-                                                                || o.arguments()
-                                                                                .place()
-                                                                                .ownPullRequest()
-                                                                        != null)))
+                                        && (o.arguments().place() != null
+                                                        && (o.arguments().runRole()
+                                                                        == RunRole.REVIEWER
+                                                                || o.arguments().runRole()
+                                                                                == RunRole.AUTHOR
+                                                                        && (o.arguments()
+                                                                                                .place()
+                                                                                                .gatePush()
+                                                                                        != null
+                                                                                || o.arguments()
+                                                                                                .place()
+                                                                                                .ownPullRequest()
+                                                                                        != null))
+                                                || freedOffer(run, o)))
                 .map(o -> new Offered(o.id(), o.arguments()))
                 .toList();
+    }
+
+    /**
+     * The offers of a run the window starts without the person, as {@link #placeStarts(Run)}
+     * answers them, a freed issue's building work only while its issue is still free to be built on
+     * the board as it stands: one whose blocker went back to rework, or that was moved or became a
+     * person's since, waits, and is served again once it is free again.
+     *
+     * @param run the run
+     * @param board the board as it stands
+     * @return those offers, none for a stopped or halted run
+     */
+    public static List<Offered> placeStarts(final Run run, final Board board) {
+        return placeStarts(run).stream()
+                .filter(
+                        o ->
+                                o.task().place() != null
+                                        || freeable(board, run, o.task().issues().getFirst()))
+                .toList();
+    }
+
+    /**
+     * Whether an offer of a run has the shape of a freed issue's building work: an author's builder
+     * of one issue at no place, into the run's own working state under a rule that hands back no
+     * result and reads nothing, and that is given nothing and reads nothing itself.
+     *
+     * @param run the run
+     * @param offer the offer
+     * @return true for that shape
+     */
+    public static boolean freedOffer(final Run run, final Offer offer) {
+        final WorkOrder.Task task = offer.arguments();
+        return task.runRole() == RunRole.AUTHOR
+                && task.place() == null
+                && task.role().equals("BUILDER")
+                && offer.binding().role().equals("BUILDER")
+                && offer.binding().state().equals(run.to())
+                && task.issues().size() == 1
+                && offer.binding().rule().result() == null
+                && offer.binding().rule().blocked() == null
+                && task.result() == null
+                && task.given().isEmpty()
+                && task.reads().isEmpty();
+    }
+
+    /** The run's freed offers not started yet. */
+    private static List<Offer> freedWaiting(final Run run) {
+        return run.offers().stream()
+                .filter(
+                        o ->
+                                o.status().equals("OFFERED")
+                                        && run.placeOffers().contains(o.id())
+                                        && freedOffer(run, o))
+                .toList();
+    }
+
+    /**
+     * Offers the building work of each issue a run's Start held back by a blocker or a wait, once
+     * nothing holds it back any more, so it starts without the person: one story's run at a time,
+     * each judged on a fresh read of the record and the board. A run that is stopped, halted, has a
+     * save in flight or works under any rule but the building one offers nothing; an issue is
+     * offered only while it stands where that rule takes from, is an agent's, holds no warning, its
+     * story none either, and no run offers or works it already. It leaves the issues held back once
+     * offered, so it is offered once; an offer not started whose issue is no longer free is taken
+     * back and its issue held back again, to be offered anew once it is free. An issue whose work
+     * cannot be built is told and stays held back; a run that fails is told and left as it stood.
+     *
+     * @return the stories whose runs offered work, none when nothing was offered
+     */
+    public Set<String> freed() {
+        final List<String> stories =
+                record.latest().runs().values().stream()
+                        .filter(
+                                r ->
+                                        (!r.heldBack().isEmpty() || !freedWaiting(r).isEmpty())
+                                                && !r.stopped()
+                                                && !r.halted()
+                                                && r.pending() == null)
+                        .map(Run::story)
+                        .toList();
+        final Set<String> offered = new LinkedHashSet<>();
+        for (final String story : stories) {
+            try {
+                if (record.locked(session -> freed(session, story))) {
+                    offered.add(story);
+                }
+            } catch (final RuntimeException failed) {
+                told.accept(
+                        "The issues held back in story "
+                                + story
+                                + " could not be offered: "
+                                + NextStep.said(failed));
+            }
+        }
+        return Set.copyOf(offered);
+    }
+
+    /** Offers the freed issues of one story's run, under the record's lock. */
+    private boolean freed(final Session session, final String story) {
+        final Snapshot snapshot = read(session);
+        final Run run = snapshot.runs().get(story);
+        if (run == null
+                || run.heldBack().isEmpty() && freedWaiting(run).isEmpty()
+                || run.stopped()
+                || run.halted()
+                || run.pending() != null) {
+            return false;
+        }
+        final Board board = store.board();
+        final Draft draft = new Draft(run);
+        boolean changed = false;
+        for (final Offer waiting : freedWaiting(run)) {
+            final String id = waiting.binding().issues().getFirst();
+            if (!freeable(board, run, id)) {
+                // Taken back, so no later Start waits on it and its id starts nothing.
+                draft.offers.removeIf(o -> o.id().equals(waiting.id()));
+                draft.placeOffers.remove(waiting.id());
+                if (!draft.heldBack.contains(id)) {
+                    draft.heldBack.add(id);
+                }
+                changed = true;
+            }
+        }
+        final WorkRule rule = building(board, run.to());
+        for (final String id : run.heldBack()) {
+            if (rule == null || !freeable(board, run, id) || offered(snapshot, id)) {
+                continue;
+            }
+            final Offer next;
+            try {
+                next = freedTask(board, run, board.issue(id).orElseThrow(), rule);
+            } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
+                told.accept(
+                        "Issue "
+                                + id
+                                + " held back in story "
+                                + story
+                                + " could not be offered: "
+                                + NextStep.said(cannotBuild));
+                continue;
+            }
+            listed(draft, next.arguments(), rule);
+            draft.progress.putIfAbsent(
+                    id,
+                    NextStep.Progress.start(
+                            run.issueReadingRounds().stream()
+                                    .filter(l -> l.issue().equals(id))
+                                    .mapToInt(WorkProposal.IssueRounds::rounds)
+                                    .findFirst()
+                                    .orElse(run.readingRounds())));
+            draft.offers.add(next);
+            draft.placeOffers.add(next.id());
+            draft.heldBack.remove(id);
+            changed = true;
+        }
+        if (!changed) {
+            return false;
+        }
+        final Snapshot next = replace(snapshot, draft.freeze());
+        session.preflight(next);
+        session.write(next);
+        return true;
+    }
+
+    /** The building work of a freed issue, in the run's mode where the rule allows it. */
+    private static Offer freedTask(
+            final Board board, final Run run, final Issue issue, final WorkRule rule) {
+        final String story = run.story();
+        final String id = issue.id();
+        NextStep.Planned planned =
+                NextStep.task(
+                        board,
+                        story,
+                        issue,
+                        run.to(),
+                        rule,
+                        null,
+                        run.comment(),
+                        "",
+                        "BUILDER",
+                        lastBuild(run, id));
+        if (!planned.task().mode().equals(run.mode()) && rule.modes().contains(run.mode())) {
+            // The issue is built in the run's mode where the rule allows it.
+            planned =
+                    NextStep.task(
+                            board,
+                            story,
+                            issue,
+                            run.to(),
+                            rule,
+                            new NextStep.Settings(
+                                    run.mode(), planned.task().agent(), planned.task().model()),
+                            run.comment(),
+                            "",
+                            "BUILDER",
+                            lastBuild(run, id));
+        }
+        return offer(
+                new NextStep.Planned(
+                        planned.task().at(RunRole.AUTHOR, null),
+                        planned.state(),
+                        planned.rule(),
+                        planned.basis()),
+                story);
+    }
+
+    /**
+     * Whether an issue the run's Start held back is free to be built on the board as it stands:
+     * still of the run's story and open, where the run's building rule takes from, an agent's, with
+     * no warning on it or its story and no blocker or wait not done.
+     */
+    private static boolean freeable(final Board board, final Run run, final String id) {
+        final WorkRule rule = building(board, run.to());
+        final Story story = board.story(run.story()).orElse(null);
+        final Issue issue = board.issue(id).orElse(null);
+        if (rule == null
+                || story == null
+                || issue == null
+                || board.twice(id).isPresent()
+                || board.holdsWork(run.story()).isPresent()) {
+            return false;
+        }
+        final boolean own =
+                story.issues().contains(id)
+                        || issue.parent() != null && story.issues().contains(issue.parent());
+        return own
+                && !board.workflow().closed().contains(issue.state())
+                && rule.from().contains(issue.state())
+                && issue.worker() != Worker.MANUAL
+                && !WorkProposal.free(board, run.to(), List.of(issue), null).isEmpty();
+    }
+
+    /** Whether any run offers or works the issue. */
+    private static boolean offered(final Snapshot snapshot, final String id) {
+        return snapshot.runs().values().stream()
+                .flatMap(r -> r.offers().stream())
+                .anyMatch(
+                        o ->
+                                (o.status().equals("OFFERED") || o.status().equals("STARTED"))
+                                        && o.binding().issues().contains(id));
+    }
+
+    /**
+     * Lists a freed issue in the run's repository it is built in, or in a new entry for that
+     * repository with the task's settings, so the window finds it in the run.
+     */
+    private static void listed(final Draft draft, final WorkOrder.Task task, final WorkRule rule) {
+        final String id = task.issues().getFirst();
+        for (int at = 0; at < draft.repositories.size(); at++) {
+            final WorkProposal.Repository entry = draft.repositories.get(at);
+            if (entry.repository().equals(task.repository())) {
+                if (!entry.issues().contains(id)) {
+                    final List<String> issues = new ArrayList<>(entry.issues());
+                    issues.add(id);
+                    draft.repositories.set(
+                            at,
+                            new WorkProposal.Repository(
+                                    entry.repository(), issues, entry.main(), entry.subAgents()));
+                }
+                return;
+            }
+        }
+        draft.repositories.add(
+                new WorkProposal.Repository(
+                        task.repository(),
+                        List.of(id),
+                        new WorkProposal.Main(
+                                "main",
+                                "MAIN",
+                                task.agent(),
+                                task.model(),
+                                rule.order(),
+                                task.effort(),
+                                task.basis()),
+                        List.of()));
     }
 
     /**
@@ -6034,6 +6367,58 @@ public final class WorkRun implements RefusedEventResave {
         }
     }
 
+    /**
+     * The issues a Start of the story's own issues into the building rule holds back by a blocker
+     * or a wait not done, among those standing where the rule takes from that an agent works: never
+     * one a warning holds, which the person clears, and none under any other rule, which takes a
+     * blocked issue like any other.
+     */
+    private static List<String> heldBack(
+            final Board board, final String to, final WorkProposal proposal) {
+        final WorkRule rule = building(board, to);
+        if (rule == null) {
+            return List.of();
+        }
+        return proposal.held().stream()
+                .map(WorkProposal.Held::issue)
+                .filter(id -> board.twice(id).isEmpty() && board.holdsWork(id).isEmpty())
+                .flatMap(id -> board.issue(id).stream())
+                .filter(
+                        issue ->
+                                rule.from().contains(issue.state())
+                                        && issue.worker() != Worker.MANUAL
+                                        && !WorkProposal.openBlockers(board, issue).isEmpty())
+                .map(Issue::id)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * What a Start naming issues keeps held back of the run it replaces: into the same working
+     * state, the issues it held back that the Start does not name; it holds back nothing new.
+     */
+    private static List<String> stillHeld(
+            final @Nullable Run earlier, final String to, final List<String> named) {
+        if (earlier == null || !earlier.to().equals(to)) {
+            return List.of();
+        }
+        return earlier.heldBack().stream().filter(id -> !named.contains(id)).toList();
+    }
+
+    /**
+     * The rule of the working state {@code to} when it is the building rule, the one blockers hold
+     * work back from, which hands back no result and is no reading's rework; null for any other.
+     */
+    private static @Nullable WorkRule building(final Board board, final String to) {
+        final WorkRule rule = WorkRules.check(board.workflow(), board.work()).rules().get(to);
+        return rule != null
+                        && rule.result() == null
+                        && rule.blocked() == null
+                        && WorkProposal.blockersHold(board, to)
+                ? rule
+                : null;
+    }
+
     private static Offer offer(final NextStep.Planned planned, final String story) {
         final WorkOrder.Task task = planned.task();
         if (task.agent().length() > 128
@@ -6365,6 +6750,8 @@ public final class WorkRun implements RefusedEventResave {
         private final Map<String, String> unavailable = new LinkedHashMap<>();
         private final Map<String, IssuePlace> places;
         private final List<String> placeOffers;
+        private final List<WorkProposal.Repository> repositories;
+        private final List<String> heldBack;
         private boolean stopped;
         private boolean halted;
         private @Nullable PendingSave pending;
@@ -6377,6 +6764,8 @@ public final class WorkRun implements RefusedEventResave {
             progress = new LinkedHashMap<>(run.issues());
             places = new LinkedHashMap<>(run.places());
             placeOffers = new ArrayList<>(run.placeOffers());
+            repositories = new ArrayList<>(run.repositories());
+            heldBack = new ArrayList<>(run.heldBack());
             stopped = run.stopped();
             halted = run.halted();
             pending = run.pending();
@@ -6529,7 +6918,7 @@ public final class WorkRun implements RefusedEventResave {
                     original.coordinator(),
                     original.readingRounds(),
                     original.issueReadingRounds(),
-                    original.repositories(),
+                    repositories,
                     original.since(),
                     offers,
                     progress,
@@ -6537,7 +6926,8 @@ public final class WorkRun implements RefusedEventResave {
                     halted,
                     pending,
                     places,
-                    placeOffers);
+                    placeOffers,
+                    heldBack);
         }
     }
 }

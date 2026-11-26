@@ -1023,6 +1023,108 @@ class WorkRecordTest {
     }
 
     @Test
+    void aFreedIssuesOfferAndTheIssuesAStartHeldBackAreReadBackAndARecordWithoutThemOpens()
+            throws Exception {
+        // Harm: after a restart a held issue is never freed, or its offer is lost, so it never
+        // starts; an older record no longer opens; or a record changed on disk names an offer of
+        // another shape, which the window then starts without the person.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String freed = "00000000-0000-0000-0000-000000000006";
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode run = (ObjectNode) document.path("runs").iterator().next();
+        final ObjectNode offer = ((ObjectNode) run.get("offers").get(0)).deepCopy();
+        offer.put("id", freed).put("status", "OFFERED");
+        for (final String unbound : List.of("task", "containerId", "machine", "since", "ended")) {
+            offer.putNull(unbound);
+        }
+        ((ObjectNode) offer.get("arguments"))
+                .put("role", "BUILDER")
+                .put("runRole", "AUTHOR")
+                .putNull("place");
+        ((ObjectNode) offer.get("binding")).put("role", "BUILDER");
+        ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
+        run.putArray("placeOffers").add(freed);
+        run.putArray("heldBack").add("AA2");
+        final String sound = json.writeValueAsString(document);
+        Files.writeString(file, sound);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run read = run(records);
+            assertThat(read.heldBack()).as("the held issue read back").containsExactly("AA2");
+            assertThat(WorkRun.placeStarts(read))
+                    .as("the freed offer read back as a start")
+                    .extracting(WorkRun.Offered::offer)
+                    .containsExactly(freed);
+
+            final var older = json.readTree(sound);
+            ((ObjectNode) older.path("runs").iterator().next()).remove("heldBack");
+            Files.writeString(file, json.writeValueAsString(older));
+            records.forget("project");
+            assertThat(run(records).heldBack()).as("an older record holds none back").isEmpty();
+
+            final Map<String, java.util.function.Consumer<ObjectNode>> forged =
+                    new java.util.LinkedHashMap<>();
+            forged.put("a reader", at -> part(at, "arguments").put("role", "READER"));
+            forged.put("a reviewer", at -> part(at, "arguments").put("runRole", "REVIEWER"));
+            forged.put("a main", at -> part(at, "binding").put("role", "MAIN"));
+            forged.put(
+                    "two issues",
+                    at -> {
+                        issues(at, "arguments").add("AA2");
+                        issues(at, "binding").add("AA2");
+                    });
+            forged.put(
+                    "an issue not the run's",
+                    at -> {
+                        issues(at, "arguments").set(0, "AA9");
+                        issues(at, "binding").set(0, "AA9");
+                    });
+            forged.put(
+                    "a stage's result",
+                    at -> ((ObjectNode) part(at, "binding").get("rule")).put("result", "ANALYSIS"));
+            forged.put("another state", at -> part(at, "binding").put("state", "Finished"));
+            forged.put(
+                    "a reading's rule",
+                    at -> ((ObjectNode) part(at, "binding").get("rule")).put("blocked", "Rework"));
+            forged.put(
+                    "a stage's own result and files",
+                    at -> {
+                        part(at, "arguments").put("result", "analysis.json");
+                        part(at, "arguments")
+                                .putArray("given")
+                                .addObject()
+                                .put("name", "AA1.md")
+                                .put("text", "x");
+                    });
+            forged.put("a task's reads", at -> part(at, "arguments").putArray("reads").add("task"));
+            forged.put("a held id that is none", at -> at.putArray("heldBack").add("not an id"));
+            forged.put("a held id twice", at -> at.putArray("heldBack").add("AA2").add("AA2"));
+            for (final var each : forged.entrySet()) {
+                final var tampered = json.readTree(sound);
+                each.getValue().accept((ObjectNode) tampered.path("runs").iterator().next());
+                Files.writeString(file, json.writeValueAsString(tampered));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records))
+                        .as("refused: " + each.getKey())
+                        .isInstanceOf(WorkRefusal.class);
+            }
+        }
+    }
+
+    /** A part of the freed offer of a run as written. */
+    private static ObjectNode part(final ObjectNode run, final String name) {
+        return (ObjectNode) run.get("offers").get(1).get(name);
+    }
+
+    /** The issues of a part of the freed offer of a run as written. */
+    private static tools.jackson.databind.node.ArrayNode issues(
+            final ObjectNode run, final String name) {
+        return (tools.jackson.databind.node.ArrayNode) part(run, name).get("issues");
+    }
+
+    @Test
     void anAuthorsReworkAtItsOwnPullRequestIsReadBack() throws Exception {
         // Harm: once Porelo forwarded the work to its task's pull request, the saved rework offer
         // there is refused, so the record no longer opens and the author is never sent back.

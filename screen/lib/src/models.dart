@@ -369,12 +369,13 @@ class PlanWork {
         final order = PlanningTaskOrder.from(entry);
         final repository = repositories.where((repo) => repo.repository == order.repository).firstOrNull;
         // Only an author sent back to a place it resumes, its gate push or its task's own pull request, as a builder
-        // that pushes its work, or a reviewer of the work at its place, a reader, starts without the person, each for
-        // one issue of the run's.
+        // that pushes its work, an author building an issue its run held back, at no place, or a reviewer of the work
+        // at its place, a reader, starts without the person, each for one issue of the run's.
         final resumes = order.place?.gatePush != null || order.place?.ownPullRequest == true;
         final author = order.runRole == 'AUTHOR' && resumes && order.role == 'BUILDER';
+        final freed = order.runRole == 'AUTHOR' && order.place == null && order.role == 'BUILDER';
         final reviewer = order.runRole == 'REVIEWER' && order.place != null && order.role == 'READER';
-        if ((author || reviewer) &&
+        if ((author || freed || reviewer) &&
             order.result == null &&
             order.issues.length == 1 &&
             repository != null &&
@@ -391,7 +392,8 @@ class PlanWork {
 
   /// The run's offers made without a request of the window's, which the window starts through the hook it gives for
   /// them: an author sent back to the push its work waits at, started under that push's name, or to its task's own
-  /// pull request, or a reviewer of the work at its place, started under a task name of its own.
+  /// pull request, an author building an issue its run held back once nothing holds it, or a reviewer of the work at
+  /// its place, the last two started under a task name of their own.
   final List<PlanningTaskOrder> starts;
 
   /// The run the planner drew when the work started, compared only for equality; null from a planner without it.

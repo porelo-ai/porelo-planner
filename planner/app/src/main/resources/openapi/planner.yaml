@@ -5570,9 +5570,12 @@ components:
             pull request, once Porelo forwarded the gate push there, with runRole AUTHOR and place ownPullRequest,
             started under the same task's name; or, where the reading rule names a reviewer, a reviewer of a new
             head at the place the work waits at, with runRole REVIEWER, role READER and that place, started under a
-            task name of its own, never the name of the task whose work it reviews. The window starts each once,
-            through the callback it gives for offers it did not ask for; empty when none waits, and for a stopped or
-            halted run.
+            task name of its own, never the name of the task whose work it reviews; or the building work of an issue
+            the run's Start held back by a blocker or a wait not done, once each of them stands in review or closed,
+            with runRole AUTHOR, role BUILDER, no place and no result, for that one issue, which the run's
+            repositories then list, started under a task name of its own, and served only while nothing holds the
+            issue back on the board as it stands. The window starts each once, through the callback it gives for
+            offers it did not ask for; empty when none waits, and for a stopped or halted run.
           items:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanWorkTask:

@@ -117,6 +117,73 @@ class WorkAnswersTest {
                         org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.REVIEWER);
     }
 
+    @Test
+    void aFreedIssuesStartIsServedOnlyWhileTheBoardStillLetsItBeBuilt() {
+        // Harm: the window is served a freed issue's start the board no longer lets be built, such
+        // as one whose blockers no longer hold it, and starts it without the person.
+        final WorkRule rule = board().work().rules().get("Building");
+        final org.fuin.porelo.planner.core.WorkOrder.Task task =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                                "alpha",
+                                List.of("AA1"),
+                                "BUILDER",
+                                "codex",
+                                "model",
+                                null,
+                                "AGENT",
+                                "Build.")
+                        .at(org.fuin.porelo.planner.core.RunRole.AUTHOR, null);
+        final WorkRun.Offer freed =
+                new WorkRun.Offer(
+                        "00000000-0000-0000-0000-000000000003",
+                        task,
+                        new NextStep.Binding(
+                                "ST1",
+                                "alpha",
+                                List.of("AA1"),
+                                "BUILDER",
+                                "Building",
+                                "AGENT",
+                                rule),
+                        "OFFERED",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final WorkRun.Run run =
+                new WorkRun.Run(
+                        "00000000-0000-0000-0000-000000000001",
+                        "ST1",
+                        "Building",
+                        "AGENT",
+                        "",
+                        "START",
+                        1,
+                        List.of(),
+                        List.of(),
+                        "2026-01-01T00:00:00Z",
+                        List.of(freed),
+                        Map.of(),
+                        false,
+                        false,
+                        null,
+                        Map.of(),
+                        List.of(freed.id()),
+                        List.of());
+        assertThat(WorkRun.freedOffer(run, freed)).as("a freed issue's offer").isTrue();
+        assertThat(WorkAnswers.knownWork(run, id -> false).starts())
+                .as("counted in the bound of the answer's size")
+                .hasSize(1);
+        assertThat(WorkAnswers.knownWork(board(), run, TaskHelds.Counts.NONE).starts())
+                .as("not served on a board whose workflow tells no backlog state")
+                .isEmpty();
+    }
+
     private static WorkRun.Offer started(
             final String id,
             final String task,
