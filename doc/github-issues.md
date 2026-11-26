@@ -173,9 +173,10 @@ Markdown store's stage records count them; a pause and a person's move are shown
   `owner/repository#number` with whether it is done and its link. A blocker the person's token cannot read is named
   as a wait on something not readable, never as done; so is each blocker GitHub counts but leaves out of the ones it
   names, with no reference.
-- Work never starts on an issue while a blocker of it is open: a blocker on the board in an open state, a wait not
-  done, or a wait whose state could not be read. A start reads the offered issues' waits once more and refuses on an
-  open or unread one; a run already started goes on when a wait opens again.
+- Building never starts on an issue while a blocker of it is open: a blocker on the board neither closed nor in
+  review, a wait not done, or a wait whose state could not be read. Only the building work is held back; analysis,
+  estimation and the other work move a blocked issue with its story. A start into the building work reads the offered
+  issues' waits once more and refuses on an open or unread one; a run already started goes on when a wait opens again.
 - A look at the board asks each repository outside the project that a wait stands in, up to 10, whether its issues
   changed, and reads only the waits again when one did; with more of them, or when a look runs out of time, the waits
   are read again once a minute. A repository the token cannot read is asked once after each whole read. A blocker

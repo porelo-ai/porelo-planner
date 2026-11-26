@@ -235,7 +235,7 @@ public record WorkProposal(
         bounded(story, to, rule.order());
         // An issue held back, by a warning or by a blocker not done, is offered on no path.
         final List<Held> held = new ArrayList<>();
-        final List<Issue> open = free(board, issues(board, story, to, held), held);
+        final List<Issue> open = free(board, to, issues(board, story, to, held), held);
         if (picked != null) {
             for (final Held each : held) {
                 if (picked.contains(each.issue())) {
@@ -455,7 +455,7 @@ public record WorkProposal(
      */
     private static boolean agentsReady(
             final Board board, final Story story, final String to, final WorkRule rule) {
-        final List<Issue> open = free(board, issues(board, story, to, new ArrayList<>()), null);
+        final List<Issue> open = free(board, to, issues(board, story, to, new ArrayList<>()), null);
         if (open.stream().noneMatch(i -> i.worker() == Worker.MANUAL)) {
             return false;
         }
@@ -492,6 +492,28 @@ public record WorkProposal(
             }
         }
         return held;
+    }
+
+    /**
+     * Whether blockers hold issues back from the work of the working state {@code to}: only from
+     * the building rule, the one that builds and pushes (no result, no reading) and takes work from
+     * the workflow's backlog state. Analysis, estimation and every other work take a blocked issue
+     * like any other. Where the workflow tells no backlog state, or names no rule for {@code to},
+     * blockers hold under every rule, as nothing tells the building rule apart.
+     *
+     * @param board the board
+     * @param to the working state
+     * @return true when a blocker not done holds an issue back from that work
+     */
+    public static boolean blockersHold(final Board board, final String to) {
+        final WorkRule rule = board.work().rules().get(to);
+        final java.util.Optional<StoryState> states = StoryState.of(board.workflow(), List.of());
+        if (rule == null || states.isEmpty()) {
+            return true;
+        }
+        return rule.result() == null
+                && rule.blocked() == null
+                && rule.from().contains(states.get().backlog());
     }
 
     /**
@@ -569,17 +591,22 @@ public record WorkProposal(
 
     /**
      * The open issues nothing holds back, each one held back added to {@code held} with its reason,
-     * so it is named but never worked.
+     * so it is named but never worked. A warning that holds work holds under every rule; a blocker
+     * or an outside wait only under the building rule ({@link #blockersHold}).
      */
     private static List<Issue> free(
-            final Board board, final List<Issue> open, final @Nullable List<Held> held) {
+            final Board board,
+            final String to,
+            final List<Issue> open,
+            final @Nullable List<Held> held) {
+        final boolean blockers = blockersHold(board, to);
         final List<Issue> free = new ArrayList<>();
         for (final Issue issue : open) {
             final java.util.Optional<String> reason =
                     board.holdsWork(issue.id())
                             .or(
                                     () ->
-                                            openBlockers(board, issue).isEmpty()
+                                            !blockers || openBlockers(board, issue).isEmpty()
                                                     ? java.util.Optional.empty()
                                                     : java.util.Optional.of(
                                                             waiting(board, List.of(issue))));

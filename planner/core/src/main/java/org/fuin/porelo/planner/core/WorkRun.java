@@ -5934,11 +5934,15 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Refuses a start whose offered issues wait, as the tracker answers now, on an issue not done:
-     * a wait the board holds as done may have opened again since it was read.
+     * Refuses a start into the building rule whose offered issues wait, as the tracker answers now,
+     * on an issue not done: a wait the board holds as done may have opened again since it was read.
+     * Other work takes a waiting issue like any other, so it asks the tracker nothing.
      */
     private void waitsNow(
             final Board board, final String story, final String to, final WorkProposal proposal) {
+        if (!WorkProposal.blockersHold(board, to)) {
+            return;
+        }
         final List<String> offered = new ArrayList<>();
         proposal.repositories().forEach(repository -> offered.addAll(repository.issues()));
         final Map<String, List<Wait>> now = store.waitsNow(offered);

@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1203,6 +1204,90 @@ class WorkProposalTest {
 
     private static Issue issue(final Board board) {
         return board.issue("BB1").orElseThrow();
+    }
+
+    @Test
+    void aBlockerHoldsAnIssueBackOnlyFromTheBuildingWork() {
+        // Harm: a blocked issue never gets its analysis or estimate, so its story stalls before it
+        // can be built; or the building work starts on an issue whose blocker is not done.
+        final Board board =
+                analysing(
+                        reviewed(
+                                waiting(
+                                        board(WorkRule.Per.REPOSITORY),
+                                        "BB1",
+                                        List.of("AA1"),
+                                        List.of())));
+
+        assertThat(WorkProposal.blockersHold(board, "Building")).as("the building work").isTrue();
+        assertThat(WorkProposal.blockersHold(board, "Analysing")).as("an analysis").isFalse();
+        assertThat(offered(WorkProposal.propose(board, "ST1", "Analysing")))
+                .as("the analysis takes the blocked issue like any other")
+                .contains("BB1");
+        final WorkProposal building = WorkProposal.propose(board, "ST1", "Building");
+        assertThat(offered(building))
+                .as("the building work offers the free issues")
+                .contains("AA1")
+                .doesNotContain("BB1");
+        assertThat(building.held())
+                .as("and holds the blocked one, naming its blocker")
+                .extracting(WorkProposal.Held::issue)
+                .containsExactly("BB1");
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        board,
+                                        "ST1",
+                                        "Building",
+                                        story -> List.of(),
+                                        List.of("BB1")))
+                .as("a Start naming the blocked issue alone is refused")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("AA1");
+    }
+
+    @Test
+    void aBlockerHoldsUnderEveryRuleWhereNoBacklogStateTellsTheBuildingWork() {
+        // Harm: a workflow that cannot tell its building work apart starts it over an open blocker.
+        final Board board =
+                analysing(
+                        waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of("AA1"), List.of()));
+
+        assertThat(WorkProposal.blockersHold(board, "Analysing")).isTrue();
+        assertThat(offered(WorkProposal.propose(board, "ST1", "Analysing")))
+                .as("held as today")
+                .doesNotContain("BB1");
+    }
+
+    /** The board with an analysis from Backlog, before Backlog, beside the building work. */
+    private static Board analysing(final Board board) {
+        final Map<String, WorkRule> rules = new LinkedHashMap<>(board.work().rules());
+        rules.put(
+                "Analysing",
+                new WorkRule(
+                        List.of("Backlog"),
+                        "Review",
+                        null,
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Analyze {story}; issues {issues}.",
+                        Map.of("zeta", "large"),
+                        Map.of(),
+                        WorkRule.Result.ANALYSIS));
+        final List<String> states = new ArrayList<>(board.workflow().states());
+        states.add(states.indexOf("Backlog"), "Analysing");
+        return new Board(
+                board.revision(),
+                new Workflow(
+                        states,
+                        board.workflow().phases(),
+                        board.workflow().closed(),
+                        board.workflow().measured()),
+                board.stories(),
+                board.issues(),
+                new Work(rules, board.work().faults()),
+                board.repositories());
     }
 
     /** The board with a workflow whose review state is Review, followed by Rework. */

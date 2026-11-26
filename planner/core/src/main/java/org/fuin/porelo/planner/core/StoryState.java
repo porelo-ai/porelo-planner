@@ -105,6 +105,13 @@ public final class StoryState {
     }
 
     /**
+     * @return B, the state before the first measured one, where a story waits to be built
+     */
+    public String backlog() {
+        return states.get(backlog);
+    }
+
+    /**
      * @return R, the state a story waits in for the person's review
      */
     public String review() {
