@@ -1047,6 +1047,10 @@ public final class WorkRecord implements AutoCloseable {
                     if (place instanceof ObjectNode kept && !kept.has("reviewed")) {
                         kept.putNull("reviewed");
                     }
+                    // A place kept before runs started by hand were taken there names none.
+                    if (place instanceof ObjectNode kept && !kept.has("again")) {
+                        kept.putNull("again");
+                    }
                 }
                 for (final JsonNode repository : run.path("repositories")) {
                     olderChoice(repository.path("main"));
@@ -1595,8 +1599,9 @@ public final class WorkRecord implements AutoCloseable {
 
         /**
          * Refuses a kept place of an issue the run does not hold, one whose reviewed head is no
-         * commit, or one whose author run is no ended or void builder's offer of the run owning the
-         * issue that pushes its work as its author, bound to the place's task in a container.
+         * commit, one whose run started by hand started at no instant, or one whose author run is
+         * no ended or void builder's offer of the run owning the issue that pushes its work as its
+         * author, bound to the place's task in a container.
          */
         private static void checkedPlace(
                 final WorkRun.Run run, final String issue, final IssuePlace place) {
@@ -1607,6 +1612,14 @@ public final class WorkRecord implements AutoCloseable {
             final String reviewed = place.reviewed();
             if (reviewed != null && !ReviewOpen.commit(reviewed)) {
                 throw new IllegalArgumentException("a place fails its check");
+            }
+            final String again = place.again();
+            if (again != null) {
+                try {
+                    java.time.Instant.parse(again);
+                } catch (final java.time.format.DateTimeParseException noTime) {
+                    throw new IllegalArgumentException("a place fails its check", noTime);
+                }
             }
             for (final String id : place.authorRuns()) {
                 if (run.offers().stream()

@@ -422,7 +422,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                             LogText.of(project),
                             logged(e));
                 } else {
-                    unread = said(project, e);
+                    unread = said(project, null, null, e);
                 }
             }
         }
@@ -539,10 +539,14 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     reviews.open(project, place.place(), RunRole.AUTHOR, place.task());
             read = new PlaceRead.Opened(place.place(), place.task(), answer);
             if (forwarded(place, answer)) {
-                read = ownRead(project, place, answer, reviews);
+                read = ownRead(project, waits.issue(), place, answer, reviews);
             }
         } catch (final TaskRecords.Unanswered e) {
-            read = new PlaceRead.Unread(place.place(), place.task(), said(project, e));
+            read =
+                    new PlaceRead.Unread(
+                            place.place(),
+                            place.task(),
+                            said(project, waits.issue(), place.place(), e));
         }
         return work.placeRead(waits.story(), waits.issue(), read);
     }
@@ -563,6 +567,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
      */
     private static PlaceRead ownRead(
             final String project,
+            final String issue,
             final IssuePlace place,
             final ReviewOpen atGate,
             final PlaceReviews reviews) {
@@ -574,23 +579,47 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     reviews.open(project, RunPlace.own(), RunRole.AUTHOR, place.task()));
         } catch (final PlaceReviews.Refused refused) {
             if (NO_PULL_REQUEST.contains(refused.refusal())) {
+                LOG.info(
+                        "Porelo found no pull request where issue {} of project {} waits at {},"
+                                + " so the gate's answer stands: {}",
+                        LogText.of(issue),
+                        LogText.of(project),
+                        LogText.of(RunPlace.own()),
+                        logged(refused));
                 return new PlaceRead.Opened(place.place(), place.task(), atGate);
             }
-            return new PlaceRead.Unread(place.place(), place.task(), said(project, refused));
+            return new PlaceRead.Unread(
+                    place.place(), place.task(), said(project, issue, RunPlace.own(), refused));
         } catch (final TaskRecords.Unanswered e) {
-            return new PlaceRead.Unread(place.place(), place.task(), said(project, e));
+            return new PlaceRead.Unread(
+                    place.place(), place.task(), said(project, issue, RunPlace.own(), e));
         }
     }
 
     /**
      * Why Porelo gave no answer, in fixed words: a typed refusal by its names, anything else in
-     * words of its own, its detail only in the log, scrubbed of any local path.
+     * words of its own, its detail only in the log, scrubbed of any local path. The log names the
+     * issue and the place asked for, when the answer was asked for one.
      */
-    private static String said(final String project, final TaskRecords.Unanswered unanswered) {
-        LOG.info(
-                "Porelo gave project {} no answer of where work waits: {}",
-                LogText.of(project),
-                logged(unanswered));
+    private static String said(
+            final String project,
+            final @Nullable String issue,
+            final @Nullable RunPlace place,
+            final TaskRecords.Unanswered unanswered) {
+        if (issue == null) {
+            LOG.info(
+                    "Porelo gave project {} no answer of where work waits: {}",
+                    LogText.of(project),
+                    logged(unanswered));
+        } else {
+            LOG.info(
+                    "Porelo gave project {} no answer of what is open where issue {} waits at {}:"
+                            + " {}",
+                    LogText.of(project),
+                    LogText.of(issue),
+                    LogText.of(place),
+                    logged(unanswered));
+        }
         if (unanswered instanceof PlaceReviews.Refused refused
                 && NAME.matcher(refused.refusal()).matches()
                 && (refused.reason() == null || NAME.matcher(refused.reason()).matches())) {

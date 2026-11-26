@@ -77,6 +77,13 @@ class SerializationCheckTest {
                                 .count())
                 .as("one place whose push was forwarded, naming the branch its commit landed on")
                 .isEqualTo(1);
+        assertThat(
+                        record.runs().values().stream()
+                                .flatMap(run -> run.places().values().stream())
+                                .filter(place -> place.again() != null)
+                                .count())
+                .as("one place a run started by hand works at, with its start")
+                .isEqualTo(1);
     }
 
     @Test

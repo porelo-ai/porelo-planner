@@ -197,7 +197,9 @@ final class SerializationCheck {
                                                 true,
                                                 null,
                                                 "v2")))
-                        .reviewing("0123456789abcdef0123456789abcdef01234567");
+                        .reviewing("0123456789abcdef0123456789abcdef01234567")
+                        // A run the person started by hand works at the forwarded place.
+                        .runAgain(WHEN.toString());
         final Map<String, WorkRun.Run> runs = new LinkedHashMap<>(filled.runs());
         runs.put(
                 "ST1",

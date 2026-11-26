@@ -1346,16 +1346,30 @@ public final class WorkRun implements RefusedEventResave {
                 return again(session, snapshot, run, known, task, report);
             }
             replayFailure(known);
+            final String waits = waitsForAgain(run, known, task);
+            if (waits != null) {
+                // The person started the author's task again by hand at the place its work waits
+                // at: the run works there, its end stands.
+                return runAgain(session, snapshot, run, known, waits, clock.instant().toString());
+            }
             return new Answered(answer(run, known.following()));
         }
         if (report.event() != Event.STARTED && !known.status().equals("STARTED")) {
-            if (known.status().equals(report.event().name())
-                    && known.fingerprint().equals(fingerprint(report))) {
-                if (unsaved(run, known)) {
-                    return again(session, snapshot, run, known, task, report);
-                }
+            final boolean same =
+                    known.status().equals(report.event().name())
+                            && known.fingerprint().equals(fingerprint(report));
+            if (same && unsaved(run, known)) {
+                return again(session, snapshot, run, known, task, report);
+            }
+            if (same) {
+                // The author's own end resent, never the end of a run started by hand since.
                 replayFailure(known);
                 return new Answered(answer(run, known.following()));
+            }
+            final String rerun = runningAgain(run, known);
+            if (rerun != null) {
+                // A run started by hand ends whatever it pushed; the place reads that push.
+                return runAgain(session, snapshot, run, known, rerun, null);
             }
             throw conflict(
                     task, report.event(), "The task has not started or already ended differently.");
@@ -1373,6 +1387,71 @@ public final class WorkRun implements RefusedEventResave {
         final Board board = store.board();
         final Judged judged = judge(snapshot, run, known, task, report, board);
         return step(saved(session, snapshot, judged, board), judged.following(), true);
+    }
+
+    /**
+     * The issue whose work waits at a place kept for the task given, whose last author run is the
+     * ended offer given, and which no run started by hand works at yet; null when there is none or
+     * the run is stopped or halted.
+     */
+    private @Nullable String waitsForAgain(final Run run, final Offer known, final String task) {
+        if (run.stopped() || run.halted()) {
+            return null;
+        }
+        final List<String> issues =
+                run.places().entrySet().stream()
+                        .filter(
+                                e ->
+                                        e.getValue().again() == null
+                                                && kept(e.getValue(), known, task))
+                        .map(Map.Entry::getKey)
+                        .toList();
+        if (issues.isEmpty()) {
+            return null;
+        }
+        final Board board = store.board();
+        return issues.stream().filter(i -> stillWaits(board, run, i)).findFirst().orElse(null);
+    }
+
+    /** The issue whose kept place a run started by hand in the ended offer's task works at. */
+    private static @Nullable String runningAgain(final Run run, final Offer known) {
+        final String task = known.task();
+        return task == null
+                ? null
+                : run.places().entrySet().stream()
+                        .filter(
+                                e ->
+                                        e.getValue().again() != null
+                                                && kept(e.getValue(), known, task))
+                        .map(Map.Entry::getKey)
+                        .findFirst()
+                        .orElse(null);
+    }
+
+    /** Whether a place is kept for the task's author whose last run there is the offer given. */
+    private static boolean kept(final IssuePlace place, final Offer offer, final String task) {
+        return place.role() == RunRole.AUTHOR
+                && place.task().equals(task)
+                && place.authorRuns().getLast().equals(offer.id());
+    }
+
+    /**
+     * Records that a run started by hand works at an issue's kept place since the time given, or
+     * that it ended, and answers what stands of the offer.
+     */
+    private Step runAgain(
+            final Session session,
+            final Snapshot snapshot,
+            final Run run,
+            final Offer known,
+            final String issue,
+            final @Nullable String since) {
+        final Draft draft = new Draft(run);
+        final IssuePlace kept = Objects.requireNonNull(run.places().get(issue), "a kept place");
+        draft.places.put(issue, kept.runAgain(since));
+        final Run next = draft.freeze();
+        session.write(replace(snapshot, next));
+        return new Answered(answer(next, known.following()));
     }
 
     /** The step a planned save leads to. */
@@ -2280,7 +2359,17 @@ public final class WorkRun implements RefusedEventResave {
      */
     public List<Started> started() {
         final List<Started> started = new ArrayList<>();
-        for (final Run run : record.latest().runs().values()) {
+        final Map<String, Run> runs = record.latest().runs();
+        // Only a place a run started by hand works at is judged on the board.
+        final Board board =
+                runs.values().stream()
+                                .anyMatch(
+                                        r ->
+                                                r.places().values().stream()
+                                                        .anyMatch(p -> p.again() != null))
+                        ? store.board()
+                        : null;
+        for (final Run run : runs.values()) {
             for (final Offer offer : run.offers()) {
                 final String task = offer.task();
                 if (task != null) {
@@ -2288,11 +2377,54 @@ public final class WorkRun implements RefusedEventResave {
                             new Started(
                                     task,
                                     offer.since() == null ? run.since() : offer.since(),
-                                    offer.status().equals("STARTED")));
+                                    atWork(run, offer, board)));
                 }
             }
         }
         return started;
+    }
+
+    /**
+     * Whether an offer of a run is at work: started, or the ended author's offer whose task the
+     * person started again by hand at the place its work still waits at, until that run ends.
+     *
+     * @param run the run
+     * @param offer an offer of the run
+     * @param board the board the issue's place is judged on, or null for a bound unchecked against
+     *     it
+     * @return true while it works
+     */
+    public static boolean atWork(final Run run, final Offer offer, final @Nullable Board board) {
+        if (offer.status().equals("STARTED")) {
+            return true;
+        }
+        final String task = offer.task();
+        return task != null
+                && run.places().entrySet().stream()
+                        .anyMatch(
+                                e ->
+                                        kept(e.getValue(), offer, task)
+                                                && againAt(run, e.getKey(), board));
+    }
+
+    /**
+     * Whether the person's run started by hand in the task of an issue's kept place works there:
+     * the run is neither stopped nor halted, and the issue's work still waits where its author's
+     * end left it.
+     *
+     * @param run the run
+     * @param issue the issue
+     * @param board the board the issue's place is judged on, or null for a bound unchecked against
+     *     it
+     * @return true while that run works
+     */
+    public static boolean againAt(final Run run, final String issue, final @Nullable Board board) {
+        final IssuePlace kept = run.places().get(issue);
+        return kept != null
+                && kept.again() != null
+                && !run.stopped()
+                && !run.halted()
+                && (board == null ? stillRead(run.offers(), kept) : stillWaits(board, run, issue));
     }
 
     /**
@@ -2724,10 +2856,11 @@ public final class WorkRun implements RefusedEventResave {
      * the person ({@link #REJECTED_WITHOUT_POINTS}). An incomplete answer, or none, keeps nothing
      * and asks the person ({@link #PLACE_UNREADABLE}) until a complete one is read, naming Porelo's
      * reason by its name alone. A reason asked once is neither written nor told again, and no read
-     * replaces another reason the issue asks for but an unreadable read's. An issue moved on from
-     * where its author's end left it, or bound by an offer of its run, takes nothing from a read. A
-     * read whose save the store refused before writing, for items changed meanwhile, is judged once
-     * more.
+     * replaces another reason the issue asks for but an unreadable read's, except that an
+     * unreadable read replaces the ask that no rework could be offered for the place's points. An
+     * issue moved on from where its author's end left it, bound by an offer of its run, or whose
+     * place a run started by hand still works at, takes nothing from a read. A read whose save the
+     * store refused before writing, for items changed meanwhile, is judged once more.
      *
      * @param story the story whose run keeps the place
      * @param issue the issue
@@ -2809,6 +2942,11 @@ public final class WorkRun implements RefusedEventResave {
             // Moved on by hand, or bound by a run of its own: its work no longer waits there.
             return new PlaceStep(PlaceOutcome.UNCHANGED, null);
         }
+        if (left.again() != null) {
+            // A run the person started by hand still works there: nothing is offered, asked or
+            // told of work in progress until that run's end is reported.
+            return new PlaceStep(PlaceOutcome.UNCHANGED, null);
+        }
         final boolean switched =
                 given instanceof PlaceRead.Forwarded forwarded
                         && forwardsToOwn(board, issue, left, bound, forwarded);
@@ -2845,8 +2983,12 @@ public final class WorkRun implements RefusedEventResave {
                         ? plain(missing.reason(), 200)
                         : answer != null && !answer.complete() ? incomplete(answer) : null;
         if (unread != null) {
-            if (progress.needsYou()) {
-                // Asked already, for this reason or another, which stands; a switch is kept.
+            if (progress.needsYou()
+                    && !(progress.reason().equals("NEXT_STEP_UNAVAILABLE")
+                            && reworkAsked(board, issue, kept))) {
+                // Asked already, for this reason or another, which stands; a switch is kept. The
+                // ask that no rework could be offered for the place's points gives way, since
+                // the place it was judged at can no longer be read.
                 return switched
                         ? new PlaceStep(PlaceOutcome.KEPT, written(session, snapshot, draft))
                         : new PlaceStep(PlaceOutcome.UNCHANGED, null);
@@ -2874,6 +3016,19 @@ public final class WorkRun implements RefusedEventResave {
         NextStep.Progress before = progress;
         if (before.needsYou() && before.reason().equals(PLACE_UNREADABLE)) {
             // A complete answer read again ends the stop its unreadable read made.
+            before =
+                    new NextStep.Progress(
+                            before.rounds(), before.findings(), false, "NONE", before.answer());
+            draft.progress.put(issue, before);
+            changed = true;
+        }
+        if (before.needsYou()
+                && before.reason().equals("NEXT_STEP_UNAVAILABLE")
+                && now != kept
+                && reworkAsked(board, issue, kept)) {
+            // The ask that no rework could be offered for the points at the place stands only
+            // while the place's answer still holds them: a new head or an approval there is
+            // judged afresh, and asks again when its points still find no rework.
             before =
                     new NextStep.Progress(
                             before.rounds(), before.findings(), false, "NONE", before.answer());
@@ -3265,6 +3420,24 @@ public final class WorkRun implements RefusedEventResave {
                         ? PlaceOutcome.NEEDS_YOU
                         : PlaceOutcome.REWORK,
                 planned instanceof Flight flight ? flight : null);
+    }
+
+    /**
+     * Whether an issue's ask is the one a place's points make when no rule reworks from the issue's
+     * state: the kept answer held points, and the state names no rework that takes work from it.
+     */
+    private static boolean reworkAsked(
+            final Board board, final String issueId, final IssuePlace kept) {
+        final IssuePlace.Review last = kept.last();
+        final Issue issue = board.issue(issueId).orElse(null);
+        if (last == null || issue == null || last.points().isEmpty() && last.findings() == 0) {
+            return false;
+        }
+        final Map<String, WorkRule> rules = WorkRules.check(board.workflow(), board.work()).rules();
+        final WorkRule reading = rules.get(issue.state());
+        final String target = reading == null ? null : reading.blocked();
+        final WorkRule rule = target == null ? null : rules.get(target);
+        return rule == null || !rule.from().contains(issue.state());
     }
 
     /** The reviewer rule of the state an issue stands in, or null when that state has none. */
@@ -5177,6 +5350,18 @@ public final class WorkRun implements RefusedEventResave {
                     changed = true;
                 }
             }
+            for (final Offer offer : List.copyOf(draft.offers)) {
+                if (offer.status().equals("OFFERED")
+                        && offer.startRefusal() != null
+                        && offer.binding().issues().stream().anyMatch(moved::contains)
+                        && offer.binding().issues().stream()
+                                .noneMatch(id -> refusalAsks(draft.progress.get(id)))) {
+                    // The refusal goes with the ask it raised, so a later refusal of the same
+                    // offer is judged afresh and asks the person again.
+                    draft.set(withoutStartRefusal(offer));
+                    changed = true;
+                }
+            }
             if (changed) {
                 next = replace(next, draft.freeze());
             }
@@ -5184,6 +5369,36 @@ public final class WorkRun implements RefusedEventResave {
         if (next != snapshot) {
             session.write(next);
         }
+    }
+
+    /** Whether an issue asks the person because a Start of its work was refused. */
+    private static boolean refusalAsks(final NextStep.@Nullable Progress progress) {
+        return progress != null
+                && progress.needsYou()
+                && (progress.reason().equals(START_REFUSED)
+                        || progress.reason().equals(PLACE_CHANGED));
+    }
+
+    /** The same offer with no refusal of its Start standing on it. */
+    private static Offer withoutStartRefusal(final Offer offer) {
+        return new Offer(
+                offer.id(),
+                offer.arguments(),
+                offer.binding(),
+                offer.status(),
+                offer.task(),
+                offer.containerId(),
+                offer.machine(),
+                offer.since(),
+                offer.ended(),
+                offer.fingerprint(),
+                offer.following(),
+                offer.deferred(),
+                offer.refusal(),
+                offer.reviewAnyway(),
+                offer.reworkComment(),
+                offer.rework(),
+                null);
     }
 
     /** Refuses a change of a story or an issue that a run with a started task owns. */

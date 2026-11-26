@@ -1269,6 +1269,46 @@ class WorkRecordTest {
     }
 
     @Test
+    void aKeptPlacesRunStartedByHandIsReadOnlyWithItsStartAsAnInstant() throws Exception {
+        // Harm: after a restart the run the person started by hand at a place is lost, so the issue
+        // reads as nobody at work again; an older place without it no longer opens; or a start
+        // changed on disk into no time is trusted.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String sound = Files.readString(file);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final String since = "2026-01-01T01:00:00Z";
+            final var started = json.readTree(sound);
+            place((ObjectNode) started.path("runs").iterator().next()).put("again", since);
+            Files.writeString(file, json.writeValueAsString(started));
+            records.forget("project");
+            assertThat(run(records).places().get("AA1").again())
+                    .as("the start read back")
+                    .isEqualTo(since);
+
+            for (final String wrong : List.of("", "yesterday", "2026-01-01")) {
+                final var document = json.readTree(sound);
+                place((ObjectNode) document.path("runs").iterator().next()).put("again", wrong);
+                Files.writeString(file, json.writeValueAsString(document));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records))
+                        .as("'%s'", wrong)
+                        .isInstanceOf(WorkRefusal.class);
+            }
+
+            final var older = json.readTree(sound);
+            place((ObjectNode) older.path("runs").iterator().next()).remove("again");
+            Files.writeString(file, json.writeValueAsString(older));
+            records.forget("project");
+            assertThat(run(records).places().get("AA1").again())
+                    .as("an older place names no run started by hand")
+                    .isNull();
+        }
+    }
+
+    @Test
     void aKeptPlaceThatDoesNotFitItsRunIsRefusedAsTheRecordOpens() throws Exception {
         // Harm: a record changed on disk trusted: a place of an issue the run does not hold, an
         // author run that is no ended or void builder's offer of the issue in a container under

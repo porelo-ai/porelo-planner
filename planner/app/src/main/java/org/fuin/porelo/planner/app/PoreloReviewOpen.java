@@ -50,9 +50,6 @@ public final class PoreloReviewOpen implements PlaceReviews {
                     "reason",
                     "version");
 
-    private static final Set<String> REFUSALS =
-            Set.of("PlaceUnreadable", "UnknownForge", "NoPullRequest", "NoSuchPullRequest");
-
     /** A name as Porelo's contract gives one, such as why an answer is incomplete. */
     private static final java.util.regex.Pattern NAME =
             java.util.regex.Pattern.compile("[A-Z][A-Za-z]{0,63}");
@@ -199,8 +196,9 @@ public final class PoreloReviewOpen implements PlaceReviews {
             throw new Unanswered("Porelo's refusal of the place is no JSON object");
         }
         final String name = text(root, "refused", "refused");
-        if (!REFUSALS.contains(name)) {
-            throw refused("refused", "is none of " + REFUSALS);
+        // Porelo adds refusals without notice; each is carried by its name, never as no answer.
+        if (!NAME.matcher(name).matches()) {
+            throw refused("refused", "is no name");
         }
         final String reason =
                 "PlaceUnreadable".equals(name) ? text(root, "reason", "reason") : null;

@@ -585,6 +585,158 @@ class WorkAnswersTest {
                 .isFalse();
     }
 
+    // Harm: a run the person started by hand in the author's task after a Reject, working at the
+    // place the issue waits at, reads as nobody at work.
+    @Test
+    void aRunStartedByHandAtTheKeptPlaceOfItsTaskIsAtWork() {
+        final WorkRun.Offer ended = offer("ENDED");
+        final WorkRun.Offer author =
+                new WorkRun.Offer(
+                        ended.id(),
+                        ended.arguments(),
+                        new NextStep.Binding(
+                                "ST1",
+                                "alpha",
+                                List.of("AA1"),
+                                "MAIN",
+                                "Building",
+                                "AGENT",
+                                ended.binding().rule()),
+                        "ENDED",
+                        "task",
+                        "box",
+                        "workstation",
+                        null,
+                        new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", "Built", 0, List.of()),
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final org.fuin.porelo.planner.core.IssuePlace place =
+                org.fuin.porelo.planner.core.IssuePlace.atGate("task", author.id());
+
+        assertThat(WorkAnswers.issue(inReview(), REVIEWED, kept(author, place)).atWork())
+                .as("nobody works while the place only waits")
+                .isFalse();
+        final WorkRun.Snapshot again = kept(author, place.runAgain("2026-01-01T01:00:00Z"));
+        assertThat(WorkAnswers.issue(inReview(), REVIEWED, again).atWork())
+                .as("the issue is at work")
+                .isTrue();
+        assertThat(WorkAnswers.issue(board(), AGENTS, again).atWork())
+                .as("not once it was moved away from where its author left it")
+                .isFalse();
+        final var work = WorkAnswers.knownWork(again.runs().get("ST1"), issue -> false);
+        assertThat(work.atWork()).as("the story's work is at work").isTrue();
+        assertThat(work.tasks().getFirst().atWork()).as("in the author's task").isTrue();
+    }
+
+    @Test
+    void onlyTheIssueWhosePlaceARunStartedByHandWorksAtIsAtWork() {
+        // Harm: an offer of two issues serves both as at work while the person's own run works at
+        // the place of only one of them.
+        final WorkRun.Offer ended = offer("ENDED");
+        final WorkRun.Offer author =
+                new WorkRun.Offer(
+                        ended.id(),
+                        ended.arguments(),
+                        new NextStep.Binding(
+                                "ST1",
+                                "alpha",
+                                List.of("AA1", "AA2"),
+                                "MAIN",
+                                "Building",
+                                "AGENT",
+                                ended.binding().rule()),
+                        "ENDED",
+                        "task",
+                        "box",
+                        "workstation",
+                        null,
+                        new WorkRun.Ended("2026-01-01T00:00:00Z", true, "", "Built", 0, List.of()),
+                        "",
+                        List.of(),
+                        List.of(),
+                        null);
+        final org.fuin.porelo.planner.core.IssuePlace place =
+                org.fuin.porelo.planner.core.IssuePlace.atGate("task", author.id());
+        final WorkRun.Snapshot again =
+                kept(author, Map.of("AA1", place.runAgain("2026-01-01T01:00:00Z"), "AA2", place));
+        final Board board = inReview();
+        assertThat(
+                        List.of(
+                                WorkAnswers.issue(board, REVIEWED, again).atWork(),
+                                WorkAnswers.issue(board, REVIEWED_TOO, again).atWork()))
+                .as("the issue worked at, not the other")
+                .containsExactly(true, false);
+        assertThat(
+                        WorkAnswers.knownWork(board, again.runs().get("ST1"), TaskHelds.Counts.NONE)
+                                .issues()
+                                .stream()
+                                .map(i -> i.atWork())
+                                .toList())
+                .as("the run's issues alike")
+                .containsExactly(true, false);
+    }
+
+    private static final Issue REVIEWED =
+            new Issue("AA1", "alpha", "An agent's", "Review", null, List.of(), null, null, "");
+
+    private static final Issue REVIEWED_TOO =
+            new Issue("AA2", "alpha", "Another's", "Review", null, List.of(), null, null, "");
+
+    /** The board with both issues where their author's end left them. */
+    private static Board inReview() {
+        final Board board = board();
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                List.of(REVIEWED, REVIEWED_TOO),
+                board.work(),
+                board.repositories());
+    }
+
+    /** A running run whose ended author's offer given left AA1 at the place given. */
+    private static WorkRun.Snapshot kept(
+            final WorkRun.Offer author, final org.fuin.porelo.planner.core.IssuePlace place) {
+        return kept(author, Map.of("AA1", place));
+    }
+
+    /** A running run whose ended author's offer given left its issues at the places given. */
+    private static WorkRun.Snapshot kept(
+            final WorkRun.Offer author,
+            final Map<String, org.fuin.porelo.planner.core.IssuePlace> places) {
+        final Map<String, NextStep.Progress> issues = new java.util.TreeMap<>();
+        places.keySet()
+                .forEach(
+                        id ->
+                                issues.put(
+                                        id,
+                                        new NextStep.Progress(
+                                                rounds(), List.of(), false, "NONE", "")));
+        return new WorkRun.Snapshot(
+                1,
+                Map.of(
+                        "ST1",
+                        new WorkRun.Run(
+                                "run",
+                                "ST1",
+                                "Building",
+                                "AGENT",
+                                "",
+                                "",
+                                2,
+                                List.of(),
+                                List.of(),
+                                "2026-01-01T00:00:00Z",
+                                List.of(author),
+                                issues,
+                                false,
+                                false,
+                                null,
+                                places)));
+    }
+
     private static WorkRun.Offer offer(final String status) {
         final WorkRule rule = board().work().rules().get("Building");
         return new WorkRun.Offer(

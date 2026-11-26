@@ -626,6 +626,65 @@ class PlaceWatchTest {
     }
 
     @Test
+    void eachRefusedReadIsLoggedWithItsProjectIssueAndPlace() {
+        // Harm: a log that says only that some place of a project was refused, so no one can
+        // tell which issue waits and where.
+        final ReviewOpen gate = forwardedAnswer();
+        final Logger logger = (Logger) LoggerFactory.getLogger(PlaceWatch.class);
+        final ListAppender<ILoggingEvent> lines = new ListAppender<>();
+        lines.start();
+        logger.addAppender(lines);
+        try {
+            new PlaceWatch(
+                            p -> new Fake(WorkRun.PlaceOutcome.NEEDS_YOU),
+                            (project, from) -> List.of(),
+                            (project, place, role, task) -> {
+                                throw new PlaceReviews.Refused("NoPullRequest", null);
+                            },
+                            saved::add,
+                            helds,
+                            scheduler,
+                            Duration.ofMinutes(1))
+                    .readAll("refused-project");
+            new PlaceWatch(
+                            p -> new Fake(WorkRun.PlaceOutcome.KEPT),
+                            (project, from) -> List.of(),
+                            (project, place, role, task) -> {
+                                if (place.ownPullRequest() == null) {
+                                    return gate;
+                                }
+                                throw new PlaceReviews.Refused("NoPullRequest", null);
+                            },
+                            saved::add,
+                            helds,
+                            scheduler,
+                            Duration.ofMinutes(1))
+                    .readAll("forwarded-project");
+        } finally {
+            logger.detachAppender(lines);
+        }
+
+        assertThat(lines.list)
+                .filteredOn(line -> line.getLevel() == Level.INFO)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .as("the refused place and the own pull request Porelo found none at")
+                .anySatisfy(
+                        line ->
+                                assertThat(line)
+                                        .contains("refused-project")
+                                        .contains("AA1")
+                                        .contains(String.valueOf(RunPlace.gate(null, "task")))
+                                        .contains("NoPullRequest"))
+                .anySatisfy(
+                        line ->
+                                assertThat(line)
+                                        .contains("forwarded-project")
+                                        .contains("AA1")
+                                        .contains(String.valueOf(RunPlace.own()))
+                                        .contains("NoPullRequest"));
+    }
+
+    @Test
     void oneIssueThatCannotBeReadLeavesTheOthersRead() {
         // Harm: one broken place stops every other issue's rework.
         final Fake work = new Fake(WorkRun.PlaceOutcome.KEPT);

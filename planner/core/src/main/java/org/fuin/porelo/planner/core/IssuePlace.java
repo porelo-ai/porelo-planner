@@ -20,6 +20,8 @@ import org.jspecify.annotations.Nullable;
  * @param authorRuns the offers of the author runs used at the place, each once, in their order
  * @param last the last complete answer read at the place, or null while none was read
  * @param reviewed the head a reviewer run was last offered at there, or null while none was
+ * @param again when the person started the place's task again by hand to work there, or null while
+ *     no such run works
  */
 public record IssuePlace(
         RunPlace place,
@@ -27,7 +29,8 @@ public record IssuePlace(
         String task,
         List<String> authorRuns,
         @Nullable Review last,
-        @Nullable String reviewed) {
+        @Nullable String reviewed,
+        @Nullable String again) {
 
     /** The most author runs a place keeps. */
     public static final int MOST_RUNS = 16;
@@ -61,6 +64,26 @@ public record IssuePlace(
                 || authorRuns.stream().anyMatch(id -> !UUID.fromString(id).toString().equals(id))) {
             throw new IllegalArgumentException("A kept place's author runs do not fit");
         }
+    }
+
+    /**
+     * A place no run started by hand works at.
+     *
+     * @param place the place
+     * @param role the role of the runs at the place
+     * @param task the bound task's name within the project
+     * @param authorRuns the offers of the author runs used at the place
+     * @param last the last complete answer read at the place, or null while none was read
+     * @param reviewed the head a reviewer run was last offered at there, or null while none was
+     */
+    public IssuePlace(
+            final RunPlace place,
+            final RunRole role,
+            final String task,
+            final List<String> authorRuns,
+            final @Nullable Review last,
+            final @Nullable String reviewed) {
+        this(place, role, task, authorRuns, last, reviewed, null);
     }
 
     /**
@@ -195,7 +218,7 @@ public record IssuePlace(
         }
         final List<String> runs = new ArrayList<>(authorRuns);
         runs.add(offer);
-        return new IssuePlace(place, role, task, runs, last, reviewed);
+        return new IssuePlace(place, role, task, runs, last, reviewed, again);
     }
 
     /**
@@ -206,7 +229,7 @@ public record IssuePlace(
      * @throws IllegalArgumentException for an incomplete answer
      */
     public IssuePlace read(final ReviewOpen answer) {
-        return new IssuePlace(place, role, task, authorRuns, Review.of(answer), reviewed);
+        return new IssuePlace(place, role, task, authorRuns, Review.of(answer), reviewed, again);
     }
 
     /**
@@ -216,7 +239,7 @@ public record IssuePlace(
      * @return the place
      */
     public IssuePlace reviewing(final @Nullable String head) {
-        return new IssuePlace(place, role, task, authorRuns, last, head);
+        return new IssuePlace(place, role, task, authorRuns, last, head, again);
     }
 
     /**
@@ -237,7 +260,17 @@ public record IssuePlace(
      * @return the place
      */
     public IssuePlace forwarded() {
-        return new IssuePlace(RunPlace.own(), role, task, authorRuns, null);
+        return new IssuePlace(RunPlace.own(), role, task, authorRuns, null, null, again);
+    }
+
+    /**
+     * The place with a run the person started by hand in its task working there, or with none.
+     *
+     * @param since when that run started, or null once it ended
+     * @return the place
+     */
+    public IssuePlace runAgain(final @Nullable String since) {
+        return new IssuePlace(place, role, task, authorRuns, last, reviewed, since);
     }
 
     /**

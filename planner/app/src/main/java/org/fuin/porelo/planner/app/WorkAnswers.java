@@ -181,7 +181,8 @@ public final class WorkAnswers {
      */
     static PlanWork knownWork(
             final Board board, final WorkRun.Run run, final TaskHelds.Counts held) {
-        return knownWork(run, issue -> manual(board, issue), held, WorkRun.placeStarts(run, board));
+        return knownWork(
+                board, run, issue -> manual(board, issue), held, WorkRun.placeStarts(run, board));
     }
 
     /** The run's work for a caller that knows no held items. */
@@ -195,7 +196,7 @@ public final class WorkAnswers {
      */
     static PlanWork knownWork(
             final WorkRun.Run run, final Predicate<String> manual, final TaskHelds.Counts held) {
-        return knownWork(run, manual, held, WorkRun.placeStarts(run));
+        return knownWork(null, run, manual, held, WorkRun.placeStarts(run));
     }
 
     /**
@@ -203,6 +204,7 @@ public final class WorkAnswers {
      * agent's choice, whatever the run recorded before the switch.
      */
     private static PlanWork knownWork(
+            final @Nullable Board board,
             final WorkRun.Run run,
             final Predicate<String> manual,
             final TaskHelds.Counts held,
@@ -229,7 +231,7 @@ public final class WorkAnswers {
                                                 PlanWorkTask.RoleEnum.fromValue(
                                                         o.arguments().role()),
                                                 String.valueOf(o.since()),
-                                                o.status().equals("STARTED"),
+                                                WorkRun.atWork(run, o, board),
                                                 ended(o.ended()),
                                                 o.arguments().runRole() == null
                                                         ? null
@@ -268,7 +270,7 @@ public final class WorkAnswers {
                                             PlanWorkIssue.ReasonEnum.fromValue(p.reason()),
                                             p.rounds().rounds(),
                                             p.rounds().roundsMost(),
-                                            atWork(run, entry.getKey()),
+                                            atWork(board, run, entry.getKey()),
                                             p.needsYou(),
                                             !person && p.rounds().stopped(),
                                             findings(p.findings()),
@@ -307,10 +309,18 @@ public final class WorkAnswers {
                 .orElse(false);
     }
 
-    static boolean atWork(final WorkRun.Run run, final String issue) {
+    /**
+     * Whether an issue is at work in a run: bound by a started offer, or its own place worked at by
+     * a run the person started by hand there, judged on the board given or, without one, unchecked
+     * against it.
+     */
+    static boolean atWork(final @Nullable Board board, final WorkRun.Run run, final String issue) {
         return run.offers().stream()
-                .anyMatch(
-                        o -> o.status().equals("STARTED") && o.binding().issues().contains(issue));
+                        .anyMatch(
+                                o ->
+                                        o.status().equals("STARTED")
+                                                && o.binding().issues().contains(issue))
+                || WorkRun.againAt(run, issue, board);
     }
 
     static List<Finding> findings(final List<WorkEnds.Finding> findings) {
@@ -331,7 +341,7 @@ public final class WorkAnswers {
         return snapshot.runs().values().stream()
                 .filter(r -> r.issues().containsKey(issue))
                 .min(
-                        Comparator.comparing((WorkRun.Run r) -> !atWork(r, issue))
+                        Comparator.comparing((WorkRun.Run r) -> !atWork(null, r, issue))
                                 .thenComparing(
                                         Comparator.comparingInt(
                                                         (WorkRun.Run r) ->
@@ -346,8 +356,8 @@ public final class WorkAnswers {
                 .orElse(null);
     }
 
-    static boolean atWork(final WorkRun.Snapshot snapshot, final String issue) {
-        return snapshot.runs().values().stream().anyMatch(run -> atWork(run, issue));
+    static boolean atWork(final Board board, final WorkRun.Snapshot snapshot, final String issue) {
+        return snapshot.runs().values().stream().anyMatch(run -> atWork(board, run, issue));
     }
 
     static boolean lost(final Board board, final WorkRun.Snapshot snapshot, final Issue issue) {
@@ -414,7 +424,7 @@ public final class WorkAnswers {
                 org.fuin.porelo.planner.app.answers.Worker.fromValue(issue.worker().name()),
                 progress == null ? null : progress.rounds().rounds(),
                 progress == null ? null : progress.rounds().roundsMost(),
-                atWork(snapshot, issue.id()),
+                atWork(board, snapshot, issue.id()),
                 raised,
                 !manual && progress != null && progress.rounds().stopped(),
                 // A run that raised the issue is this planner's, whatever its offers say.

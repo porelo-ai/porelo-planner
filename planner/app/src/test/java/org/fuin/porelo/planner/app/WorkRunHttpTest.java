@@ -706,6 +706,12 @@ class WorkRunHttpTest {
         assertThat(again.path("type").asString())
                 .as("a resent landing is a conflict the window may ignore")
                 .endsWith(":TaskEventConflict");
+        assertThat(again.at("/parameters/reason").asString())
+                .as("the conflict names its reason in words")
+                .isEqualTo("The task's work has already landed.");
+        assertThat(again.path("detail").asString())
+                .as("its detail says the same")
+                .isEqualTo(again.at("/parameters/reason").asString());
         assertThat(
                         projects.work("project").work("ST1").offers().stream()
                                 .filter(o -> o.binding().role().equals("READER"))
