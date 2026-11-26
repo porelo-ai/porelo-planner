@@ -2985,7 +2985,7 @@ public final class WorkRun implements RefusedEventResave {
         if (unread != null) {
             if (progress.needsYou()
                     && !(progress.reason().equals("NEXT_STEP_UNAVAILABLE")
-                            && reworkAsked(board, issue, kept))) {
+                            && reworkAsked(board, issue, kept, bound))) {
                 // Asked already, for this reason or another, which stands; a switch is kept. The
                 // ask that no rework could be offered for the place's points gives way, since
                 // the place it was judged at can no longer be read.
@@ -3025,7 +3025,7 @@ public final class WorkRun implements RefusedEventResave {
         if (before.needsYou()
                 && before.reason().equals("NEXT_STEP_UNAVAILABLE")
                 && now != kept
-                && reworkAsked(board, issue, kept)) {
+                && reworkAsked(board, issue, kept, bound)) {
             // The ask that no rework could be offered for the points at the place stands only
             // while the place's answer still holds them: a new head or an approval there is
             // judged afresh, and asks again when its points still find no rework.
@@ -3297,11 +3297,54 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Sends the issue back to the rule its state's blocked work goes to, offering its author again
-     * at the kept place under the kept task's name, with each open point named; a step that cannot
-     * be built asks the person why. Saved as the owner account's choices are, so a store refusal
-     * before writing leaves the run as it stood; the offer follows no end, so no reply to a task's
-     * event names it, and a save that halts changes no offer that ended.
+     * Where an issue's rework goes: the working state and its rule.
+     *
+     * @param state the working state the issue goes back to
+     * @param rule that state's rule
+     */
+    private record Rework(String state, WorkRule rule) {}
+
+    /**
+     * Where the points at an issue's place send its author back to, or null when nowhere: the
+     * blocked work its state's rule names, when that rule takes work from the state; or, when the
+     * state names no blocked work, the rule that built it, in its own working state, while it is
+     * still an author's rule, with no reviewer and no result. That rule reworks the work it made,
+     * so its {@code from} need not name the state the work waits in.
+     */
+    private static @Nullable Rework reworkOf(
+            final Board board, final Issue issue, final Offer bound) {
+        final Map<String, WorkRule> rules = WorkRules.check(board.workflow(), board.work()).rules();
+        final String blocked = blocksTo(board, issue);
+        if (blocked != null) {
+            final WorkRule rule = rules.get(blocked);
+            return rule == null || !rule.from().contains(issue.state())
+                    ? null
+                    : new Rework(blocked, rule);
+        }
+        final String built = bound.binding().state();
+        final WorkRule rule = rules.get(built);
+        // Only an author's building rule reworks: one that now reviews or saves a result has no
+        // author to send back.
+        return rule == null || rule.reviewer() != null || rule.result() != null
+                ? null
+                : new Rework(built, rule);
+    }
+
+    /** The blocked work the rule of the state an issue stands in names, or null for none. */
+    private static @Nullable String blocksTo(final Board board, final Issue issue) {
+        final WorkRule reading =
+                WorkRules.check(board.workflow(), board.work()).rules().get(issue.state());
+        return reading == null ? null : reading.blocked();
+    }
+
+    /**
+     * Sends the issue back to the rule its state's blocked work goes to, or, when its state names
+     * none, to the rule that built it, offering its author again at the kept place under the kept
+     * task's name, with each open point named; a step that cannot be built asks the person why. The
+     * issue moves to that rule's working state with the offer, so its Start finds it there. Saved
+     * as the owner account's choices are, so a store refusal before writing leaves the run as it
+     * stood; the offer follows no end, so no reply to a task's event names it, and a save that
+     * halts changes no offer that ended.
      */
     private PlaceStep rework(
             final Session session,
@@ -3314,10 +3357,9 @@ public final class WorkRun implements RefusedEventResave {
             final Offer bound,
             final ReviewOpen answer) {
         final Issue issue = board.issue(issueId).orElseThrow();
-        final Map<String, WorkRule> rules = WorkRules.check(board.workflow(), board.work()).rules();
-        final WorkRule reading = rules.get(issue.state());
-        final String target = reading == null ? null : reading.blocked();
-        final WorkRule rule = target == null ? null : rules.get(target);
+        final Rework to = reworkOf(board, issue, bound);
+        final String target = to == null ? null : to.state();
+        final WorkRule rule = to == null ? null : to.rule();
         final NextStep.Binding scope =
                 new NextStep.Binding(
                         run.story(),
@@ -3336,8 +3378,16 @@ public final class WorkRun implements RefusedEventResave {
             why = "it no longer belongs to story " + run.story();
         } else if (issue.worker() == Worker.MANUAL) {
             why = "a person works it";
-        } else if (target == null || rule == null || !rule.from().contains(issue.state())) {
-            why = "the rule " + issue.state() + " names no rework that takes work from it";
+        } else if (target == null || rule == null) {
+            why =
+                    "the rule "
+                            + issue.state()
+                            + " names no rework that takes work from it"
+                            + (blocksTo(board, issue) == null
+                                    ? ", nor has the rule "
+                                            + bound.binding().state()
+                                            + " that built it"
+                                    : "");
         } else if (NextStep.waitsForChildren(board, issue, target)) {
             why = "its sub-issues have not reached " + target;
         }
@@ -3423,21 +3473,17 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Whether an issue's ask is the one a place's points make when no rule reworks from the issue's
-     * state: the kept answer held points, and the state names no rework that takes work from it.
+     * Whether an issue's ask is the one a place's points make when no rule reworks the issue: the
+     * kept answer held points, and neither its state nor the rule that built it takes its rework.
      */
     private static boolean reworkAsked(
-            final Board board, final String issueId, final IssuePlace kept) {
+            final Board board, final String issueId, final IssuePlace kept, final Offer bound) {
         final IssuePlace.Review last = kept.last();
         final Issue issue = board.issue(issueId).orElse(null);
         if (last == null || issue == null || last.points().isEmpty() && last.findings() == 0) {
             return false;
         }
-        final Map<String, WorkRule> rules = WorkRules.check(board.workflow(), board.work()).rules();
-        final WorkRule reading = rules.get(issue.state());
-        final String target = reading == null ? null : reading.blocked();
-        final WorkRule rule = target == null ? null : rules.get(target);
-        return rule == null || !rule.from().contains(issue.state());
+        return reworkOf(board, issue, bound) == null;
     }
 
     /** The reviewer rule of the state an issue stands in, or null when that state has none. */

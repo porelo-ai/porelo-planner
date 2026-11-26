@@ -3557,6 +3557,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
         assertThat(f.run.work("ST1").issues().get("AA1").reason())
                 .as("no rework could be offered for the place's points")
@@ -4865,6 +4866,236 @@ class WorkRunTest {
     }
 
     @Test
+    void aReturnedGatePushUnderNoReworkRuleSendsItsAuthorBackByTheRuleThatBuiltIt() {
+        // Harm: a point the gate's owner returns the push with asks the person, because the
+        // state the issue waits in names no rework, although the rule that built it can rework.
+        final Fixture f = new Fixture();
+        noReading(f);
+        final WorkRun.Offered build = waiting(f);
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                .as("returned with a point open")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+
+        final WorkRun.Run run = f.run.work("ST1");
+        assertThat(run.issues().get("AA1").needsYou()).as("nobody is asked").isFalse();
+        assertThat(run.places().get("AA1").authorRuns())
+                .as("the same author runs")
+                .containsExactly(build.offer());
+        final WorkRun.Offer rework = run.offers().getLast();
+        assertThat(
+                        List.of(
+                                rework.arguments().runRole(),
+                                rework.arguments().place(),
+                                rework.binding().state()))
+                .as("its author sent back to the gate push, by the rule that built it")
+                .containsExactly(RunRole.AUTHOR, RunPlace.gate(null, "task"), "Building");
+        assertThat(rework.arguments().prompt()).as("the open point named").contains("t0");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue goes back to the state that built it")
+                .isEqualTo("Building");
+        assertThat(WorkRun.placeStarts(run))
+                .as("the window starts it")
+                .extracting(WorkRun.Offered::offer)
+                .containsExactly(rework.id());
+    }
+
+    @Test
+    void aForwardedPushUnderNoReworkRuleSendsItsAuthorBackToItsOwnPullRequest() {
+        // Harm: a point on the task's own pull request, which the gate forwarded the push to,
+        // asks the person because the state the issue waits in names no rework.
+        final Fixture f = new Fixture();
+        noReading(f);
+        waiting(f);
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                forwarded("task", answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .as("a point open on the own pull request")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+
+        final WorkRun.Run run = f.run.work("ST1");
+        final WorkRun.Offer rework = run.offers().getLast();
+        assertThat(
+                        List.of(
+                                rework.arguments().runRole(),
+                                rework.arguments().place(),
+                                rework.binding().state()))
+                .as("its author sent back to the own pull request, by the rule that built it")
+                .containsExactly(RunRole.AUTHOR, RunPlace.own(), "Building");
+        assertThat(f.store.board().issue("AA1").orElseThrow().state()).isEqualTo("Building");
+    }
+
+    @Test
+    void theReviewRoundsStillStopAReworkByTheRuleThatBuiltIt() {
+        // Harm: the rework by the building rule sends the author back again and again, past the
+        // rounds the issue has.
+        final Fixture f = new Fixture();
+        noReading(f);
+        final WorkRun.Offered build = waiting(f);
+        f.record.value =
+                withPlace(
+                        f.record.value,
+                        "AA1",
+                        new IssuePlace(
+                                RunPlace.gate(null, "task"),
+                                RunRole.AUTHOR,
+                                "task",
+                                List.of(java.util.UUID.randomUUID().toString(), build.offer()),
+                                null));
+        final WorkRun.Run run = f.run.work("ST1");
+        final Map<String, NextStep.Progress> issues = new java.util.LinkedHashMap<>(run.issues());
+        issues.put("AA1", NextStep.Progress.start(1));
+        f.record.value = withRun(f.record.value, withIssues(run, issues));
+        final int offers = run.offers().size();
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                .as("the one round is used")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .isEqualTo(WorkRun.REVIEW_ROUNDS_USED);
+        assertThat(f.run.work("ST1").offers()).as("no rework offered").hasSize(offers);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("nothing moved")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void aPointThatNeitherTheStateNorTheRuleThatBuiltItCanReworkAsksThePerson() {
+        // Harm: a rework offered by a rule the board no longer has, or the person left without
+        // being told that the points find no rework.
+        final Fixture f = new Fixture();
+        noReading(f);
+        waiting(f);
+        noRework(f);
+        final int offers = f.run.work("ST1").offers().size();
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                .as("returned with a point open")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(f.run.work("ST1").offers()).as("no rework offered").hasSize(offers);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("nothing moved")
+                .isEqualTo("Review");
+    }
+
+    @Test
+    void aRuleThatBuiltTheIssueButNowReviewsOrHandsBackAResultReworksNothing() {
+        // Harm: a rework is offered by a rule that is no author's building rule any more, so a
+        // reviewer or a stage that saves a result is started as the author of the points.
+        for (final WorkRule changed :
+                List.of(
+                        new WorkRule(
+                                List.of("Backlog"),
+                                "Review",
+                                null,
+                                "Reworking",
+                                WorkRule.Per.REPOSITORY,
+                                List.of("AGENT"),
+                                "Work {story}: {issues}; {tasks}",
+                                Map.of("codex", "model"),
+                                Map.of(),
+                                null,
+                                WorkRule.Reviewer.AT_WORK),
+                        new WorkRule(
+                                List.of("Backlog"),
+                                "Review",
+                                null,
+                                null,
+                                WorkRule.Per.REPOSITORY,
+                                List.of("AGENT"),
+                                "Work {story}: {issues}; {tasks}",
+                                Map.of("codex", "model"),
+                                Map.of(),
+                                WorkRule.Result.ANALYSIS))) {
+            final Fixture f = new Fixture();
+            noReading(f);
+            waiting(f);
+            f.store.current = NextStepTest.withRule(f.store.board(), "Building", changed);
+            assertThat(WorkRules.check(f.store.board().workflow(), f.store.board().work()).rules())
+                    .as("the changed rule is sound")
+                    .containsKey("Building");
+            final int offers = f.run.work("ST1").offers().size();
+
+            assertThat(
+                            f.run.placeRead(
+                                    "ST1",
+                                    "AA1",
+                                    atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                    .as("returned with a point open")
+                    .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+            assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                    .isEqualTo("NEXT_STEP_UNAVAILABLE");
+            assertThat(f.run.work("ST1").offers()).as("no rework offered").hasSize(offers);
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("nothing moved")
+                    .isEqualTo("Review");
+        }
+    }
+
+    @Test
+    void aStateWhoseBlockedRuleTakesNoWorkFromItAsksThePersonPastTheRuleThatBuiltIt() {
+        // Harm: points at a state whose blocked work cannot take the issue are reworked by the rule
+        // that built it, past the rework the board names for that state.
+        final Fixture f = new Fixture();
+        noReading(f);
+        waiting(f);
+        // Review gets a rule, so the rules end in a closed state to stay sound.
+        Board board = f.store.board();
+        for (final String state : List.of("Building", "Review", "Reworking")) {
+            board =
+                    NextStepTest.withRule(
+                            board,
+                            state,
+                            new WorkRule(
+                                    List.of(state.equals("Reworking") ? "Reading" : "Backlog"),
+                                    "Finished",
+                                    null,
+                                    state.equals("Review") ? "Reworking" : null,
+                                    WorkRule.Per.REPOSITORY,
+                                    List.of("AGENT"),
+                                    "Work {story}: {issues}; {tasks}",
+                                    Map.of("codex", "model")));
+        }
+        f.store.current = board;
+        assertThat(WorkRules.check(f.store.board().workflow(), f.store.board().work()).rules())
+                .as("Review's blocked work takes from Reading alone; the building rule is sound")
+                .containsKeys("Building", "Review", "Reworking");
+        assertThat(f.store.board().work().rules().get("Reworking").from()).doesNotContain("Review");
+        final int offers = f.run.work("ST1").offers().size();
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                .as("returned with a point open")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+        assertThat(f.run.work("ST1").offers()).as("no rework offered").hasSize(offers);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("nothing moved")
+                .isEqualTo("Review");
+    }
+
+    @Test
     void aForwardedPushKeepsTheOwnPullRequestAndTheTasksRecordAtItsGatePushStillMatches() {
         // Harm: the move to the pull request is lost when nothing is open there, so the next read
         // judges the gate again; or Porelo's record of the run at its gate push is taken for
@@ -4938,6 +5169,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         waiting(f);
+        noRework(f);
         assertThat(f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
                 .as("points stand open, but no rule reworks from Review")
                 .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
@@ -4963,6 +5195,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
         assertThat(
                         f.run.placeRead(
@@ -4983,6 +5216,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         final WorkRun.Offered build = waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0)));
         assertThat(atWork(f, f.run.work("ST1"), build.offer()))
                 .as("nobody works before the person starts the task again")
@@ -5064,6 +5298,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         final WorkRun.Offered build = waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0)));
         f.start(build);
         f.run.report(
@@ -5086,6 +5321,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         final WorkRun.Offered build = waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0)));
         f.start(build);
         f.store.current = inState(f.store.board(), "AA1", "Backlog");
@@ -5101,6 +5337,7 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         noReading(f);
         final WorkRun.Offered build = waiting(f);
+        noRework(f);
         f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0)));
         f.start(build);
         final int writes = f.record.writes;
@@ -5170,6 +5407,26 @@ class WorkRunTest {
                         building.modes(),
                         building.order(),
                         building.models()));
+        final Board board = f.store.board();
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues(),
+                        new Work(rules, board.work().faults()),
+                        board.repositories());
+    }
+
+    /**
+     * Drops the building rule from the fixture's board, so that once its build waits under a
+     * building rule that names no reading, neither the state it waits in nor the rule that built it
+     * can rework it.
+     */
+    private static void noRework(final Fixture f) {
+        final Map<String, WorkRule> rules =
+                new java.util.LinkedHashMap<>(f.store.board().work().rules());
+        rules.remove("Building");
         final Board board = f.store.board();
         f.store.current =
                 new Board(
