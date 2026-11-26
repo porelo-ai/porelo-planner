@@ -298,8 +298,8 @@ final class SerializationCheck {
     }
 
     /**
-     * An outbox as the planner writes it: a command held for every refusal kind it keeps, one in
-     * every other state, and a group kept from another source.
+     * An outbox as the planner writes it: a command held for every refusal kind it keeps, each with
+     * the try that ended there, one in every other state, and a group kept from another source.
      *
      * @return the outbox
      */
@@ -357,7 +357,10 @@ final class SerializationCheck {
                 state,
                 why,
                 number % 2 == 0,
-                number % 2 == 0 ? "ST1" : "");
+                number % 2 == 0 ? "ST1" : "",
+                state == CommandOutbox.State.HELD || state == CommandOutbox.State.REFUSED
+                        ? List.of(new CommandOutbox.Try(WHEN, state, why))
+                        : List.of());
     }
 
     /** Writes a filled instance as JSON, reads it back and answers how many values it held. */

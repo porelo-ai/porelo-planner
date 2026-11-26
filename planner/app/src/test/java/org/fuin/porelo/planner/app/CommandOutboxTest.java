@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +63,42 @@ class CommandOutboxTest {
 
     private CommandOutbox outbox() {
         return outbox("main");
+    }
+
+    private static final Instant START = Instant.parse("2026-03-04T05:06:07Z");
+
+    /** A clock a second later at each reading, so each try has its own time. */
+    private static final class Ticking extends Clock {
+
+        private final AtomicInteger seconds = new AtomicInteger();
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(final ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            return START.plusSeconds(seconds.getAndIncrement());
+        }
+    }
+
+    private CommandOutbox timed(final Clock clock) {
+        final PrivateFiles files = PrivateFiles.of(environment());
+        return new CommandOutbox(
+                environment(),
+                directory,
+                "planning",
+                "porelo-lib",
+                "main",
+                files,
+                new DurableFile(files, LimitFactors.DEFAULT),
+                clock);
     }
 
     private static Issue issue(final String id, final String state, final List<String> blockedBy) {
@@ -377,11 +417,11 @@ class CommandOutboxTest {
                 .isInstanceOf(IllegalStateException.class);
         other.close();
 
-        edit("\"format\":1", "\"format\":2");
+        edit("\"format\":2", "\"format\":3");
         assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("a newer form")
                 .isInstanceOf(WorkRefusal.class);
-        edit("\"format\":2", "\"format\":1");
+        edit("\"format\":3", "\"format\":2");
         edit("\"project\":\"planning\"", "\"project\":\"another\"");
         assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("another project's")
@@ -452,8 +492,10 @@ class CommandOutboxTest {
         final List<String> forged =
                 List.of(
                         good.substring(0, good.length() / 2),
-                        good.replace("\"format\":1", "\"format\":1,\"extra\":1"),
-                        good.replace("\"format\":1", "\"format\":1,\"format\":1"),
+                        good.replace("\"format\":2", "\"format\":2,\"extra\":1"),
+                        good.replace("\"format\":2", "\"format\":2,\"format\":2"),
+                        good.replace("\"tries\":[]", "\"tries\":null"),
+                        good.replace("\"format\":2", "\"format\":1"),
                         good.replace("\"text\":\"\"", "\"text\":null"),
                         good.replace("\"AA1\":\"Building\"", "\"AA1\":null"),
                         good.replace("\"kind\":\"write\"", "\"kind\":\"comment\""),
@@ -996,5 +1038,172 @@ class CommandOutboxTest {
         assertThatThrownBy(() -> new OutboxResave(runs, outbox).resave("ST1", "g1"))
                 .isInstanceOf(WorkRefusal.class);
         assertThat(outbox.pending()).extracting(CommandOutbox.Group::id).containsExactly("g1");
+    }
+
+    @Test
+    void everyTryOfAHeldGroupIsKeptWithItsTimeAndResultAcrossAResendAndARestart() {
+        // Harm: the person cannot tell how often and when a held save was tried, because a resend
+        // overwrites the try before it or a restart forgets it.
+        final Ticking clock = new Ticking();
+        final CommandOutbox outbox = timed(clock);
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building"))));
+        outbox.begin("c1");
+        outbox.done("c1");
+        outbox.begin("c2");
+        outbox.conflict("c2", List.of("STATE"));
+        outbox.resend("g1");
+        outbox.begin("c2");
+        outbox.refused("c2", new StoreException.Unreachable("porelo-lib", "timed out"), true, null);
+        outbox.resend("g1");
+        outbox.begin("c2");
+        outbox.requeue("c2");
+        outbox.hold("g1", new StoreException.Busy("porelo-lib"));
+        outbox.close();
+
+        final CommandOutbox again = timed(clock);
+        again.open(() -> BEFORE);
+        assertThat(again.tries("g1"))
+                .extracting(
+                        CommandOutbox.Try::at, CommandOutbox.Try::result, each -> each.why().name())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(START, State.REFUSED, "Changed"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                START.plusSeconds(1), State.HELD, "Unreachable"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                START.plusSeconds(2), State.HELD, "Busy"));
+        assertThat(again.tries("g1").getFirst().why().places())
+                .as("the try keeps its own reason")
+                .containsExactly("STATE");
+        assertThat(again.told("g1"))
+                .extracting(CommandOutbox.Told::state)
+                .containsExactly(State.DONE, State.HELD);
+    }
+
+    @Test
+    void aTryCutByAStopEndsHeldWhenTheRepairAtOpenHoldsIt() {
+        // Harm: a save tried just before the planner stopped shows fewer tries than were made.
+        begunAndStopped(
+                new CommandGroup(
+                        "g1",
+                        List.of(move("c1", "AA1", "Building"), move("c2", "AB2", "Building"))));
+        final Board moved = with(BEFORE, issue("AA1", "Review", List.of("AB2")));
+
+        final CommandOutbox again = timed(Clock.fixed(START, ZoneOffset.UTC));
+        again.open(() -> moved);
+
+        assertThat(again.tries("g1"))
+                .as("one try, ended at the command begun")
+                .extracting(
+                        CommandOutbox.Try::at, CommandOutbox.Try::result, each -> each.why().name())
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(START, State.HELD, "Changed"));
+    }
+
+    @Test
+    void anOutboxOfTheFormerFormReadsWithNoTriesAndIsWrittenInTheNewForm() throws IOException {
+        // Harm: saves held by the planner before an update refused or lost by the updated one.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+        final String text = Files.readString(file());
+        assertThat(text).as("a try kept").contains("\"tries\":[{");
+        final tools.jackson.databind.node.ObjectNode former =
+                (tools.jackson.databind.node.ObjectNode) WorkRecord.JSON.readTree(text);
+        former.put("format", 1);
+        former.get("entries")
+                .values()
+                .forEach(each -> ((tools.jackson.databind.node.ObjectNode) each).remove("tries"));
+        Files.writeString(file(), WorkRecord.JSON.writeValueAsString(former));
+        assertThat(Files.readString(file())).as("the former form").doesNotContain("\"tries\"");
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+
+        assertThat(again.tries("g1")).as("no tries").isEmpty();
+        assertThat(again.told("g1"))
+                .extracting(CommandOutbox.Told::state)
+                .containsExactly(State.REFUSED);
+        assertThat(Files.readString(file()))
+                .as("written in the new form")
+                .contains("\"format\":2", "\"tries\":[]");
+    }
+
+    @Test
+    void aTryWithoutAnEndOrWithAReasonOutOfPlaceIsRefused() throws IOException {
+        // Harm: a forged try shown to the person as one the planner made.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+        final String good = Files.readString(file());
+        final String result = "\"result\":\"REFUSED\"";
+        assertThat(good).contains(result);
+
+        final tools.jackson.databind.node.ObjectNode done =
+                (tools.jackson.databind.node.ObjectNode) WorkRecord.JSON.readTree(good);
+        ((tools.jackson.databind.node.ArrayNode) done.get("entries").get(0).get("tries"))
+                .set(
+                        0,
+                        WorkRecord.JSON.valueToTree(
+                                new CommandOutbox.Try(START, State.DONE, CommandOutbox.Why.NONE)));
+
+        for (final String text :
+                List.of(
+                        good.replace(result, "\"result\":\"QUEUED\""),
+                        good.replace(result, "\"result\":\"DONE\""),
+                        WorkRecord.JSON.writeValueAsString(done),
+                        good.replace("\"at\":\"", "\"at\":\"then"))) {
+            assertThat(text).as("forged").isNotEqualTo(good);
+            Files.writeString(file(), text);
+            assertThatThrownBy(() -> outbox().open(() -> BEFORE))
+                    .as(text)
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
+    void aGroupQueuedAtTheBoundStillKeepsTheReserveWholeAfterItsLongestHoldAndReopens()
+            throws IOException {
+        // Harm: a save queued near the cap whose hold, with its try, eats into the reserve, so
+        // later ends and holds of other saves can no longer be written.
+        final CommandOutbox probe = outbox();
+        probe.open(() -> BEFORE);
+        probe.enqueue(new CommandGroup("g1", List.of(new Command.Comment("c1", "AA1", "x"))));
+        final int base =
+                CommandOutbox.worst(
+                                WorkRecord.JSON.readValue(
+                                        Files.readAllBytes(file()), CommandOutbox.Document.class))
+                        - 1;
+        probe.unqueue("g1");
+        final String large = "x".repeat(CommandOutbox.MOST - CommandOutbox.RESERVE - base);
+        probe.enqueue(new CommandGroup("g1", List.of(new Command.Comment("c1", "AA1", large))));
+        assertThatThrownBy(
+                        () ->
+                                probe.enqueue(
+                                        new CommandGroup(
+                                                "g2",
+                                                List.of(new Command.Comment("c2", "AB2", "")))))
+                .as("the bound is reached")
+                .isInstanceOf(WorkRefusal.class);
+
+        probe.hold("g1", new StoreException.Busy("😀".repeat(CommandOutbox.MOST_SUBJECT)));
+
+        assertThat(Files.size(file()))
+                .as("the reserve whole")
+                .isLessThanOrEqualTo(CommandOutbox.MOST - CommandOutbox.RESERVE);
+        probe.close();
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(again.tries("g1"))
+                .extracting(CommandOutbox.Try::result)
+                .containsExactly(State.HELD);
     }
 }

@@ -3,6 +3,8 @@ package org.fuin.porelo.planner.app;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -41,6 +43,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * One project's commands on disk, in the planner's state directory beside the work record: every
@@ -54,6 +57,9 @@ import tools.jackson.databind.JsonNode;
  * means queued again, anything else holds it for the owner account. A command whose parts the board
  * cannot show is held, never told done and never sent twice. A file of another repository or branch
  * is never run again: its open commands are kept held under that source.
+ *
+ * <p>Every try of a group that ends refused or held is kept on the command it ended at, with its
+ * time and reason, until the group leaves the file.
  */
 final class CommandOutbox implements AutoCloseable {
 
@@ -62,8 +68,8 @@ final class CommandOutbox implements AutoCloseable {
     /** The file's name in the project's state directory. */
     static final String FILE = "outbox.json";
 
-    /** The form of the file this planner writes and reads. */
-    static final int FORMAT = 1;
+    /** The form of the file this planner writes; a file of form 1 reads with no tries. */
+    static final int FORMAT = 2;
 
     /** The most bytes the file holds. */
     static final int MOST = WorkRecord.MOST_RECORD;
@@ -184,6 +190,22 @@ final class CommandOutbox implements AutoCloseable {
     }
 
     /**
+     * One try of a group, kept on the command it ended at.
+     *
+     * @param at when it ended, in UTC
+     * @param result how it ended: refused or held; a group written whole leaves the file, so no try
+     *     is kept done
+     * @param why why it was refused or held
+     */
+    record Try(Instant at, State result, Why why) {
+
+        /** Whether it is one the file may keep: refused or held, with a sound reason. */
+        boolean sound() {
+            return (result == State.REFUSED || result == State.HELD) && why.sound();
+        }
+    }
+
+    /**
      * A new issue as data, its unset values left out.
      *
      * @param repository the repository
@@ -268,6 +290,7 @@ final class CommandOutbox implements AutoCloseable {
      *     holds it instead of telling it unwritten
      * @param story the story whose run saves its group, empty for a window's save; a run's group is
      *     repaired by its run, never sent again by the owner account
+     * @param tries the tries of its group that ended at it, oldest first
      */
     record Entry(
             String group,
@@ -279,15 +302,34 @@ final class CommandOutbox implements AutoCloseable {
             State state,
             Why why,
             boolean resumed,
-            String story) {
+            String story,
+            List<Try> tries) {
+
+        /** Copies the tries. */
+        Entry {
+            tries = List.copyOf(tries);
+        }
 
         Entry to(final State next, final Why because) {
             return new Entry(
-                    group, id, kind, target, judged, changes, next, because, resumed, story);
+                    group, id, kind, target, judged, changes, next, because, resumed, story, tries);
         }
 
         Entry resumed(final boolean again) {
-            return new Entry(group, id, kind, target, judged, changes, state, why, again, story);
+            return new Entry(
+                    group, id, kind, target, judged, changes, state, why, again, story, tries);
+        }
+
+        Entry tried(final List<Try> all) {
+            return new Entry(
+                    group, id, kind, target, judged, changes, state, why, resumed, story, all);
+        }
+
+        /** The entry with its state taken as a try's end, the try kept. */
+        Entry ended(final State next, final Why because, final Instant at) {
+            final List<Try> more = new ArrayList<>(tries);
+            more.add(new Try(at, next, because));
+            return to(next, because).tried(more);
         }
     }
 
@@ -349,6 +391,7 @@ final class CommandOutbox implements AutoCloseable {
     private final Path file;
     private final DurableFile durable;
     private final LocalPaths paths;
+    private final Clock clock;
     private List<Entry> entries = List.of();
 
     private List<Earlier> earlier = List.of();
@@ -391,10 +434,11 @@ final class CommandOutbox implements AutoCloseable {
                 repository,
                 branch,
                 files,
-                new DurableFile(files, limits));
+                new DurableFile(files, limits),
+                Clock.systemUTC());
     }
 
-    /** Keeps the commands with the given durable file. */
+    /** Keeps the commands with the given durable file, its tries timed by the system's clock. */
     CommandOutbox(
             final Map<String, String> environment,
             final Path directory,
@@ -403,7 +447,29 @@ final class CommandOutbox implements AutoCloseable {
             final @Nullable String branch,
             final PrivateFiles files,
             final DurableFile durable) {
+        this(
+                environment,
+                directory,
+                project,
+                repository,
+                branch,
+                files,
+                durable,
+                Clock.systemUTC());
+    }
+
+    /** Keeps the commands with the given durable file, its tries timed by the clock given. */
+    CommandOutbox(
+            final Map<String, String> environment,
+            final Path directory,
+            final String project,
+            final String repository,
+            final @Nullable String branch,
+            final PrivateFiles files,
+            final DurableFile durable,
+            final Clock clock) {
         this.project = project;
+        this.clock = clock;
         this.source = new Source(repository, branch == null ? "" : branch);
         this.file = directory.resolve(FILE);
         this.durable = durable;
@@ -437,11 +503,11 @@ final class CommandOutbox implements AutoCloseable {
         List<Entry> now = read == null ? List.of() : read.entries();
         List<Earlier> kept = read == null ? List.of() : read.earlier();
         if (read != null && !read.source().equals(source)) {
-            kept = keptAside(kept, read.source(), now);
+            kept = keptAside(kept, read.source(), now, clock);
             now = List.of();
         }
         final Map<String, State> settled = new LinkedHashMap<>();
-        now = settledAtOpen(now, board, settled);
+        now = settledAtOpen(now, board, settled, clock);
         final Document next = new Document(FORMAT, project, source, pruned(now), prunedKept(kept));
         if (read == null
                 ? !next.entries().isEmpty() || !next.earlier().isEmpty()
@@ -481,7 +547,7 @@ final class CommandOutbox implements AutoCloseable {
             next.add(entry(group.id(), command, group.story()));
         }
         final Document document = new Document(FORMAT, project, source, next, earlier);
-        if (bytes(worstHeld(document)).length > MOST - RESERVE) {
+        if (worst(document) > MOST - RESERVE) {
             throw unavailable("The outbox has no room for this save.");
         }
         write(
@@ -587,13 +653,21 @@ final class CommandOutbox implements AutoCloseable {
         running();
         final List<Entry> of = group(group);
         final Why because = Why.of(why);
+        final Instant at = clock.instant();
         final List<Entry> held = new ArrayList<>();
+        boolean tried = false;
         for (final Entry entry : of) {
-            held.add(
-                    entry.state() == State.QUEUED || entry.state() == State.IN_FLIGHT
-                            ? entry.to(State.HELD, because)
-                                    .resumed(entry.resumed() || entry.state() == State.IN_FLIGHT)
-                            : entry);
+            if (entry.state() == State.QUEUED || entry.state() == State.IN_FLIGHT) {
+                // The try ends at the first command not written; those behind it wait on it.
+                held.add(
+                        (tried
+                                        ? entry.to(State.HELD, because)
+                                        : entry.ended(State.HELD, because, at))
+                                .resumed(entry.resumed() || entry.state() == State.IN_FLIGHT));
+                tried = true;
+            } else {
+                held.add(entry);
+            }
         }
         replace(at(of.getFirst().id()), held, false);
     }
@@ -786,6 +860,19 @@ final class CommandOutbox implements AutoCloseable {
         return groups(source, group(group), false).getFirst().commands();
     }
 
+    /**
+     * Every try of a group kept, of this source or another, oldest first.
+     *
+     * @param group the group's id
+     * @return its tries
+     */
+    synchronized List<Try> tries(final String group) {
+        final List<Try> tries = new ArrayList<>();
+        all(group).forEach(entry -> tries.addAll(entry.tries()));
+        tries.sort(java.util.Comparator.comparing(Try::at));
+        return List.copyOf(tries);
+    }
+
     private List<Entry> group(final String group) {
         final List<Entry> of = entries.stream().filter(e -> e.group().equals(group)).toList();
         if (of.isEmpty()) {
@@ -826,7 +913,7 @@ final class CommandOutbox implements AutoCloseable {
     private State ended(final int at, final State state, final Why why) {
         final Entry entry = entries.get(at);
         final List<Entry> ended = new ArrayList<>();
-        ended.add(entry.to(state, why));
+        ended.add(entry.ended(state, why, clock.instant()));
         for (int after = at + 1;
                 after < entries.size() && entries.get(after).group().equals(entry.group());
                 after++) {
@@ -884,6 +971,9 @@ final class CommandOutbox implements AutoCloseable {
         if (format.intValue() > FORMAT) {
             throw unavailable("The outbox was written by a newer planner.");
         }
+        if (format.intValue() == 1 && !withoutTries(tree)) {
+            throw unavailable("The outbox does not have its form.");
+        }
         final JsonNode named = tree.get("project");
         if (named == null || !named.isString() || !named.stringValue().equals(project)) {
             throw unavailable("The outbox is another project's.");
@@ -900,6 +990,32 @@ final class CommandOutbox implements AutoCloseable {
             throw unavailable("The outbox has a command that fails its check.");
         }
         return document;
+    }
+
+    /**
+     * Gives every command of a file of form 1, which kept no tries, an empty list of them.
+     *
+     * @return false when a command of it holds tries already, or the file is not of its form
+     */
+    private static boolean withoutTries(final JsonNode tree) {
+        final List<JsonNode> lists = new ArrayList<>();
+        lists.add(tree.get("entries"));
+        final JsonNode kept = tree.get("earlier");
+        if (kept != null && kept.isArray()) {
+            kept.values().forEach(each -> lists.add(each.get("entries")));
+        }
+        for (final JsonNode list : lists) {
+            if (list == null || !list.isArray()) {
+                return false;
+            }
+            for (final JsonNode entry : list.values()) {
+                if (!(entry instanceof ObjectNode command) || command.has("tries")) {
+                    return false;
+                }
+                command.putArray("tries");
+            }
+        }
+        return true;
     }
 
     private static boolean holdsNull(final JsonNode node) {
@@ -969,12 +1085,16 @@ final class CommandOutbox implements AutoCloseable {
             if (!entry(entry.group(), command, repository, entry.story())
                     .to(entry.state(), entry.why())
                     .resumed(entry.resumed())
+                    .tried(entry.tries())
                     .equals(entry)) {
                 throw new IllegalArgumentException("changes not of their kind");
             }
             final boolean reasoned = entry.state() == State.REFUSED || entry.state() == State.HELD;
             if (reasoned ? !entry.why().sound() : !entry.why().equals(Why.NONE)) {
                 throw new IllegalArgumentException("a reason out of place");
+            }
+            if (!entry.tries().stream().allMatch(Try::sound)) {
+                throw new IllegalArgumentException("a try out of place");
             }
             if (!runs && (entry.state() == State.QUEUED || entry.state() == State.IN_FLIGHT)) {
                 throw new IllegalArgumentException("a kept command to run");
@@ -1000,7 +1120,8 @@ final class CommandOutbox implements AutoCloseable {
     private static List<Entry> settledAtOpen(
             final List<Entry> list,
             final Supplier<Board> boards,
-            final Map<String, State> settled) {
+            final Map<String, State> settled,
+            final Clock clock) {
         final List<Entry> next = new ArrayList<>();
         Entry heldBy = null;
         Board board = null;
@@ -1019,7 +1140,12 @@ final class CommandOutbox implements AutoCloseable {
                 // Read once, and only when a command was begun: a plain open reads nothing.
                 board = boards.get();
             }
-            final Entry after = settled(entry, board);
+            final Entry settledNow = settled(entry, board);
+            // A try begun before the stop ends here when the repair holds it.
+            final Entry after =
+                    settledNow.state() == State.HELD
+                            ? entry.ended(State.HELD, settledNow.why(), clock.instant())
+                            : settledNow;
             next.add(after);
             settled.put(entry.id(), after.state());
             if (after.state() == State.HELD) {
@@ -1055,13 +1181,17 @@ final class CommandOutbox implements AutoCloseable {
 
     /** Keeps a source's open groups aside, every command of them held, never run again. */
     private static List<Earlier> keptAside(
-            final List<Earlier> kept, final Source old, final List<Entry> list) {
+            final List<Earlier> kept, final Source old, final List<Entry> list, final Clock clock) {
         final List<Entry> held = new ArrayList<>();
         for (final Entry entry : list) {
+            final Why changed = new Why("Changed", subject(entry.target()), "");
             held.add(
-                    entry.state() == State.QUEUED || entry.state() == State.IN_FLIGHT
-                            ? entry.to(State.HELD, new Why("Changed", subject(entry.target()), ""))
-                            : entry);
+                    entry.state() == State.IN_FLIGHT
+                            // A try begun on the other source ends here.
+                            ? entry.ended(State.HELD, changed, clock.instant())
+                            : entry.state() == State.QUEUED
+                                    ? entry.to(State.HELD, changed)
+                                    : entry);
         }
         final List<Earlier> next = new ArrayList<>();
         boolean merged = false;
@@ -1100,15 +1230,29 @@ final class CommandOutbox implements AutoCloseable {
     }
 
     /** The document as it would stand with every open command held for the longest reason. */
-    private static Document worstHeld(final Document document) {
+    /**
+     * The bytes of the document as it would stand with every open command held for the longest
+     * reason and given one more try for it, as ending, holding or the repair at open gives it.
+     */
+    static int worst(final Document document) {
         final Why longest =
                 new Why("ItemsDirectoryRefused", "😀".repeat(MOST_SUBJECT), "x".repeat(64));
         final List<Entry> held =
                 document.entries().stream()
-                        .map(e -> e.state() == State.DONE ? e : e.to(State.HELD, longest))
+                        .map(
+                                e ->
+                                        e.state() == State.DONE
+                                                ? e
+                                                : e.ended(State.HELD, longest, Instant.MAX))
                         .toList();
-        return new Document(
-                document.format(), document.project(), document.source(), held, document.earlier());
+        return bytes(
+                        new Document(
+                                document.format(),
+                                document.project(),
+                                document.source(),
+                                held,
+                                document.earlier()))
+                .length;
     }
 
     // --- what the board shows
@@ -1309,7 +1453,8 @@ final class CommandOutbox implements AutoCloseable {
                 State.QUEUED,
                 Why.NONE,
                 false,
-                story);
+                story,
+                List.of());
     }
 
     private static Map<String, String> story(

@@ -1,0 +1,2 @@
+title: The planner's outbox keeps every try of a held save with its time in UTC and its result, refused or held with a reason, and reads an outbox of the earlier form with no tries.
+type: added
