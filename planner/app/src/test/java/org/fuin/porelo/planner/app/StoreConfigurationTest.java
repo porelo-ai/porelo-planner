@@ -207,7 +207,8 @@ class StoreConfigurationTest {
                                     .as("what it names")
                                     .containsEntry("project", "alpha");
                         });
-        assertThatThrownBy(() -> projects.put("alpha", "https://github.com/porelo-ai/My.git", null))
+        assertThatThrownBy(
+                        () -> projects.put("alpha", "https://github.com/porelo-ai/-my.git", null))
                 .as("a URL whose last part is no repository name")
                 .isInstanceOfSatisfying(
                         Refusal.class,

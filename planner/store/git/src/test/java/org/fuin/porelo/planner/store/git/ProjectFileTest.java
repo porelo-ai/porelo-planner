@@ -214,13 +214,30 @@ class ProjectFileTest {
                         () ->
                                 ProjectFile.repositories(
                                         remote,
-                                        new CloneUrl("https://github.com/porelo-ai/MyRepo.git"),
+                                        new CloneUrl("https://github.com/porelo-ai/_repo.git"),
                                         null,
                                         10))
-                .as("an upper-case repository name")
+                .as("a repository name that starts with an underscore")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no repository name");
         assertThat(remote.fetched).as("nothing fetched").isEmpty();
+    }
+
+    @Test
+    void aRepositoryNamedWithCapitalsIsReadUnderItsNameInLowerCaseWithItsUrlAsWritten() {
+        // Harm: a project on a repository whose forge name has capitals cannot be planned at all,
+        // or the window's spelling and the file's differ and the project is refused.
+        final CloneUrl capitals = new CloneUrl("https://github.com/porelo-ai/Porelo-Project.git");
+        assertThat(ProjectFile.repositories(with(PROJECT), capitals, "main", 10).getFirst())
+                .as("the window's URL with capitals, the file's in lower case")
+                .isEqualTo(new Repository("porelo-project", capitals, "main", "porelo"));
+        final Files written =
+                with(
+                        PROJECT.replace(
+                                "porelo-ai/porelo-project.git", "porelo-ai/Porelo-Project.git"));
+        assertThat(ProjectFile.repositories(written, OWN, "main", 10).getFirst())
+                .as("the file's central with capitals, the window's URL in lower case")
+                .isEqualTo(new Repository("porelo-project", OWN, "main", "porelo"));
     }
 
     private static final CloneUrl HTTPS_OWN =

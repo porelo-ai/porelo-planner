@@ -532,11 +532,16 @@ public final class ProjectFile {
         }
     }
 
-    /** A repository's name as {@code project.yml}'s readers give it: its URL's last part. */
+    /**
+     * A repository's name as {@code project.yml}'s readers give it: its URL's last part in lower
+     * case, as a forge compares names, while the URL handed to Git stays as written.
+     */
     private static String name(final CloneUrl url) {
         final String value = url.value();
         final String last =
                 value.substring(Math.max(value.lastIndexOf('/'), value.lastIndexOf(':')) + 1);
-        return last.endsWith(".git") ? last.substring(0, last.length() - ".git".length()) : last;
+        final String name =
+                last.endsWith(".git") ? last.substring(0, last.length() - ".git".length()) : last;
+        return name.toLowerCase(java.util.Locale.ROOT);
     }
 }

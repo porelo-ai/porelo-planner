@@ -75,9 +75,14 @@ record Central(String name, String web) {
         if (match != null && !value.contains("..") && port(match) && cloned(value)) {
             final String path = match.group("path");
             final String last = path.substring(path.lastIndexOf('/') + 1);
-            final String name = last.endsWith(".git") ? last.substring(0, last.length() - 4) : last;
+            final String written =
+                    last.endsWith(".git") ? last.substring(0, last.length() - 4) : last;
+            // A forge compares names in any case; the name is kept in lower case, the pages as
+            // written.
+            final String name = written.toLowerCase(java.util.Locale.ROOT);
             if (NAME.matcher(name).matches()) {
-                final String repository = path.substring(0, path.length() - last.length()) + name;
+                final String repository =
+                        path.substring(0, path.length() - last.length()) + written;
                 return new Central(name, web(match) + "/" + repository);
             }
         }
@@ -88,8 +93,8 @@ record Central(String name, String web) {
                         + " "
                         + shown(safe(value))
                         + " is no clone URL (https://host/path, ssh://host/path or user@host:path,"
-                        + " its last part a repository name of lowercase letters, digits, '.', '_'"
-                        + " and '-')");
+                        + " its last part a repository name of letters, digits, '.', '_' and"
+                        + " '-')");
     }
 
     private static @Nullable Matcher matched(String value) {

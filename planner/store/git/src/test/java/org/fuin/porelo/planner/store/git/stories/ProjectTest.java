@@ -126,7 +126,8 @@ class ProjectTest {
         "ssh://git.example.org/acme/widget.js.git, widget.js,"
                 + " https://git.example.org/acme/widget.js",
         "git@git.example.org:acme/widget.git, widget, https://git.example.org/acme/widget",
-        "git@git.example.org:/srv/acme/widget, widget, https://git.example.org/srv/acme/widget"
+        "git@git.example.org:/srv/acme/widget, widget, https://git.example.org/srv/acme/widget",
+        "https://github.com/Acme/Widget-T.git, widget-t, https://github.com/Acme/Widget-T"
     })
     void eachCloneUrlShapeIsReadWithItsNameAndHost(String central, String name, String web)
             throws IOException {
@@ -178,6 +179,27 @@ class ProjectTest {
                 .hasMessageNotContaining(String.valueOf((char) 7));
     }
 
+    // Prevents one repository named in two spellings from becoming two clones under one folder.
+    @Test
+    void twoCentralsWhoseNamesDifferOnlyInCaseAreRefusedAsOneRepository() throws IOException {
+        Files.writeString(
+                work.resolve("project.yml"),
+                "project:\n  central: git@git.example.org:acme/plans.git\n"
+                        + "repositories:\n"
+                        + "  one:\n    central: https://git.example.org/acme/Widget.git\n"
+                        + "    issues: [AB]\n"
+                        + "  two:\n    central: https://git.example.org/acme/widget.git\n"
+                        + "    issues: [CD]\n");
+
+        assertThatThrownBy(
+                        () ->
+                                Project.read(
+                                        work.resolve("stories/README.md"), repository -> Map.of()))
+                .as("the second spelling of one repository")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("duplicate repository widget");
+    }
+
     // Prevents a credential in a refused central of any shape from being shown in the refusal.
     @ParameterizedTest
     @CsvSource(
@@ -219,8 +241,6 @@ class ProjectTest {
     @ParameterizedTest
     @ValueSource(
             strings = {
-                "https://git.example.org/acme/Widget.git",
-                "git@git.example.org:acme/WIDGET",
                 "git@git.example.org:-acme/x.git",
                 "git@git.example.org:x",
                 "https://git.example.org:0/acme/x.git",
