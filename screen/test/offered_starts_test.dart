@@ -24,7 +24,7 @@ void main() {
       _rework(1),
       _rework(1),
       _rework(2, runRole: null),
-      _rework(3, place: {'ownPullRequest': true}),
+      _rework(3, place: {'pullRequest': 'https://github.com/acme/shop/pull/3'}),
       _rework(
         4,
         place: {
@@ -48,6 +48,24 @@ void main() {
       'gatePush': {'name': 'task'},
     });
     expect(PlanWork.from(servedWork()).starts, isEmpty, reason: 'a planner without starts offers none');
+  });
+
+  test('the work reads an author sent back to its task\'s own pull request as a start, as a builder only', () {
+    // Harm: the author's rework at its own pull request is never started, so the issue stays in Rework with its offer
+    // waiting; or a reader, a stage handing back a result, or a builder of no author's run starts there without the
+    // person.
+    final own = {'ownPullRequest': true};
+    final work = _work([
+      _rework(30, place: own),
+      _rework(31, place: own, role: 'READER'),
+      _rework(32, place: own)..['result'] = 'analysis.json',
+      _rework(33, place: own, runRole: null),
+      _rework(34, place: own, runRole: 'REVIEWER'),
+    ]);
+    expect(work.starts.map((order) => order.offer), [servedOffer(30)]);
+    expect(work.starts.single.runRole, 'AUTHOR');
+    expect(work.starts.single.place?.ownPullRequest, isTrue);
+    expect(work.starts.single.place?.toJson(), own);
   });
 
   test('the work reads a reviewer of the work at its place as a start, never one with another duty', () {

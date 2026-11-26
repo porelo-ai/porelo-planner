@@ -521,8 +521,8 @@ class PlanningTaskOrder {
   /// The run's role Start is handed as its `role`, `AUTHOR` or `REVIEWER`; null for an author at its own push.
   final String? runRole;
 
-  /// Where the run works, handed to Start as its `place`; null for the task's own push. An author's gate push names
-  /// the task it resumes, the name Start is given.
+  /// Where the run works, handed to Start as its `place`; null for the task's own push. An author resumes at its gate
+  /// push, which names the task it resumes, the name Start is given, or at its task's own pull request.
   final PlanningRunPlace? place;
 
   bool _matches(PlanningTaskOrder other) =>
