@@ -993,7 +993,7 @@ class PlanHeldChange {
       saved = map['saved'] is String ? map['saved'] as String : null,
       read = _heldRead(map),
       now = _heldRead(map) == PlanHeldValueRead.value ? map['now'] as String : null,
-      nowAt = _heldRead(map) == PlanHeldValueRead.never ? null : DateTime.parse(map['nowAt'] as String).toUtc();
+      nowAt = _heldRead(map) == PlanHeldValueRead.never ? null : _heldTime(map['nowAt']);
 
   /// The issue or story the field belongs to.
   final String target;
@@ -1014,24 +1014,32 @@ class PlanHeldChange {
   final String? saved;
 }
 
+/// A time the planner reports, in UTC; null where it is no time or names no zone, which would be read as the screen's
+/// own local time.
+DateTime? _heldTime(Object? value) {
+  if (value is! String || !RegExp(r'(Z|[+-]\d\d:?\d\d)$').hasMatch(value)) return null;
+  return DateTime.tryParse(value)?.toUtc();
+}
+
 PlanHeldValueRead _heldRead(Map<String, dynamic> map) {
-  final at = map['nowAt'];
-  if (at is! String || DateTime.tryParse(at) == null) return PlanHeldValueRead.never;
+  if (_heldTime(map['nowAt']) == null) return PlanHeldValueRead.never;
   if (map['now'] is String) return PlanHeldValueRead.value;
   return map['nowUnset'] == true ? PlanHeldValueRead.empty : PlanHeldValueRead.never;
 }
 
 /// The forge's own answer to a refused call, word for word as the planner keeps it.
 class PlanHeldAnswer {
-  /// Reads the fields the planner reports; an answer without a status reads as none, see [PlanHeldAnswer.read].
+  /// Takes the answer's parts.
   PlanHeldAnswer._(this.status, this.text, this.requestId);
 
-  /// The answer in [value], or null where it is absent or carries no status.
+  /// The answer in [value], or null where it is absent. A status that is missing, or outside 0 to 999, reads as 0, so
+  /// the forge's words are kept whatever its status.
   static PlanHeldAnswer? read(Object? value) {
-    if (value is! Map<String, dynamic> || value['status'] is! int) return null;
+    if (value is! Map<String, dynamic>) return null;
+    final status = value['status'];
     final id = value['requestId'];
     return PlanHeldAnswer._(
-      value['status'] as int,
+      status is int && status >= 0 && status <= 999 ? status : 0,
       _planText(value, 'text'),
       id is String && id.isNotEmpty ? id : null,
     );
@@ -1051,12 +1059,12 @@ class PlanHeldAnswer {
 class PlanHeldTry {
   /// Reads the fields the planner reports.
   PlanHeldTry.from(Map<String, dynamic> map)
-    : at = map['at'] is String ? DateTime.tryParse(map['at'] as String)?.toUtc() : null,
+    : at = _heldTime(map['at']),
       result = _planText(map, 'result'),
       reason = _planText(map, 'reason'),
       answer = PlanHeldAnswer.read(map['answer']);
 
-  /// When it ended, in UTC; null where the planner gave no time.
+  /// When it ended, in UTC; null where the planner gave no time, or one without its zone.
   final DateTime? at;
 
   /// How it ended: REFUSED or HELD.
@@ -1122,16 +1130,23 @@ class PlanHeldSave {
   /// Every try that ended refused or held, oldest first.
   final List<PlanHeldTry> tries;
 
-  /// Every save folded into this line, oldest first, [id] last; [id] alone when nothing folds with it.
+  /// Every save folded into this line, oldest first, [id] last; [id] alone when nothing folds with it. Empty when the
+  /// planner's list cannot be read, see [savesUnreadable].
   final List<String> saves;
+
+  /// Whether the planner's list of the saves this line folds cannot be read: missing, empty, holding anything but
+  /// ids, or not ending with [id]. Such a line is neither resent nor dropped, since the saves either would reach are
+  /// not known.
+  bool get savesUnreadable => saves.isEmpty;
 }
 
-/// The saves a line folds, oldest first and its own id last; its own id alone where the planner names none, or names
-/// a list that does not end with it.
+/// The saves a line folds, oldest first and its own id last; none where the planner's list is missing, empty, holds
+/// anything but ids, or does not end with the line's own id.
 List<String> _heldSaves(Map<String, dynamic> map) {
   final id = _planText(map, 'id');
-  final named = _planStrings(map['saves']);
-  return named.isNotEmpty && named.last == id ? List.unmodifiable(named) : List.unmodifiable([id]);
+  final named = map['saves'];
+  if (id.isEmpty || !_planStringsReported(named) || (named as List).isEmpty || named.last != id) return const [];
+  return List.unmodifiable(named.cast<String>());
 }
 
 /// The longest directory the planner takes, in bytes of UTF-8.
