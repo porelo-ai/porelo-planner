@@ -1,0 +1,2 @@
+title: A call that fails on an unexpected fault is answered as the problem Unexpected and logged on one line with its causes and where it was thrown.
+type: changed

@@ -23,6 +23,8 @@ info:
     place of the body's digest, and its events are not part of it. Before its first call, and again after a
     connection error, a timeout, a stream it opens again, a 401 or a change of the address file, a caller asks POST
     /proof that the planner on the port holds the token, and calls nothing when the answer is not the proof.
+    A call that fails on a fault the planner answers by no other name answers 500 with the problem
+    `urn:porelo-planner:Unexpected` and fixed words, the same for every such fault; the planner's log names the cause.
 servers:
   - url: http://127.0.0.1
 security:

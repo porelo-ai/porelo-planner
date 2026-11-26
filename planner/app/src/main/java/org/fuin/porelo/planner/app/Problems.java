@@ -7,18 +7,22 @@ import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.git.LogText;
+import org.fuin.porelo.planner.store.git.PoreloProgram;
 import org.fuin.porelo.planner.store.local.ItemsDirectories;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.HandlerMapping;
 
@@ -37,6 +41,12 @@ public class Problems {
 
     /** The prefix of every problem type; the window reads the name after it. */
     static final String TYPE = "urn:porelo-planner:";
+
+    /** The most causes the line names, outermost first. */
+    private static final int CAUSES = 4;
+
+    /** The most frames of the innermost cause the line names. */
+    private static final int FRAMES = 8;
 
     private final Projects projects;
 
@@ -147,6 +157,92 @@ public class Problems {
     @ExceptionHandler(WorkRefusal.class)
     public ResponseEntity<ProblemDetail> refused(final WorkRefusal refusal) {
         return refused(Refusal.work(refusal));
+    }
+
+    /**
+     * Answers a fault no other handler names: one ERROR line in the planner's log names the call,
+     * the cause chain with each message scrubbed and where the innermost cause was thrown, and the
+     * caller gets fixed words alone. A fault Spring answers itself is handed back to it.
+     *
+     * @param fault the fault
+     * @param request the request, whose method and path pattern the line names
+     * @return the problem, or none when the answer has begun already, as a stream's has
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public @Nullable ResponseEntity<ProblemDetail> unexpected(
+            final RuntimeException fault, final WebRequest request) {
+        if (fault instanceof ErrorResponse || fault instanceof TypeMismatchException) {
+            // Spring's own answer, such as 400 for a parameter of the wrong type.
+            throw fault;
+        }
+        logUnexpected(fault, request);
+        final jakarta.servlet.http.HttpServletResponse response =
+                request instanceof ServletWebRequest servlet ? servlet.getResponse() : null;
+        if (response != null && response.isCommitted()) {
+            // A stream's answer has begun; no problem can follow it.
+            return null;
+        }
+        return problem(
+                "Unexpected",
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "The planner failed on this call; its log names the cause.",
+                Map.of());
+    }
+
+    /**
+     * Logs one line of separate values, never the fault itself, whose trace would print each
+     * message unscrubbed and span lines.
+     */
+    private static void logUnexpected(final Throwable fault, final WebRequest request) {
+        final List<Throwable> chain = new java.util.ArrayList<>();
+        final java.util.Set<Throwable> seen =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Throwable each = fault; each != null && seen.add(each); each = each.getCause()) {
+            chain.add(each);
+        }
+        final List<Object> values = new java.util.ArrayList<>();
+        values.add(
+                LogText.of(
+                        request instanceof ServletWebRequest servlet
+                                ? servlet.getHttpMethod().name()
+                                : "?"));
+        final Object pattern =
+                request.getAttribute(
+                        HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE,
+                        RequestAttributes.SCOPE_REQUEST);
+        // The pattern, never the raw path, which may carry what the call sent.
+        values.add(LogText.of(pattern instanceof String text ? text : "?"));
+        final StringBuilder format = new StringBuilder("A call to {} {} failed unexpectedly: {}");
+        for (int i = 0; i < Math.min(chain.size(), CAUSES); i++) {
+            if (i > 0) {
+                format.append("; caused by {}");
+            }
+            final Throwable cause = chain.get(i);
+            values.add(
+                    LogText.of(
+                            simpleName(cause.getClass().getName())
+                                    + ": "
+                                    + PoreloProgram.scrubbed(cause.getMessage())));
+        }
+        format.append("; at {}");
+        values.add(
+                LogText.of(
+                        java.util.Arrays.stream(chain.getLast().getStackTrace())
+                                .limit(FRAMES)
+                                .map(
+                                        frame ->
+                                                simpleName(frame.getClassName())
+                                                        + "."
+                                                        + frame.getMethodName()
+                                                        + ":"
+                                                        + frame.getLineNumber())
+                                .collect(java.util.stream.Collectors.joining(", "))));
+        LOG.error(format.toString(), values.toArray());
+    }
+
+    /** A class's name without its package, an inner or a hidden class's name kept whole. */
+    private static String simpleName(final String className) {
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     /**
