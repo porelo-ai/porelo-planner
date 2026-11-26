@@ -299,6 +299,21 @@ public final class GitHubStore implements PlanningStore {
 
     private volatile @Nullable Snapshot snapshot;
 
+    /**
+     * When the board held was last read whole from GitHub, or taken in its copy, with the revision
+     * of the board it was held with; null while none is held. One reference, so a time is never
+     * read with half of another.
+     */
+    private volatile @Nullable ReadTime readAt;
+
+    /**
+     * The time of a whole read beside the board it describes.
+     *
+     * @param revision the board's revision
+     * @param at when its whole read began, or its copy was taken
+     */
+    private record ReadTime(org.fuin.porelo.planner.store.Revision revision, Instant at) {}
+
     private volatile boolean retired;
 
     /** Whether the copy on disk was looked for; it is, once, on the first read of the board. */
@@ -530,6 +545,11 @@ public final class GitHubStore implements PlanningStore {
                 // behind.
                 saves.load(copy.held());
                 snapshot = loaded;
+                final @Nullable Instant copyTaken = copy.takenAt();
+                readAt =
+                        copyTaken == null
+                                ? null
+                                : new ReadTime(loaded.board().revision(), copyTaken);
                 fromCopy = true;
                 cursor = copy.cursor();
                 listedAt.clear();
@@ -652,6 +672,18 @@ public final class GitHubStore implements PlanningStore {
         final Snapshot current = snapshot;
         return current != null
                 ? java.util.Optional.of(current.board().revision())
+                : java.util.Optional.empty();
+    }
+
+    /**
+     * When the board given was last read whole from GitHub, its copy's time while it is taken from
+     * that; empty once the store holds a board of another revision.
+     */
+    @Override
+    public java.util.Optional<Instant> boardReadAt(final Board board) {
+        final ReadTime read = readAt;
+        return read != null && read.revision().equals(board.revision())
+                ? java.util.Optional.of(read.at())
                 : java.util.Optional.empty();
     }
 
@@ -1389,7 +1421,7 @@ public final class GitHubStore implements PlanningStore {
                                     return base;
                                 }
                                 final Snapshot fresh = laidOn(base, delta, began);
-                                holdNow(fresh, false);
+                                holdNow(fresh, null);
                                 return fresh;
                             }
                         });
@@ -1681,7 +1713,7 @@ public final class GitHubStore implements PlanningStore {
             }
             if (newest == base) {
                 if (moved || looked != base) {
-                    holdNow(looked, false);
+                    holdNow(looked, null);
                 }
                 return looked;
             }
@@ -1718,7 +1750,7 @@ public final class GitHubStore implements PlanningStore {
                     .removeIf(wait -> wait.getValue().equals(base.waits().get(wait.getKey())));
             if (put.isEmpty() && gone.isEmpty() && waits.isEmpty()) {
                 if (moved) {
-                    holdNow(newest, false);
+                    holdNow(newest, null);
                 }
                 return newest;
             }
@@ -1727,7 +1759,7 @@ public final class GitHubStore implements PlanningStore {
                             .apply(
                                     newest,
                                     new Reread(newest.config(), null, put, gone, archived, waits));
-            holdNow(fresh, false);
+            holdNow(fresh, null);
             return fresh;
         }
     }
@@ -1989,10 +2021,11 @@ public final class GitHubStore implements PlanningStore {
             final Snapshot list,
             final Snapshot result,
             final List<Round> rounds,
-            final long listBegan) {
+            final long listBegan,
+            final Instant wholeReadBegan) {
         synchronized (holding) {
             final Snapshot fresh = overList(list, result, rounds, snapshot, listBegan);
-            holdNow(fresh, true);
+            holdNow(fresh, wholeReadBegan);
             if (unreadFailed < listBegan) {
                 // Every save that named its writes unread failed before the list was read.
                 unread = null;
@@ -2097,6 +2130,7 @@ public final class GitHubStore implements PlanningStore {
             }
             // Beside the saves, so a wait for GitHub's rate limit holds none of them.
             final long listBegan = saves.begin();
+            final Instant wholeReadBegan = parts.reader().now();
             final Snapshot read = parts.reader().read(now, true);
             parts.probe().readWhole();
             LOG.info(
@@ -2170,7 +2204,7 @@ public final class GitHubStore implements PlanningStore {
                                             saved.size(),
                                             readBefore);
                                 }
-                                result = heldWhole(read, result, rounds, listBegan);
+                                result = heldWhole(read, result, rounds, listBegan, wholeReadBegan);
                                 synchronized (fold) {
                                     inFlight = null;
                                 }
@@ -2813,13 +2847,26 @@ public final class GitHubStore implements PlanningStore {
                 return null;
             }
             final Snapshot fresh = laidOn(newest, delta, began);
-            holdNow(fresh, false);
+            holdNow(fresh, null);
             return fresh;
         }
     }
 
-    private void holdNow(final Snapshot fresh, final boolean whole) {
+    /**
+     * Holds a board and offers its copy.
+     *
+     * @param fresh the board
+     * @param wholeReadBegan when the whole read it comes from began, or null for a read of some
+     *     items or waits, which leaves the time of the last whole read: the items it did not read
+     *     are no newer
+     */
+    private void holdNow(final Snapshot fresh, final @Nullable Instant wholeReadBegan) {
+        final boolean whole = wholeReadBegan != null;
+        final ReadTime before = readAt;
+        final @Nullable Instant readTime =
+                whole ? wholeReadBegan : before == null ? null : before.at();
         snapshot = fresh;
+        readAt = readTime == null ? null : new ReadTime(fresh.board().revision(), readTime);
         // Only the items held keep their times; one gone and back is compared anew.
         listedAt.keySet().retainAll(fresh.raw().keySet());
         if (whole) {
@@ -2865,6 +2912,7 @@ public final class GitHubStore implements PlanningStore {
     private void drop() {
         synchronized (holding) {
             snapshot = null;
+            readAt = null;
             unread = null;
             // GitHub is read whole next: nothing read before is laid over it.
             saves.clear();

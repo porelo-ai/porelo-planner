@@ -3,7 +3,10 @@ package org.fuin.porelo.planner.store.github;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
+import java.util.List;
+import org.fuin.porelo.forge.github.GitHubExceptions;
 import org.fuin.porelo.forge.github.GitHubRefusals;
+import org.fuin.porelo.planner.store.ForgeAnswer;
 import org.fuin.porelo.planner.store.StoreException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -116,5 +119,42 @@ class ForgeAccessRefusalsTest {
                 .as("a failure after a write, scrubbed with no token")
                 .isInstanceOf(StoreException.PartlySaved.class)
                 .hasMessageNotContaining(TOKEN);
+    }
+
+    @Test
+    void aRefusalKeepsGitHubsOwnAnswerWithoutTheToken() {
+        // Harm: the person sees only the planner's words for a refused save, not GitHub's, or
+        // GitHub's words carry the token onto the board.
+        final StoreException refused =
+                refusal(
+                        GitHubRefusals.answered(
+                                422,
+                                "Validation Failed for " + TOKEN,
+                                List.of("Field is invalid"),
+                                "C0DE:1234:ABCD"));
+
+        assertThat(refused.answer())
+                .contains(
+                        new ForgeAnswer(
+                                422,
+                                "Validation Failed for [redacted]; Field is invalid",
+                                "C0DE:1234:ABCD"));
+        assertThat(
+                        refusal(GitHubRefusals.answered(401, null, List.of(), "C0DE:1"))
+                                .answer()
+                                .orElseThrow())
+                .as("a token refused, GitHub's message blank")
+                .isEqualTo(new ForgeAnswer(401, "", "C0DE:1"));
+        assertThat(
+                        refusal(
+                                        new BoardWriter.AfterWriting(
+                                                GitHubRefusals.answered(
+                                                        502, "Bad Gateway", List.of(), null)))
+                                .answer())
+                .as("after a part of the save was written")
+                .contains(new ForgeAnswer(502, "Bad Gateway", null));
+        assertThat(refusal(GitHubExceptions.unanswered("timed out")).answer())
+                .as("a call GitHub never answered")
+                .isEmpty();
     }
 }

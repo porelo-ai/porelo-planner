@@ -3,7 +3,10 @@ package org.fuin.porelo.planner.store.github;
 import java.util.List;
 import org.fuin.porelo.planner.store.StoreException;
 
-/** Turns a failure of a GitHub call into the store's refusal, scrubbed of the token. */
+/**
+ * Turns a failure of a GitHub call into the store's refusal, scrubbed of the token, with GitHub's
+ * own answer kept on it when GitHub answered the call.
+ */
 @FunctionalInterface
 public interface AccessRefusals {
 
@@ -12,22 +15,8 @@ public interface AccessRefusals {
      * partly saved, and any other failure as GitHub unreachable, in words free of the token.
      */
     AccessRefusals DEFAULT =
-            (repository, failure, token) -> {
-                if (failure instanceof BoardWriter.AfterWriting after) {
-                    return after.failure() instanceof StoreException.PartlySaved partly
-                            ? partly
-                            : new StoreException.PartlySaved(
-                                    repository,
-                                    List.of(),
-                                    "A part of the save was written before a call failed");
-                }
-                return failure instanceof StoreException refusal
-                        ? refusal
-                        : new StoreException.Unreachable(
-                                repository,
-                                Scrubbed.text(
-                                        String.valueOf(failure.getMessage()), List.of(token)));
-            };
+            (repository, failure, token) ->
+                    ForgeAnswers.kept(plain(repository, failure, token), failure, token);
 
     /**
      * Answers the refusal for a failure.
@@ -40,4 +29,22 @@ public interface AccessRefusals {
      * @return the store's refusal
      */
     StoreException refusal(String repository, RuntimeException failure, String token);
+
+    /** The refusal {@link #DEFAULT} answers, before GitHub's answer is kept on it. */
+    private static StoreException plain(
+            final String repository, final RuntimeException failure, final String token) {
+        if (failure instanceof BoardWriter.AfterWriting after) {
+            return after.failure() instanceof StoreException.PartlySaved partly
+                    ? partly
+                    : new StoreException.PartlySaved(
+                            repository,
+                            List.of(),
+                            "A part of the save was written before a call failed");
+        }
+        return failure instanceof StoreException refusal
+                ? refusal
+                : new StoreException.Unreachable(
+                        repository,
+                        Scrubbed.text(String.valueOf(failure.getMessage()), List.of(token)));
+    }
 }

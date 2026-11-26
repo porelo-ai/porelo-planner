@@ -31,9 +31,37 @@ public abstract sealed class StoreException extends RuntimeException
 
     private final String subject;
 
+    /** The forge's own answer, once a store gave it. */
+    private transient volatile @Nullable ForgeAnswer answer;
+
     private StoreException(final String subject, final String message) {
         super(message);
         this.subject = subject;
+    }
+
+    /**
+     * Keeps the forge's own answer that this refusal stands for; a store gives it once, where it
+     * turns the forge's refusal into this one.
+     *
+     * @param given the answer, its words already cleaned
+     * @return this refusal
+     * @throws IllegalStateException when it holds an answer already
+     */
+    public final StoreException answered(final ForgeAnswer given) {
+        if (answer != null) {
+            throw new IllegalStateException("The refusal holds the forge's answer already.");
+        }
+        answer = given;
+        return this;
+    }
+
+    /**
+     * Answers the forge's own answer that this refusal stands for.
+     *
+     * @return the answer, or empty when the refusal is the store's own or the forge gave none
+     */
+    public final java.util.Optional<ForgeAnswer> answer() {
+        return java.util.Optional.ofNullable(answer);
     }
 
     /**

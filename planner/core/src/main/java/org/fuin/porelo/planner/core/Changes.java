@@ -6,7 +6,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import java.util.function.Function;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.jspecify.annotations.Nullable;
@@ -26,7 +26,7 @@ public final class Changes {
 
     private final Runnable whenIdle;
 
-    private final Supplier<List<?>> held;
+    private final Function<Board, List<?>> held;
 
     private final Set<Subscription> subscriptions = new CopyOnWriteArraySet<>();
 
@@ -43,7 +43,7 @@ public final class Changes {
     /** Publishes work generations together with the board they decorate. */
     public Changes(
             final PlanningStore store, final Runnable whenIdle, final @Nullable WorkRun work) {
-        this(store, whenIdle, work, List::of);
+        this(store, whenIdle, work, board -> List.of());
     }
 
     /**
@@ -53,14 +53,14 @@ public final class Changes {
      * @param store the project's store; a project given anew gets changes of its own
      * @param whenIdle runs once each time the last subscription is closed
      * @param work the project's work, or null for none
-     * @param held reads the saves the project keeps for the person, as the board carries them,
-     *     compared by equality
+     * @param held reads the saves the project keeps for the person, as the board given carries
+     *     them, compared by equality
      */
     public Changes(
             final PlanningStore store,
             final Runnable whenIdle,
             final @Nullable WorkRun work,
-            final Supplier<List<?>> held) {
+            final Function<Board, List<?>> held) {
         this.store = store;
         this.whenIdle = whenIdle;
         this.work = work;
@@ -88,14 +88,13 @@ public final class Changes {
     private Frame frame() {
         final WorkRun run = work;
         return run == null
-                ? new Frame(
-                        store.board(),
-                        new WorkRun.Snapshot(0, java.util.Map.of()),
-                        store.keepsReasons(),
-                        held.get())
-                : run.view(
-                        (board, snapshot) ->
-                                new Frame(board, snapshot, store.keepsReasons(), held.get()));
+                ? frame(store.board(), new WorkRun.Snapshot(0, java.util.Map.of()))
+                : run.view(this::frame);
+    }
+
+    /** The frame of a board, its held saves told against that same board. */
+    private Frame frame(final Board board, final WorkRun.Snapshot snapshot) {
+        return new Frame(board, snapshot, store.keepsReasons(), held.apply(board));
     }
 
     /**

@@ -84,6 +84,9 @@ class ApiMatchesDescriptionTest {
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
                     Map.entry("HeldSave", org.fuin.porelo.planner.app.answers.HeldSave.class),
+                    Map.entry("HeldChange", org.fuin.porelo.planner.app.answers.HeldChange.class),
+                    Map.entry("HeldTry", org.fuin.porelo.planner.app.answers.HeldTry.class),
+                    Map.entry("HeldAnswer", org.fuin.porelo.planner.app.answers.HeldAnswer.class),
                     Map.entry("HeldCommand", org.fuin.porelo.planner.app.answers.HeldCommand.class),
                     Map.entry(
                             "UnlistedIssue",

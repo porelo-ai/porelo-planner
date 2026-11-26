@@ -156,6 +156,27 @@ paths:
         '404':
           description: The planner does not run in the mock mode, or the project was not given.
 
+  /mock/projects/{project}/held:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: holdMockSave
+      summary: Hold a save on the mock board
+      description: >-
+        Only in the mock mode (`porelo-planner --mock`), for the window's tests: gives the project one held save of
+        the window's own, which its board's `heldSaves` then carries: it would change the priority of an issue of the
+        mock board, and was tried three times, the last held with the forge's answer and its request id. A resend
+        writes it as written whole and a drop removes it, each writing nothing to the mock board; a reset forgets it.
+        Outside the mock mode a POST here answers 404, as for a path that does not exist.
+      tags: [mock]
+      responses:
+        '204':
+          description: The project's board carries the held save.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The planner does not run in the mock mode, or the project was not given.
+
   /projects/{project}:
     parameters:
       - $ref: '#/components/parameters/Project'
@@ -3165,10 +3186,41 @@ components:
         it wrote, or held after a command that may stand in part. Every group can be dropped; one that is
         `resendable` can also be resent.
       type: object
-      required: [id, run, earlier, resendable, commands]
+      required: [id, run, earlier, resendable, reason, changes, tries, commands]
       properties:
         id:
           $ref: '#/components/schemas/SaveId'
+        reason:
+          type: string
+          maxLength: 512
+          description: >-
+            Why the save is held, in one plain sentence of the planner's fixed words for the reason of its first
+            command refused or held, naming what the reason is about where there is something.
+        changes:
+          type: array
+          maxItems: 2000
+          description: >-
+            What the save would change, for every command of it not yet written, in their order: one line per field
+            of an item. Empty when its commands change no field the board names, as a comment, a new item or a
+            repository's labels do.
+          items:
+            $ref: '#/components/schemas/HeldChange'
+        answer:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/HeldAnswer'
+          description: >-
+            The forge's answer to the save's last try, as that try keeps it; absent when the last try kept none, as
+            for a refusal the planner made itself, or when the save has no try.
+        tries:
+          type: array
+          maxItems: 1000
+          description: >-
+            Every try of the save that ended refused or held, oldest first, each kept with its time, how it ended, why
+            and the forge's answer; at most the newest 1000, the older left out. Empty for a save kept before its
+            tries were.
+          items:
+            $ref: '#/components/schemas/HeldTry'
         run:
           type: boolean
           description: >-
@@ -3205,9 +3257,100 @@ components:
           items:
             $ref: '#/components/schemas/HeldCommand'
 
+    HeldChange:
+      description: >-
+        One field of one item a held save would change: the value it would write, and the value GitHub held at the
+        planner's last read of the board. `now` and `nowAt` are both absent when the item was never read or the store
+        tells no time of its read, and for a value the board does not hold, such as an item's text; `nowUnset` and
+        `nowAt` tell a value read and empty.
+      type: object
+      required: [target, field]
+      properties:
+        target:
+          description: The issue or story the field belongs to, by its id.
+          type: string
+          pattern: '^((?!.*\.\.)[a-z0-9][a-z0-9._-]{0,99}|ST[0-9]{1,5}|[A-Z]{1,4}[0-9]{1,5}(\.[0-9]{1,3})?|(?![^#]*\.\.)[a-z0-9][a-z0-9._-]{0,99}#[1-9][0-9]{0,8})$'
+        field:
+          description: >-
+            The field by the name its item carries it under on the board (state, worker, priority, size, title,
+            labels, blockedBy, issues), or for a value the board does not hold by its own name (reason,
+            estimateMinutes, rank, and a text part such as whatMustBeTrue).
+          type: string
+          pattern: '^[a-z][A-Za-z]{0,63}$'
+        now:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          description: >-
+            The value at the planner's last read; a list joined by a comma and a blank. Absent when not known or
+            read empty.
+        nowUnset:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: True when the value was read and empty; absent otherwise.
+        nowAt:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          format: date-time
+          description: When the board holding `now` was read, in UTC; present exactly when `now` or `nowUnset` is.
+        saved:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          description: >-
+            The value the save would write; a list joined by a comma and a blank. Absent when the save removes or
+            empties the value.
+
+    HeldTry:
+      description: One try of a held save that ended refused or held.
+      type: object
+      required: [at, result, reason]
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: When the try ended, in UTC.
+        result:
+          type: string
+          enum: [REFUSED, HELD]
+          description: >-
+            REFUSED when the store refused it before it wrote anything; HELD when it may stand in part.
+        reason:
+          type: string
+          maxLength: 512
+          description: >-
+            Why the try ended so, in one plain sentence of the planner's fixed words, as a save's `reason` is.
+        answer:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/HeldAnswer'
+          description: The forge's answer to the try; absent when it gave none.
+
+    HeldAnswer:
+      description: >-
+        The forge's own answer to a call that was refused, word for word: its message and further words joined by a
+        semicolon and a blank, with any token removed and control characters escaped, at most 4096 bytes in UTF-8.
+      type: object
+      required: [status, text]
+      properties:
+        status:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 999
+          description: The HTTP status the forge answered with; 0 when it answered none.
+        text:
+          type: string
+          maxLength: 4096
+          description: The forge's words; empty when it gave none.
+        requestId:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$'
+          description: The id the forge gave the request, for its support; absent when it gave none.
+
     HeldCommand:
       description: >-
-        One command of a held save, told by its kind, its target and where it stands, never by the values it writes.
+        One command of a held save, told by its kind, its target and where it stands; what it would change is in its
+        save's `changes`.
       type: object
       required: [id, kind, target, state, reason, subject]
       properties:

@@ -396,14 +396,33 @@ public class StoreConfiguration {
 
     /**
      * The saves each project's outbox keeps for the owner account: a GitHub project's, and none of
-     * a Git, local or mock project, whose saves go through no outbox.
+     * a Git or local project, whose saves go through no outbox; in the mock mode, the held save the
+     * mock gives a project on request.
      *
      * @param projects the projects the window has given
+     * @param mode present only in the mock mode
+     * @param mock the mock's held saves
      * @return the held saves of each project
      */
     @Bean
-    HeldSavesOf heldSaves(final Projects projects) {
-        return projects::held;
+    HeldSavesOf heldSaves(
+            final Projects projects,
+            final ObjectProvider<MockMode> mode,
+            final MockHeldSaves mock) {
+        // Decided at run time, not by @Profile: a native image fixes its beans when it is built.
+        return mode.getIfAvailable() != null ? mock::of : projects::held;
+    }
+
+    /**
+     * The held save the mock mode gives a project on request; none outside the mock mode, whose
+     * path for it answers as one that does not exist.
+     *
+     * @param projects the projects given
+     * @return the mock's held saves
+     */
+    @Bean
+    public MockHeldSaves mockHeldSaves(final Projects projects) {
+        return new MockHeldSaves(projects);
     }
 
     /**

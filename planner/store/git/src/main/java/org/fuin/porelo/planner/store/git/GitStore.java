@@ -278,6 +278,20 @@ public final class GitStore implements PlanningStore {
         return snapshot.board();
     }
 
+    /**
+     * When the board held was last checked against the remotes, while it is the board given; empty
+     * for a board read from the clones alone, before any check.
+     */
+    @Override
+    public java.util.Optional<Instant> boardReadAt(final Board board) {
+        final Snapshot snapshot = current.get();
+        return snapshot == null
+                        || snapshot.checked().equals(Instant.MIN)
+                        || !snapshot.board().revision().equals(board.revision())
+                ? java.util.Optional.empty()
+                : java.util.Optional.of(snapshot.checked());
+    }
+
     @Override
     public Board refresh() {
         final Board board = refreshed();

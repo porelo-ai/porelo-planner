@@ -10,8 +10,11 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.fuin.porelo.planner.app.answers.EditSaved;
+import org.fuin.porelo.planner.app.answers.HeldAnswer;
+import org.fuin.porelo.planner.app.answers.HeldChange;
 import org.fuin.porelo.planner.app.answers.HeldCommand;
 import org.fuin.porelo.planner.app.answers.HeldSave;
+import org.fuin.porelo.planner.app.answers.HeldTry;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -42,7 +45,16 @@ public class HeldSavesController {
     /** The most commands one group carries on the board. */
     static final int MOST_COMMANDS = 200;
 
-    /** The most characters a reason's subject holds. */
+    /** The most changes one group carries on the board. */
+    static final int MOST_CHANGES = 2000;
+
+    /** The most tries a held save carries, its newest. */
+    static final int MOST_TRIES = 1000;
+
+    /**
+     * The most UTF-16 units a reason's subject holds, so every reader counts the bound of a subject
+     * and of the sentence naming it alike, however it counts characters.
+     */
     private static final int MOST_SUBJECT = 256;
 
     /** The most characters a source's repository holds on the board. */
@@ -57,6 +69,8 @@ public class HeldSavesController {
     private static final Pattern SAVE = Pattern.compile(UUID);
 
     private static final Pattern COMMAND = Pattern.compile(UUID + "/[0-9]{1,3}");
+
+    private static final Pattern FIELD = Pattern.compile("[a-z][A-Za-z]{0,63}");
 
     private static final Pattern TARGET =
             Pattern.compile(
@@ -222,9 +236,15 @@ public class HeldSavesController {
      *
      * @param project the project's name, for the log
      * @param saves the project's held saves
+     * @param board the board they are shown beside, whose values tell what each would change
+     * @param readAt when that board was read, or empty when its store tells no time
      * @return at most {@value #MOST_GROUPS} groups
      */
-    static List<HeldSave> answers(final String project, final HeldSaves saves) {
+    static List<HeldSave> answers(
+            final String project,
+            final HeldSaves saves,
+            final Board board,
+            final Optional<java.time.Instant> readAt) {
         final List<HeldSave> answers = new ArrayList<>();
         int left = 0;
         for (final CommandOutbox.Group group : saves.groups()) {
@@ -236,7 +256,7 @@ public class HeldSavesController {
                 }
                 continue;
             }
-            final Optional<HeldSave> answer = answer(project, saves, group);
+            final Optional<HeldSave> answer = answer(project, saves, group, board, readAt);
             if (answer.isEmpty()) {
                 continue;
             }
@@ -262,7 +282,11 @@ public class HeldSavesController {
     }
 
     private static Optional<HeldSave> answer(
-            final String project, final HeldSaves saves, final CommandOutbox.Group group) {
+            final String project,
+            final HeldSaves saves,
+            final CommandOutbox.Group group,
+            final Board board,
+            final Optional<java.time.Instant> readAt) {
         if (!SAVE.matcher(group.id()).matches()) {
             unshown(project, group, "its id is no save's id");
             return Optional.empty();
@@ -290,18 +314,73 @@ public class HeldSavesController {
             }
             commands.add(command.get());
         }
+        final List<HeldChange> changes = new ArrayList<>();
+        for (final CommandOutbox.Told told : group.commands()) {
+            if (told.state() != CommandOutbox.State.DONE) {
+                // A save kept from another source writes items of another board: no value
+                // of the board shown is theirs.
+                changes.addAll(
+                        HeldChanges.of(told, board, group.earlier() ? Optional.empty() : readAt));
+            }
+        }
+        if (changes.size() > MOST_CHANGES
+                || changes.stream()
+                        .anyMatch(
+                                c ->
+                                        !TARGET.matcher(c.target()).matches()
+                                                || !FIELD.matcher(c.field()).matches())) {
+            unshown(project, group, "what it would change cannot be told as the board describes");
+            return Optional.empty();
+        }
+        final CommandOutbox.Told stopped =
+                group.commands().stream()
+                        .filter(t -> STOPPED.contains(t.state()))
+                        .findFirst()
+                        .orElseThrow();
+        final WorkRun.@Nullable SaveFailure why = stopped.why();
+        final String reason =
+                why == null
+                        ? HeldReasons.of("", "")
+                        : HeldReasons.of(why.name(), clean(why.subject()));
+        final List<CommandOutbox.Try> kept = group.tries();
+        final List<HeldTry> tries =
+                kept.subList(Math.max(0, kept.size() - MOST_TRIES), kept.size()).stream()
+                        .map(HeldSavesController::tried)
+                        .toList();
+        final @Nullable HeldAnswer answer = tries.isEmpty() ? null : tries.getLast().answer();
         final boolean run = !group.story().isEmpty();
         final boolean resendable =
                 !group.earlier() && (!run || saves.runs().resavable(group.story(), group.id()));
         return Optional.of(
                 new HeldSave(
                         group.id(),
+                        reason,
+                        changes,
+                        answer,
+                        tries,
                         run,
                         group.earlier(),
                         resendable,
                         group.earlier() ? repository : null,
                         group.earlier() && !branch.isEmpty() ? branch : null,
                         commands));
+    }
+
+    /** A try as the board tells it: the outbox keeps only sound ones, so each fits the board. */
+    private static HeldTry tried(final CommandOutbox.Try kept) {
+        final CommandOutbox.Answer answer = kept.answer();
+        return new HeldTry(
+                kept.at().toString(),
+                kept.result() == CommandOutbox.State.REFUSED
+                        ? HeldTry.ResultEnum.REFUSED
+                        : HeldTry.ResultEnum.HELD,
+                HeldReasons.of(kept.why().name(), clean(kept.why().subject())),
+                answer.equals(CommandOutbox.Answer.NONE)
+                        ? null
+                        : new HeldAnswer(
+                                answer.status(),
+                                answer.text(),
+                                answer.requestId().isEmpty() ? null : answer.requestId()));
     }
 
     private static Optional<HeldCommand> command(final CommandOutbox.Told told) {
@@ -345,7 +424,7 @@ public class HeldSavesController {
 
     /** The subject when its words are bounded and shown; empty otherwise. */
     private static String clean(final String subject) {
-        return subject.codePointCount(0, subject.length()) > MOST_SUBJECT
+        return subject.length() > MOST_SUBJECT
                         || subject.codePoints().anyMatch(Writes.Reason::unshown)
                 ? ""
                 : subject;

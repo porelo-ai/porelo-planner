@@ -202,6 +202,39 @@ class GitStoreReadTest {
     }
 
     @Test
+    void theBoardsReadTimeIsItsLastCheckAndNoneForABoardFromTheClonesAlone() throws Exception {
+        // Harm: "Last read" shows a time at which no remote was checked: the start's, for a board
+        // read from the clones a former run left.
+        final java.time.Instant before = java.time.Instant.now();
+        final GitStore checked = store(null);
+        final Board board = checked.board();
+        assertThat(checked.boardReadAt(board))
+                .as("the check of the first read")
+                .hasValueSatisfying(
+                        at -> assertThat(at).isBetween(before, java.time.Instant.now()));
+        final Board other =
+                new Board(
+                        new org.fuin.porelo.planner.store.Revision("another"),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues(),
+                        board.work(),
+                        board.repositories(),
+                        board.faults(),
+                        board.owner(),
+                        board.unlisted(),
+                        board.repositoryWarnings());
+        assertThat(checked.boardReadAt(other))
+                .as("for a board of another revision, which the check did not read")
+                .isEmpty();
+
+        final GitStore fromClones = reopened(work -> {});
+        assertThat(fromClones.boardReadAt(fromClones.board()))
+                .as("from the clones alone")
+                .isEmpty();
+    }
+
+    @Test
     void itsTextsAreMarkdown() throws Exception {
         // Named plain, a story's description would show its Markdown signs on the screen.
         assertThat(store(null).textFormat())

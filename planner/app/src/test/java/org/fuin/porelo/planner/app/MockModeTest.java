@@ -375,6 +375,77 @@ class MockModeTest {
     }
 
     @Test
+    void aHeldSaveAskedForIsOnTheBoardWithItsAnswerAndTriesUntilItIsResent() throws Exception {
+        // The window's tests of a held save read it from the planner's mock; a mock that serves
+        // none, or one without the forge's answer, its request id or its tries, leaves the
+        // window's held-save row untested, and one kept past a resend or a reset leaks into the
+        // next test.
+        assertThat(call(runtime, "POST", "/mock/projects/none/held", null).statusCode())
+                .as("a held save for a project never given")
+                .isEqualTo(404);
+        call(runtime, "PUT", "/projects/held", SOURCE);
+        assertThat(call(runtime, "POST", "/mock/projects/held/held", null).statusCode())
+                .as("a held save asked for")
+                .isEqualTo(204);
+
+        final JsonNode saves = heldSaves("held");
+        assertThat(saves.size()).as("one held save").isEqualTo(1);
+        final JsonNode save = saves.path(0);
+        assertThat(save.path("id").asString()).as("its id").isEqualTo(MockHeldSaves.SAVE);
+        assertThat(save.path("resendable").asBoolean()).as("a window's save").isTrue();
+        assertThat(
+                        List.of(
+                                save.at("/changes/0/target").asString(),
+                                save.at("/changes/0/field").asString(),
+                                save.at("/changes/0/saved").asString()))
+                .as("the one field it would change")
+                .containsExactly(MockHeldSaves.ISSUE, "priority", MockHeldSaves.PRIORITY);
+        assertThat(save.at("/answer/requestId").asString())
+                .as("the forge's answer with its request id")
+                .isEqualTo(MockHeldSaves.REQUEST_ID);
+        final List<String> results = new ArrayList<>();
+        save.path("tries").forEach(each -> results.add(each.path("result").asString()));
+        assertThat(results).as("three tries").containsExactly("REFUSED", "REFUSED", "HELD");
+
+        assertThat(
+                        call(
+                                        runtime,
+                                        "POST",
+                                        "/projects/held/saves/" + MockHeldSaves.SAVE + "/resend",
+                                        null)
+                                .statusCode())
+                .as("the save resent")
+                .isEqualTo(200);
+        assertThat(heldSaves("held").size()).as("none held once resent").isZero();
+
+        call(runtime, "POST", "/mock/projects/held/held", null);
+        call(runtime, "POST", "/mock/reset", null);
+        call(runtime, "PUT", "/projects/held", SOURCE);
+        assertThat(heldSaves("held").size()).as("none held after a reset").isZero();
+    }
+
+    /** The held saves of the first board a project's stream tells. */
+    private static JsonNode heldSaves(final String project) throws Exception {
+        final RuntimeDirectories.Address address = RuntimeDirectories.read(runtime);
+        final HttpResponse<java.util.stream.Stream<String>> stream =
+                Signing.stream(address, "/projects/" + project + "/events");
+        try (java.util.stream.Stream<String> lines = stream.body()) {
+            final String board =
+                    CompletableFuture.supplyAsync(
+                                    () ->
+                                            lines.filter(
+                                                            line ->
+                                                                    line.startsWith("data:")
+                                                                            && line.contains(
+                                                                                    "\"heldSaves\""))
+                                                    .findFirst()
+                                                    .orElseThrow())
+                            .get(20, TimeUnit.SECONDS);
+            return JSON.readTree(board.substring("data:".length())).path("heldSaves");
+        }
+    }
+
+    @Test
     void aResetForgetsTheProjectsGivenSoEachTestStartsAlike() throws Exception {
         // Projects kept across the window's tests would leak a test's project into the next, and
         // the projects of every test before would pile up for as long as the mock runs.

@@ -117,7 +117,7 @@ class ChangesTest {
         // Harm: dropping a held save changes no item and keeps the revision, so every window kept
         // offering a save that no longer exists.
         final List<String> kept = new java.util.ArrayList<>(List.of("a held save"));
-        final Changes holding = new Changes(store, idle::incrementAndGet, null, () -> kept);
+        final Changes holding = new Changes(store, idle::incrementAndGet, null, board -> kept);
         final Changes.Subscription one = holding.subscribe();
         assertThat(one.firstFrame().held()).as("the held save at once").hasSize(1);
 
@@ -128,6 +128,30 @@ class ChangesTest {
                 .contains(List.of());
         holding.saved();
         assertThat(one.nextFrame(NOW)).as("told once").isEmpty();
+    }
+
+    @Test
+    void theHeldSavesAreToldAgainstTheBoardOfTheirOwnFrame() {
+        // Harm: what a held save would change shown against another board than the one drawn
+        // beside it, so the value told as GitHub's is not the one on the card.
+        final AtomicInteger reads = new AtomicInteger();
+        final FakeStore moving =
+                new FakeStore() {
+                    @Override
+                    public Board board() {
+                        return boardAt("r" + reads.incrementAndGet());
+                    }
+                };
+        final Changes holding =
+                new Changes(
+                        moving,
+                        idle::incrementAndGet,
+                        null,
+                        board -> List.of(board.revision().value()));
+
+        final Changes.Frame frame = holding.subscribe().firstFrame();
+
+        assertThat(frame.held()).isEqualTo(List.of(frame.board().revision().value()));
     }
 
     @Test

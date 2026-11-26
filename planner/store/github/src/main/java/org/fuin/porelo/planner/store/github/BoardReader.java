@@ -180,6 +180,15 @@ public interface BoardReader {
     }
 
     /**
+     * Answers the time now, as the reader's clock tells it, which a board read is timed by.
+     *
+     * @return the time
+     */
+    default java.time.Instant now() {
+        return java.time.Instant.now();
+    }
+
+    /**
      * Answers the board's copy to keep on disk, each item with its own last change as the tracker's
      * list last showed it.
      *

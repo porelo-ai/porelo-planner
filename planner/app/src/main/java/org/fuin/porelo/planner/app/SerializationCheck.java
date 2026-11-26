@@ -359,7 +359,13 @@ final class SerializationCheck {
                 number % 2 == 0,
                 number % 2 == 0 ? "ST1" : "",
                 state == CommandOutbox.State.HELD || state == CommandOutbox.State.REFUSED
-                        ? List.of(new CommandOutbox.Try(WHEN, state, why))
+                        ? List.of(
+                                new CommandOutbox.Try(
+                                        WHEN,
+                                        state,
+                                        why,
+                                        new CommandOutbox.Answer(
+                                                422, "Validation Failed", "C0DE:1234:ABCD")))
                         : List.of());
     }
 

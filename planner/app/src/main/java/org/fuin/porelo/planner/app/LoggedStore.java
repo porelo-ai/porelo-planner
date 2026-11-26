@@ -86,6 +86,12 @@ final class LoggedStore implements PlanningStore {
     }
 
     @Override
+    public java.util.Optional<java.time.Instant> boardReadAt(
+            final org.fuin.porelo.planner.store.Board board) {
+        return store.boardReadAt(board);
+    }
+
+    @Override
     public java.time.Duration pollDelay(
             final java.time.Duration fetched, final java.time.Duration probed) {
         return store.pollDelay(fetched, probed);

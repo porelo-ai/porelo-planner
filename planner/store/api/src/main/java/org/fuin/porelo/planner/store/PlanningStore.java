@@ -87,6 +87,18 @@ public interface PlanningStore {
     }
 
     /**
+     * Answers when a board was last read whole from its source, so a person sees how current a
+     * value shown from it is: only while the store holds that very board, so a board and a time
+     * read apart never pair a time with a board it does not describe.
+     *
+     * @param board a board the store answered
+     * @return the time of that read, or empty when the store holds another board or tells no time
+     */
+    default java.util.Optional<java.time.Instant> boardReadAt(final Board board) {
+        return java.util.Optional.empty();
+    }
+
+    /**
      * Answers how long to wait before the next scheduled poll.
      *
      * @param fetched the interval of a store that fetches its whole source

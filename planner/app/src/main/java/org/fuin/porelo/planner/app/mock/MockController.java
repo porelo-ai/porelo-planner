@@ -1,5 +1,7 @@
 package org.fuin.porelo.planner.app.mock;
 
+import org.fuin.porelo.planner.app.ChangesRegistry;
+import org.fuin.porelo.planner.app.MockHeldSaves;
 import org.fuin.porelo.planner.app.Projects;
 import org.fuin.porelo.planner.app.WorkRecord;
 import org.jspecify.annotations.Nullable;
@@ -45,6 +47,8 @@ public class MockController {
 
     private static final String REVIEWER = "/mock/projects/{project}/reviewer";
 
+    private static final String HELD = "/mock/projects/{project}/held";
+
     private final ObjectProvider<MockMode> mode;
 
     private final ObjectProvider<MockStore> store;
@@ -53,6 +57,10 @@ public class MockController {
 
     private final WorkRecord records;
 
+    private final MockHeldSaves held;
+
+    private final ChangesRegistry changes;
+
     /**
      * Makes the controller.
      *
@@ -60,16 +68,22 @@ public class MockController {
      * @param store the mock store, made only when the mock mode is on
      * @param projects the projects given, forgotten by a reset
      * @param records the work records, held in memory in the mock mode
+     * @param held the held save the mock gives on request
+     * @param changes told of a held save given, so the window's board carries it
      */
     public MockController(
             final ObjectProvider<MockMode> mode,
             final ObjectProvider<MockStore> store,
             final Projects projects,
-            final WorkRecord records) {
+            final WorkRecord records,
+            final MockHeldSaves held,
+            final ChangesRegistry changes) {
         this.mode = mode;
         this.store = store;
         this.projects = projects;
         this.records = records;
+        this.held = held;
+        this.changes = changes;
     }
 
     /**
@@ -107,6 +121,27 @@ public class MockController {
         if (!records.plant(project, MockSeed.of(MockStore.fromClassPath().board()))) {
             return ResponseEntity.notFound().build();
         }
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Gives a project given before the held save of {@link MockHeldSaves}, which its board then
+     * carries until it is resent, dropped or the mock board reset.
+     *
+     * @param project the project
+     * @return no content, or not found for a project not given
+     * @throws NoResourceFoundException outside the mock mode, as for any unknown path
+     */
+    @PostMapping(HELD)
+    public ResponseEntity<Void> held(@PathVariable("project") final String project)
+            throws NoResourceFoundException {
+        if (mode.getIfAvailable() == null) {
+            throw new NoResourceFoundException(HttpMethod.POST, HELD, HELD.substring(1));
+        }
+        if (!held.hold(project)) {
+            return ResponseEntity.notFound().build();
+        }
+        changes.saved(project);
         return ResponseEntity.noContent().build();
     }
 }

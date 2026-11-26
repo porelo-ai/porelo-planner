@@ -31,4 +31,30 @@ public final class GitHubRefusals {
                 false,
                 rateLimited ? GitHubExceptions.WITHOUT_A_WORD : null);
     }
+
+    /**
+     * Answers GitHub's refusal of a call with GitHub's own words and request id.
+     *
+     * @param status the HTTP status GitHub answered
+     * @param message GitHub's message, or null for a blank one
+     * @param details GitHub's further words
+     * @param requestId the id GitHub gave the request, or null for none
+     * @return the failure
+     */
+    public static GitHubException answered(
+            final int status,
+            final @Nullable String message,
+            final java.util.List<String> details,
+            final @Nullable String requestId) {
+        return new GitHubException(
+                status,
+                "GitHub answered " + status,
+                Delivery.ANSWERED,
+                null,
+                false,
+                null,
+                false,
+                null,
+                new GitHubWords(requestId, message, details));
+    }
 }

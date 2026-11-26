@@ -1098,6 +1098,11 @@ public final class ItemsBoardReader implements BoardReader {
 
     /** Answers the board's copy, each item with its time as the list last showed it. */
     @Override
+    public Instant now() {
+        return clock.instant();
+    }
+
+    @Override
     public @Nullable BoardCopy toCopy(
             final Snapshot held,
             final ChangeCursor cursor,

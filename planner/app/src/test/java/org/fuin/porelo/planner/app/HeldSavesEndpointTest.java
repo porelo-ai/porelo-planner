@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.CommandGroup;
 import org.fuin.porelo.planner.store.CommandOutcome;
+import org.fuin.porelo.planner.store.ForgeAnswer;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
@@ -174,6 +175,8 @@ class HeldSavesEndpointTest {
                         new WorkRun.SaveFailure("Changed", "porelo-store", List.of())));
     }
 
+    private static final java.time.Instant READ = java.time.Instant.parse("2026-05-06T07:08:09Z");
+
     @BeforeEach
     void serve() throws Exception {
         store =
@@ -186,6 +189,13 @@ class HeldSavesEndpointTest {
                     @Override
                     public Board refresh() {
                         return current;
+                    }
+
+                    @Override
+                    public java.util.Optional<java.time.Instant> boardReadAt(final Board board) {
+                        return board == current
+                                ? java.util.Optional.of(READ)
+                                : java.util.Optional.empty();
                     }
 
                     @Override
@@ -296,6 +306,32 @@ class HeldSavesEndpointTest {
         assertThat(shown.path(0).path("commands").path(0).path("state").asText())
                 .as("its command refused")
                 .isEqualTo("REFUSED");
+        assertThat(shown.path(0).path("reason").asText())
+                .as("why, in one plain sentence")
+                .isEqualTo("ST1 was changed elsewhere since it was read.");
+        assertThat(shown.path(0).path("changes"))
+                .as("what it would change, beside the value last read and its time")
+                .isEqualTo(
+                        JsonMapper.builder()
+                                .build()
+                                .readTree(
+                                        "[{\"target\":\"ST1\",\"field\":\"state\",\"now\":\"Backlog\","
+                                                + "\"nowAt\":\"2026-05-06T07:08:09Z\",\"saved\":\"Finished\"}]"));
+        assertThat(shown.path(0).path("tries").size()).as("its one try from the file").isEqualTo(1);
+        final JsonNode tried = shown.path(0).path("tries").path(0);
+        assertThat(java.time.Instant.parse(tried.path("at").asText()))
+                .as("when it ended, as the outbox kept it")
+                .isEqualTo(outbox.tries(WINDOW).getFirst().at());
+        assertThat(List.of(tried.path("result").asText(), tried.path("reason").asText()))
+                .as("how it ended and why")
+                .containsExactly("REFUSED", "ST1 was changed elsewhere since it was read.");
+        final JsonNode answer =
+                JsonMapper.builder()
+                        .build()
+                        .readTree(
+                                "{\"status\":409,\"text\":\"Conflict\",\"requestId\":\"C0DE:1234\"}");
+        assertThat(tried.path("answer")).as("the forge's answer to it").isEqualTo(answer);
+        assertThat(shown.path(0).path("answer")).as("the answer of the last try").isEqualTo(answer);
 
         mvc.perform(delete("/projects/alpha/saves/" + WINDOW)).andExpect(status().isNoContent());
         outbox.close();
@@ -318,10 +354,121 @@ class HeldSavesEndpointTest {
                         Recheck.none());
         outbox.enqueue(new CommandGroup(WINDOW, List.of(move)));
         outbox.begin(move.id());
-        outbox.refused(move.id(), new StoreException.Changed(List.of("ST1")), false, null);
+        outbox.refused(
+                move.id(),
+                new StoreException.Changed(List.of("ST1"))
+                        .answered(new ForgeAnswer(409, "Conflict", "C0DE:1234")),
+                false,
+                null);
         final CommandRunner runner = new CommandRunner(outbox, store);
         given = new OutboxHeldSaves(outbox, runner, HeldSaves.NO_RUNS);
         return runner;
+    }
+
+    private static CommandOutbox.Try tried(
+            final int minute,
+            final CommandOutbox.State result,
+            final CommandOutbox.Why why,
+            final CommandOutbox.Answer answer) {
+        return new CommandOutbox.Try(READ.plusSeconds(60L * minute), result, why, answer);
+    }
+
+    private static CommandOutbox.Group triedGroup(final List<CommandOutbox.Try> tries) {
+        final CommandOutbox.Group refused = refused(WINDOW, "");
+        return new CommandOutbox.Group(
+                refused.source(), WINDOW, refused.commands(), false, "", tries);
+    }
+
+    @Test
+    void everyTryIsOnTheBoardWithItsAnswerAndTheLastTrysAnswerTopsIt() throws Exception {
+        // Harm: the person sees a held save without what GitHub answered and without when it
+        // was tried, so they cannot tell a passing outage from a lasting refusal, or quote the
+        // request id to GitHub.
+        saves.kept.add(
+                triedGroup(
+                        List.of(
+                                tried(
+                                        1,
+                                        CommandOutbox.State.REFUSED,
+                                        new CommandOutbox.Why("Unreachable", "", ""),
+                                        CommandOutbox.Answer.NONE),
+                                tried(
+                                        2,
+                                        CommandOutbox.State.HELD,
+                                        new CommandOutbox.Why("Changed", "porelo-store", ""),
+                                        new CommandOutbox.Answer(502, "Bad Gateway", "C0DE:9")))));
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame()).path(0);
+
+        assertThat(shown.path("tries"))
+                .as("each try, oldest first, the one without an answer without one")
+                .isEqualTo(
+                        JsonMapper.builder()
+                                .build()
+                                .readTree(
+                                        "[{\"at\":\"2026-05-06T07:09:09Z\",\"result\":\"REFUSED\","
+                                                + "\"reason\":\""
+                                                + HeldReasons.of("Unreachable", "")
+                                                + "\"},{\"at\":\"2026-05-06T07:10:09Z\","
+                                                + "\"result\":\"HELD\",\"reason\":\"porelo-store was"
+                                                + " changed elsewhere since it was read.\","
+                                                + "\"answer\":{\"status\":502,\"text\":\"Bad Gateway\","
+                                                + "\"requestId\":\"C0DE:9\"}}]"));
+        assertThat(shown.path("answer"))
+                .as("the save's answer, its last try's")
+                .isEqualTo(shown.path("tries").path(1).path("answer"));
+    }
+
+    @Test
+    void aLastTryWithoutAnAnswerLeavesTheSaveWithoutOne() throws Exception {
+        // Harm: an older try's answer is shown as what GitHub said last, so the person acts on
+        // a refusal that no longer stands.
+        saves.kept.add(
+                triedGroup(
+                        List.of(
+                                tried(
+                                        1,
+                                        CommandOutbox.State.REFUSED,
+                                        new CommandOutbox.Why("CredentialRefused", "", ""),
+                                        new CommandOutbox.Answer(401, "Bad credentials", "")),
+                                tried(
+                                        2,
+                                        CommandOutbox.State.REFUSED,
+                                        new CommandOutbox.Why("Unreachable", "", ""),
+                                        CommandOutbox.Answer.NONE))));
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame()).path(0);
+
+        assertThat(shown.has("answer")).as("no answer of the save").isFalse();
+        assertThat(shown.path("tries").path(0).path("answer").has("requestId"))
+                .as("an answer without a request id names none")
+                .isFalse();
+    }
+
+    @Test
+    void aSaveTriedMoreOftenThanTheBoardCarriesShowsItsNewestTries() throws Exception {
+        // Harm: a save tried without end grows the board past what its description bounds, so
+        // the window refuses the whole board, or the newest tries are the ones left out.
+        final List<CommandOutbox.Try> tries = new ArrayList<>();
+        for (int i = 0; i <= HeldSavesController.MOST_TRIES; i++) {
+            tries.add(
+                    tried(
+                            i,
+                            CommandOutbox.State.REFUSED,
+                            new CommandOutbox.Why("Unreachable", "", ""),
+                            CommandOutbox.Answer.NONE));
+        }
+        saves.kept.add(triedGroup(tries));
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame()).path(0).path("tries");
+
+        assertThat(shown.size()).as("the tries told").isEqualTo(HeldSavesController.MOST_TRIES);
+        assertThat(
+                        List.of(
+                                shown.path(0).path("at").asText(),
+                                shown.path(shown.size() - 1).path("at").asText()))
+                .as("the oldest left out, the newest kept")
+                .containsExactly(tries.get(1).at().toString(), tries.getLast().at().toString());
     }
 
     @Test

@@ -36,6 +36,11 @@ public final class ForgeAccessRefusals implements AccessRefusals {
     @Override
     public StoreException refusal(
             final String repository, final RuntimeException failure, final String token) {
+        return ForgeAnswers.kept(refused(repository, failure, token), failure, token);
+    }
+
+    private StoreException refused(
+            final String repository, final RuntimeException failure, final String token) {
         if (failure instanceof BoardWriter.AfterWriting after) {
             final RuntimeException cause = after.failure();
             if (cause instanceof StoreException.PartlySaved partly) {

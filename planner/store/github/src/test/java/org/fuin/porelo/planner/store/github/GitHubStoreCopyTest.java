@@ -92,6 +92,9 @@ class GitHubStoreCopyTest {
 
         private @Nullable RuntimeException failure;
 
+        /** Runs as GitHub answers the project's items, as time passes during a whole read. */
+        private Runnable onItems = () -> {};
+
         @Override
         public GitHubGraphQl.ProjectFields projectFields(
                 final String token, final String owner, final int number, final String after) {
@@ -119,6 +122,7 @@ class GitHubStoreCopyTest {
         public GitHubGraphQl.ProjectItems projectItems(
                 final String token, final String owner, final int number, final String after) {
             answer("projectItems");
+            onItems.run();
             return new GitHubGraphQl.ProjectItems(
                     List.of(
                             item(),
@@ -276,6 +280,55 @@ class GitHubStoreCopyTest {
     }
 
     @Test
+    void theBoardsReadTimeIsTheCopysAtAStartFromItAndMovesWithTheNextRead() {
+        // Harm: "Last read on GitHub" shows a time at which GitHub was not read: the start's,
+        // for a board taken from a copy made long before.
+        heldBefore();
+        final GitHub github = new GitHub();
+        github.title = "One, changed on GitHub";
+        final Instant later = FIRST.plusSeconds(3600);
+        github.onItems = () -> now.set(later.plusSeconds(30));
+        final GitHubStore store = store(github);
+        now.set(later);
+
+        final Board fromCopy = store.board();
+        assertThat(store.boardReadAt(fromCopy)).as("from the copy").contains(FIRST);
+
+        final Board read = store.poll();
+        assertThat(store.boardReadAt(read))
+                .as("after GitHub was read whole: when that read began, not when it ended")
+                .contains(later);
+        assertThat(store.boardReadAt(fromCopy))
+                .as("for the board held before, which the time no longer describes")
+                .isEmpty();
+    }
+
+    @Test
+    void aReadOfSomeItemsLeavesTheTimeOfTheLastWholeRead() {
+        // Harm: a look that read one item makes every other item, unread since the copy was
+        // taken, look read now, so the person trusts a value hours old.
+        heldBefore();
+        final GitHub github = new GitHub();
+        github.title = "One, changed on GitHub";
+        final GitHubStore store =
+                store(
+                        github,
+                        BoardWriter.NONE,
+                        AccessRefusals.DEFAULT,
+                        (config, token, cursor, known) ->
+                                Optional.of(
+                                        new TrackerChanges.Changed(
+                                                Set.of("PVTI_1"), Set.of(), Set.of(), LOOKED)));
+        store.board();
+        now.set(FIRST.plusSeconds(3600));
+
+        final Board polled = store.poll();
+
+        assertThat(github.calls).as("one item read by id").containsExactly("issueBoard of [I_1]");
+        assertThat(store.boardReadAt(polled)).as("the copy's time still").contains(FIRST);
+    }
+
+    @Test
     void theFirstPollAfterAStartFromTheCopyReadsGitHubWhole() {
         // Harm: a change made on GitHub while the planner was stopped never shown.
         heldBefore();
@@ -337,9 +390,11 @@ class GitHubStoreCopyTest {
         store.board();
         github.failure = new IllegalStateException("401 Bad credentials");
 
+        final Board shown = store.board();
         assertThatThrownBy(store::poll)
                 .as("the poll GitHub refuses")
                 .isInstanceOf(StoreException.NoForgeAccess.class);
+        assertThat(store.boardReadAt(shown)).as("no read time once the board is dropped").isEmpty();
         assertThat(copies().read(PROJECT, CONFIG.commit()))
                 .as("the copy after the refusal")
                 .isEmpty();

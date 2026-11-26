@@ -417,11 +417,11 @@ class CommandOutboxTest {
                 .isInstanceOf(IllegalStateException.class);
         other.close();
 
-        edit("\"format\":2", "\"format\":3");
+        edit("\"format\":3", "\"format\":4");
         assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("a newer form")
                 .isInstanceOf(WorkRefusal.class);
-        edit("\"format\":3", "\"format\":2");
+        edit("\"format\":4", "\"format\":3");
         edit("\"project\":\"planning\"", "\"project\":\"another\"");
         assertThatThrownBy(() -> outbox("feature").open(() -> BEFORE))
                 .as("another project's")
@@ -492,10 +492,10 @@ class CommandOutboxTest {
         final List<String> forged =
                 List.of(
                         good.substring(0, good.length() / 2),
-                        good.replace("\"format\":2", "\"format\":2,\"extra\":1"),
-                        good.replace("\"format\":2", "\"format\":2,\"format\":2"),
+                        good.replace("\"format\":3", "\"format\":3,\"extra\":1"),
+                        good.replace("\"format\":3", "\"format\":3,\"format\":3"),
                         good.replace("\"tries\":[]", "\"tries\":null"),
-                        good.replace("\"format\":2", "\"format\":1"),
+                        good.replace("\"format\":3", "\"format\":1"),
                         good.replace("\"text\":\"\"", "\"text\":null"),
                         good.replace("\"AA1\":\"Building\"", "\"AA1\":null"),
                         good.replace("\"kind\":\"write\"", "\"kind\":\"comment\""),
@@ -1131,7 +1131,7 @@ class CommandOutboxTest {
                 .containsExactly(State.REFUSED);
         assertThat(Files.readString(file()))
                 .as("written in the new form")
-                .contains("\"format\":2", "\"tries\":[]");
+                .contains("\"format\":3", "\"tries\":[]");
     }
 
     @Test
@@ -1153,7 +1153,11 @@ class CommandOutboxTest {
                 .set(
                         0,
                         WorkRecord.JSON.valueToTree(
-                                new CommandOutbox.Try(START, State.DONE, CommandOutbox.Why.NONE)));
+                                new CommandOutbox.Try(
+                                        START,
+                                        State.DONE,
+                                        CommandOutbox.Why.NONE,
+                                        CommandOutbox.Answer.NONE)));
 
         for (final String text :
                 List.of(
@@ -1170,7 +1174,7 @@ class CommandOutboxTest {
     }
 
     @Test
-    void aGroupQueuedAtTheBoundStillKeepsTheReserveWholeAfterItsLongestHoldAndReopens()
+    void aGroupQueuedAtTheBoundStillKeepsTheReserveWholeAfterItsLongestHoldAndAnswerAndReopens()
             throws IOException {
         // Harm: a save queued near the cap whose hold, with its try, eats into the reserve, so
         // later ends and holds of other saves can no longer be written.
@@ -1194,7 +1198,20 @@ class CommandOutboxTest {
                 .as("the bound is reached")
                 .isInstanceOf(WorkRefusal.class);
 
-        probe.hold("g1", new StoreException.Busy("😀".repeat(CommandOutbox.MOST_SUBJECT)));
+        probe.hold(
+                "g1",
+                new StoreException.Busy("😀".repeat(CommandOutbox.MOST_SUBJECT))
+                        .answered(
+                                org.fuin.porelo.planner.store.ForgeAnswer.of(
+                                        503,
+                                        "\\"
+                                                .repeat(
+                                                        2
+                                                                * org.fuin.porelo.planner.store
+                                                                        .ForgeAnswer.MOST_BYTES),
+                                        List.of(),
+                                        "C0DE:1234:ABCD",
+                                        List.of())));
 
         assertThat(Files.size(file()))
                 .as("the reserve whole")
@@ -1205,5 +1222,97 @@ class CommandOutboxTest {
         assertThat(again.tries("g1"))
                 .extracting(CommandOutbox.Try::result)
                 .containsExactly(State.HELD);
+    }
+
+    @Test
+    void aTryKeepsTheForgesAnswerThatRefusedItAcrossARestart() {
+        // Harm: the person cannot see what GitHub answered when it refused a save, or the answer
+        // of one try is shown for another.
+        final CommandOutbox outbox = timed(new Ticking());
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        outbox.begin("c1");
+        final org.fuin.porelo.planner.store.ForgeAnswer answer =
+                org.fuin.porelo.planner.store.ForgeAnswer.of(
+                        422, "Validation Failed", List.of(), "C0DE:1234:ABCD", List.of());
+        outbox.refused(
+                "c1",
+                new StoreException.Unreachable("porelo-lib", "refused").answered(answer),
+                true,
+                null);
+        outbox.resend("g1");
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(again.tries("g1"))
+                .extracting(CommandOutbox.Try::answer)
+                .containsExactly(
+                        new CommandOutbox.Answer(422, "Validation Failed", "C0DE:1234:ABCD"),
+                        CommandOutbox.Answer.NONE);
+    }
+
+    @Test
+    void anOutboxOfTheSecondFormReadsItsTriesWithNoAnswerAndAForgedAnswerIsRefused()
+            throws IOException {
+        // Harm: saves held by the planner before an update refused or lost by the updated one, or
+        // a forged answer shown as the forge's.
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", List.of(move("c1", "AA1", "Building"))));
+        outbox.begin("c1");
+        outbox.conflict("c1", List.of("STATE"));
+        outbox.close();
+        final String good = Files.readString(file());
+        final tools.jackson.databind.node.ObjectNode second =
+                (tools.jackson.databind.node.ObjectNode) WorkRecord.JSON.readTree(good);
+        second.put("format", 2);
+        second.get("entries")
+                .values()
+                .forEach(
+                        each ->
+                                each.get("tries")
+                                        .values()
+                                        .forEach(
+                                                tried ->
+                                                        ((tools.jackson.databind.node.ObjectNode)
+                                                                        tried)
+                                                                .remove("answer")));
+        Files.writeString(file(), WorkRecord.JSON.writeValueAsString(second));
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        assertThat(again.tries("g1"))
+                .extracting(CommandOutbox.Try::answer)
+                .containsExactly(CommandOutbox.Answer.NONE);
+        again.close();
+
+        final String text = Files.readString(file());
+        assertThat(text).as("written in the new form").contains("\"format\":3");
+        for (final String forged :
+                List.of(
+                        text.replace("\"format\":3", "\"format\":2"),
+                        text.replace(
+                                "\"answer\":{\"status\":0,\"text\":\"\"",
+                                "\"answer\":{\"status\":0,\"text\":\"\\u0007\""),
+                        text.replace("\"answer\":{\"status\":0", "\"answer\":{\"status\":1000"),
+                        text.replace(
+                                "\"answer\":{\"status\":0,\"text\":\"\"",
+                                "\"answer\":{\"status\":0,\"text\":\""
+                                        + "x"
+                                                .repeat(
+                                                        org.fuin.porelo.planner.store.ForgeAnswer
+                                                                        .MOST_BYTES
+                                                                + 1)
+                                        + "\""),
+                        text.replace("\"requestId\":\"\"", "\"requestId\":\"a b\""))) {
+            assertThat(forged).as("forged").isNotEqualTo(text);
+            Files.writeString(file(), forged);
+            assertThatThrownBy(() -> outbox().open(() -> BEFORE))
+                    .as(forged)
+                    .isInstanceOf(WorkRefusal.class);
+        }
     }
 }
