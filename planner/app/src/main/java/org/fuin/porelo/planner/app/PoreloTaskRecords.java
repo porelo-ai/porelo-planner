@@ -335,7 +335,8 @@ public final class PoreloTaskRecords implements TaskRecords {
         /**
          * The issues of the task's work, a list of at most {@link PoreloTaskRecords#MOST_PAIRS}
          * issue and phase pairs, each issue once; a Porelo that records one pair as an object, or
-         * none as null, is read the same, so the planner reads a record of either.
+         * none as null, is read the same, so the planner reads a record of either; a pair that
+         * names no issue id is left out.
          */
         private List<String> work() {
             final JsonNode work = present(record, "work", "work");
@@ -343,7 +344,8 @@ public final class PoreloTaskRecords implements TaskRecords {
                 return List.of();
             }
             if (work.isObject()) {
-                return List.of(withinProject(pair(work, "work")));
+                final String issue = pair(work, "work");
+                return issue == null ? List.of() : List.of(withinProject(issue));
             }
             if (!work.isArray()) {
                 throw refused("work", "is neither a list of issue and phase pairs nor null");
@@ -355,6 +357,9 @@ public final class PoreloTaskRecords implements TaskRecords {
             final List<String> issues = new ArrayList<>();
             for (int i = 0; i < work.size(); i++) {
                 final String issue = pair(work.get(i), "work[" + i + "]");
+                if (issue == null) {
+                    continue;
+                }
                 if (named.contains(issue)) {
                     throw refused("work[" + i + "].issue", "names an issue an earlier pair names");
                 }
@@ -367,14 +372,12 @@ public final class PoreloTaskRecords implements TaskRecords {
             return issues;
         }
 
-        private String pair(final JsonNode pair, final String path) {
+        /** The pair's issue, or null for one that names no issue id. */
+        private @Nullable String pair(final JsonNode pair, final String path) {
             if (!pair.isObject()) {
                 throw refused(path, "is no object");
             }
-            final String issue = text(pair, "issue", path + ".issue");
-            if (!ISSUE.matcher(issue).matches()) {
-                throw refused(path + ".issue", "is no issue id (" + ISSUE.pattern() + ")");
-            }
+            final String issue = named(text(pair, "issue", path + ".issue"), path + ".issue");
             final String phase = text(pair, "phase", path + ".phase");
             if (phase.isBlank() || phase.length() > 64 || UNSOUND.matcher(phase).find()) {
                 throw refused(
@@ -382,6 +385,19 @@ public final class PoreloTaskRecords implements TaskRecords {
                         "is no phase (one line that is not blank, at most 64 characters)");
             }
             return issue;
+        }
+
+        /**
+         * An issue as a board names it, or null for one that names no issue id, as a task started
+         * by hand with a plain number records it: that names no issue of a board, so it is left out
+         * and the record read, never every record of the answer refused for it.
+         */
+        private @Nullable String named(final String issue, final String path) {
+            if (issue.isEmpty() || issue.length() > 200 || UNSOUND.matcher(issue).find()) {
+                throw refused(
+                        path, "is empty, longer than 200 characters or holds a control character");
+            }
+            return ISSUE.matcher(issue).matches() ? issue : null;
         }
 
         /**
@@ -474,10 +490,8 @@ public final class PoreloTaskRecords implements TaskRecords {
             if (!present(call, "background", path + ".background").isBoolean()) {
                 throw refused(path + ".background", "is no boolean");
             }
-            final String issue = textOrNull(call, "issue", path + ".issue");
-            if (issue != null && !ISSUE.matcher(issue).matches()) {
-                throw refused(path + ".issue", "is no issue id (" + ISSUE.pattern() + ")");
-            }
+            final String given = textOrNull(call, "issue", path + ".issue");
+            final String issue = given == null ? null : named(given, path + ".issue");
             try {
                 return new TaskRecord.Call(issue == null ? null : withinProject(issue), start, end);
             } catch (final IllegalArgumentException ex) {

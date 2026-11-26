@@ -376,12 +376,9 @@ class PoreloTaskRecordsTest {
                 Arguments.of("repository", NODES.numberNode(7)),
                 Arguments.of("work", NODES.textNode("EX12")),
                 Arguments.of("work[0]", NODES.textNode("EX12")),
-                Arguments.of("work[0].issue", NODES.textNode("pl61")),
                 Arguments.of("work[0].issue", NODES.nullNode()),
-                Arguments.of("work[0].issue", NODES.textNode("porelo-x#3")),
-                Arguments.of("work[0].issue", NODES.textNode("example-org/Porelo-X#3")),
-                Arguments.of("work[0].issue", NODES.textNode("a..b/porelo-x#3")),
-                Arguments.of("work[0].issue", NODES.textNode("example-org/porelo-x#0")),
+                Arguments.of("work[0].issue", NODES.textNode("6\u001b[2J")),
+                Arguments.of("work[0].issue", NODES.textNode("x".repeat(201))),
                 Arguments.of("work[0].phase", NODES.textNode(" ")),
                 Arguments.of("work[0].phase", NODES.textNode("build\nimplement")),
                 Arguments.of("work[0].phase", NODES.textNode("build:" + "x".repeat(59))),
@@ -415,8 +412,8 @@ class PoreloTaskRecordsTest {
                 Arguments.of("toolCalls[0].endFrom", NODES.textNode("guess")),
                 Arguments.of("toolCalls[0].command", NODES.numberNode(7)),
                 Arguments.of("toolCalls[0].background", NODES.textNode("true")),
-                Arguments.of("toolCalls[0].issue", NODES.textNode("EX-12")),
-                Arguments.of("toolCalls[0].issue", NODES.textNode("example-org/x/porelo-x#3")));
+                Arguments.of("toolCalls[0].issue", NODES.textNode("6\u001b[2J")),
+                Arguments.of("toolCalls[0].issue", NODES.textNode("x".repeat(201))));
     }
 
     // Prevents a value of the wrong type or shape from being read as a time, an end or an issue.
@@ -551,6 +548,42 @@ class PoreloTaskRecordsTest {
                 .doesNotContain("second line");
     }
 
+    // Prevents one task started by hand with a work issue that names no issue of a board, such as
+    // "6", from making every record unreadable, so that no place of the project is read again.
+    @Test
+    void aWorkOrCallIssueThatNamesNoIssueIdIsLeftOutAndTheRecordRead() throws Exception {
+        for (final String plain :
+                List.of(
+                        "6",
+                        "pl61",
+                        "porelo-x#3",
+                        "example-org/Porelo-X#3",
+                        "a..b/porelo-x#3",
+                        "example-org/porelo-x#0")) {
+            final ObjectNode record = record();
+            record.putArray("work")
+                    .add(JSON.createObjectNode().put("issue", plain).put("phase", "Build"))
+                    .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "build"));
+            ((ObjectNode) record.get("toolCalls").get(1)).put("issue", plain);
+            final ObjectNode alone = record();
+            alone.putObject("work").put("issue", plain).put("phase", "Build");
+            answer(JSON.createArrayNode().add(record).add(alone));
+
+            final List<TaskRecord> read = records().since("porelo-planner", SINCE);
+            assertThat(read).as("both records read beside " + plain).hasSize(2);
+            assertThat(read.get(0).issues())
+                    .as("the issue id kept beside " + plain)
+                    .containsExactly("EX12");
+            assertThat(read.get(1).issues())
+                    .as("a task for no issue of a board: " + plain)
+                    .isEmpty();
+            assertThat(read.get(0).calls())
+                    .as("a call for no issue of a board: " + plain)
+                    .extracting(TaskRecord.Call::issue)
+                    .containsOnlyNulls();
+        }
+    }
+
     // Prevents a task started for several issues from being counted for one of them only, or for
     // none when Porelo writes the list a record of this Porelo holds.
     @Test
@@ -617,7 +650,7 @@ class PoreloTaskRecordsTest {
         final ObjectNode second = record();
         second.putArray("work")
                 .add(JSON.createObjectNode().put("issue", "EX12").put("phase", "build"))
-                .add(JSON.createObjectNode().put("issue", "pl61").put("phase", "read"));
+                .add(JSON.createObjectNode().put("issue", "pl61\n").put("phase", "read"));
         answer(JSON.createArrayNode().add(second));
         assertThat(refusal())
                 .as("a bad second pair named by its place")

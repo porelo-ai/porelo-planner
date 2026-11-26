@@ -1,0 +1,2 @@
+title: A task record whose work names no issue id, such as one started by hand with a plain number, no longer stops the planner from reading every place of the project.
+type: fixed

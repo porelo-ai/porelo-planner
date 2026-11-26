@@ -3214,6 +3214,32 @@ class WorkRunTest {
     }
 
     @Test
+    void aCompleteReturnAfterAnIncompleteFirstReadSendsTheIssueBackToRework() {
+        // Harm: a first read made as the task ends, before Porelo knows the decision's time,
+        // stops the issue for good, so the owner's return never offers the author again.
+        final Fixture f = new Fixture();
+        waiting(f);
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(incomplete("TimeMissing", ReviewOpen.Decision.OPEN))))
+                .as("the first read, incomplete")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                atTask(answer(ReviewOpen.Decision.RETURNED, 1, 0, 0))))
+                .as("the owner's return, read complete")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("the unread stop ended")
+                .isNotEqualTo(WorkRun.PLACE_UNREADABLE);
+    }
+
+    @Test
     void heldItemsABoundRunOrAHandMoveLeaveTheIssueWhereItStands() {
         // Harm: an author sent back while the owner still holds items; a second run offered at a
         // place one is already bound to; or a move over the person's own.
