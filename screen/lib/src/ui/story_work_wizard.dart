@@ -120,8 +120,9 @@ class _StoryWorkSteps {
 
   String? _whereProblem() {
     if (work.busy && work.proposal == null) return 'Waiting for the planner’s answer.';
-    if (!work.current) return 'The board changed or is no longer live. Cancel and open Start work again.';
+    // A refusal is the answer; a board that moved since leaves it as it stands.
     if (work.problem case final problem?) return problem;
+    if (!work.current) return 'The board changed or is no longer live. Cancel and open Start work again.';
     if (work.proposal == null) return 'The planner has not proposed the work yet.';
     return null;
   }
@@ -217,7 +218,9 @@ class _StoryWorkSteps {
       else
         Text('Working state: ${_said(work.to)}', key: const Key('story-work-target-name')),
       if (work.busy) _waiting('Waiting for the planner’s answer…'),
-      if (!work.current) const Text('The board changed or is no longer live. Cancel and open Start work again.'),
+      // Only a proposal the window holds goes stale; a refused or missing one has nothing to go stale.
+      if (!work.current && work.proposal != null)
+        const Text('The board changed or is no longer live. Cancel and open Start work again.'),
       if (work.problem case final problem?) ...[
         Text(problem, key: const Key('story-work-error')),
         TextButton(

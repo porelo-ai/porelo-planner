@@ -316,6 +316,8 @@ class StoryWork extends ChangeNotifier {
   /// Reads the proposal and agent list from the same captured machine.
   Future<void> load() async {
     if (_disposed || starting || tasks.isNotEmpty) return;
+    // Nothing started yet: the proposal is asked on the board as it stands now, as a change of machine does.
+    revision = board.snapshot?.revision ?? '';
     if (!current) {
       problem = !board.stories.any((each) => each.id == story.id)
           ? 'The planner did not report story ${story.id}.'

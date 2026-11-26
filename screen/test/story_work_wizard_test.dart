@@ -132,6 +132,28 @@ void _offer(MockPlanningSource source, List<Map<String, String>> offered) {
   };
 }
 
+/// A planner whose next proposal is refused for a blocker while an unrelated save moves the board's revision.
+class _MovedWhileRefused extends MockPlanningSource {
+  bool refuseNext = true;
+  int asked = 0;
+
+  @override
+  Future<StoryWorkProposal> proposeStoryWork(String project, String story, String to, {List<String>? issues}) async {
+    asked++;
+    if (!refuseNext) return super.proposeStoryWork(project, story, to, issues: issues);
+    refuseNext = false;
+    push(project, _board()..['revision'] = 'r2');
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    throw mockRefusal('org.fuin.porelo.Tasks1.WorkNotAllowed', {
+      'from': 'Backlog',
+      'to': to,
+      'reason': 'AA1 waits on AA0. Work on it starts once that is done.',
+    });
+  }
+}
+
+const _stale = 'The board changed or is no longer live. Cancel and open Start work again.';
+
 StoryWork _work(PlanningBoard board, List<PlanningAgent> agents) {
   final work = planningStoryWork(board, board.stories.single, 'Implementing', agents: FakeAgents(agents));
   addTearDown(work.dispose);
@@ -199,6 +221,68 @@ void main() {
     expect(find.text('Working state: Implementing'), findsOneWidget, reason: 'the working state is named');
     expect(find.byKey(const Key('story-work-mode-name')), findsOneWidget, reason: 'the mode is named');
     expect(wizards.steps[1].summary(), ['Unattended'], reason: 'the review names the mode');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // Harm: a Start refused for its blockers reads as a board that changed, and Retry can never ask again, so the person
+  // cannot tell why the work does not start nor start it once the blocker is done.
+  testWidgets(
+    'a refused proposal while the board moves shows the refusal alone and Retry asks on the board as it stands',
+    (tester) async {
+      final source = _MovedWhileRefused()..boards['demo'] = _board();
+      final board = PlanningBoard(source, 'demo');
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      addTearDown(() async {
+        board.dispose();
+        await tester.runAsync(source.end);
+      });
+      final work = _work(board, const [PlanningAgent('codex')]);
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
+      await _answered(tester);
+      expect(board.snapshot?.revision, 'r2', reason: 'the board moved while the proposal was asked');
+      expect(work.problem, contains('AA1 waits on AA0'), reason: 'the refusal');
+      expect(_problem(tester), work.problem, reason: 'the step names the refusal');
+      expect(find.text(_stale), findsNothing, reason: 'a refused proposal has nothing to go stale');
+
+      await tester.tap(find.byKey(const Key('story-work-retry')));
+      await _answered(tester);
+      expect(source.asked, 2, reason: 'Retry asked again');
+      expect(work.problem, isNull, reason: 'the new answer stands: ${work.problem}');
+      expect(work.proposal, isNotNull, reason: 'proposed on the board as it stands');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  // Harm: work starts on a proposal the board has moved past without the person seeing that it went stale.
+  testWidgets('a proposal given and then passed by the board still says the board changed', (tester) async {
+    final (source, board) = await _open(tester);
+    final work = _work(board, const [PlanningAgent('codex')]);
+    final wizards = _Wizards();
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (each) {
+            context = each;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    unawaited(showStoryWork(context, work, wizards: wizards));
+    await _answered(tester);
+    expect(work.proposal, isNotNull, reason: 'the proposal was read: ${work.problem}');
+    expect(wizards.steps.first.check(), isNull, reason: 'a current proposal lets the person go on');
+    source.push('demo', _board()..['revision'] = 'r2');
+    await _answered(tester);
+    expect(wizards.steps.first.check(), _stale, reason: 'the stale proposal stops the person, saying why');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: Builder(builder: wizards.steps.first.panel)),
+      ),
+    );
+    await settle(tester);
+    expect(find.text(_stale), findsOneWidget, reason: 'the step says the board changed');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
