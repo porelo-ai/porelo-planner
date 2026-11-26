@@ -1163,7 +1163,23 @@ public final class WorkRun implements RefusedEventResave {
                                 to,
                                 "Every issue needs a participant in its own repository.");
                     }
-                    final Map<String, IssuePlace> places = carriedPlaces(old, offers);
+                    // An issue its author builds afresh, at no place, as from Backlog after a hand
+                    // move, keeps no place of the old run; a stop that place made cannot stand,
+                    // since a Start is refused while one does and none can be passed over.
+                    final Set<String> fresh = new HashSet<>();
+                    // A build carried void from the old run for its readers is no new build.
+                    final Set<String> earlierOffers = new HashSet<>();
+                    if (old != null) {
+                        old.offers().forEach(o -> earlierOffers.add(o.id()));
+                    }
+                    offers.stream()
+                            .filter(
+                                    o ->
+                                            author(o)
+                                                    && o.arguments().place() == null
+                                                    && !earlierOffers.contains(o.id()))
+                            .forEach(o -> fresh.addAll(o.binding().issues()));
+                    final Map<String, IssuePlace> places = carriedPlaces(old, offers, fresh);
                     final List<String> heldBack =
                             decision.issues() == null
                                     ? heldBack(board, to, proposal)
@@ -5693,15 +5709,18 @@ public final class WorkRun implements RefusedEventResave {
      * The places the old run kept, carried into the run that replaces it with the author runs they
      * name, put void before the new run's offers in their old order where it does not hold them
      * yet, so the issue's work is still found where it waits, the new run's own builds stay the
-     * last ones found, and no report can bind to those runs again.
+     * last ones found, and no report can bind to those runs again. An issue its author builds
+     * afresh keeps no place, since its work no longer waits there.
      */
     private static Map<String, IssuePlace> carriedPlaces(
-            final @Nullable Run old, final List<Offer> offers) {
+            final @Nullable Run old, final List<Offer> offers, final Set<String> fresh) {
         if (old == null) {
             return Map.of();
         }
+        final Map<String, IssuePlace> kept = new LinkedHashMap<>(old.places());
+        kept.keySet().removeAll(fresh);
         final Set<String> named = new HashSet<>();
-        old.places().values().forEach(place -> named.addAll(place.authorRuns()));
+        kept.values().forEach(place -> named.addAll(place.authorRuns()));
         final List<Offer> carried = new ArrayList<>();
         for (final Offer run : old.offers()) {
             if (named.remove(run.id()) && offers.stream().noneMatch(o -> o.id().equals(run.id()))) {
@@ -5713,7 +5732,7 @@ public final class WorkRun implements RefusedEventResave {
             throw new IllegalStateException("A kept place names an author run its run lacks.");
         }
         offers.addAll(0, carried);
-        return old.places();
+        return kept;
     }
 
     /**

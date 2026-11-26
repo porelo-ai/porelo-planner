@@ -2650,6 +2650,57 @@ class WorkRunTest {
     }
 
     @Test
+    void aStoryStartedAgainAfterItsIssueWasMovedBackByHandBuildsWhereTheNewTaskPushes() {
+        // Harm: a story started again after its issue was moved back to Backlog by hand keeps the
+        // old run's place, so the new author's work is taken for another place than the one kept,
+        // and the issue stops instead of going on.
+        final Fixture f = new Fixture();
+        waiting(f);
+        final Board moved = inState(f.store.board(), "AA1", "Backlog");
+        f.store.current =
+                new Board(
+                        moved.revision(),
+                        moved.workflow(),
+                        moved.stories().stream()
+                                .map(
+                                        s ->
+                                                new Story(
+                                                        s.id(),
+                                                        s.title(),
+                                                        "Backlog",
+                                                        s.priority(),
+                                                        s.size(),
+                                                        s.issues(),
+                                                        s.description(),
+                                                        s.link()))
+                                .toList(),
+                        moved.issues(),
+                        moved.work(),
+                        moved.repositories());
+
+        final WorkRun.Offered again = f.order().tasks().getFirst();
+        assertThat(f.run.work("ST1").places())
+                .as("no place carried for a fresh build")
+                .doesNotContainKey("AA1");
+
+        f.run.report(
+                "task-2",
+                new WorkRun.Report(
+                        again.offer(), WorkRun.Event.STARTED, "box-2", "workstation", null));
+        f.run.report(
+                "task-2",
+                new WorkRun.Report(
+                        again.offer(),
+                        WorkRun.Event.ENDED,
+                        "box-2",
+                        "workstation",
+                        unlanded("Built")));
+        assertThat(f.run.work("ST1").places().get("AA1"))
+                .as("the work waits at the new task's push")
+                .isEqualTo(IssuePlace.atGate("task-2", again.offer()));
+    }
+
+    @Test
     void aStartThatReplacesTheRunCarriesItsPlacesWithTheirAuthorRunsVoid() {
         // Harm: a new start forgets where an issue's work waits, or keeps a place whose author
         // run it dropped, so the record no longer opens.
