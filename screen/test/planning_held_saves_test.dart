@@ -25,6 +25,14 @@ Map<String, dynamic> _command(String save, int at, String target, String state, 
 List<Map<String, dynamic>> _held() => [
   {
     'id': _window,
+    'saves': [_window],
+    'reason': 'I2 was changed elsewhere since it was read.',
+    'changes': [
+      {'target': 'I2', 'field': 'state', 'now': 'Ready', 'nowAt': '2026-05-06T07:08:09Z', 'saved': 'Building'},
+    ],
+    'tries': [
+      {'at': '2026-05-06T07:10:00Z', 'result': 'REFUSED', 'reason': 'I2 was changed elsewhere since it was read.'},
+    ],
     'run': false,
     'earlier': false,
     'resendable': true,
@@ -35,6 +43,18 @@ List<Map<String, dynamic>> _held() => [
   },
   {
     'id': _halted,
+    'saves': [_halted],
+    'reason': 'Only part of the save may have been written to S1.',
+    'changes': [
+      {'target': 'S1', 'field': 'state', 'saved': 'Done'},
+    ],
+    'tries': [
+      {
+        'at': '2026-05-06T07:10:00Z',
+        'result': 'REFUSED',
+        'reason': 'Only part of the save may have been written to S1.',
+      },
+    ],
     'run': true,
     'earlier': false,
     'resendable': false,
@@ -42,6 +62,14 @@ List<Map<String, dynamic>> _held() => [
   },
   {
     'id': _elsewhere,
+    'saves': [_elsewhere],
+    'reason': 'S2 was changed elsewhere since it was read.',
+    'changes': [
+      {'target': 'S2', 'field': 'state', 'saved': 'Done'},
+    ],
+    'tries': [
+      {'at': '2026-05-06T07:10:00Z', 'result': 'REFUSED', 'reason': 'S2 was changed elsewhere since it was read.'},
+    ],
     'run': false,
     'earlier': true,
     'resendable': false,

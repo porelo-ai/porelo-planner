@@ -940,8 +940,8 @@ class PlanRuleBreach {
   final String words;
 }
 
-/// One command of a save the planner keeps for the person, told by its kind, its target and where it stands, never
-/// by the values it writes.
+/// One command of a save the planner keeps for the person, told by its kind, its target and where it stands; what it
+/// would change is in its save's [PlanHeldSave.changes].
 class PlanHeldCommand {
   /// Reads the fields the planner reports.
   PlanHeldCommand.from(Map<String, dynamic> map)
@@ -971,8 +971,107 @@ class PlanHeldCommand {
   final String subject;
 }
 
+/// What the planner knew of a field a held save would change, when it last read the board.
+enum PlanHeldValueRead {
+  /// The planner never read it, or tells no time of its read: no value is known.
+  never,
+
+  /// It was read, and empty.
+  empty,
+
+  /// It was read, holding [PlanHeldChange.now].
+  value,
+}
+
+/// One field of one item a held save would change: the value it would write beside the value the planner last read.
+class PlanHeldChange {
+  /// Reads the fields the planner reports; a value without its time of reading, or with a time that is no time, reads
+  /// as never read, since a value shown without when it was read would look current.
+  PlanHeldChange.from(Map<String, dynamic> map)
+    : target = _planText(map, 'target'),
+      field = _planText(map, 'field'),
+      saved = map['saved'] is String ? map['saved'] as String : null,
+      read = _heldRead(map),
+      now = _heldRead(map) == PlanHeldValueRead.value ? map['now'] as String : null,
+      nowAt = _heldRead(map) == PlanHeldValueRead.never ? null : DateTime.parse(map['nowAt'] as String).toUtc();
+
+  /// The issue or story the field belongs to.
+  final String target;
+
+  /// The field, by the name its item carries it under on the board, or for a value the board does not hold by its own.
+  final String field;
+
+  /// What the planner knew of the value when it last read the board.
+  final PlanHeldValueRead read;
+
+  /// The value last read; null unless [read] is [PlanHeldValueRead.value].
+  final String? now;
+
+  /// When the board holding [now] was read, in UTC; null when [read] is [PlanHeldValueRead.never].
+  final DateTime? nowAt;
+
+  /// The value the save would write; null when it removes or empties the value.
+  final String? saved;
+}
+
+PlanHeldValueRead _heldRead(Map<String, dynamic> map) {
+  final at = map['nowAt'];
+  if (at is! String || DateTime.tryParse(at) == null) return PlanHeldValueRead.never;
+  if (map['now'] is String) return PlanHeldValueRead.value;
+  return map['nowUnset'] == true ? PlanHeldValueRead.empty : PlanHeldValueRead.never;
+}
+
+/// The forge's own answer to a refused call, word for word as the planner keeps it.
+class PlanHeldAnswer {
+  /// Reads the fields the planner reports; an answer without a status reads as none, see [PlanHeldAnswer.read].
+  PlanHeldAnswer._(this.status, this.text, this.requestId);
+
+  /// The answer in [value], or null where it is absent or carries no status.
+  static PlanHeldAnswer? read(Object? value) {
+    if (value is! Map<String, dynamic> || value['status'] is! int) return null;
+    final id = value['requestId'];
+    return PlanHeldAnswer._(
+      value['status'] as int,
+      _planText(value, 'text'),
+      id is String && id.isNotEmpty ? id : null,
+    );
+  }
+
+  /// The HTTP status the forge answered with; 0 when it answered none.
+  final int status;
+
+  /// The forge's words, its token removed and its control characters escaped; empty when it gave none.
+  final String text;
+
+  /// The id the forge gave the request, for its support; null when it gave none.
+  final String? requestId;
+}
+
+/// One try of a held save that ended refused or held.
+class PlanHeldTry {
+  /// Reads the fields the planner reports.
+  PlanHeldTry.from(Map<String, dynamic> map)
+    : at = map['at'] is String ? DateTime.tryParse(map['at'] as String)?.toUtc() : null,
+      result = _planText(map, 'result'),
+      reason = _planText(map, 'reason'),
+      answer = PlanHeldAnswer.read(map['answer']);
+
+  /// When it ended, in UTC; null where the planner gave no time.
+  final DateTime? at;
+
+  /// How it ended: REFUSED or HELD.
+  final String result;
+
+  /// Why, in one plain sentence of the planner's words.
+  final String reason;
+
+  /// The forge's answer to it; null when it gave none.
+  final PlanHeldAnswer? answer;
+}
+
 /// A save the planner keeps for the person, a group of commands not written whole: refused before it wrote, or held
-/// after a command that may stand in part. Every one can be dropped; one that is [resendable] can be resent.
+/// after a command that may stand in part. Every one can be dropped; one that is [resendable] can be resent. A line
+/// may fold several saves of one field, value and source: [saves] names each, and the line acts on all of them.
 class PlanHeldSave {
   /// Reads the fields the planner reports.
   PlanHeldSave.from(Map<String, dynamic> map)
@@ -983,7 +1082,12 @@ class PlanHeldSave {
       resendable = map['resendable'] == true && map['earlier'] != true,
       repository = _planText(map, 'repository'),
       branch = _planText(map, 'branch'),
-      commands = _planList(map['commands'], PlanHeldCommand.from);
+      commands = _planList(map['commands'], PlanHeldCommand.from),
+      reason = _planText(map, 'reason'),
+      changes = _planList(map['changes'], PlanHeldChange.from),
+      answer = PlanHeldAnswer.read(map['answer']),
+      tries = _planList(map['tries'], PlanHeldTry.from),
+      saves = _heldSaves(map);
 
   /// The save's id, which a resend or a drop names.
   final String id;
@@ -1005,6 +1109,29 @@ class PlanHeldSave {
 
   /// Every command of it in order, those already written included.
   final List<PlanHeldCommand> commands;
+
+  /// Why it is held, in one plain sentence of the planner's words.
+  final String reason;
+
+  /// What it would change, one line per field of an item; empty when it changes no field the board names.
+  final List<PlanHeldChange> changes;
+
+  /// The forge's answer to its last try; null when that try kept none.
+  final PlanHeldAnswer? answer;
+
+  /// Every try that ended refused or held, oldest first.
+  final List<PlanHeldTry> tries;
+
+  /// Every save folded into this line, oldest first, [id] last; [id] alone when nothing folds with it.
+  final List<String> saves;
+}
+
+/// The saves a line folds, oldest first and its own id last; its own id alone where the planner names none, or names
+/// a list that does not end with it.
+List<String> _heldSaves(Map<String, dynamic> map) {
+  final id = _planText(map, 'id');
+  final named = _planStrings(map['saves']);
+  return named.isNotEmpty && named.last == id ? List.unmodifiable(named) : List.unmodifiable([id]);
 }
 
 /// The longest directory the planner takes, in bytes of UTF-8.

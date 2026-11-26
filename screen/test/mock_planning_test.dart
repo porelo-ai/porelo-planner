@@ -203,9 +203,21 @@ void main() {
         ..['heldSaves'] = [
           {
             'id': save,
+            'saves': [save],
             'run': false,
             'earlier': false,
             'resendable': true,
+            'reason': 'S1 was changed elsewhere since it was read.',
+            'changes': [
+              {'target': 'S1', 'field': 'state', 'now': 'Ready', 'nowAt': '2026-05-06T07:08:09Z', 'saved': 'Building'},
+            ],
+            'tries': [
+              {
+                'at': '2026-05-06T07:10:00Z',
+                'result': 'REFUSED',
+                'reason': 'S1 was changed elsewhere since it was read.',
+              },
+            ],
             'commands': [
               {
                 'id': '$save/0',
