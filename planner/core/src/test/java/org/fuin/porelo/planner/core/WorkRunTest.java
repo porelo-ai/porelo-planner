@@ -4243,6 +4243,128 @@ class WorkRunTest {
     }
 
     @Test
+    void anApprovalOrACloseUnderAReadersRuleMovesNothingAndAsksNothing() {
+        // Harm: a reader's work moved on or stopped by what only a reviewer's rule decides.
+        for (final ReviewOpen.Decision ended :
+                List.of(ReviewOpen.Decision.APPROVED, ReviewOpen.Decision.CLOSED)) {
+            final Fixture read = new Fixture();
+            waiting(read);
+            read.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ended, 0, 0)));
+            assertThat(
+                            List.of(
+                                    read.store.board().issue("AA1").orElseThrow().state(),
+                                    String.valueOf(
+                                            read.run.work("ST1").issues().get("AA1").needsYou())))
+                    .as("under a reader's rule %s moves nothing and asks nothing", ended)
+                    .containsExactly("Reading", "false");
+        }
+    }
+
+    /** The fixture's work reviewed at the kept push, its reviewer ended there at {@code COMMIT}. */
+    private static Fixture reviewedAtThePlace() {
+        final Fixture f = new Fixture();
+        endReviewer(f, reviewerOffered(f));
+        return f;
+    }
+
+    @Test
+    void aMergeReadWhileTheIssueAsksThePersonMovesNothing() {
+        // Harm: an issue the person is asked about moved on to Review over the open question.
+        final Fixture f = reviewedAtThePlace();
+        final WorkRun.Run run = f.run.work("ST1");
+        final Map<String, NextStep.Progress> asking = new java.util.LinkedHashMap<>(run.issues());
+        asking.replaceAll((id, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+        f.record.value = withRun(f.record.value, withIssues(run, asking));
+
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0))))
+                .as("the answer is kept, no step taken")
+                .isEqualTo(WorkRun.PlaceOutcome.KEPT);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("the issue stays in its state")
+                .isEqualTo("Reading");
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("the reason asked stands")
+                .isEqualTo("NEXT_STEP_UNAVAILABLE");
+    }
+
+    @Test
+    void aMergeOfWorkThatMayNotMoveAsksThePersonWhyAndKeepsItsPlace() {
+        // Harm: work held on the board, worked by a person, or no longer the story's moved to
+        // Review by the planner, or its place forgotten so no later read finds it.
+        final Map<String, java.util.function.UnaryOperator<Board>> bars =
+                new java.util.LinkedHashMap<>();
+        bars.put("held issue", b -> HeldBoards.warned(b, "AA1", Warning.wrongParent()));
+        bars.put(
+                "held story",
+                b ->
+                        new Board(
+                                b.revision(),
+                                b.workflow(),
+                                b.stories().stream()
+                                        .map(
+                                                s ->
+                                                        s.withWarnings(
+                                                                List.of(
+                                                                        HeldBoards.HAND_EDITS
+                                                                                .getFirst())))
+                                        .toList(),
+                                b.issues(),
+                                b.work(),
+                                b.repositories()));
+        bars.put("a person's", b -> ManualIssues.of(b, "AA1"));
+        bars.put("no longer the story's", WorkRunTest::withoutStoryIssues);
+        for (final var bar : bars.entrySet()) {
+            final Fixture f = reviewedAtThePlace();
+            f.store.current = bar.getValue().apply(f.store.current);
+
+            assertThat(
+                            f.run.placeRead(
+                                    "ST1",
+                                    "AA1",
+                                    atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0))))
+                    .as("%s: the person is asked", bar.getKey())
+                    .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+            assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                    .as("%s: nothing moves", bar.getKey())
+                    .isEqualTo("Reading");
+            assertThat(f.told)
+                    .as("%s: one line says why", bar.getKey())
+                    .anyMatch(line -> line.contains("its work is done at its place, but"));
+            assertThat(f.run.work("ST1").places())
+                    .as("%s: the place is kept", bar.getKey())
+                    .containsKey("AA1");
+        }
+    }
+
+    @Test
+    void aClosedPullRequestOrAMergeOfAnotherHeadStaysStoppedOnTheNextRead() {
+        // Harm: the person told again at every read, or the stop replaced by a later read of the
+        // same answer.
+        final String other = "89abcdef0123456789abcdef0123456789abcdef";
+        for (final ReviewOpen ended :
+                List.of(
+                        at(COMMIT, ReviewOpen.Decision.CLOSED, 0, 0),
+                        at(other, ReviewOpen.Decision.MERGED, 0, 0))) {
+            final Fixture f = reviewedAtThePlace();
+            assertThat(f.run.placeRead("ST1", "AA1", atTask(ended)))
+                    .as("%s stops", ended.decision())
+                    .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+            final String reason = f.run.work("ST1").issues().get("AA1").reason();
+            final int told = f.told.size();
+
+            assertThat(f.run.placeRead("ST1", "AA1", atTask(ended)))
+                    .as("%s read again takes no step", ended.decision())
+                    .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+            assertThat(f.told).as("%s told once", ended.decision()).hasSize(told);
+            assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                    .as("%s: the reason stands", ended.decision())
+                    .isEqualTo(reason);
+        }
+    }
+
+    @Test
     void aPullRequestClosedUnmergedOrAMergeOfAnotherHeadAsksThePersonNamingBoth() {
         // Harm: a closed pull request or a merge of work nobody read taken as the issue's done
         // work, or the person not told which commits differ.
