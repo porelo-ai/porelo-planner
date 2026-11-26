@@ -255,17 +255,23 @@ public final class WorkAnswers {
                                             p.needsYou(),
                                             !person && p.rounds().stopped(),
                                             findings(p.findings()),
-                                            person ? null : startRefusal(run, entry.getKey()));
+                                            person ? null : startRefusal(run, entry.getKey(), p));
                                 })
                         .toList(),
                 starts(WorkRun.placeStarts(run)));
     }
 
     /**
-     * The refusal of a Start that stands on an issue's offer, which the issue asks the person for.
+     * The refusal of a Start that stands on an issue's offer, served only while the issue asks the
+     * person because of it; under any other reason, or once nothing is asked, none.
      */
     private static org.fuin.porelo.planner.app.answers.@Nullable TaskRefusal startRefusal(
-            final WorkRun.Run run, final String issue) {
+            final WorkRun.Run run, final String issue, final NextStep.Progress progress) {
+        if (!progress.needsYou()
+                || !(progress.reason().equals(WorkRun.START_REFUSED)
+                        || progress.reason().equals(WorkRun.PLACE_CHANGED))) {
+            return null;
+        }
         return run.offers().stream()
                 .filter(o -> o.status().equals("OFFERED") && o.startRefusal() != null)
                 .filter(o -> o.binding().issues().contains(issue))

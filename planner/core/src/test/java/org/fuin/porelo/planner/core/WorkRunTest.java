@@ -2958,6 +2958,116 @@ class WorkRunTest {
                 .isEqualTo(WorkRun.START_REFUSED);
     }
 
+    /** The board with every story's issues taken away, as a move by hand leaves it. */
+    private static Board withoutStoryIssues(final Board board) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories().stream()
+                        .map(
+                                s ->
+                                        new Story(
+                                                s.id(),
+                                                s.title(),
+                                                s.state(),
+                                                s.priority(),
+                                                null,
+                                                List.of(),
+                                                s.description(),
+                                                s.link()))
+                        .toList(),
+                board.issues(),
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
+    void aRefusalForAnOfferWhoseIssueWasMovedAwayRaisesAndWritesNothing() {
+        // Harm: an issue moved out of the story by hand asks the person for a refusal no Start of
+        // this run can ever clear.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        f.store.current = withoutStoryIssues(f.store.board());
+        final WorkRun.Snapshot before = f.record.value;
+        final int saves = f.store.saves;
+
+        f.run.report("task", refused(offer.offer(), "UnknownForge", ""));
+
+        assertThat(f.record.value).as("nothing is recorded").isEqualTo(before);
+        assertThat(f.store.saves).as("nothing is written").isEqualTo(saves);
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .isNotEqualTo(WorkRun.START_REFUSED);
+    }
+
+    @Test
+    void aRefusedReviewerOfferSaysStartRefusedNeverThatThePlaceChanged() {
+        // Harm: a reviewer refused at the place it reads is shown as the author's place having
+        // changed, so the person looks for a push that never moved.
+        final Fixture f = new Fixture();
+        final WorkRun.Offer reviewer = reviewerOffered(f);
+
+        f.run.report("reviewer", refused(reviewer.id(), "NotTheTasksPush", ""));
+
+        final NextStep.Progress progress = f.run.work("ST1").issues().get("AA1");
+        assertThat(List.of(progress.needsYou(), progress.reason()))
+                .containsExactly(true, WorkRun.START_REFUSED);
+    }
+
+    @Test
+    void aRefusalOnAnIssueThatAsksAlreadyKeepsTheReasonThatStandsAndALaterStartLeavesIt() {
+        // Harm: a refusal stands on an offer while its issue asks for another reason, so the
+        // refusal shown is not why the issue asks; or a second refusal hides the first that made
+        // the issue ask.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered offer = f.order().tasks().getFirst();
+        final WorkRun.Run run = f.run.work("ST1");
+        final Map<String, NextStep.Progress> asking = new java.util.LinkedHashMap<>(run.issues());
+        asking.replaceAll((id, p) -> p.attention("NEXT_STEP_UNAVAILABLE"));
+        f.record.value = withRun(f.record.value, withIssues(run, asking));
+        final int writes = f.record.writes;
+
+        f.run.report("task", refused(offer.offer(), "UnknownForge", ""));
+
+        assertThat(f.record.writes).as("nothing is recorded").isEqualTo(writes);
+        assertThat(f.run.work("ST1").offers().getFirst().startRefusal())
+                .as("no refusal stands on the offer")
+                .isNull();
+        f.start(offer);
+        final NextStep.Progress after = f.run.work("ST1").issues().get("AA1");
+        assertThat(List.of(after.needsYou(), after.reason()))
+                .as("the reason that stood is kept")
+                .containsExactly(true, "NEXT_STEP_UNAVAILABLE");
+
+        final Fixture g = new Fixture();
+        final WorkRun.Offered first = g.order().tasks().getFirst();
+        final WorkRun.Run withFirst = g.run.work("ST1");
+        final WorkRun.Offer second =
+                offeredLike(
+                        withFirst.offers().getFirst(), withFirst.offers().getFirst().arguments());
+        final List<WorkRun.Offer> offers = new java.util.ArrayList<>(withFirst.offers());
+        offers.add(second);
+        g.record.value = withRun(g.record.value, withOffers(withFirst, offers));
+        g.run.report("task", refused(first.offer(), "UnknownForge", "first"));
+
+        g.run.report("task-2", refused(second.id(), "AdapterNotInstalled", "second"));
+
+        assertThat(
+                        java.util.stream.Stream.of(first.offer(), second.id())
+                                .map(
+                                        id -> {
+                                            final WorkRun.StartRefusal standing =
+                                                    g.run.work("ST1").offers().stream()
+                                                            .filter(o -> o.id().equals(id))
+                                                            .findFirst()
+                                                            .orElseThrow()
+                                                            .startRefusal();
+                                            return standing == null ? "none" : standing.detail();
+                                        })
+                                .toList())
+                .as("only the refusal that made the issue ask stands")
+                .containsExactly("first", "none");
+    }
+
     @Test
     void aLaterStartOfTheSameOfferClearsTheStandingRefusal() {
         // Harm: a Start that went through after a refusal leaves the issue under Needs you with

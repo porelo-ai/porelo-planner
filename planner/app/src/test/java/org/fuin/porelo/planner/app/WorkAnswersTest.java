@@ -172,6 +172,90 @@ class WorkAnswersTest {
                 null);
     }
 
+    /** The issue AA1 with the progress given, its offer still offered under the refusal given. */
+    private static WorkRun.Run refusedOn(
+            final NextStep.Progress progress, final WorkRun.StartRefusal refusal) {
+        final org.fuin.porelo.planner.core.WorkOrder.Task task =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                        "alpha", List.of("AA1"), "MAIN", "codex", "model", null, "AGENT", "Build.");
+        final WorkRun.Offer offered = started("a", "task", task);
+        final WorkRun.Offer refused =
+                new WorkRun.Offer(
+                        offered.id(),
+                        task,
+                        new NextStep.Binding(
+                                "ST1",
+                                "alpha",
+                                List.of("AA1"),
+                                "MAIN",
+                                "Building",
+                                "AGENT",
+                                offered.binding().rule()),
+                        "OFFERED",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "",
+                        List.of(),
+                        List.of(),
+                        null,
+                        false,
+                        "",
+                        null,
+                        refusal);
+        return new WorkRun.Run(
+                "00000000-0000-0000-0000-000000000001",
+                "ST1",
+                "Building",
+                "AGENT",
+                "",
+                "START",
+                1,
+                List.of(),
+                List.of(),
+                "2026-01-01T00:00:00Z",
+                List.of(refused),
+                Map.of("AA1", progress),
+                false,
+                false,
+                null);
+    }
+
+    // Harm: a refusal shown on an issue that asks for another reason, or on one moved on since,
+    // names a cause that is not why the issue asks, or asks nothing any more.
+    @Test
+    void aStartRefusalIsServedOnlyWhileTheIssueAsksBecauseOfIt() {
+        final WorkRun.StartRefusal refusal =
+                new WorkRun.StartRefusal("UnknownForge", Map.of(), "Porelo's words.");
+        final java.util.function.Function<NextStep.Progress, Object> served =
+                progress ->
+                        String.valueOf(
+                                WorkAnswers.knownWork(refusedOn(progress, refusal), id -> false)
+                                        .issues()
+                                        .getFirst()
+                                        .startRefusal());
+
+        assertThat(
+                        List.of(
+                                new NextStep.Progress(
+                                        rounds(), List.of(), true, WorkRun.START_REFUSED, ""),
+                                new NextStep.Progress(
+                                        rounds(), List.of(), true, WorkRun.PLACE_CHANGED, "")))
+                .as("served while the refusal's reason stands")
+                .allSatisfy(progress -> assertThat(served.apply(progress)).isNotEqualTo("null"));
+        assertThat(
+                        List.of(
+                                new NextStep.Progress(rounds(), List.of(), false, "NONE", ""),
+                                new NextStep.Progress(
+                                        rounds(), List.of(), true, "NEXT_STEP_UNAVAILABLE", ""),
+                                new NextStep.Progress(
+                                        rounds(), List.of(), false, WorkRun.START_REFUSED, "")))
+                .as("none once the issue moved on, or asks for another reason")
+                .allSatisfy(progress -> assertThat(served.apply(progress)).isEqualTo("null"));
+    }
+
     // Harm: a reviewer's card is shown as an author's, or a task shows the place or the held items
     // of another task, so the person reads the wrong run.
     @Test

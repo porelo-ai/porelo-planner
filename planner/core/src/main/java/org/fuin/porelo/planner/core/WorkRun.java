@@ -1257,6 +1257,13 @@ public final class WorkRun implements RefusedEventResave {
                 return new Answered(answer(run, known.following()));
             }
             final Board board = store.board();
+            if (!NextStep.owns(board, known.binding()) || asksAlready(run, known)) {
+                // An offer whose issues were moved away by hand, or whose issues all ask the
+                // person already, keeps nothing of the refusal: the report is answered as a
+                // resend, so nothing is raised that no Start of it could clear or that hides the
+                // refusal which made the issue ask.
+                return new Answered(answer(run, known.following()));
+            }
             final Judged judged = judge(snapshot, run, known, task, report, board);
             return step(saved(session, snapshot, judged, board), judged.following(), true);
         }
@@ -1886,6 +1893,17 @@ public final class WorkRun implements RefusedEventResave {
             }
         }
         return false;
+    }
+
+    /** Whether an offer has issues and each asks the person already, for whatever reason. */
+    private static boolean asksAlready(final Run run, final Offer offer) {
+        return !offer.binding().issues().isEmpty()
+                && offer.binding().issues().stream()
+                        .allMatch(
+                                id -> {
+                                    final NextStep.Progress progress = run.issues().get(id);
+                                    return progress != null && progress.needsYou();
+                                });
     }
 
     /**

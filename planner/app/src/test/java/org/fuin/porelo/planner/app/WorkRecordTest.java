@@ -619,6 +619,34 @@ class WorkRecordTest {
     }
 
     @Test
+    void aRefusalThatSaysThePlaceChangedSurvivesRestartWithItsReason() throws Exception {
+        // Harm: a planner restart forgets that a rework's Start was refused at its kept place, so
+        // the issue leaves Needs you and the refusal is no longer shown.
+        final WorkRun.Run saved =
+                writeRefusedRecord(
+                        "OFFERED",
+                        new WorkRun.StartRefusal("NotTheTasksPush", Map.of(), "The push moved."),
+                        Map.of(
+                                "AA1",
+                                new NextStep.Progress(
+                                        new org.fuin.porelo.planner.core.ReadingCycle.Rounds(
+                                                0, 2, false),
+                                        List.of(),
+                                        true,
+                                        WorkRun.PLACE_CHANGED,
+                                        "")));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            final WorkRun.Run restored =
+                    records.open("project", "https://example.org/store.git", null)
+                            .locked(session -> session.read().runs().values().iterator().next());
+            assertThat(restored)
+                    .as("the run with its refusal and reason survives")
+                    .isEqualTo(saved);
+        }
+    }
+
+    @Test
     void aRefusalKeptBeforeRightsWereToldStillReads() throws Exception {
         // Harm: an upgrade makes a work record with a kept save refusal unreadable, so the story's
         // work stops until the record is removed by hand.
@@ -1822,6 +1850,13 @@ class WorkRecordTest {
 
     private WorkRun.Run writeRefusedRecord(
             final String status, final WorkRun.StartRefusal refusal) {
+        return writeRefusedRecord(status, refusal, Map.of());
+    }
+
+    private WorkRun.Run writeRefusedRecord(
+            final String status,
+            final WorkRun.StartRefusal refusal,
+            final Map<String, NextStep.Progress> issues) {
         final String story = "ST1";
         final var rule =
                 new WorkRule(
@@ -1870,7 +1905,7 @@ class WorkRecordTest {
                         List.of(),
                         java.time.Instant.EPOCH.toString(),
                         List.of(offer),
-                        Map.of(),
+                        issues,
                         false,
                         false,
                         null);
