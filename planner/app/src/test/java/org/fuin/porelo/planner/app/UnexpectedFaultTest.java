@@ -143,6 +143,21 @@ class UnexpectedFaultTest {
     }
 
     @Test
+    void aCauseWithoutFramesSaysSoInsteadOfABareAt() {
+        // Harm: a line that ends in a dangling "at", read as a trace cut off by the log.
+        final IllegalArgumentException cause = new IllegalArgumentException("No trace.");
+        cause.setStackTrace(new StackTraceElement[0]);
+
+        problems.unexpected(
+                new IllegalStateException("The call failed.", cause),
+                new ServletWebRequest(new MockHttpServletRequest(), new MockHttpServletResponse()));
+
+        assertThat(errors().getFirst().getFormattedMessage())
+                .endsWith("; no frames")
+                .doesNotContain("; at ");
+    }
+
+    @Test
     void aFaultAfterTheAnswerBeganIsLoggedAndWritesNoProblem() {
         // Harm: a problem written into a stream whose answer has begun, after the fault is lost.
         final MockHttpServletResponse response = new MockHttpServletResponse();

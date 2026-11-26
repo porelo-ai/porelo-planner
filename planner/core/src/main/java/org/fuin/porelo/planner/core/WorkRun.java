@@ -2478,11 +2478,23 @@ public final class WorkRun implements RefusedEventResave {
                 && !before.needsYou()
                 && answer.held() == 0
                 && now.open()
-                && head != null
-                && !head.equals(now.reviewed())
+                && (head == null || !head.equals(now.reviewed()))
                 && board.issue(issue).map(i -> i.state().equals(goesOn(bound))).orElse(false)) {
-            // A new head at the place is reviewed before its open points send it back.
-            return review(session, snapshot, board, run, draft, issue, now, bound, reviewing);
+            // A new head at the place is reviewed before its open points send it back; an open
+            // place without a head names nothing a reviewer could read, so the person is asked.
+            return review(
+                    session,
+                    snapshot,
+                    board,
+                    run,
+                    draft,
+                    issue,
+                    now,
+                    bound,
+                    reviewing,
+                    head == null
+                            ? "Porelo gave no head there, so no reviewer can be offered"
+                            : null);
         }
         final boolean stands =
                 board.issue(issue).map(i -> i.state().equals(goesOn(bound))).orElse(false);
@@ -2889,7 +2901,8 @@ public final class WorkRun implements RefusedEventResave {
      * the reviewer rule's state; a reviewer that cannot be offered asks the person why. The place
      * keeps the head reviewed once the reviewer starts, so one voided before its start leaves the
      * head to be offered again; while it waits, the place is still read, but no read offers a
-     * second reviewer or a rework, and an end read there voids it.
+     * second reviewer or a rework, and an end read there voids it. A reason given asks the person
+     * with it and offers no reviewer.
      */
     private PlaceStep review(
             final Session session,
@@ -2900,9 +2913,10 @@ public final class WorkRun implements RefusedEventResave {
             final String issueId,
             final IssuePlace place,
             final Offer bound,
-            final WorkRule rule) {
+            final WorkRule rule,
+            final @Nullable String unreviewable) {
         final Issue issue = board.issue(issueId).orElseThrow();
-        String why = barred(board, run, bound, issue);
+        String why = unreviewable != null ? unreviewable : barred(board, run, bound, issue);
         if (why == null && NextStep.waitsForChildren(board, issue, issue.state())) {
             why = "its sub-issues have not reached " + issue.state();
         }
@@ -2931,7 +2945,11 @@ public final class WorkRun implements RefusedEventResave {
             draft.unavailable(
                     issueId,
                     draft.progress(issueId),
-                    "a new push stands at " + said(place.place()) + ", but " + why);
+                    // Without a head no push is known, only that work stands there.
+                    (unreviewable != null ? "work stands at " : "a new push stands at ")
+                            + said(place.place())
+                            + ", but "
+                            + why);
         }
         final Planned planned =
                 save(

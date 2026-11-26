@@ -40,6 +40,16 @@ public record ReviewOpen(
     private static final Pattern COMMIT = Pattern.compile("[0-9a-f]{40}|[0-9a-f]{64}");
 
     /**
+     * Answers whether a text is a commit as an answer names one: 40 or 64 lower-case hex digits.
+     *
+     * @param text the text
+     * @return true for a commit
+     */
+    public static boolean commit(final String text) {
+        return COMMIT.matcher(text).matches();
+    }
+
+    /**
      * Whether a complete answer may lack its decision's time: a pull request's forge never gives
      * it.
      */
@@ -117,7 +127,7 @@ public record ReviewOpen(
                     "An answer gives a merged commit exactly with the branch it landed on");
         }
         for (final String commit : new String[] {head, mergedCommit}) {
-            if (commit != null && !COMMIT.matcher(commit).matches()) {
+            if (commit != null && !commit(commit)) {
                 throw new IllegalArgumentException("An answer names a commit that is no commit");
             }
         }

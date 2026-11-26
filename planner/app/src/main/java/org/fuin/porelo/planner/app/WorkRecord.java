@@ -28,6 +28,7 @@ import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReportTaking;
+import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.StageOrder;
 import org.fuin.porelo.planner.core.WorkOrder;
@@ -1588,14 +1589,18 @@ public final class WorkRecord implements AutoCloseable {
         }
 
         /**
-         * Refuses a kept place of an issue the run does not hold, or one whose author run is no
-         * ended or void builder's offer of the run owning the issue that pushes its work as its
-         * author, bound to the place's task in a container.
+         * Refuses a kept place of an issue the run does not hold, one whose reviewed head is no
+         * commit, or one whose author run is no ended or void builder's offer of the run owning the
+         * issue that pushes its work as its author, bound to the place's task in a container.
          */
         private static void checkedPlace(
                 final WorkRun.Run run, final String issue, final IssuePlace place) {
             Ids.issue(issue);
             if (!run.issues().containsKey(issue)) {
+                throw new IllegalArgumentException("a place fails its check");
+            }
+            final String reviewed = place.reviewed();
+            if (reviewed != null && !ReviewOpen.commit(reviewed)) {
                 throw new IllegalArgumentException("a place fails its check");
             }
             for (final String id : place.authorRuns()) {

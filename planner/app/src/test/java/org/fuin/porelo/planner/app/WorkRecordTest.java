@@ -1107,6 +1107,38 @@ class WorkRecordTest {
     }
 
     @Test
+    void aKeptPlacesReviewedHeadIsReadOnlyAsACommit() throws Exception {
+        // Harm: a record changed on disk names a reviewed head that is no commit, so a read of the
+        // place compares the head Porelo gives against a text no head can equal.
+        writePlaceRecord();
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final String sound = Files.readString(file);
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            for (final String wrong : List.of("zz", "a".repeat(39), "A".repeat(40))) {
+                final var document = json.readTree(sound);
+                place((ObjectNode) document.path("runs").iterator().next()).put("reviewed", wrong);
+                Files.writeString(file, json.writeValueAsString(document));
+                records.forget("project");
+                assertThatThrownBy(() -> run(records)).as(wrong).isInstanceOf(WorkRefusal.class);
+            }
+            for (final String commit : List.of("a".repeat(40), "b".repeat(64))) {
+                final var document = json.readTree(sound);
+                place((ObjectNode) document.path("runs").iterator().next()).put("reviewed", commit);
+                Files.writeString(file, json.writeValueAsString(document));
+                records.forget("project");
+                assertThat(run(records).places().get("AA1").reviewed()).isEqualTo(commit);
+            }
+            final var document = json.readTree(sound);
+            place((ObjectNode) document.path("runs").iterator().next()).putNull("reviewed");
+            Files.writeString(file, json.writeValueAsString(document));
+            records.forget("project");
+            assertThat(run(records).places().get("AA1").reviewed()).isNull();
+        }
+    }
+
+    @Test
     void aKeptPlaceThatDoesNotFitItsRunIsRefusedAsTheRecordOpens() throws Exception {
         // Harm: a record changed on disk trusted: a place of an issue the run does not hold, an
         // author run that is no ended or void builder's offer of the issue in a container under

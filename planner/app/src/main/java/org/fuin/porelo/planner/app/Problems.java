@@ -224,10 +224,17 @@ public class Problems {
                                     + ": "
                                     + PoreloProgram.scrubbed(cause.getMessage())));
         }
+        final StackTraceElement[] frames = chain.getLast().getStackTrace();
+        if (frames.length == 0) {
+            // A trace left out, as some throwables do to save its cost, says so.
+            format.append("; no frames");
+            LOG.error(format.toString(), values.toArray());
+            return;
+        }
         format.append("; at {}");
         values.add(
                 LogText.of(
-                        java.util.Arrays.stream(chain.getLast().getStackTrace())
+                        java.util.Arrays.stream(frames)
                                 .limit(FRAMES)
                                 .map(
                                         frame ->

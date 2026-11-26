@@ -3808,9 +3808,12 @@ class WorkRunTest {
                 board.repositories());
     }
 
-    /** A complete answer at the head given, with the decision, points and held items given. */
+    /**
+     * A complete answer at the head given, or at none, with the decision, points and held items
+     * given.
+     */
     private static ReviewOpen at(
-            final String head,
+            final @Nullable String head,
             final ReviewOpen.Decision decision,
             final int points,
             final int held) {
@@ -3900,6 +3903,37 @@ class WorkRunTest {
         assertThat(f.run.work("ST1").offers())
                 .as("no second reviewer and no rework")
                 .hasSize(offers);
+    }
+
+    @Test
+    void anOpenPlaceWithoutAHeadOffersNoReviewerAndAsksThePerson() {
+        // Harm: work waiting at its place under a reviewer rule is silently never reviewed when
+        // Porelo names no head there.
+        final Fixture f = new Fixture();
+        f.store.current = reviewed(f.store.current);
+        waiting(f);
+        final int offers = f.run.work("ST1").offers().size();
+
+        assertThat(f.run.placeRead("ST1", "AA1", atTask(at(null, ReviewOpen.Decision.OPEN, 0, 0))))
+                .as("the person is asked")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(f.run.work("ST1").offers()).as("no reviewer offered").hasSize(offers);
+        final NextStep.Progress progress = f.run.work("ST1").issues().get("AA1");
+        assertThat(List.of(progress.needsYou(), progress.reason()))
+                .containsExactly(true, "NEXT_STEP_UNAVAILABLE");
+        assertThat(f.told)
+                .as("one line says why, naming work, not a push no head shows")
+                .anyMatch(
+                        line ->
+                                line.contains("work stands at")
+                                        && line.contains("Porelo gave no head there"))
+                .noneMatch(line -> line.contains("a new push stands at"));
+        final int told = f.told.size();
+
+        assertThat(f.run.placeRead("ST1", "AA1", atTask(at(null, ReviewOpen.Decision.OPEN, 0, 0))))
+                .as("the same answer read again takes no step")
+                .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
+        assertThat(f.told).as("the person is asked once, not at every read").hasSize(told);
     }
 
     @Test
