@@ -12,6 +12,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.KeyStore;
 import java.util.Base64;
 import java.util.List;
@@ -26,7 +27,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Serves the bare repositories of one directory over HTTPS through {@code git http-backend}, with a
- * certificate made for this run alone, and asks for a login when one is set.
+ * certificate made once for this JVM alone, and asks for a login when one is set.
  *
  * <p>TLS ends on a blocking {@link SSLServerSocket}, which hands the plain bytes to the JDK's HTTP
  * server on loopback: the JDK's own HTTPS server now and then sent git a record its GnuTLS could
@@ -108,7 +109,7 @@ public final class GitHttpsServer implements AutoCloseable {
      * Starts a server.
      *
      * @param root the directory of bare repositories
-     * @param work a directory of the test's own for the key
+     * @param work a directory of the test's own, for the copy of the certificate
      * @param login {@code user:password} it asks for, or {@code null} for none
      * @return the server
      * @throws Exception when it cannot start
@@ -125,7 +126,7 @@ public final class GitHttpsServer implements AutoCloseable {
      * Starts a server that answers every request with a redirect to the same path elsewhere, as a
      * renamed or moved repository's forge does.
      *
-     * @param work a directory of the test's own for the key
+     * @param work a directory of the test's own, for the copy of the certificate
      * @param to the address the requests are sent on to, without a closing slash
      * @return the server
      * @throws Exception when it cannot start
@@ -166,63 +167,121 @@ public final class GitHttpsServer implements AutoCloseable {
     }
 
     private static GitHttpsServer listening(final Path work) throws Exception {
-        final Path keystore = work.resolve("server.p12");
-        final Path ca = work.resolve("ca.pem");
-        final String keytool =
-                Path.of(System.getProperty("java.home"), "bin", "keytool").toString();
-        run(
-                List.of(
-                        keytool,
-                        "-genkeypair",
-                        "-alias",
-                        "server",
-                        "-keyalg",
-                        "EC",
-                        "-groupname",
-                        "secp256r1",
-                        "-dname",
-                        "CN=localhost",
-                        "-ext",
-                        "SAN=dns:localhost",
-                        "-validity",
-                        "2",
-                        "-keystore",
-                        keystore.toString(),
-                        "-storetype",
-                        "PKCS12",
-                        "-storepass:env",
-                        "STOREPASS",
-                        "-keypass:env",
-                        "STOREPASS"));
-        run(
-                List.of(
-                        keytool,
-                        "-exportcert",
-                        "-rfc",
-                        "-alias",
-                        "server",
-                        "-file",
-                        ca.toString(),
-                        "-keystore",
-                        keystore.toString(),
-                        "-storepass:env",
-                        "STOREPASS"));
-        final KeyStore store = KeyStore.getInstance("PKCS12");
-        try (InputStream in = Files.newInputStream(keystore)) {
-            store.load(in, PASS.toCharArray());
-        }
-        final KeyManagerFactory keys =
-                KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keys.init(store, PASS.toCharArray());
-        final SSLContext tls = SSLContext.getInstance("TLS");
-        tls.init(keys.getKeyManagers(), null, null);
+        final Tls tls = Tls.made();
+        final Path ca =
+                Files.copy(tls.ca, work.resolve("ca.pem"), StandardCopyOption.REPLACE_EXISTING);
         final HttpServer server =
                 HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         final SSLServerSocket front =
                 (SSLServerSocket)
-                        tls.getServerSocketFactory()
+                        tls.context
+                                .getServerSocketFactory()
                                 .createServerSocket(0, 50, InetAddress.getLoopbackAddress());
         return new GitHttpsServer(server, front, ca);
+    }
+
+    /**
+     * The key and certificate every server of this JVM shares, made once by {@code keytool}: a key
+     * made per server put a rare fault of the key's making or reading into hundreds of tests.
+     */
+    private static final class Tls {
+
+        /** The one made, once made. */
+        private static @Nullable Tls made;
+
+        /** The fault of the one making, kept so that every later server fails alike. */
+        private static @Nullable Exception fault;
+
+        private final SSLContext context;
+
+        /** The certificate, in a directory of this holder's own. */
+        private final Path ca;
+
+        private Tls(final SSLContext context, final Path ca) {
+            this.context = context;
+            this.ca = ca;
+        }
+
+        /**
+         * Answers the shared key and certificate, making them on the first call.
+         *
+         * @return them
+         * @throws Exception when {@code keytool} or the key's reading failed, now or before
+         */
+        private static synchronized Tls made() throws Exception {
+            if (fault != null) {
+                throw new IOException("the test server's key could not be made", fault);
+            }
+            Tls tls = made;
+            if (tls == null) {
+                try {
+                    tls = making();
+                } catch (final Exception failed) {
+                    fault = failed;
+                    throw failed;
+                }
+                made = tls;
+            }
+            return tls;
+        }
+
+        private static Tls making() throws Exception {
+            final Path dir = Files.createTempDirectory("git-https-server");
+            dir.toFile().deleteOnExit();
+            final Path keystore = dir.resolve("server.p12");
+            final Path ca = dir.resolve("ca.pem");
+            keystore.toFile().deleteOnExit();
+            ca.toFile().deleteOnExit();
+            final String keytool =
+                    Path.of(System.getProperty("java.home"), "bin", "keytool").toString();
+            run(
+                    List.of(
+                            keytool,
+                            "-genkeypair",
+                            "-alias",
+                            "server",
+                            "-keyalg",
+                            "EC",
+                            "-groupname",
+                            "secp256r1",
+                            "-dname",
+                            "CN=localhost",
+                            "-ext",
+                            "SAN=dns:localhost",
+                            "-validity",
+                            "2",
+                            "-keystore",
+                            keystore.toString(),
+                            "-storetype",
+                            "PKCS12",
+                            "-storepass:env",
+                            "STOREPASS",
+                            "-keypass:env",
+                            "STOREPASS"));
+            run(
+                    List.of(
+                            keytool,
+                            "-exportcert",
+                            "-rfc",
+                            "-alias",
+                            "server",
+                            "-file",
+                            ca.toString(),
+                            "-keystore",
+                            keystore.toString(),
+                            "-storepass:env",
+                            "STOREPASS"));
+            final KeyStore store = KeyStore.getInstance("PKCS12");
+            try (InputStream in = Files.newInputStream(keystore)) {
+                store.load(in, PASS.toCharArray());
+            }
+            final KeyManagerFactory keys =
+                    KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keys.init(store, PASS.toCharArray());
+            final SSLContext context = SSLContext.getInstance("TLS");
+            context.init(keys.getKeyManagers(), null, null);
+            return new Tls(context, ca);
+        }
     }
 
     /**
