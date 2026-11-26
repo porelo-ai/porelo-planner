@@ -293,6 +293,7 @@ class _StoryWorkSteps {
             }}',
       ],
       if (proposal.manual.isNotEmpty) 'Worked by a person, with no task: ${proposal.manual.join(', ')}',
+      if (proposal.held.isNotEmpty) 'Stays behind: ${proposal.held.map((held) => _said(held.issue)).join(', ')}',
       _coordinator,
     ];
   }
@@ -341,6 +342,12 @@ class _StoryWorkSteps {
       if (proposal.manual.isNotEmpty) ...[
         const SizedBox(height: Space.normal),
         Text('Worked by a person, with no task: ${proposal.manual.join(', ')}', key: const Key('story-work-manual')),
+      ],
+      if (proposal.held.isNotEmpty) ...[
+        const SizedBox(height: Space.normal),
+        Text('Stays behind', key: const Key('story-work-held'), style: Theme.of(context).textTheme.titleSmall),
+        for (final held in proposal.held)
+          Text('${_said(held.issue)}: ${_said(held.reason)}', key: Key('story-work-held ${held.issue}')),
       ],
       const SizedBox(height: Space.normal),
       Text(_coordinator, key: const Key('story-work-coordinator')),

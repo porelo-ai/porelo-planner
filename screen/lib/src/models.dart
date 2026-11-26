@@ -2256,7 +2256,8 @@ class StoryWorkProposal {
       readingRounds = map['readingRounds'] is int ? map['readingRounds'] as int : null,
       issueReadingRounds = _planList(map['issueReadingRounds'], PlanIssueReadingRounds.from),
       revision = _planText(map, 'revision'),
-      manual = _planStrings(map['manual']);
+      manual = _planStrings(map['manual']),
+      held = _heldOnce(_planList(map['held'], StoryWorkHeld.from));
 
   /// The modes reported by the daemon.
   final List<String> modes;
@@ -2276,11 +2277,36 @@ class StoryWorkProposal {
   /// The story's open issues a person works, which no task of the proposal names; empty from an older planner.
   final List<String> manual;
 
+  /// The story's open issues the board holds back, such as by a blocker not done, each with why; no task of the
+  /// proposal names them.
+  final List<StoryWorkHeld> held;
+
   /// The proposed issue identities grouped by repository.
   List<StoryWorkIssue> get issues => [
     for (final repo in repositories)
       for (final issue in repo.issues) StoryWorkIssue.from({'id': issue, 'repository': repo.repository}),
   ];
+}
+
+/// An open issue of the story the board holds back from the proposal's work, and why.
+/// Each held issue once, in the order served, leaving out an entry that names no issue.
+List<StoryWorkHeld> _heldOnce(List<StoryWorkHeld> all) {
+  final seen = <String>{};
+  return [
+    for (final held in all)
+      if (held.issue.isNotEmpty && seen.add(held.issue)) held,
+  ];
+}
+
+class StoryWorkHeld {
+  /// Reads one held issue as served.
+  StoryWorkHeld.from(Map<String, dynamic> map) : issue = _planText(map, 'issue'), reason = _planText(map, 'reason');
+
+  /// The held issue.
+  final String issue;
+
+  /// Why it is held, in the planner's words, such as the blocker it waits on.
+  final String reason;
 }
 
 /// The daemon's words describing one way of working.

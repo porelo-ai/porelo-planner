@@ -457,6 +457,50 @@ void main() {
     );
   });
 
+  // Harm: a person starts a story's building and is not told which issues stay behind, or why, so a blocked issue
+  // looks forgotten; or a held list that repeats an issue or leaves one out stops the Who step drawing.
+  testWidgets('the Who step lists each issue a blocker holds back, with its blocker, and none when none is held', (
+    tester,
+  ) async {
+    final (source, board) = await _open(tester);
+    final proposal = source.work.call('ProposeStoryWork', {'project': 'demo', 'story': 'ST1', 'to': 'Implementing'});
+    source.work.proposals['ST1'] = {
+      ...proposal,
+      'held': [
+        {'issue': 'AA2', 'reason': 'AA2 waits on AA1. Work on it starts once that is done.'},
+        {'issue': 'AA2', 'reason': 'again'},
+        {'reason': 'no issue'},
+        {'issue': 7, 'reason': 'not a text'},
+      ],
+    };
+    final work = _work(board, const [PlanningAgent('codex')]);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(work))));
+    await _answered(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-held')));
+    expect(
+      tester.widget<Text>(find.byKey(const Key('story-work-held AA2'))).data,
+      'AA2: AA2 waits on AA1. Work on it starts once that is done.',
+      reason: 'the held issue is named with what it waits on',
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> && (widget.key! as ValueKey<String>).value.startsWith('story-work-held '),
+      ),
+      findsOneWidget,
+      reason: 'an issue named twice is listed once, and an entry without an issue not at all',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    source.work.proposals['ST1'] = proposal;
+    final plain = _work(board, const [PlanningAgent('codex')]);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StoryWorkWizard(plain))));
+    await _answered(tester);
+    await nextUntil(tester, find.byKey(const Key('story-work-coordinator')));
+    expect(find.byKey(const Key('story-work-held')), findsNothing, reason: 'nothing held, no part');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   // Prevents the Who step from failing to draw when two of its tasks name the same agent.
   testWidgets('the Who step draws two repositories\' tasks on the same agent', (tester) async {
     final source = MockPlanningSource()..boards['demo'] = _twoRepositories();
