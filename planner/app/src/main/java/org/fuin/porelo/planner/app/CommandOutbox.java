@@ -1195,7 +1195,9 @@ final class CommandOutbox implements AutoCloseable {
                     values.put("title", edit.title());
                 }
                 final Map<String, String> parts = new LinkedHashMap<>();
-                new EnumMap<>(edit.written()).forEach((part, text) -> parts.put(part.name(), text));
+                edit.written().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .forEach(each -> parts.put(each.getKey().name(), each.getValue()));
                 final List<String> removed =
                         edit.removed().stream().sorted().map(Enum::name).toList();
                 changes =

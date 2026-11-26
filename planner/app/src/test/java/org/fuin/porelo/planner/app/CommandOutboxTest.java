@@ -555,6 +555,42 @@ class CommandOutboxTest {
     }
 
     @Test
+    void aTextEditOfTheTitleOrTheLabelsAloneIsQueuedAndReadBack() {
+        // Harm: a GitHub project's rename, or a change of its topic labels alone, is refused at the
+        // outbox, so the person's edit is never saved.
+        final org.fuin.porelo.planner.store.TextEdit title =
+                new org.fuin.porelo.planner.store.TextEdit(
+                        org.fuin.porelo.planner.store.TextEdit.Kind.ISSUE,
+                        "A new title",
+                        Map.of(),
+                        java.util.Set.of(),
+                        null);
+        final org.fuin.porelo.planner.store.TextEdit labels =
+                new org.fuin.porelo.planner.store.TextEdit(
+                        org.fuin.porelo.planner.store.TextEdit.Kind.ISSUE,
+                        null,
+                        Map.of(),
+                        java.util.Set.of(),
+                        List.of("tests"));
+        final List<Command> edits =
+                List.of(
+                        new Command.SetText("c1", "AA1", title, Basis.of(BEFORE), Recheck.none()),
+                        new Command.SetText("c2", "AA1", labels, Basis.of(BEFORE), Recheck.none()));
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", edits));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        for (final Command queued : edits) {
+            assertThat(withoutRule(again.command(queued.id())))
+                    .as(queued.id())
+                    .isEqualTo(withoutRule(queued));
+        }
+    }
+
+    @Test
     void everyKindOfCommandIsReadBackAsItWasQueued() {
         // Harm: a command read back after a restart writing other changes than those judged.
         final org.fuin.porelo.planner.store.Fields fields =
@@ -646,6 +682,49 @@ class CommandOutboxTest {
                         "porelo-lib",
                         "porelo-lib",
                         "AC3");
+    }
+
+    @Test
+    void aTextEditWritingNoPartIsQueuedAndReadBackAsItWasQueued() {
+        // Harm: a rename, or the removal of a part alone, that can never be saved at all.
+        final List<Command> all =
+                List.of(
+                        new Command.SetText(
+                                "c1",
+                                "AA1",
+                                new org.fuin.porelo.planner.store.TextEdit(
+                                        org.fuin.porelo.planner.store.TextEdit.Kind.ISSUE,
+                                        "A new title",
+                                        Map.of(),
+                                        java.util.Set.of(),
+                                        null),
+                                Basis.of(BEFORE),
+                                Recheck.none()),
+                        new Command.SetText(
+                                "c2",
+                                "AA1",
+                                new org.fuin.porelo.planner.store.TextEdit(
+                                        org.fuin.porelo.planner.store.TextEdit.Kind.ISSUE,
+                                        null,
+                                        Map.of(),
+                                        java.util.Set.of(
+                                                org.fuin.porelo.planner.store.TextEdit.Part
+                                                        .FINDINGS),
+                                        null),
+                                Basis.of(BEFORE),
+                                Recheck.none()));
+        final CommandOutbox outbox = outbox();
+        outbox.open(() -> BEFORE);
+        outbox.enqueue(new CommandGroup("g1", all));
+        outbox.close();
+
+        final CommandOutbox again = outbox();
+        again.open(() -> BEFORE);
+        for (final Command queued : all) {
+            assertThat(withoutRule(again.command(queued.id())))
+                    .as(queued.id())
+                    .isEqualTo(withoutRule(queued));
+        }
     }
 
     /** A command's data without its rule, which is code and never kept. */

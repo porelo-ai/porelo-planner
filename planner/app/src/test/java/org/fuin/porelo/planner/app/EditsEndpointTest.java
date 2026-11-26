@@ -76,9 +76,16 @@ class EditsEndpointTest {
 
     private ChangesRegistry changes;
 
+    private PlanningStore store;
+
+    /** The records a test serves through a project's outbox, closed after it. */
+    private final List<WorkRecord> durable = new ArrayList<>();
+
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path state;
+
     @BeforeEach
     void serve() {
-        final PlanningStore store =
+        store =
                 new PlanningStore() {
                     @Override
                     public Board board() {
@@ -161,6 +168,31 @@ class EditsEndpointTest {
     @AfterEach
     void close() {
         changes.close();
+        durable.forEach(WorkRecord::close);
+    }
+
+    /**
+     * Serves the project from a durable record, its saves handed to its queue and written through
+     * its outbox, as the planner's configuration wires them.
+     */
+    private void throughTheOutbox() {
+        changes.close();
+        final WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", state.toString()), false);
+        durable.add(records);
+        final Projects projects = new Projects((project, repository, branch) -> store, records);
+        projects.put("alpha", "git@example.org:a/porelo-store.git", null);
+        changes =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor());
+        mvc =
+                MockMvcBuilders.standaloneSetup(
+                                new EditsController(
+                                        new BoardEdits(projects, changes, projects::queue)))
+                        .setControllerAdvice(new Problems(projects))
+                        .build();
     }
 
     private void refuse() {
@@ -380,6 +412,24 @@ class EditsEndpointTest {
                                 null,
                                 Map.of(TextEdit.Part.GAIN, "More."),
                                 java.util.Set.of()));
+    }
+
+    @Test
+    void aTitleAloneIsSavedThroughTheOutbox() throws Exception {
+        // Harm: a rename that can never be saved, answered as a fault of the planner.
+        throughTheOutbox();
+
+        send(
+                        "PUT",
+                        "/issues/AB1/text",
+                        "{\"title\": \"A title\", \"seen\": " + Seens.of(current) + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(written)
+                .as("the title written alone")
+                .containsExactly(
+                        new TextEdit(TextEdit.Kind.ISSUE, "A title", Map.of(), java.util.Set.of()));
     }
 
     @Test
