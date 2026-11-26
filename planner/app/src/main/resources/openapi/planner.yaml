@@ -1573,7 +1573,9 @@ paths:
         again, it stays there with the new reason, and the refusal is answered. Takes no body. A group that is not
         refused or held, because it runs or another window resent it, is refused as SaveNotHeld; a halted run's
         group as SaveOfRun, since the run's own Stop or Start decides it; a group kept from another repository or
-        branch as SaveFromElsewhere, naming that source, since it was never judged against this one.
+        branch as SaveFromElsewhere, naming that source, since it was never judged against this one. Of a line of
+        folded saves, named by any of its `saves`, the newest group is sent, once; once it is written, the others
+        of the line are dropped, since they would write the same.
       tags: [work]
       responses:
         '200':
@@ -1610,7 +1612,8 @@ paths:
         Removes a group of the board's `heldSaves` from the outbox, a halted run's and one kept from another source
         among them, writing nothing to the store; what its commands wrote before they were held stays written. The
         planner's log names the group's id and its commands' targets. No other call removes a held group. A group
-        that is not refused or held, because it runs or another window resent it, is refused as SaveNotHeld.
+        that is not refused or held, because it runs or another window resent it, is refused as SaveNotHeld. Of a
+        line of folded saves, every group of the line is dropped.
       tags: [work]
       responses:
         '204':
@@ -3184,12 +3187,25 @@ components:
       description: >-
         One save the outbox keeps for the person, a group of commands not written whole: refused by the store before
         it wrote, or held after a command that may stand in part. Every group can be dropped; one that is
-        `resendable` can also be resent.
+        `resendable` can also be resent. Groups each of whose one command not yet written makes exactly one change, to
+        the same field of the same item and the same value, with the same run, earlier flag, repository and branch,
+        fold into one line, told by its newest group: its id, reason, changes, commands and flags, with the tries of
+        every group folded. A group with more than one command not yet written, or whose one command makes no
+        change or more than one, stays a line of its own.
       type: object
-      required: [id, run, earlier, resendable, reason, changes, tries, commands]
+      required: [id, saves, run, earlier, resendable, reason, changes, tries, commands]
       properties:
         id:
           $ref: '#/components/schemas/SaveId'
+        saves:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: >-
+            Every group folded into the line, oldest first, its `id` last; the one group alone when nothing folds
+            with it.
+          items:
+            $ref: '#/components/schemas/SaveId'
         reason:
           type: string
           maxLength: 512

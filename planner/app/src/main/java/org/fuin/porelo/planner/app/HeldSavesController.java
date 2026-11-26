@@ -18,6 +18,7 @@ import org.fuin.porelo.planner.app.answers.HeldTry;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Writes;
 import org.fuin.porelo.planner.store.git.LogText;
 import org.jspecify.annotations.Nullable;
@@ -47,6 +48,9 @@ public class HeldSavesController {
 
     /** The most changes one group carries on the board. */
     static final int MOST_CHANGES = 2000;
+
+    /** The most saves one line folds; a further one starts a line of its own. */
+    static final int MOST_SAVES = 1000;
 
     /** The most tries a held save carries, its newest. */
     static final int MOST_TRIES = 1000;
@@ -127,7 +131,8 @@ public class HeldSavesController {
 
     /**
      * Sends a resendable held save again: a window's through the project's runner, a run's through
-     * its run; answered as a move.
+     * its run; answered as a move. Of a line of folded saves the newest is sent, once, and the
+     * others are dropped once it is written.
      *
      * @param project the project's name
      * @param save the held save's id
@@ -142,10 +147,13 @@ public class HeldSavesController {
         final PlanningStore store = projects.store(name);
         final HeldSaves saves = held.of(name);
         try {
-            final CommandOutbox.Group group = held(name, saves, id);
+            held(name, saves, id);
+            final List<String> line = line(name, saves, id);
+            final String newest = line.getLast();
+            final CommandOutbox.Group group = held(name, saves, newest);
             if (group.earlier()) {
                 final Map<String, Object> parameters = new LinkedHashMap<>();
-                parameters.put("save", id);
+                parameters.put("save", newest);
                 parameters.put("repository", group.source().repository());
                 if (!group.source().branch().isEmpty()) {
                     parameters.put("branch", group.source().branch());
@@ -158,14 +166,14 @@ public class HeldSavesController {
             }
             final Board board;
             if (!group.story().isEmpty()) {
-                if (!saves.runs().resavable(group.story(), id)) {
+                if (!saves.runs().resavable(group.story(), newest)) {
                     throw new Refusal(
                             "SaveOfRun",
                             HttpStatus.CONFLICT,
                             "The save is a halted run's; the run's Stop or Start decides it.",
-                            Map.of("save", id));
+                            Map.of("save", newest));
                 }
-                board = saves.runs().resave(group.story(), id);
+                board = saves.runs().resave(group.story(), newest);
             } else {
                 board =
                         projects.work(name)
@@ -175,15 +183,20 @@ public class HeldSavesController {
                                                         lost(
                                                                 name,
                                                                 saves,
-                                                                id,
-                                                                () -> saves.resend(id)),
+                                                                newest,
+                                                                () -> saves.resend(newest)),
                                                         store));
             }
+            // Written once: the saves folded into its line would write the same again. One the
+            // outbox refuses to drop stays held, a line of its own; the write stands.
+            dropped(name, saves, line.subList(0, line.size() - 1), true);
             LOG.info(
-                    "Resent the held save {} of project {} as revision {}",
-                    LogText.of(id),
+                    "Resent the held save {} of project {} as revision {}, dropping {} folded"
+                            + " into it",
+                    LogText.of(newest),
                     LogText.of(name),
-                    LogText.of(board.revision().value()));
+                    LogText.of(board.revision().value()),
+                    line.size() - 1);
             return new EditSaved(board.revision().value());
         } finally {
             changes.saved(name);
@@ -191,7 +204,8 @@ public class HeldSavesController {
     }
 
     /**
-     * Removes a held save from the project's outbox, writing nothing to the store.
+     * Removes a held save from the project's outbox, writing nothing to the store, with every save
+     * folded into its line.
      *
      * @param project the project's name
      * @param save the held save's id
@@ -207,6 +221,7 @@ public class HeldSavesController {
         final HeldSaves saves = held.of(name);
         try {
             final CommandOutbox.Group group = held(name, saves, id);
+            final List<String> line = line(name, saves, id);
             lost(
                     name,
                     saves,
@@ -215,6 +230,7 @@ public class HeldSavesController {
                         saves.drop(id);
                         return id;
                     });
+            dropped(name, saves, line.stream().filter(each -> !each.equals(id)).toList(), false);
             LOG.info(
                     "Dropped the held save {} of project {} with the targets {}",
                     LogText.of(id),
@@ -231,14 +247,16 @@ public class HeldSavesController {
 
     /**
      * The saves a project's outbox keeps for the person, as the board carries them: each group
-     * refused or held and none of its commands queued or under way, this source's first. A group
-     * the board cannot tell as described is left out and logged, never told otherwise.
+     * refused or held and none of its commands queued or under way, this source's first. Groups
+     * that change one field of one item to one value from one run, earlier save, repository and
+     * branch fold into one line, told by its newest. A group the board cannot tell as described is
+     * left out and logged, never told otherwise.
      *
      * @param project the project's name, for the log
      * @param saves the project's held saves
      * @param board the board they are shown beside, whose values tell what each would change
      * @param readAt when that board was read, or empty when its store tells no time
-     * @return at most {@value #MOST_GROUPS} groups
+     * @return at most {@value #MOST_GROUPS} lines
      */
     static List<HeldSave> answers(
             final String project,
@@ -247,6 +265,89 @@ public class HeldSavesController {
             final Optional<java.time.Instant> readAt) {
         final List<HeldSave> answers = new ArrayList<>();
         int left = 0;
+        for (final Line line : lines(project, saves, board, readAt)) {
+            if (answers.size() == MOST_GROUPS) {
+                left++;
+                continue;
+            }
+            answers.add(line.told());
+        }
+        if (left > 0) {
+            LOG.warn(
+                    "Project {} keeps {} held saves more than the board carries",
+                    LogText.of(project),
+                    left);
+        }
+        return List.copyOf(answers);
+    }
+
+    /**
+     * One line of held saves: a group alone, or groups folded as one, oldest first.
+     *
+     * @param groups the groups
+     * @param saves each group as the board tells it alone
+     */
+    private record Line(List<CommandOutbox.Group> groups, List<HeldSave> saves) {
+
+        /** The line as the board tells it: its newest save, with every save and try of it. */
+        HeldSave told() {
+            final HeldSave newest = saves.getLast();
+            if (saves.size() == 1) {
+                return newest;
+            }
+            final List<CommandOutbox.Try> kept =
+                    groups.stream()
+                            .flatMap(group -> group.tries().stream())
+                            .sorted(java.util.Comparator.comparing(CommandOutbox.Try::at))
+                            .toList();
+            final List<HeldTry> tries =
+                    kept.subList(Math.max(0, kept.size() - MOST_TRIES), kept.size()).stream()
+                            .map(HeldSavesController::tried)
+                            .toList();
+            return new HeldSave(
+                    newest.id(),
+                    saves.stream().map(HeldSave::id).toList(),
+                    newest.reason(),
+                    newest.changes(),
+                    tries.isEmpty() ? null : tries.getLast().answer(),
+                    tries,
+                    newest.run(),
+                    newest.earlier(),
+                    newest.resendable(),
+                    newest.repository(),
+                    newest.branch(),
+                    newest.commands());
+        }
+    }
+
+    /** What folds held groups into one line. */
+    private record Fold(
+            String target,
+            String field,
+            @Nullable String saved,
+            String story,
+            boolean earlier,
+            String repository,
+            String branch) {}
+
+    /**
+     * The lines of a project's held saves, in the order of each line's oldest group.
+     *
+     * @param project the project's name, for the log
+     * @param saves the project's held saves
+     * @param board the board they are shown beside, whose values tell what each would change; null
+     *     where no value now is asked for, since the lines are the groups' alone
+     * @param readAt when that board was read, or empty when its store tells no time
+     * @return the lines
+     */
+    private static List<Line> lines(
+            final String project,
+            final HeldSaves saves,
+            final @Nullable Board board,
+            final Optional<java.time.Instant> readAt) {
+        final List<List<CommandOutbox.Group>> groups = new ArrayList<>();
+        final List<List<HeldSave>> told = new ArrayList<>();
+        final Map<Fold, Integer> folds = new LinkedHashMap<>();
         for (final CommandOutbox.Group group : saves.groups()) {
             if (!stopped(group)) {
                 if (group.commands().stream().anyMatch(t -> STOPPED.contains(t.state()))) {
@@ -260,19 +361,101 @@ public class HeldSavesController {
             if (answer.isEmpty()) {
                 continue;
             }
-            if (answers.size() == MOST_GROUPS) {
-                left++;
-                continue;
+            final Fold fold = fold(group);
+            final Integer at = fold == null ? null : folds.get(fold);
+            if (at == null || groups.get(at).size() == MOST_SAVES) {
+                if (fold != null) {
+                    folds.put(fold, groups.size());
+                }
+                groups.add(new ArrayList<>(List.of(group)));
+                told.add(new ArrayList<>(List.of(answer.get())));
+            } else {
+                groups.get(at).add(group);
+                told.get(at).add(answer.get());
             }
-            answers.add(answer.get());
         }
-        if (left > 0) {
-            LOG.warn(
-                    "Project {} keeps {} held saves more than the board carries",
-                    LogText.of(project),
-                    left);
+        final List<Line> lines = new ArrayList<>();
+        for (int i = 0; i < groups.size(); i++) {
+            lines.add(new Line(List.copyOf(groups.get(i)), List.copyOf(told.get(i))));
         }
-        return List.copyOf(answers);
+        return lines;
+    }
+
+    /**
+     * What folds a group with others: its one command not yet written, when that command makes
+     * exactly one change; null for any other group, which stays a line of its own, since a resend
+     * of another group would not write all it holds.
+     */
+    private static @Nullable Fold fold(final CommandOutbox.Group group) {
+        final List<CommandOutbox.Told> open =
+                group.commands().stream()
+                        .filter(told -> told.state() != CommandOutbox.State.DONE)
+                        .toList();
+        if (open.size() != 1) {
+            return null;
+        }
+        final List<HeldChange> changes = HeldChanges.of(open.getFirst());
+        if (changes.size() != 1) {
+            return null;
+        }
+        final HeldChange change = changes.getFirst();
+        return new Fold(
+                change.target(),
+                change.field(),
+                change.saved(),
+                group.story(),
+                group.earlier(),
+                group.source().repository(),
+                group.source().branch());
+    }
+
+    /**
+     * The ids of the line a held save is told in, oldest first, from the groups alone; the save
+     * alone when no line holds it.
+     */
+    private static List<String> line(final String project, final HeldSaves saves, final String id) {
+        return lines(project, saves, null, Optional.empty()).stream()
+                .map(line -> line.saves().stream().map(HeldSave::id).toList())
+                .filter(ids -> ids.contains(id))
+                .findFirst()
+                .orElse(List.of(id));
+    }
+
+    /**
+     * Drops the saves folded into a line beside the one resent or dropped; one another call took
+     * meanwhile is left to it. The outbox's refusal of a drop is answered, those dropped before it
+     * staying dropped; after a resend, whose write stands, it is only logged.
+     *
+     * @param project the project's name
+     * @param saves the project's held saves
+     * @param folded the saves to drop
+     * @param written whether the line's newest was written, so a refusal is logged, not answered
+     */
+    private static void dropped(
+            final String project,
+            final HeldSaves saves,
+            final List<String> folded,
+            final boolean written) {
+        for (final String other : folded) {
+            try {
+                saves.drop(other);
+            } catch (final IllegalStateException taken) {
+                LOG.info(
+                        "The save {} folded beside another of project {} was taken meanwhile: {}",
+                        LogText.of(other),
+                        LogText.of(project),
+                        LogText.of(String.valueOf(taken.getMessage())));
+            } catch (final StoreException refused) {
+                if (!written) {
+                    throw refused;
+                }
+                LOG.warn(
+                        "The save {} folded beside one written of project {} stays held: {}",
+                        LogText.of(other),
+                        LogText.of(project),
+                        LogText.of(String.valueOf(refused.getMessage())));
+            }
+        }
     }
 
     /** Whether the group is refused or held, with no command waiting or under way. */
@@ -285,7 +468,7 @@ public class HeldSavesController {
             final String project,
             final HeldSaves saves,
             final CommandOutbox.Group group,
-            final Board board,
+            final @Nullable Board board,
             final Optional<java.time.Instant> readAt) {
         if (!SAVE.matcher(group.id()).matches()) {
             unshown(project, group, "its id is no save's id");
@@ -320,7 +503,10 @@ public class HeldSavesController {
                 // A save kept from another source writes items of another board: no value
                 // of the board shown is theirs.
                 changes.addAll(
-                        HeldChanges.of(told, board, group.earlier() ? Optional.empty() : readAt));
+                        board == null
+                                ? HeldChanges.of(told)
+                                : HeldChanges.of(
+                                        told, board, group.earlier() ? Optional.empty() : readAt));
             }
         }
         if (changes.size() > MOST_CHANGES
@@ -354,6 +540,7 @@ public class HeldSavesController {
         return Optional.of(
                 new HeldSave(
                         group.id(),
+                        List.of(group.id()),
                         reason,
                         changes,
                         answer,

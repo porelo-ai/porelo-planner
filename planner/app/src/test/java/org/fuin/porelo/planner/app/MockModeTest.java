@@ -389,9 +389,14 @@ class MockModeTest {
                 .isEqualTo(204);
 
         final JsonNode saves = heldSaves("held");
-        assertThat(saves.size()).as("one held save").isEqualTo(1);
+        assertThat(saves.size()).as("one line of held saves").isEqualTo(1);
         final JsonNode save = saves.path(0);
         assertThat(save.path("id").asString()).as("its id").isEqualTo(MockHeldSaves.SAVE);
+        final List<String> folded = new ArrayList<>();
+        save.path("saves").forEach(each -> folded.add(each.asString()));
+        assertThat(folded)
+                .as("two saves folded into it")
+                .containsExactly(MockHeldSaves.FOLDED, MockHeldSaves.SAVE);
         assertThat(save.path("resendable").asBoolean()).as("a window's save").isTrue();
         assertThat(
                         List.of(
@@ -405,7 +410,9 @@ class MockModeTest {
                 .isEqualTo(MockHeldSaves.REQUEST_ID);
         final List<String> results = new ArrayList<>();
         save.path("tries").forEach(each -> results.add(each.path("result").asString()));
-        assertThat(results).as("three tries").containsExactly("REFUSED", "REFUSED", "HELD");
+        assertThat(results)
+                .as("three tries, of both saves")
+                .containsExactly("REFUSED", "REFUSED", "HELD");
 
         assertThat(
                         call(

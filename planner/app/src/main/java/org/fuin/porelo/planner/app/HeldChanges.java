@@ -28,13 +28,14 @@ final class HeldChanges {
                     "ESTIMATE", "estimateMinutes",
                     "RANK", "rank");
 
-    private final Board board;
+    /** The board held now, or null where no value now is asked for. */
+    private final @Nullable Board board;
 
     private final @Nullable String readAt;
 
     private final List<HeldChange> changes = new ArrayList<>();
 
-    private HeldChanges(final Board board, final Optional<Instant> readAt) {
+    private HeldChanges(final @Nullable Board board, final Optional<Instant> readAt) {
         this.board = board;
         this.readAt = readAt.map(Instant::toString).orElse(null);
     }
@@ -50,6 +51,19 @@ final class HeldChanges {
     static List<HeldChange> of(
             final CommandOutbox.Told told, final Board board, final Optional<Instant> readAt) {
         final HeldChanges of = new HeldChanges(board, readAt);
+        of.add(told);
+        return List.copyOf(of.changes);
+    }
+
+    /**
+     * The fields a command would change and the values it would write, told without any value now:
+     * what a command is, whatever the board holds.
+     *
+     * @param told the command with its changes
+     * @return the changes; empty for a command that changes no field of an item
+     */
+    static List<HeldChange> of(final CommandOutbox.Told told) {
+        final HeldChanges of = new HeldChanges(null, Optional.empty());
         of.add(told);
         return List.copyOf(of.changes);
     }
@@ -218,11 +232,19 @@ final class HeldChanges {
     }
 
     private @Nullable Issue issue(final String id) {
-        return board.issues().stream().filter(i -> i.id().equals(id)).findFirst().orElse(null);
+        final Board held = board;
+        if (held == null) {
+            return null;
+        }
+        return held.issues().stream().filter(i -> i.id().equals(id)).findFirst().orElse(null);
     }
 
     private @Nullable Story story(final String id) {
-        return board.stories().stream().filter(s -> s.id().equals(id)).findFirst().orElse(null);
+        final Board held = board;
+        if (held == null) {
+            return null;
+        }
+        return held.stories().stream().filter(s -> s.id().equals(id)).findFirst().orElse(null);
     }
 
     /** A text part's name as a field's: {@code WHAT_MUST_BE_TRUE} as {@code whatMustBeTrue}. */

@@ -76,6 +76,9 @@ class HeldSavesEndpointTest {
     /** What the store's judgment refuses a group with, or null when it takes it. */
     private @Nullable RuntimeException judged;
 
+    /** What the store's board is refused with, or null when it is read. */
+    private @Nullable RuntimeException boardFailure;
+
     /** What the store refuses every write with, or null when it writes. */
     private @Nullable RuntimeException writing;
 
@@ -94,6 +97,12 @@ class HeldSavesEndpointTest {
 
         private final Set<String> resavable = new HashSet<>();
 
+        /** The groups whose drop the outbox refuses, as while it drains. */
+        private final Set<String> undroppable = new HashSet<>();
+
+        /** What a resend is refused with, or null when it writes. */
+        private @Nullable RuntimeException resendRefusal;
+
         @Override
         public List<CommandOutbox.Group> groups() {
             return List.copyOf(kept);
@@ -101,6 +110,10 @@ class HeldSavesEndpointTest {
 
         @Override
         public CommandOutcome resend(final String group) {
+            final RuntimeException refusal = resendRefusal;
+            if (refusal != null) {
+                throw refusal;
+            }
             resent.add(group);
             // Written whole, the group is pruned from the file.
             kept.removeIf(each -> each.id().equals(group));
@@ -110,6 +123,9 @@ class HeldSavesEndpointTest {
 
         @Override
         public void drop(final String group) {
+            if (undroppable.contains(group)) {
+                throw new StoreException.Busy("porelo-store");
+            }
             dropped.add(group);
             kept.removeIf(each -> each.id().equals(group));
         }
@@ -183,6 +199,10 @@ class HeldSavesEndpointTest {
                 new PlanningStore() {
                     @Override
                     public Board board() {
+                        final RuntimeException failure = boardFailure;
+                        if (failure != null) {
+                            throw failure;
+                        }
                         return current;
                     }
 
@@ -577,6 +597,289 @@ class HeldSavesEndpointTest {
                 "main",
                 PrivateFiles.of(environment),
                 LimitFactors.DEFAULT);
+    }
+
+    private static final String OLDER = "a0000000-0000-4000-8000-000000000001";
+
+    private static final String NEWER = "a0000000-0000-4000-8000-000000000002";
+
+    /** A group setting the worker of the issue AA1, and priorities, refused, tried at a minute. */
+    private static CommandOutbox.Group setting(
+            final String id,
+            final CommandOutbox.Source source,
+            final boolean earlier,
+            final String story,
+            final String worker,
+            final Map<String, String> priorities,
+            final int minute) {
+        final Map<String, Writes.Reason> none = Map.of();
+        final CommandOutbox.Why why = new CommandOutbox.Why("Unreachable", "", "");
+        return new CommandOutbox.Group(
+                source,
+                id,
+                List.of(
+                        new CommandOutbox.Told(
+                                id + "/0",
+                                "write",
+                                "AA1",
+                                CommandOutbox.State.REFUSED,
+                                why.failure(),
+                                List.of(),
+                                new CommandOutbox.Changes(
+                                        Map.of(),
+                                        Map.of(),
+                                        Map.of("AA1", worker),
+                                        priorities,
+                                        none,
+                                        none,
+                                        Map.of(),
+                                        Map.of(),
+                                        List.of(),
+                                        List.of(),
+                                        false,
+                                        List.of(),
+                                        List.of(),
+                                        "",
+                                        List.of()))),
+                earlier,
+                story,
+                List.of(
+                        tried(
+                                minute,
+                                CommandOutbox.State.REFUSED,
+                                why,
+                                CommandOutbox.Answer.NONE)));
+    }
+
+    private static CommandOutbox.Group assigned(final String id, final int minute) {
+        return setting(id, OWN, false, "", "someone", Map.of(), minute);
+    }
+
+    @Test
+    void savesOfOneFieldValueAndSourceFoldIntoOneLineToldByTheNewest() throws Exception {
+        // Harm: the person sees one change many times and resends each, or saves that differ in
+        // value, source, run or in a further field are shown as one and resent as one.
+        final CommandOutbox.Source other = new CommandOutbox.Source("other-store", "");
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(setting(WINDOW, OWN, false, "", "another", Map.of(), 2));
+        saves.kept.add(setting(ELSEWHERE, other, true, "", "someone", Map.of(), 3));
+        saves.kept.add(setting(RUN, OWN, false, "ST1", "someone", Map.of(), 4));
+        saves.kept.add(setting(RUNNING, OWN, false, "", "someone", Map.of("AA1", "Low"), 5));
+        saves.kept.add(assigned(NEWER, 6));
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame());
+
+        assertThat(ids(shown))
+                .as("one line for the two alike, told by the newer; the others each alone")
+                .containsExactly(NEWER, WINDOW, ELSEWHERE, RUN, RUNNING);
+        final List<String> folded = new ArrayList<>();
+        shown.path(0).path("saves").forEach(each -> folded.add(each.asText()));
+        assertThat(folded).as("every save of the line, oldest first").containsExactly(OLDER, NEWER);
+        final List<String> at = new ArrayList<>();
+        shown.path(0).path("tries").forEach(each -> at.add(each.path("at").asText()));
+        assertThat(at)
+                .as("the tries of both")
+                .containsExactly(READ.plusSeconds(60).toString(), READ.plusSeconds(360).toString());
+        assertThat(shown.path(1).path("saves").size()).as("a save alone names itself").isEqualTo(1);
+        assertThat(shown.path(1).path("saves").path(0).asText()).isEqualTo(WINDOW);
+    }
+
+    @Test
+    void aResendOfAFoldedLineWritesTheNewestOnceAndDropsTheOthers() throws Exception {
+        // Harm: the same change is written once per save folded into the line, or the saves
+        // folded beside the one written stay held and are resent again.
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(assigned(NEWER, 2));
+
+        mvc.perform(post("/projects/alpha/saves/" + OLDER + "/resend"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+
+        assertThat(saves.resent).as("the newest written once").containsExactly(NEWER);
+        assertThat(saves.dropped).as("the other dropped").containsExactly(OLDER);
+        assertThat(ids(held(changes.subscribe("alpha").firstFrame())))
+                .as("nothing held after")
+                .isEmpty();
+    }
+
+    /** The group with a command before its own, refused as well. */
+    private static CommandOutbox.Group beside(
+            final CommandOutbox.Group group,
+            final String kind,
+            final String target,
+            final String text) {
+        final Map<String, Writes.Reason> none = Map.of();
+        final List<CommandOutbox.Told> commands = new ArrayList<>();
+        commands.add(
+                new CommandOutbox.Told(
+                        group.id() + "/9",
+                        kind,
+                        target,
+                        CommandOutbox.State.REFUSED,
+                        new CommandOutbox.Why("Unreachable", "", "").failure(),
+                        List.of(),
+                        new CommandOutbox.Changes(
+                                Map.of(), Map.of(), Map.of(), Map.of(), none, none, Map.of(),
+                                Map.of(), List.of(), List.of(), false, List.of(), List.of(), text,
+                                List.of())));
+        commands.addAll(group.commands());
+        return new CommandOutbox.Group(
+                group.source(),
+                group.id(),
+                commands,
+                group.earlier(),
+                group.story(),
+                group.tries());
+    }
+
+    /** The group tried at each of the minutes. */
+    private static CommandOutbox.Group triedAt(
+            final CommandOutbox.Group group, final int... minutes) {
+        final List<CommandOutbox.Try> tries = new ArrayList<>();
+        for (final int minute : minutes) {
+            tries.add(
+                    tried(
+                            minute,
+                            CommandOutbox.State.REFUSED,
+                            new CommandOutbox.Why("Unreachable", "", ""),
+                            CommandOutbox.Answer.NONE));
+        }
+        return new CommandOutbox.Group(
+                group.source(),
+                group.id(),
+                group.commands(),
+                group.earlier(),
+                group.story(),
+                tries);
+    }
+
+    private static String save(final int number) {
+        return String.format("b0000000-0000-4000-8000-%012d", number);
+    }
+
+    @Test
+    void aSaveWithACommandBesideItsOneChangeIsNeverFolded() throws Exception {
+        // Harm: a resend of the line writes only the newest save, so a comment or a new item of
+        // a save folded into it is dropped unwritten.
+        saves.kept.add(beside(assigned(save(1), 1), "comment", "AA1", "first"));
+        saves.kept.add(beside(assigned(save(2), 2), "comment", "AA1", "second"));
+        saves.kept.add(beside(assigned(save(3), 3), "createIssue", "porelo-store", ""));
+        saves.kept.add(beside(assigned(save(4), 4), "createIssue", "porelo-store", ""));
+
+        assertThat(ids(held(changes.subscribe("alpha").firstFrame())))
+                .as("each a line of its own")
+                .containsExactly(save(1), save(2), save(3), save(4));
+    }
+
+    @Test
+    void theEarlierFlagAloneKeepsSavesApartAndTriesOfALineInterleaveInTime() throws Exception {
+        // Harm: a save kept from before, never written here, is resent with this source's; or a
+        // line's tries are told out of their order.
+        saves.kept.add(triedAt(assigned(OLDER, 1), 1, 5));
+        saves.kept.add(setting(save(1), OWN, true, "", "someone", Map.of(), 2));
+        saves.kept.add(triedAt(assigned(NEWER, 3), 3));
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame());
+
+        assertThat(ids(shown)).as("the earlier one apart").containsExactly(NEWER, save(1));
+        final List<String> at = new ArrayList<>();
+        shown.path(0).path("tries").forEach(each -> at.add(each.path("at").asText()));
+        assertThat(at)
+                .as("both saves' tries in time")
+                .containsExactly(
+                        READ.plusSeconds(60).toString(),
+                        READ.plusSeconds(180).toString(),
+                        READ.plusSeconds(300).toString());
+    }
+
+    @Test
+    void aLineFoldsAtMostItsBoundOfSaves() throws Exception {
+        // Harm: a line names more saves than the board carries, so the window's read fails.
+        for (int i = 1; i <= HeldSavesController.MOST_SAVES + 1; i++) {
+            saves.kept.add(assigned(save(i), 1));
+        }
+
+        final JsonNode shown = held(changes.subscribe("alpha").firstFrame());
+
+        assertThat(List.of(shown.path(0).path("saves").size(), shown.path(1).path("saves").size()))
+                .as("a full line, and one more")
+                .containsExactly(HeldSavesController.MOST_SAVES, 1);
+    }
+
+    @Test
+    void aResendWhoseFoldedDropIsRefusedStandsAndOneRefusedDropsNothing() throws Exception {
+        // Harm: a save written is answered as failed, so the person resends it again; or the
+        // saves folded beside one the store refused are dropped unwritten.
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(assigned(NEWER, 2));
+        saves.undroppable.add(OLDER);
+
+        mvc.perform(post("/projects/alpha/saves/" + NEWER + "/resend"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"));
+        assertThat(ids(held(changes.subscribe("alpha").firstFrame())))
+                .as("the one not dropped stays held")
+                .containsExactly(OLDER);
+
+        saves.undroppable.clear();
+        saves.kept.add(assigned(NEWER, 2));
+        saves.resendRefusal = new StoreException.Busy("porelo-store");
+        mvc.perform(post("/projects/alpha/saves/" + NEWER + "/resend"))
+                .andExpect(status().isServiceUnavailable());
+        assertThat(saves.dropped).as("nothing dropped beside a refused resend").isEmpty();
+    }
+
+    @Test
+    void aDropRefusedPartwayIsAnsweredAndKeepsWhatWasDropped() throws Exception {
+        // Harm: a drop the outbox refused for a folded save is answered as done, so the person
+        // thinks the line gone while a save of it stays held.
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(assigned(NEWER, 2));
+        saves.undroppable.add(OLDER);
+
+        mvc.perform(delete("/projects/alpha/saves/" + NEWER))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:Busy"));
+
+        assertThat(saves.dropped).as("the newest dropped before").containsExactly(NEWER);
+    }
+
+    @Test
+    void aSaveIsDroppedThoughTheBoardCannotBeRead() throws Exception {
+        // Harm: a project whose workflow is missing keeps its held saves for good.
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(assigned(NEWER, 2));
+        boardFailure = new StoreException.WorkflowMissing("porelo-store");
+
+        mvc.perform(delete("/projects/alpha/saves/" + NEWER)).andExpect(status().isNoContent());
+
+        assertThat(saves.dropped).containsExactlyInAnyOrder(OLDER, NEWER);
+    }
+
+    @Test
+    void aRunsLineIsResentOnlyWhenItsNewestIsResavable() throws Exception {
+        // Harm: a halted run's newest save is resent around its run's Stop or Start.
+        saves.kept.add(setting(OLDER, OWN, false, "ST1", "someone", Map.of(), 1));
+        saves.kept.add(setting(NEWER, OWN, false, "ST1", "someone", Map.of(), 2));
+        saves.resavable.add(OLDER);
+
+        mvc.perform(post("/projects/alpha/saves/" + OLDER + "/resend"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:porelo-planner:SaveOfRun"))
+                .andExpect(jsonPath("$.parameters.save").value(NEWER));
+        assertThat(saves.resaved).as("nothing saved again").isEmpty();
+    }
+
+    @Test
+    void aDropOfAFoldedLineDropsEverySaveOfIt() throws Exception {
+        // Harm: dropping the line the person sees leaves the saves folded into it held.
+        saves.kept.add(assigned(OLDER, 1));
+        saves.kept.add(assigned(NEWER, 2));
+
+        mvc.perform(delete("/projects/alpha/saves/" + NEWER)).andExpect(status().isNoContent());
+
+        assertThat(saves.dropped).as("both dropped").containsExactlyInAnyOrder(OLDER, NEWER);
+        assertThat(saves.resent).as("nothing written").isEmpty();
     }
 
     @Test
