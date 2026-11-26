@@ -2375,8 +2375,9 @@ class WorkRunTest {
     @Test
     void aTaskRecordOfTheBoundContainerAtItsOwnPushMatchesAndAnyOtherAsksThePerson() {
         // Harm: Porelo's default place, its own push named without or with its repository, taken
-        // for another place and stopping the issue; or another container's, role's or
-        // repository's record taken for it.
+        // for another place and stopping the issue; a record naming the repository by Porelo's
+        // own name, which may differ from the board's, taken for another task's; or another
+        // container's or role's record taken for it.
         final Fixture f = new Fixture();
         final WorkRun.Offered build = waiting(f);
         final String repository = build.task().repository();
@@ -2384,7 +2385,9 @@ class WorkRunTest {
         for (final TaskRecord same :
                 List.of(
                         record("box", RunRole.AUTHOR, repository, null),
-                        record("box", null, null, RunPlace.gate(repository, "task")))) {
+                        record("box", null, null, RunPlace.gate(repository, "task")),
+                        record("box", RunRole.AUTHOR, "walk", null),
+                        record("box", RunRole.AUTHOR, "walk", RunPlace.gate("walk", "task")))) {
             assertThat(f.run.placeRead("ST1", "AA1", new PlaceRead.Recorded(same)))
                     .as("a matching record: " + same)
                     .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
@@ -2402,18 +2405,17 @@ class WorkRunTest {
                         List.of("the gate push task-2", "the gate push task"),
                         record("box", RunRole.REVIEWER, repository, null),
                         List.of("as REVIEWER", "as AUTHOR"),
-                        record("box", RunRole.AUTHOR, "beta", null),
-                        List.of("in repository beta", "in repository " + repository));
+                        record("box", RunRole.AUTHOR, "walk", RunPlace.gate("other", "task")),
+                        List.of("the gate push task of repository other", "the gate push task"),
+                        record("box", RunRole.AUTHOR, null, RunPlace.gate("other", "task")),
+                        List.of("the gate push task of repository other", "the gate push task"));
         others.forEach(
                 (other, named) -> {
                     final Fixture g = new Fixture();
                     waiting(g);
                     g.run.placeRead("ST1", "AA1", new PlaceRead.Recorded(other));
                     assertThat(g.run.work("ST1").issues().get("AA1").reason())
-                            .as(
-                                    "another container, place, role or repository asks the"
-                                            + " person: "
-                                            + other)
+                            .as("another container, place or role asks the person: " + other)
                             .isEqualTo(WorkRun.PLACE_CHANGED);
                     assertThat(g.told)
                             .as("the line names what differs on both sides: " + other)

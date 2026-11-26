@@ -1,0 +1,2 @@
+title: A task's record that names its repository by Porelo's own name, which may differ from the board's, is read as the task's own instead of stopping its issue as a changed place.
+type: fixed

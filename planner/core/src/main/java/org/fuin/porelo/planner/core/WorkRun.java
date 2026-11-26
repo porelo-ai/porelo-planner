@@ -3406,8 +3406,9 @@ public final class WorkRun implements RefusedEventResave {
 
     /**
      * Why a read is not of the kept place, or null when it is. A task's record must be of the bound
-     * task's container, role and repository, at the place, a record naming no place being at that
-     * task's own push; an answer must be asked for the bound task at the place.
+     * task's container and role, at the place, a record naming no place, or a push in its own
+     * repository, being at that task's own push; an answer must be asked for the bound task at the
+     * place.
      */
     private static @Nullable String differs(
             final IssuePlace kept, final Offer bound, final PlaceRead found) {
@@ -3417,12 +3418,20 @@ public final class WorkRun implements RefusedEventResave {
             case PlaceRead.Recorded recorded -> {
                 final TaskRecord task = recorded.record();
                 final RunPlace place = task.place();
-                final RunPlace at = place == null ? RunPlace.gate(null, kept.task()) : place;
                 final RunRole role = task.role();
                 final String in = task.repository();
+                // Porelo names the repository by its own name for it, which may differ from the
+                // board's; the container, started for this very offer, binds the record to it,
+                // and a push the record names in its own repository is its own push.
+                final RunPlace.GatePush push = place == null ? null : place.gatePush();
+                final RunPlace at =
+                        place == null
+                                ? RunPlace.gate(null, kept.task())
+                                : push != null && in != null && in.equals(push.repository())
+                                        ? RunPlace.gate(null, push.name())
+                                        : place;
                 yield task.task().equals(bound.containerId())
                                 && (role == null || role == kept.role())
-                                && (in == null || in.equals(repository))
                                 && (kept.same(at, repository) || kept.forwardedFrom(at, repository))
                         ? null
                         : "Porelo's record of container "
