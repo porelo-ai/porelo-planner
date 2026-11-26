@@ -1301,13 +1301,14 @@ class PlanningBoard extends ChangeNotifier {
   List<PlanHeldSave> get heldSaves => snapshot?.heldSaves ?? const [];
 
   /// Why the held save [save] cannot be resent or dropped now, or null when it can.
-  String? heldSaveUnavailable(String save) => _disposed || !live
-      ? 'the planning board is not live'
-      : actionBusy || saving
-      ? 'waiting for the planner'
-      : !heldSaves.any((held) => held.id == save)
-      ? 'the save is no longer held'
-      : null;
+  /// A line whose list of folded saves cannot be read is neither resent nor dropped, as the view offers neither.
+  String? heldSaveUnavailable(String save) {
+    if (_disposed || !live) return 'the planning board is not live';
+    if (actionBusy || saving) return 'waiting for the planner';
+    final held = heldSaves.where((each) => each.id == save).firstOrNull;
+    if (held == null) return 'the save is no longer held';
+    return held.savesUnreadable ? 'the planner\'s list of the saves in this line cannot be read' : null;
+  }
 
   /// Sends the held save [save] again; answers whether the planner wrote it. The board that follows no longer holds
   /// it; a refusal's words stand in [actionProblem].

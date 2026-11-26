@@ -1032,17 +1032,17 @@ class PlanHeldAnswer {
   /// Takes the answer's parts.
   PlanHeldAnswer._(this.status, this.text, this.requestId);
 
-  /// The answer in [value], or null where it is absent. A status that is missing, or outside 0 to 999, reads as 0, so
-  /// the forge's words are kept whatever its status.
+  /// The answer in [value], or null where it is absent or carries neither a status, nor words, nor a request id. A
+  /// status that is missing, or outside 0 to 999, reads as 0, so the forge's words are kept whatever its status.
   static PlanHeldAnswer? read(Object? value) {
     if (value is! Map<String, dynamic>) return null;
-    final status = value['status'];
+    final given = value['status'];
+    final status = given is int && given >= 0 && given <= 999 ? given : 0;
+    final text = _planText(value, 'text');
     final id = value['requestId'];
-    return PlanHeldAnswer._(
-      status is int && status >= 0 && status <= 999 ? status : 0,
-      _planText(value, 'text'),
-      id is String && id.isNotEmpty ? id : null,
-    );
+    final requestId = id is String && id.isNotEmpty ? id : null;
+    if (status == 0 && text.isEmpty && requestId == null) return null;
+    return PlanHeldAnswer._(status, text, requestId);
   }
 
   /// The HTTP status the forge answered with; 0 when it answered none.

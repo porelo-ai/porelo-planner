@@ -375,6 +375,203 @@ void main() {
     expect(find.byKey(const Key('held-save-drop $_window')), findsNothing);
     expect(find.text('1000 or more tries'), findsOneWidget);
   });
+
+  // Harm: the window's kept row shows held saves with other words than the live view, without their details or Copy,
+  // or offers a Resend or Drop that reaches no planner.
+  testWidgets('kept held saves show the same lines, details and Copy, without Resend or Drop', (tester) async {
+    final copied = _copies(tester);
+    final saves = [
+      for (final held in _held())
+        PlanHeldSave.from({
+          ...held,
+          'answer': {'status': 409, 'text': 'Conflict', 'requestId': 'C0DE:9'},
+        }),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: PlanningKeptHeldSavesView(saves: saves, project: 'demo', machine: 'laptop'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('held-saves-kept demo')), findsOneWidget);
+    expect(find.text('Held saves · demo on laptop'), findsOneWidget, reason: 'the same title');
+    for (final save in saves) {
+      expect(find.byKey(Key('held-save ${save.id}')), findsOneWidget, reason: 'every line');
+      expect(find.byKey(Key('held-save-resend ${save.id}')), findsNothing, reason: 'no Resend');
+      expect(find.byKey(Key('held-save-drop ${save.id}')), findsNothing, reason: 'no Drop');
+    }
+    expect(find.text('A save made on the board.'), findsOneWidget, reason: 'the live view\'s words');
+
+    await tester.tap(find.byKey(const Key('held-save-open $_window')));
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const Key('held-save-command $_window/1'))).data,
+      'I2 · refused · Changed: I2',
+      reason: 'the same details',
+    );
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('held-save-answer $_window'))).data,
+      'HTTP 409 · Conflict',
+    );
+    await tester.tap(find.byKey(const Key('held-save-copy-request $_window')));
+    await tester.tap(find.byKey(const Key('held-save-copy $_window')));
+    await tester.pump();
+    expect(copied, [
+      'C0DE:9',
+      planningHeldSaveDetails(saves.first, project: 'demo', machine: 'laptop'),
+    ], reason: 'Copy as in the live view');
+    expect(copied.last, startsWith('Held saves · demo on laptop\nA save made on the board.\n'));
+  });
+
+  // Harm: an empty kept row takes room in the window.
+  testWidgets('no kept held saves show nothing', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PlanningKeptHeldSavesView(saves: [], project: 'demo'),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('held-saves-kept demo')), findsNothing);
+  });
+
+  // Harm: GitHub's words run together where it broke its lines, or a direction or control character hides or reorders
+  // what the person reads, or Copy gives other characters than the screen shows.
+  testWidgets('GitHub\'s words keep their breaks apart, and nothing hidden is shown or copied', (tester) async {
+    final copied = _copies(tester);
+    const answer = {'status': 404, 'text': 'Not Found\nSee\u202e docs\tnow', 'requestId': 'C0DE\u202e:1\n2'};
+    await _shown(tester, [
+      {
+        ..._held().first,
+        'changes': [
+          {
+            'target': 'I2',
+            'field': 'state',
+            'now': 'Re\u202eady',
+            'nowAt': '2026-05-06T07:08:09Z',
+            'saved': 'Bu\u0007ilding',
+          },
+        ],
+        'answer': answer,
+        'tries': [
+          {'at': '2026-05-06T07:10:00Z', 'result': 'HELD', 'reason': 'Un\u202ereachable.', 'answer': answer},
+        ],
+      },
+    ]);
+    await tester.tap(find.byKey(const Key('held-save-open $_window')));
+    await settle(tester);
+
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('held-save-answer $_window'))).data,
+      'HTTP 404 · Not Found See docs now',
+    );
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('held-save-request $_window'))).data,
+      'Request id C0DE:1 2',
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('held-save-change $_window 0'))).data,
+      startsWith('I2 state: Ready → Building · '),
+    );
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('held-save-try $_window 0'))).data,
+      endsWith(' · held · Unreachable. · HTTP 404 · Not Found See docs now'),
+    );
+
+    await tester.tap(find.byKey(const Key('held-save-copy-request $_window')));
+    await tester.tap(find.byKey(const Key('held-save-copy $_window')));
+    await settle(tester);
+    expect(copied.first, 'C0DE:1 2', reason: 'what is shown');
+    expect(
+      copied.last.split('\n'),
+      containsAll([
+        'Answer: HTTP 404 · Not Found See docs now',
+        'Request id: C0DE:1 2',
+        'Change: I2 state: Ready → Building (last read on GitHub 2026-05-06T07:08:09.000Z)',
+      ]),
+    );
+    expect(copied.join(), isNot(matches(RegExp('[\u202e\u0007\t]'))), reason: 'nothing hidden copied');
+  });
+
+  // Harm: a line resent or dropped and held again later opens by itself, as if the person had opened it.
+  testWidgets('a line gone from the board opens closed when it is held again', (tester) async {
+    final source = await _shown(tester, _held());
+    await tester.tap(find.byKey(const Key('held-save-open $_window')));
+    await settle(tester);
+
+    source.hold(_held().skip(1).toList());
+    await settle(tester);
+    source.hold(_held());
+    await settle(tester);
+
+    expect(find.byKey(const Key('held-save $_window')), findsOneWidget);
+    expect(find.byKey(const Key('held-save-details $_window')), findsNothing, reason: 'closed');
+  });
+
+  // Harm: a screen reader names neither which save the Details control opens, nor whether it is open.
+  testWidgets('the Details control names its targets and whether it is open', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await _shown(tester, _held());
+    final details = find.bySemanticsLabel(RegExp('^Details of I1, I2'));
+
+    expect(tester.getSemantics(details), isSemantics(hasExpandedState: true, isExpanded: false));
+    await tester.tap(find.byKey(const Key('held-save-open $_window')));
+    await settle(tester);
+    expect(tester.getSemantics(details), isSemantics(hasExpandedState: true, isExpanded: true));
+    semantics.dispose();
+  });
+
+  // Harm: a caller other than the view resends or drops a line whose folded saves are not known, leaving older saves
+  // held unseen.
+  testWidgets('the board neither resends nor drops a line whose saves cannot be read', (tester) async {
+    final source = _Source({
+      ...smallBoard(),
+      'heldSaves': [
+        {..._held().first, 'saves': <dynamic>[]},
+      ],
+    });
+    final client = FakePlanningClient([provider('local', source)]);
+    final boards = PlanningBoards(client);
+    addTearDown(() async {
+      boards.dispose();
+      client.dispose();
+      await source.close();
+    });
+    final board = boards.sources.single;
+    await settle(tester);
+
+    expect(await board.resendSave(_window), isFalse);
+    expect(await board.dropSave(_window), isFalse);
+    expect(source.resent, isEmpty);
+    expect(source.dropped, isEmpty);
+    expect(board.actionProblem, contains('cannot be read'));
+  });
+
+  // Harm: the read-only view tells the person Resend and Drop are withheld for one line, as if the others had them.
+  testWidgets('a kept line whose saves cannot be read says only that', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlanningKeptHeldSavesView(
+            saves: [
+              PlanHeldSave.from({..._held().first, 'saves': <dynamic>[]}),
+            ],
+            project: 'demo',
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('held-save-unreadable $_window'))).data,
+      'The planner\'s list of the saves in this line cannot be read.',
+    );
+  });
 }
 
 Future<_Source> _shown(WidgetTester tester, List<Map<String, dynamic>> held) async {

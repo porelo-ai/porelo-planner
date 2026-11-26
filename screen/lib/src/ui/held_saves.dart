@@ -75,6 +75,41 @@ class PlanningHeldSavesView extends StatelessWidget {
   }
 }
 
+/// A project's held saves as the window keeps them while no board of it is live: the same lines, details and Copy as
+/// [PlanningHeldSavesView], from [saves] alone, with no Resend or Drop, since no planner is reached to act on them.
+/// It shows nothing while [saves] is empty.
+class PlanningKeptHeldSavesView extends StatelessWidget {
+  /// Shows [saves] of [project], held by the planner on [machine] when one is named.
+  const PlanningKeptHeldSavesView({required this.saves, required this.project, this.machine, super.key});
+
+  /// The held saves the window kept.
+  final List<PlanHeldSave> saves;
+
+  /// The project whose saves they are.
+  final String project;
+
+  /// The machine whose planner holds them, or null when the window shows only its own.
+  final String? machine;
+
+  @override
+  Widget build(BuildContext context) {
+    if (saves.isEmpty) return const SizedBox.shrink();
+    return Card(
+      key: Key('held-saves-kept $project'),
+      child: Padding(
+        padding: const EdgeInsets.all(Space.normal),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(planningHeldSavesTitle(project, machine)),
+            PlanningHeldSaveLines(saves: saves, project: project, machine: machine),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The title of a project's held saves, naming the machine whose planner holds them when one is named.
 String planningHeldSavesTitle(String project, String? machine) =>
     'Held saves · ${planningShown(project, multiline: false)}'
@@ -111,6 +146,13 @@ class _PlanningHeldSaveLinesState extends State<PlanningHeldSaveLines> {
   static String _line(PlanHeldSave save) => save.saves.isEmpty ? save.id : save.saves.first;
 
   @override
+  void didUpdateWidget(PlanningHeldSaveLines old) {
+    super.didUpdateWidget(old);
+    // A line no longer shown is forgotten, so one resent or dropped and held again later opens closed.
+    _open.retainAll(widget.saves.map(_line));
+  }
+
+  @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -125,6 +167,7 @@ class _PlanningHeldSaveLinesState extends State<PlanningHeldSaveLines> {
             if (!_open.remove(line)) _open.add(line);
           }),
           actions: widget.actions?.call(save),
+          readOnly: widget.actions == null,
         ),
     ],
   );
@@ -142,6 +185,7 @@ class PlanningHeldSaveLine extends StatelessWidget {
     required this.onToggle,
     this.machine,
     this.actions,
+    this.readOnly = false,
     super.key,
   });
 
@@ -160,8 +204,11 @@ class PlanningHeldSaveLine extends StatelessWidget {
   /// Opens or closes it.
   final VoidCallback onToggle;
 
-  /// Its Resend and Drop, or null when it is only read.
+  /// Its Resend and Drop, or null when it offers none.
   final Widget? actions;
+
+  /// Whether it is only read, so that no Resend or Drop is ever offered for it.
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -175,16 +222,22 @@ class PlanningHeldSaveLine extends StatelessWidget {
         Text(planningHeldSaveTries(save), key: Key('held-save-tries ${save.id}')),
         if (save.savesUnreadable)
           Text(
-            'The planner\'s list of the saves in this line cannot be read; Resend and Drop are not offered.',
+            readOnly
+                ? 'The planner\'s list of the saves in this line cannot be read.'
+                : 'The planner\'s list of the saves in this line cannot be read; Resend and Drop are not offered.',
             key: Key('held-save-unreadable ${save.id}'),
           ),
         Wrap(
           spacing: Space.small,
           children: [
-            TextButton(
-              key: Key('held-save-open ${save.id}'),
-              onPressed: onToggle,
-              child: Text(open ? 'Hide details' : 'Details'),
+            Semantics(
+              label: 'Details of ${_targets()}',
+              expanded: open,
+              child: TextButton(
+                key: Key('held-save-open ${save.id}'),
+                onPressed: onToggle,
+                child: Text(open ? 'Hide details' : 'Details'),
+              ),
             ),
             ?actions,
           ],
@@ -193,6 +246,12 @@ class PlanningHeldSaveLine extends StatelessWidget {
       ],
     ),
   );
+
+  /// The items the line would change, for the Details control's label.
+  String _targets() {
+    final targets = {for (final command in save.commands) command.target};
+    return targets.isEmpty ? 'a held save' : planningShown(targets.join(', '), multiline: false);
+  }
 
   Widget _details() => Padding(
     key: Key('held-save-details ${save.id}'),
@@ -209,10 +268,11 @@ class PlanningHeldSaveLine extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: Space.small,
               children: [
-                SelectableText('Request id ${planningShown(id, multiline: false)}'),
+                SelectableText('Request id ${_oneLine(id)}', key: Key('held-save-request ${save.id}')),
                 TextButton(
                   key: Key('held-save-copy-request ${save.id}'),
-                  onPressed: () => unawaited(Clipboard.setData(ClipboardData(text: id))),
+                  // What is copied is what is shown, never a control or direction character the screen leaves out.
+                  onPressed: () => unawaited(Clipboard.setData(ClipboardData(text: _oneLine(id)))),
                   child: const Text('Copy'),
                 ),
               ],
@@ -296,10 +356,13 @@ String planningHeldChange(PlanHeldChange change, {DateTime? now}) {
 }
 
 /// The forge's answer word for word, after its status.
-String planningHeldAnswer(PlanHeldAnswer answer) => planningShown(
-  '${answer.status == 0 ? 'No status' : 'HTTP ${answer.status}'}${answer.text.isEmpty ? '' : ' · ${answer.text}'}',
-  multiline: false,
-);
+String planningHeldAnswer(PlanHeldAnswer answer) =>
+    '${answer.status == 0 ? 'No status' : 'HTTP ${answer.status}'}${answer.text.isEmpty ? '' : ' · ${_oneLine(answer.text)}'}';
+
+/// [text] on one line: each line break or tab a space, so the forge's words stay apart, then without the control and
+/// direction characters the screen never shows.
+String _oneLine(String text) =>
+    planningShown(text.replaceAll(RegExp(r'\r\n|[\r\n\t\u2028\u2029\x0b\x0c\x85]'), ' '), multiline: false);
 
 /// One try: when it ended, how, why, and the forge's answer to it.
 String planningHeldTry(PlanHeldTry tried, {DateTime? now}) {
@@ -328,7 +391,7 @@ String planningHeldSaveDetails(PlanHeldSave save, {required String project, Stri
       'Change: ${change.target} ${change.field}: ${_read(change)} → ${change.saved ?? 'removed'}'
           '${change.nowAt == null ? '' : ' (last read on GitHub ${utc(change.nowAt)})'}',
     if (answer != null) 'Answer: ${planningHeldAnswer(answer)}',
-    if (answer?.requestId case final id?) 'Request id: $id',
+    if (answer?.requestId case final id?) 'Request id: ${_oneLine(id)}',
     for (final tried in save.tries)
       'Try: ${utc(tried.at)} · ${tried.result} · ${tried.reason}'
           '${tried.answer == null ? '' : ' · ${planningHeldAnswer(tried.answer!)}'}',

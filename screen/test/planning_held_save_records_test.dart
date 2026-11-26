@@ -192,4 +192,25 @@ void main() {
     expect(save.changes.map((c) => c.nowAt), [null, null]);
     expect(save.tries.single.result, 'LOST', reason: 'an unknown result kept as the planner named it');
   });
+
+  // Harm: an empty answer is shown as GitHub answering "No status", which it never did.
+  test('an answer with neither status, words nor request id is no answer', () {
+    expect(PlanHeldSave.from(_held({'answer': <String, dynamic>{}})).answer, isNull);
+    expect(
+      PlanHeldSave.from(
+        _held({
+          'answer': {'status': 0, 'text': ''},
+        }),
+      ).answer,
+      isNull,
+    );
+    expect(
+      PlanHeldSave.from(
+        _held({
+          'answer': {'requestId': 'C0DE:1'},
+        }),
+      ).answer?.requestId,
+      'C0DE:1',
+    );
+  });
 }
