@@ -351,6 +351,269 @@ void main() {
     expect(source.work.calls.where((call) => call.$1 == 'StartStoryWork'), hasLength(1));
   });
 
+  /// A demo story with issues in more than one repository and no run, its order of work taken, and a way to refuse an
+  /// offer by name.
+  Future<
+    ({
+      MockPlanningSource source,
+      Map<String, dynamic> story,
+      PlanningTaskOrder offer,
+      Future<TaskEventResolution> Function(String offer, String name) refuse,
+      Future<PlanningTaskOrder> Function() orderAgain,
+    })
+  >
+  ordered() async {
+    final source = MockPlanningSource();
+    final board = source.board('demo');
+    final story = (board['stories'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (story) =>
+          story['work'] == null &&
+          (story['issues'] as List? ?? const [])
+                  .cast<Map<dynamic, dynamic>>()
+                  .map((i) => i['repository'])
+                  .toSet()
+                  .length >
+              1,
+    );
+    final working = (board['states'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (state) => state['kind'] == 'WORKING',
+    );
+    Future<StoryWorkOrder> order(Map<String, dynamic> board) => source.startStoryWork(
+      StoryWorkRequest(
+        project: 'demo',
+        story: story['id'] as String,
+        to: working['name'] as String,
+        mode: 'AGENT',
+        seen: seenOn(board),
+        subAgents: const [],
+      ),
+    );
+    final first = await order(board);
+    return (
+      source: source,
+      story: story,
+      offer: first.tasks.first,
+      orderAgain: () async => (await order(source.board('demo'))).tasks.first,
+      refuse: (String offer, String name) => source.taskEvent(
+        'demo',
+        'task',
+        PlanningTaskEvent.refused,
+        offer: offer,
+        container: '',
+        machine: 'Machine',
+        refusal: PlanningStartRefusal(name: name, parameters: const {}, detail: 'Porelo refused.'),
+      ),
+    );
+  }
+
+  /// An issue of a run as the planner answers it, with the reason given.
+  Map<String, dynamic> runIssue(String issue, String reason, bool needsYou) => {
+    'issue': issue,
+    'rounds': 0,
+    'roundsMost': 2,
+    'atWork': false,
+    'needsYou': needsYou,
+    'readingStopped': false,
+    'findings': <Map<String, dynamic>>[],
+    'reason': reason,
+  };
+
+  /// The issue's reason and whether it asks the person, as the answer gives them.
+  (String, bool?) reasonIn(TaskEventResolution answer, String issue) {
+    final item = answer.work.issues.singleWhere((each) => each.issue == issue);
+    return (item.reason, item.needsYou);
+  }
+
+  // Harm: the stand-in shows a rework refused at its kept place as a plain refusal, or any other refusal as a changed
+  // place, otherwise than the planner, so the window rehearses a reason the planner never gives.
+  test(
+    'a rework at its kept place refused for its push or role says its place changed, any other a plain refusal',
+    () async {
+      const place = {
+        'gatePush': {'name': 'task'},
+      };
+      for (final (name, kept, reason) in [
+        ('NotTheTasksPush', null, 'PLACE_CHANGED'),
+        ('RoleNotAllowed', null, 'PLACE_CHANGED'),
+        ('UnknownForge', null, 'START_REFUSED'),
+        (
+          'NotTheTasksPush',
+          {
+            'gatePush': {'name': 'other'},
+          },
+          'START_REFUSED',
+        ),
+      ]) {
+        final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+        final issue = offer.issues.first;
+        final rework = source.work.offerRework('demo', story['id'] as String, [issue], place, kept: kept);
+
+        expect(reasonIn(await refuse(rework, name), issue), (reason, true), reason: '$name, kept at ${kept ?? place}');
+      }
+      final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+      expect(reasonIn(await refuse(offer.offer!, 'NotTheTasksPush'), offer.issues.first), (
+        'START_REFUSED',
+        true,
+      ), reason: 'the same name on an offer at no kept place');
+    },
+  );
+
+  // Harm: the stand-in replaces a reason an issue asks for with the refusal, or wipes the reasons of the story's other
+  // issues, so the window's tests never see a refusal beside another reason as the planner shows it.
+  test(
+    'a refusal and the Start after it leave an issue that asks already and every other issue with its reason',
+    () async {
+      final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+      final live = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+        (each) => each['id'] == story['id'],
+      );
+      final items = (live['issues'] as List).cast<Map<String, dynamic>>();
+      expect(
+        (offer.issues.length > 1, items.length > offer.issues.length),
+        (true, true),
+        reason: 'the offer has an issue besides the one asking, and the story one outside the offer',
+      );
+      final asking = items.firstWhere((item) => offer.issues.contains(item['id']));
+      asking['needsYou'] = true;
+      asking['attention'] = 'FAILED';
+      live['work'] = {
+        'issues': [
+          for (final item in items)
+            runIssue(item['id'] as String, item == asking ? 'FAILED' : 'STOPPED', item == asking),
+        ],
+      };
+
+      final answered = await refuse(offer.offer!, 'UnknownForge');
+
+      for (final item in items) {
+        final id = item['id'] as String;
+        expect(
+          reasonIn(answered, id).$1,
+          item == asking
+              ? 'FAILED'
+              : offer.issues.contains(id)
+              ? 'START_REFUSED'
+              : 'STOPPED',
+          reason: id,
+        );
+      }
+      expect(
+        answered.work.issues.singleWhere((each) => each.issue == asking['id']).startRefusal,
+        isNull,
+        reason: 'no refusal is served where another reason stands',
+      );
+
+      await mockStartTask(source, 'demo', story['id'] as String, offer);
+
+      final after = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+        (each) => each['id'] == story['id'],
+      );
+      final reasons = {
+        for (final item in ((after['work'] as Map)['issues'] as List).cast<Map<String, dynamic>>())
+          item['issue']: item['reason'],
+      };
+      for (final item in items) {
+        final id = item['id'] as String;
+        expect(
+          reasons[id],
+          item == asking
+              ? 'FAILED'
+              : offer.issues.contains(id)
+              ? 'NONE'
+              : 'STOPPED',
+          reason: 'the Start clears only the refusal\'s own reason: $id',
+        );
+      }
+    },
+  );
+
+  // Harm: a refusal on issues that all ask already stands on its offer, so the offer's refusal once its issues ask no
+  // more is answered as a resend and raises nothing, otherwise than the planner, which keeps nothing of the first.
+  test('a refusal on issues that all ask already keeps nothing, so a later one is judged afresh', () async {
+    final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+    final live = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+      (each) => each['id'] == story['id'],
+    );
+    final items = (live['issues'] as List).cast<Map<String, dynamic>>();
+    for (final item in items) {
+      item['needsYou'] = true;
+      item['attention'] = 'FAILED';
+    }
+    live['work'] = {
+      'issues': [for (final item in items) runIssue(item['id'] as String, 'FAILED', true)],
+    };
+
+    final answered = await refuse(offer.offer!, 'UnknownForge');
+
+    expect(answered.work.issues.map((each) => each.startRefusal), everyElement(isNull), reason: 'nothing stands');
+    final now = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+      (each) => each['id'] == story['id'],
+    );
+    final settled = (now['issues'] as List).cast<Map<String, dynamic>>();
+    for (final item in settled) {
+      item['needsYou'] = false;
+      item['attention'] = 'NONE';
+    }
+    now['work'] = {
+      'issues': [for (final item in settled) runIssue(item['id'] as String, 'NONE', false)],
+    };
+
+    final again = await refuse(offer.offer!, 'AdapterNotInstalled');
+
+    expect(
+      [for (final issue in offer.issues) reasonIn(again, issue)],
+      everyElement(('START_REFUSED', true)),
+      reason: 'once its issues ask no more, the offer\'s refusal raises them',
+    );
+  });
+
+  // Harm: the stand-in serves the refusal of an offer whose run a new order replaced, so the person reads why an
+  // earlier Start failed, not the one that just did, otherwise than the planner, which serves the current run's alone.
+  test('a refusal of a replaced run is not served once the story is ordered again and refused anew', () async {
+    final (:source, story: _, :offer, :refuse, :orderAgain) = await ordered();
+    await refuse(offer.offer!, 'UnknownForge');
+
+    final next = await orderAgain();
+    final answered = await refuse(next.offer!, 'AdapterNotInstalled');
+
+    expect(
+      [
+        for (final issue in next.issues)
+          answered.work.issues.singleWhere((each) => each.issue == issue).startRefusal?.name,
+      ],
+      everyElement('AdapterNotInstalled'),
+      reason: 'the new run\'s refusal is served',
+    );
+  });
+
+  // Harm: the stand-in fails on a refusal for an offer whose story left the board, where the planner answers it as a
+  // resend.
+  test('a refusal for an offer whose story left the board is answered and raises nothing', () async {
+    final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+    (source.board('demo')['stories'] as List).removeWhere((each) => (each as Map)['id'] == story['id']);
+
+    final answered = await refuse(offer.offer!, 'UnknownForge');
+
+    expect(answered.work.issues, isEmpty, reason: 'no issue asks');
+  });
+
+  // Harm: the stand-in raises a refusal on an issue moved out of its story by hand, which the planner never does.
+  test('a refusal for an offer whose issue left its story raises nothing', () async {
+    final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+    final live = (source.board('demo')['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+      (each) => each['id'] == story['id'],
+    );
+    (live['issues'] as List).removeWhere((item) => (item as Map)['id'] == offer.issues.first);
+
+    final answered = await refuse(offer.offer!, 'UnknownForge');
+
+    expect(
+      answered.work.issues.where((each) => each.needsYou == true || each.startRefusal != null),
+      isEmpty,
+      reason: 'no issue asks and no refusal stands',
+    );
+  });
+
   // Harm: the stand-in answers a refused Start otherwise than the planner, so the window's planning tests rehearse a
   // refusal the real planner never shows.
   test('a refused Start stands on its issues as the planner shows it, and a later Start clears it', () async {

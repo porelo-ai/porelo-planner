@@ -42,8 +42,59 @@ class MockStoryWork {
   String nextRun() => '00000000-0000-4000-9000-${(++_run).toRadixString(16).padLeft(12, "0")}';
   final _orders = <(String, String), Map<String, dynamic>>{};
 
-  /// The offers handed out, by id: where each belongs, which issues it works, and how it stands.
-  final _offers = <String, ({String project, String story, List<String> issues, String status})>{};
+  /// The offers handed out, by id: where each belongs, which issues it works, how it stands, and for a rework its run
+  /// role and the place it works at.
+  final _offers =
+      <String, ({String project, String story, List<String> issues, String status, String? runRole, Object? place})>{};
+
+  /// The place each issue's work waits at, by project and issue, as the planner keeps it.
+  final _places = <(String, String), Object>{};
+
+  /// Hands out an author's rework of [issues] at [place], as a read of a kept place offers one; the issues' kept place
+  /// is [kept], the same place unless a test names another.
+  String offerRework(String project, String story, List<String> issues, Object place, {Object? kept}) {
+    for (final issue in issues) {
+      _places[(project, issue)] = kept ?? place;
+    }
+    final offer = nextOffer();
+    _offers[offer] = (
+      project: project,
+      story: story,
+      issues: issues,
+      status: 'OFFERED',
+      runRole: 'AUTHOR',
+      place: place,
+    );
+    return offer;
+  }
+
+  /// Whether an offer is its author's rework at the place each of its issues keeps, as the planner's atKeptPlace reads.
+  bool _atKeptPlace(
+    String project,
+    ({String project, String story, List<String> issues, String status, String? runRole, Object? place}) offer,
+  ) =>
+      offer.runRole == 'AUTHOR' &&
+      offer.place != null &&
+      offer.issues.isNotEmpty &&
+      offer.issues.every((issue) => jsonEncode(_places[(project, issue)]) == jsonEncode(offer.place));
+
+  /// The reason an issue of [owner] asks for now: the run's word for it, else none.
+  static String _reasonOf(Map<String, dynamic> owner, String issue) {
+    final work = owner['work'];
+    final kept = work is Map
+        ? (work['issues'] as List? ?? const []).cast<Map<dynamic, dynamic>>().where((item) => item['issue'] == issue)
+        : const <Map<dynamic, dynamic>>[];
+    return kept.firstOrNull?['reason'] as String? ?? 'NONE';
+  }
+
+  /// The refusal an issue is served while it asks because of one, as the planner serves it.
+  Map<String, dynamic>? _standingRefusal(String issue, String reason, bool needsYou) {
+    if (!needsYou || (reason != 'START_REFUSED' && reason != 'PLACE_CHANGED')) return null;
+    return _refusals.entries
+        .where((each) => _offers[each.key]?.issues.contains(issue) ?? false)
+        .map((each) => each.value)
+        .firstOrNull;
+  }
 
   /// The refusals standing on offers Porelo refused to start, by offer id.
   final _refusals = <String, Map<String, dynamic>>{};
@@ -75,11 +126,14 @@ class MockStoryWork {
     }
     if (method == 'TaskEvent' && parameters['event'] == 'REFUSED') {
       // As the planner does: the refusal stands on the offer's issues, which ask the person, the offer stays offered,
-      // a resend is answered with what stands and an offer Porelo started is a conflict.
+      // a resend is answered with what stands and an offer Porelo started is a conflict. An offer whose issues left its
+      // story, or whose issues all ask the person already, keeps nothing of it; an issue that asks already keeps its
+      // reason; a rework at its kept place refused as NotTheTasksPush or RoleNotAllowed says its place changed.
       final offer = _offers[parameters['offer']];
       if (offer == null || offer.project != project) refuse('TaskNotAnswered', {'task': parameters['task']});
       if (offer.status == 'STARTED') refuse('TaskEventConflict', {'task': parameters['task']});
-      final owner = stories.singleWhere((item) => item['id'] == offer.story);
+      // A story that left the board owns nothing, as the planner's NextStep.owns answers.
+      final owner = stories.where((item) => item['id'] == offer.story).firstOrNull;
       final work = <String, dynamic>{
         'tasks': <Map<String, dynamic>>[],
         'coordinator': null,
@@ -90,18 +144,31 @@ class MockStoryWork {
         'readingRounds': 2,
         'issueReadingRounds': <Map<String, dynamic>>[],
         'issues': <Map<String, dynamic>>[],
-        if (owner['work'] is Map) ...owner['work'] as Map<String, dynamic>,
+        if (owner?['work'] is Map) ...owner!['work'] as Map<String, dynamic>,
       };
-      if (offer.status == 'OFFERED' && !_refusals.containsKey(parameters['offer'])) {
-        _refusals[parameters['offer'] as String] = parameters['refusal'] as Map<String, dynamic>;
-        for (final item in (owner['issues'] as List).cast<Map<String, dynamic>>()) {
-          if (offer.issues.contains(item['id'])) {
+      if (owner == null) return {'revision': board['revision'], 'work': work, 'tasks': <dynamic>[]};
+      final items = (owner['issues'] as List).cast<Map<String, dynamic>>();
+      final owned = offer.issues.every((id) => items.any((item) => item['id'] == id));
+      final asking =
+          offer.issues.isNotEmpty &&
+          offer.issues.every((id) => items.any((item) => item['id'] == id && item['needsYou'] == true));
+      if (offer.status == 'OFFERED' && !_refusals.containsKey(parameters['offer']) && owned && !asking) {
+        final refusal = parameters['refusal'] as Map<String, dynamic>;
+        _refusals[parameters['offer'] as String] = refusal;
+        // The refused offer is of the run its order made, which a later Start of it goes on.
+        if (_orders[(project, offer.story)]?['run'] case final run?) work['run'] = run;
+        final place =
+            const {'NotTheTasksPush', 'RoleNotAllowed'}.contains(refusal['name']) && _atKeptPlace(project, offer);
+        final reasons = {for (final item in items) item['id']: _reasonOf(owner, item['id'] as String)};
+        for (final item in items) {
+          if (offer.issues.contains(item['id']) && item['needsYou'] != true) {
             item['needsYou'] = true;
-            item['attention'] = 'START_REFUSED';
+            item['attention'] = place ? 'PLACE_CHANGED' : 'START_REFUSED';
+            reasons[item['id']] = item['attention'] as String;
           }
         }
         work['issues'] = [
-          for (final item in (owner['issues'] as List).cast<Map<String, dynamic>>())
+          for (final item in items)
             {
               'issue': item['id'],
               'rounds': item['rounds'] ?? 0,
@@ -110,8 +177,8 @@ class MockStoryWork {
               'needsYou': item['needsYou'] == true,
               'readingStopped': item['readingStopped'] == true,
               'findings': item['findings'] ?? <Map<String, dynamic>>[],
-              'reason': offer.issues.contains(item['id']) ? 'START_REFUSED' : 'NONE',
-              if (offer.issues.contains(item['id'])) 'startRefusal': _refusals[parameters['offer']],
+              'reason': reasons[item['id']],
+              'startRefusal': ?_standingRefusal(item['id'] as String, reasons[item['id']]!, item['needsYou'] == true),
             },
         ];
         owner['work'] = work;
@@ -429,6 +496,33 @@ class MockStoryWork {
         invalid('Initial reading rounds must be between 1 and 10.');
       }
     }
+    // A new order replaces the story's run: the refusals of its offers no longer stand, and an issue asks no more for
+    // them, as the planner serves a refusal only on an offered offer of the current run.
+    final replaced = [
+      for (final MapEntry(key: id, value: offer) in _offers.entries)
+        if (offer.project == project && offer.story == story['id'] && _refusals.containsKey(id)) id,
+    ];
+    if (replaced.isNotEmpty) {
+      _refusals.removeWhere((id, _) => replaced.contains(id));
+      final stored = (boardFor(project)['stories'] as List).cast<Map<String, dynamic>>().singleWhere(
+        (each) => each['id'] == story['id'],
+      );
+      for (final item in (stored['issues'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+        if (const {'START_REFUSED', 'PLACE_CHANGED'}.contains(item['attention'])) {
+          item['needsYou'] = false;
+          item['attention'] = 'NONE';
+        }
+      }
+      if (stored['work'] case final Map<String, dynamic> standing) {
+        for (final item in (standing['issues'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+          if (const {'START_REFUSED', 'PLACE_CHANGED'}.contains(item['reason'])) {
+            item['needsYou'] = false;
+            item['reason'] = 'NONE';
+            item.remove('startRefusal');
+          }
+        }
+      }
+    }
     _orders[(project, story['id'] as String)] = {
       ...parameters,
       'run': nextRun(),
@@ -470,6 +564,8 @@ class MockStoryWork {
         story: story['id'] as String,
         issues: (task['issues'] as List).cast<String>(),
         status: 'OFFERED',
+        runRole: null,
+        place: null,
       );
     }
     return {'revision': board['revision'], 'tasks': tasks};
@@ -480,17 +576,34 @@ class MockStoryWork {
     final board = jsonDecode(jsonEncode(boardFor(project))) as Map<String, dynamic>;
     final story = (board['stories'] as List).cast<Map<String, dynamic>>().singleWhere((story) => story['id'] == id);
     final parameters = _orders[(project, id)]!;
+    // Within the same run each issue keeps the reason it asks for; a new run starts with none.
+    final sameRun = story['work'] is Map && (story['work'] as Map)['run'] == parameters['run'];
+    final reasons = {
+      for (final item in (story['issues'] as List).cast<Map<String, dynamic>>())
+        item['id']: sameRun ? _reasonOf(story, item['id'] as String) : 'NONE',
+    };
+    final refusalCleared = <String>{};
     // A Start that went through after Porelo refused one clears the refusal, as the planner does.
     if (task.offer case final offer?) {
       final earlier = _offers[offer];
       if (earlier != null) {
-        _offers[offer] = (project: earlier.project, story: earlier.story, issues: earlier.issues, status: 'STARTED');
+        _offers[offer] = (
+          project: earlier.project,
+          story: earlier.story,
+          issues: earlier.issues,
+          status: 'STARTED',
+          runRole: earlier.runRole,
+          place: earlier.place,
+        );
       }
       if (_refusals.remove(offer) != null) {
+        // Only the refusal's own reasons are cleared; an issue that asks for another keeps it.
         for (final item in (story['issues'] as List).cast<Map<String, dynamic>>()) {
-          if (task.issues.contains(item['id'])) {
+          if (task.issues.contains(item['id']) &&
+              const {'START_REFUSED', 'PLACE_CHANGED'}.contains(_reasonOf(story, item['id'] as String))) {
             item['needsYou'] = false;
             item['attention'] = 'NONE';
+            refusalCleared.add(item['id'] as String);
           }
         }
       }
@@ -554,7 +667,12 @@ class MockStoryWork {
           'needsYou': item['needsYou'] == true,
           'readingStopped': item['readingStopped'] == true,
           'findings': item['findings'] ?? <Map<String, dynamic>>[],
-          'reason': 'NONE',
+          'reason': refusalCleared.contains(item['id']) ? 'NONE' : reasons[item['id']],
+          'startRefusal': ?_standingRefusal(
+            item['id'] as String,
+            refusalCleared.contains(item['id']) ? 'NONE' : reasons[item['id']]!,
+            item['needsYou'] == true,
+          ),
         },
     ];
     for (final item in (story['issues'] as List).cast<Map<String, dynamic>>()) {
