@@ -2,6 +2,7 @@ package org.fuin.porelo.planner.store.git;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -159,7 +161,17 @@ public final class GitHttpsServer implements AutoCloseable {
         final SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(keys.getKeyManagers(), null, null);
         final HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.setHttpsConfigurator(new HttpsConfigurator(tls));
+        server.setHttpsConfigurator(
+                new HttpsConfigurator(tls) {
+                    @Override
+                    public void configure(final HttpsParameters parameters) {
+                        // The JDK's server now and then sends a TLS 1.3 record git cannot decrypt
+                        // ("GnuTLS recv error (-24)") or resets the link; TLS 1.2 is all git needs.
+                        final SSLParameters tls12 = tls.getDefaultSSLParameters();
+                        tls12.setProtocols(new String[] {"TLSv1.2"});
+                        parameters.setSSLParameters(tls12);
+                    }
+                });
         return new GitHttpsServer(server, ca);
     }
 
@@ -205,7 +217,10 @@ public final class GitHttpsServer implements AutoCloseable {
                     return;
                 }
             }
-            final ProcessBuilder cgi = new ProcessBuilder("git", "http-backend");
+            // Its stderr is never read, so it is discarded rather than left to fill its pipe.
+            final ProcessBuilder cgi =
+                    new ProcessBuilder("git", "http-backend")
+                            .redirectError(ProcessBuilder.Redirect.DISCARD);
             final Map<String, String> env = cgi.environment();
             env.clear();
             env.put("PATH", "/usr/bin:/bin");
