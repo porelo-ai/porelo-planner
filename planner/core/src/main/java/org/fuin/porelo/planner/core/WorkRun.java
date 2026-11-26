@@ -2188,6 +2188,38 @@ public final class WorkRun implements RefusedEventResave {
             @Nullable String since) {}
 
     /**
+     * A task Porelo started for an offer of a run.
+     *
+     * @param task Porelo's name of the task
+     * @param since when it started, or its run's start where the task's is not known; null where
+     *     neither is known
+     * @param atWork whether it is still at work
+     */
+    public record Started(String task, @Nullable String since, boolean atWork) {}
+
+    /**
+     * The tasks started for the offers of every run, read without waiting for a save in flight.
+     *
+     * @return each task, in its run's order
+     */
+    public List<Started> started() {
+        final List<Started> started = new ArrayList<>();
+        for (final Run run : record.latest().runs().values()) {
+            for (final Offer offer : run.offers()) {
+                final String task = offer.task();
+                if (task != null) {
+                    started.add(
+                            new Started(
+                                    task,
+                                    offer.since() == null ? run.since() : offer.since(),
+                                    offer.status().equals("STARTED")));
+                }
+            }
+        }
+        return started;
+    }
+
+    /**
      * The issues whose work still waits at a kept place, read without waiting for a save in flight:
      * never one moved on from where its author's end left it, nor one an offer of its run binds.
      *
@@ -2595,12 +2627,14 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Whether the work at a place is done there: merged or landed, or approved with nothing open
-     * and nothing held, so its issue goes on to Review.
+     * Whether the work at a place is done there: landed, merged with nothing held, or approved with
+     * nothing open and nothing held, so its issue goes on to Review. Merged work with an item held
+     * waits, as an approval does, until none is.
      */
     private static boolean finished(final ReviewOpen answer) {
         return switch (answer.decision()) {
-            case MERGED, LANDED -> true;
+            case LANDED -> true;
+            case MERGED -> answer.held() == 0;
             case APPROVED ->
                     answer.points().isEmpty() && answer.findings() == 0 && answer.held() == 0;
             default -> false;

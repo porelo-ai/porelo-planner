@@ -20,11 +20,6 @@ import org.junit.jupiter.api.Test;
 
 class WorkAnswersTest {
 
-    @org.junit.jupiter.api.BeforeEach
-    void forgetHeld() {
-        TaskHeld.clear();
-    }
-
     // Harm: the window starts a tracked project's stage without the tracker's issue and phase, so
     // Porelo's Start records the task for no issue.
     @Test
@@ -279,17 +274,28 @@ class WorkAnswersTest {
                         base.at(
                                 org.fuin.porelo.planner.core.RunRole.AUTHOR,
                                 org.fuin.porelo.planner.core.RunPlace.gate("docs", "cart")));
-        TaskHeld.read(
+        final TaskHelds helds = new TaskHelds();
+        helds.read(
                 "project",
                 List.of(
                         record("task-reviewer", 3),
                         record("task-author", null),
                         record("task-other", 9),
-                        record("task-reviewer", 4)));
-        TaskHeld.read("other", List.of(record("task-resumed", 7)));
+                        record("task-reviewer", 4)),
+                List.of(
+                        new WorkRun.Started("task-reviewer", null, true),
+                        new WorkRun.Started("task-author", null, true),
+                        new WorkRun.Started("task-other", null, true)));
+        helds.read(
+                "other",
+                List.of(record("task-resumed", 7)),
+                List.of(new WorkRun.Started("task-resumed", null, true)));
 
         final List<org.fuin.porelo.planner.app.answers.PlanWorkTask> tasks =
-                WorkAnswers.knownWork("project", runOf(author, reviewer, resumed), issue -> false)
+                WorkAnswers.knownWork(
+                                runOf(author, reviewer, resumed),
+                                issue -> false,
+                                helds.in("project"))
                         .tasks();
 
         assertThat(tasks)

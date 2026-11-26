@@ -1215,7 +1215,7 @@ public final class WorkRecord implements AutoCloseable {
                     final var answer =
                             new TaskEventReply(
                                     "",
-                                    WorkAnswers.knownWork(project, run, issue -> false),
+                                    WorkAnswers.knownWork(run, issue -> false),
                                     WorkAnswers.starts(offers));
                     // Revision changes and cancellation must fit beside the work answer.
                     if (JSON.writeValueAsBytes(answer).length + END_RESERVE > MOST_RECORD) {
@@ -1250,7 +1250,7 @@ public final class WorkRecord implements AutoCloseable {
                                             board,
                                             found,
                                             new WorkRun.Snapshot(0, Map.of(run.story(), run))),
-                                    WorkAnswers.knownWork(project, board, run),
+                                    WorkAnswers.knownWork(board, run, TaskHelds.Counts.NONE),
                                     board.revision().value(),
                                     WorkAnswers.starts(offers));
                     if (JSON.writeValueAsBytes(answer).length + 65536 > MOST_RECORD) {

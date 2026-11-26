@@ -54,17 +54,22 @@ public class EventsController {
 
     private final Duration keepAlive;
 
+    private final TaskHelds helds;
+
     /**
      * Makes the controller.
      *
      * @param changes the projects followed
      * @param keepAlive how long the stream may be silent before it sends a keep-alive comment;
      *     refused when it is zero or less
+     * @param helds the held items of the tasks, as the place watch read them
      */
     public EventsController(
             final ChangesRegistry changes,
-            @Value("${planner.keep-alive:15s}") final Duration keepAlive) {
+            @Value("${planner.keep-alive:15s}") final Duration keepAlive,
+            final TaskHelds helds) {
         this.changes = changes;
+        this.helds = helds;
         this.keepAlive = StoreConfiguration.positive("planner.keep-alive", keepAlive);
     }
 
@@ -246,7 +251,7 @@ public class EventsController {
         try {
             // A project given anew in the meantime has closed it; its old board is not sent.
             if (subscription.open()) {
-                board(emitter, name, subscription.firstFrame(), store.tracker());
+                board(emitter, subscription.firstFrame(), store.tracker(), helds.in(name));
             }
             final Duration step = keepAlive.compareTo(LOAD_EVERY) < 0 ? keepAlive : LOAD_EVERY;
             Instant lastSent = Instant.now();
@@ -283,7 +288,7 @@ public class EventsController {
                                             MediaType.APPLICATION_JSON));
                     lastSent = Instant.now();
                 } else if (next.isPresent()) {
-                    board(emitter, name, next.get(), store.tracker());
+                    board(emitter, next.get(), store.tracker(), helds.in(name));
                     lastSent = Instant.now();
                 } else if (readsNow) {
                     load(emitter, store, Instant.now());
@@ -314,9 +319,9 @@ public class EventsController {
 
     private static void board(
             final SseEmitter emitter,
-            final String project,
             final Changes.Frame frame,
-            final org.fuin.porelo.planner.store.Tracker tracker)
+            final org.fuin.porelo.planner.store.Tracker tracker,
+            final TaskHelds.Counts held)
             throws IOException {
         emitter.send(
                 SseEmitter.event()
@@ -324,7 +329,7 @@ public class EventsController {
                         .id(frame.board().revision().value())
                         .data(
                                 BoardController.boardOf(
-                                        project,
+                                        held,
                                         frame.board(),
                                         frame.work(),
                                         frame.reasons(),

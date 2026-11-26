@@ -332,6 +332,7 @@ public class StoreConfiguration {
      * @param projects the projects the window has given
      * @param changes the projects followed, which start and stop the reads
      * @param limits the factors from the command line
+     * @param helds the held items of the tasks, which the reads fill
      * @return the watch
      */
     @Bean(destroyMethod = "close")
@@ -339,7 +340,8 @@ public class StoreConfiguration {
             final ObjectProvider<MockMode> mode,
             final Projects projects,
             final ChangesRegistry changes,
-            final ObjectProvider<LimitFactors> limits) {
+            final ObjectProvider<LimitFactors> limits,
+            final TaskHelds helds) {
         final PlaceWatch watch;
         if (mode.getIfAvailable() != null) {
             watch = PlaceWatch.none();
@@ -357,6 +359,7 @@ public class StoreConfiguration {
                                 new PoreloTaskRecords(porelo, factors),
                                 new PoreloReviewOpen(porelo, factors),
                                 changes::saved,
+                                helds,
                                 scheduler,
                                 factors.polling(PlaceWatch.INTERVAL));
             } catch (final IllegalStateException refused) {
@@ -370,6 +373,7 @@ public class StoreConfiguration {
                                 project -> PlaceWatch.Places.of(projects.work(project)),
                                 "Porelo's executable is missing or refused",
                                 changes::saved,
+                                helds,
                                 scheduler,
                                 factors.polling(PlaceWatch.INTERVAL));
             }
@@ -377,6 +381,17 @@ public class StoreConfiguration {
         }
         changes.addFollower(watch);
         return watch;
+    }
+
+    /**
+     * The held items of each task Porelo's records gave, which the place watch reads and the
+     * answers show: one for the application.
+     *
+     * @return the counts, none read yet
+     */
+    @Bean
+    TaskHelds taskHelds() {
+        return new TaskHelds();
     }
 
     /**

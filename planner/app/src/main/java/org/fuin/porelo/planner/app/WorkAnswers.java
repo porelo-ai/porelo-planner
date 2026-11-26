@@ -171,17 +171,18 @@ public final class WorkAnswers {
     }
 
     static @Nullable PlanWork work(
-            final String project, final Board board, final WorkRun.@Nullable Run run) {
-        return run == null ? null : knownWork(project, board, run);
+            final Board board, final WorkRun.@Nullable Run run, final TaskHelds.Counts held) {
+        return run == null ? null : knownWork(board, run, held);
     }
 
-    static PlanWork knownWork(final String project, final Board board, final WorkRun.Run run) {
-        return knownWork(project, run, issue -> manual(board, issue));
+    static PlanWork knownWork(
+            final Board board, final WorkRun.Run run, final TaskHelds.Counts held) {
+        return knownWork(run, issue -> manual(board, issue), held);
     }
 
-    /** The run's work for a caller that names no project, so no held items are known. */
+    /** The run's work for a caller that knows no held items. */
     static PlanWork knownWork(final WorkRun.Run run, final Predicate<String> manual) {
-        return knownWork("", run, manual);
+        return knownWork(run, manual, TaskHelds.Counts.NONE);
     }
 
     /**
@@ -189,7 +190,7 @@ public final class WorkAnswers {
      * agent's choice, whatever the run recorded before the switch.
      */
     static PlanWork knownWork(
-            final String project, final WorkRun.Run run, final Predicate<String> manual) {
+            final WorkRun.Run run, final Predicate<String> manual, final TaskHelds.Counts held) {
         final List<PlanWorkTask> tasks =
                 run.offers().stream()
                         .filter(o -> o.task() != null)
@@ -221,7 +222,7 @@ public final class WorkAnswers {
                                                 o.arguments().place() == null
                                                         ? null
                                                         : place(o.arguments().place()),
-                                                TaskHeld.of(project, String.valueOf(o.task()))))
+                                                held.of(String.valueOf(o.task()))))
                         .toList();
         return new PlanWork(
                 run.id(),

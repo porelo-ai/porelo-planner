@@ -143,7 +143,7 @@ class TrackerItemsEndpointTest {
         closing.add(changes);
         return MockMvcBuilders.standaloneSetup(
                         new BoardController(projects, changes),
-                        new EventsController(changes, Duration.ofSeconds(15)),
+                        new EventsController(changes, Duration.ofSeconds(15), new TaskHelds()),
                         new TrackerController(projects, directories),
                         new EditsController(new BoardEdits(projects, changes)))
                 .setControllerAdvice(new Problems(projects))

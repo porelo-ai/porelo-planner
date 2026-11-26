@@ -15,6 +15,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Stream;
 import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.PlaceRead;
 import org.fuin.porelo.planner.core.PlaceReviews;
@@ -53,6 +54,9 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
      */
     private static final Set<String> NO_PULL_REQUEST = Set.of("NoPullRequest", "UnknownForge");
 
+    /** How far back a task whose start is not known is read from. */
+    static final Duration UNKNOWN_START = Duration.ofDays(1);
+
     /** How often a followed project's places are read. */
     public static final Duration INTERVAL = Duration.ofSeconds(60);
 
@@ -65,6 +69,13 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
          * @return each with its place
          */
         List<WorkRun.Waits> waiting();
+
+        /**
+         * The tasks started for the project's runs.
+         *
+         * @return each task
+         */
+        List<WorkRun.Started> started();
 
         /**
          * Takes what was read of an issue's kept place.
@@ -97,6 +108,11 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                 }
 
                 @Override
+                public List<WorkRun.Started> started() {
+                    return work.started();
+                }
+
+                @Override
                 public WorkRun.PlaceOutcome placeRead(
                         final String story, final String issue, final PlaceRead found) {
                     return work.placeRead(story, issue, found);
@@ -119,6 +135,8 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
     private final @Nullable String unavailable;
 
     private final Consumer<String> saved;
+
+    private final TaskHelds helds;
 
     private final @Nullable ScheduledExecutorService scheduler;
 
@@ -144,6 +162,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
      * @param records Porelo's task records
      * @param reviews what is open at a place
      * @param saved tells a project's windows of a change
+     * @param helds the held items of the tasks, which the reads fill
      * @param scheduler runs the reads; closed with the watch
      * @param interval how often a followed project is read
      */
@@ -152,9 +171,10 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
             final TaskRecords records,
             final PlaceReviews reviews,
             final Consumer<String> saved,
+            final TaskHelds helds,
             final ScheduledExecutorService scheduler,
             final Duration interval) {
-        this(works, records, reviews, null, saved, scheduler, interval);
+        this(works, records, reviews, null, saved, helds, scheduler, interval);
     }
 
     /**
@@ -163,6 +183,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
      * @param works each project's work
      * @param unavailable why Porelo cannot be asked
      * @param saved tells a project's windows of a change
+     * @param helds the held items of the tasks, which stay unread
      * @param scheduler runs the reads; closed with the watch
      * @param interval how often a followed project is read
      */
@@ -170,9 +191,10 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
             final Function<String, Places> works,
             final String unavailable,
             final Consumer<String> saved,
+            final TaskHelds helds,
             final ScheduledExecutorService scheduler,
             final Duration interval) {
-        this(works, null, null, unavailable, saved, scheduler, interval);
+        this(works, null, null, unavailable, saved, helds, scheduler, interval);
     }
 
     private PlaceWatch(
@@ -181,6 +203,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
             final @Nullable PlaceReviews reviews,
             final @Nullable String unavailable,
             final Consumer<String> saved,
+            final TaskHelds helds,
             final @Nullable ScheduledExecutorService scheduler,
             final Duration interval) {
         this.works = works;
@@ -188,6 +211,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         this.reviews = reviews;
         this.unavailable = unavailable;
         this.saved = saved;
+        this.helds = helds;
         this.scheduler = scheduler;
         if (interval.isNegative() || interval.isZero()) {
             throw new IllegalArgumentException("A watch reads after a positive interval");
@@ -209,6 +233,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                 null,
                 null,
                 project -> {},
+                new TaskHelds(),
                 null,
                 INTERVAL);
     }
@@ -317,7 +342,9 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
     /**
      * Reads every place of a project where an issue's work waits, now, on this thread: Porelo's
      * record of the task bound there, then what is open there. A read one issue cannot take leaves
-     * the others read.
+     * the others read. The same read of the records gives the held items of each task started for
+     * the project's runs that is still at work or whose count was never read, whether or not a
+     * place waits.
      *
      * @param project the project's checked name
      * @return each issue's outcome, by story and issue
@@ -342,28 +369,55 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     logged(e));
         }
         final List<WorkRun.Waits> waiting = work.waiting();
+        final List<WorkRun.Started> counted =
+                work.started().stream().filter(t -> helds.due(project, t)).toList();
         final long waitingNanos = System.nanoTime() - began;
         final Map<String, WorkRun.PlaceOutcome> outcomes = new LinkedHashMap<>();
+        final TaskRecords recordsRead = records;
+        final PlaceReviews reviewsRead = reviews;
+        List<TaskRecord> found = List.of();
+        String unread = unavailable;
+        boolean changed = left;
+        if (recordsRead != null
+                && reviewsRead != null
+                && (!waiting.isEmpty() || !counted.isEmpty())) {
+            // One read serves both, from the earliest start of either; a task's start not known
+            // is taken as a day ago, never as the epoch, so it does not widen every read.
+            final Instant from =
+                    earliest(
+                            Stream.concat(
+                                            waiting.stream()
+                                                    .map(w -> earliest(w.since(), Instant.EPOCH)),
+                                            counted.stream()
+                                                    .map(
+                                                            t ->
+                                                                    earliest(
+                                                                            t.since(),
+                                                                            Instant.now()
+                                                                                    .minus(
+                                                                                            UNKNOWN_START))))
+                                    .toList());
+            try {
+                found = recordsRead.since(project, from.minus(SKEW));
+                changed |= helds.read(project, found, counted);
+            } catch (final TaskRecords.Unanswered e) {
+                if (waiting.isEmpty()) {
+                    LOG.info(
+                            "Porelo gave project {} no answer of its tasks' held items: {}",
+                            LogText.of(project),
+                            logged(e));
+                } else {
+                    unread = said(project, e);
+                }
+            }
+        }
         if (waiting.isEmpty()) {
-            if (left) {
+            if (changed) {
                 saved.accept(project);
             }
             measured(project, 0, waitingNanos, began);
             return outcomes;
         }
-        final TaskRecords recordsRead = records;
-        final PlaceReviews reviewsRead = reviews;
-        List<TaskRecord> found = List.of();
-        String unread = unavailable;
-        if (recordsRead != null && reviewsRead != null) {
-            try {
-                found = recordsRead.since(project, earliest(waiting).minus(SKEW));
-                TaskHeld.read(project, found);
-            } catch (final TaskRecords.Unanswered e) {
-                unread = said(project, e);
-            }
-        }
-        boolean changed = left;
         for (final WorkRun.Waits waits : waiting) {
             final String key = waits.story() + "/" + waits.issue();
             try {
@@ -513,24 +567,27 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         return "Porelo gave no answer that can be trusted";
     }
 
-    /** The earliest start of the runs bound where work waits, the epoch for one not known. */
-    private static Instant earliest(final List<WorkRun.Waits> waiting) {
+    /** The earliest of the starts given, the epoch for none. */
+    private static Instant earliest(final List<Instant> starts) {
         Instant earliest = null;
-        for (final WorkRun.Waits waits : waiting) {
-            Instant since = Instant.EPOCH;
-            final String at = waits.since();
-            if (at != null) {
-                try {
-                    since = Instant.parse(at);
-                } catch (final DateTimeParseException unknown) {
-                    since = Instant.EPOCH;
-                }
-            }
+        for (final Instant since : starts) {
             if (earliest == null || since.isBefore(earliest)) {
                 earliest = since;
             }
         }
         return earliest == null ? Instant.EPOCH : earliest;
+    }
+
+    /** A start as given, or the instant taken for it when it is not known. */
+    private static Instant earliest(final @Nullable String at, final Instant unknown) {
+        if (at == null) {
+            return unknown;
+        }
+        try {
+            return Instant.parse(at);
+        } catch (final DateTimeParseException unreadable) {
+            return unknown;
+        }
     }
 
     @Override

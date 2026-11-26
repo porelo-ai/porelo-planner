@@ -129,6 +129,8 @@ public class BoardController {
 
     private final ReportReading reading;
 
+    private final TaskHelds helds;
+
     /**
      * Makes the controller, its saves written by calling each project's store directly.
      *
@@ -148,7 +150,7 @@ public class BoardController {
      */
     public BoardController(
             final Projects projects, final ChangesRegistry changes, final CommandQueues queues) {
-        this(projects, changes, queues, ReportReading.idle());
+        this(projects, changes, queues, ReportReading.idle(), new TaskHelds());
     }
 
     /**
@@ -158,17 +160,20 @@ public class BoardController {
      * @param changes tells a followed project's windows of a save
      * @param queues gives each project's saves the queue that writes their commands
      * @param reading reads a project's task reports soon after one of its tasks' events
+     * @param helds the held items of the tasks, as the place watch read them
      */
     @Autowired
     public BoardController(
             final Projects projects,
             final ChangesRegistry changes,
             final CommandQueues queues,
-            final ReportReading reading) {
+            final ReportReading reading,
+            final TaskHelds helds) {
         this.projects = projects;
         this.changes = changes;
         this.queues = queues;
         this.reading = reading;
+        this.helds = helds;
     }
 
     /**
@@ -1260,20 +1265,21 @@ public class BoardController {
     /**
      * Maps the whole board with its local work, as an event of the changes stream carries it.
      *
+     * @param held the held items of the project's tasks
      * @param board the board
      * @param snapshot the local work generation
      * @param reasons whether the board's store keeps a move's reason
      * @param tracker where the board's store keeps the stories and issues
-     * @param held the saves the project's outbox keeps for the person
+     * @param heldSaves the saves the project's outbox keeps for the person
      * @return the workflow's answer and every story in one
      */
     static org.fuin.porelo.planner.app.answers.Board boardOf(
-            final String project,
+            final TaskHelds.Counts held,
             final Board board,
             final WorkRun.Snapshot snapshot,
             final boolean reasons,
             final org.fuin.porelo.planner.store.Tracker tracker,
-            final List<org.fuin.porelo.planner.app.answers.HeldSave> held) {
+            final List<org.fuin.porelo.planner.app.answers.HeldSave> heldSaves) {
         final org.fuin.porelo.planner.app.answers.Workflow workflow =
                 workflowOf(board, reasons, tracker);
         final OpenWork.Counter counter = new OpenWork.Counter(board);
@@ -1290,7 +1296,7 @@ public class BoardController {
                 workflow.faults(),
                 reasons,
                 board.stories().stream()
-                        .map(story -> story(project, board, story, snapshot, counter))
+                        .map(story -> story(held, board, story, snapshot, counter))
                         .toList(),
                 board.unlisted().stream().map(BoardController::unlistedIssue).toList(),
                 open(counter.board()),
@@ -1303,19 +1309,20 @@ public class BoardController {
                                                         breach.rule().spelled()),
                                                 breach.words()))
                         .toList(),
-                held);
+                heldSaves);
     }
 
     /**
      * Answers each target an ItemChanged refusal names as the board holds it now: the one issue,
      * story or unlisted issue of its id, or gone when the board holds no one item by it.
      *
+     * @param counts the held items of the project's tasks
      * @param work the project's work, whose board and runs the items are read with
      * @param ids the targets named
      * @return each target, in the order named
      */
     static List<ChangedItem> changed(
-            final String project, final WorkRun work, final List<String> ids) {
+            final TaskHelds.Counts counts, final WorkRun work, final List<String> ids) {
         return work.view(
                 (board, snapshot) -> {
                     final OpenWork.Counter counter = new OpenWork.Counter(board);
@@ -1345,7 +1352,7 @@ public class BoardController {
                                             false,
                                             null,
                                             story(
-                                                    project,
+                                                    counts,
                                                     board,
                                                     stories.getFirst(),
                                                     snapshot,
@@ -1408,7 +1415,7 @@ public class BoardController {
                                     .map(
                                             story ->
                                                     story(
-                                                            name(project),
+                                                            helds.in(name(project)),
                                                             board,
                                                             story,
                                                             snapshot,
@@ -1433,11 +1440,12 @@ public class BoardController {
         final String format = given.store().textFormat().name();
         final WorkRun work = given.work();
         return work.view(
-                (board, snapshot) -> storyDetail(name(project), board, snapshot, checked, format));
+                (board, snapshot) ->
+                        storyDetail(helds.in(name(project)), board, snapshot, checked, format));
     }
 
     private static StoryReply storyDetail(
-            final String project,
+            final TaskHelds.Counts held,
             final Board board,
             final WorkRun.Snapshot snapshot,
             final String checked,
@@ -1457,7 +1465,7 @@ public class BoardController {
                         story.labels(),
                         story.link(),
                         issues(board, story, snapshot, counter.minutes()),
-                        WorkAnswers.work(project, board, snapshot.runs().get(story.id())),
+                        WorkAnswers.work(board, snapshot.runs().get(story.id()), held),
                         storyOpen(counter.story(story)),
                         WorkAnswers.warnings(story.warnings()),
                         story.description(),
@@ -1706,7 +1714,7 @@ public class BoardController {
             reading.soon(name);
             return new TaskEventReply(
                     answer.revision(),
-                    WorkAnswers.knownWork(name, answer.board(), answer.work()),
+                    WorkAnswers.knownWork(answer.board(), answer.work(), helds.in(name)),
                     WorkAnswers.starts(answer.tasks()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
@@ -1776,7 +1784,9 @@ public class BoardController {
                             final Story found = found(board, checked);
                             return new StoryWorkReply(
                                     WorkAnswers.work(
-                                            name(project), board, snapshot.runs().get(found.id())));
+                                            board,
+                                            snapshot.runs().get(found.id()),
+                                            helds.in(name(project))));
                         });
     }
 
@@ -1794,7 +1804,8 @@ public class BoardController {
                     "Stopped the work on story {} of project {}",
                     LogText.of(checked),
                     LogText.of(name(project)));
-            return new StoryWorkReply(WorkAnswers.work(name(project), board(project), stopped));
+            return new StoryWorkReply(
+                    WorkAnswers.work(board(project), stopped, helds.in(name(project))));
         } finally {
             changes.saved(name(project));
         }
@@ -1824,7 +1835,7 @@ public class BoardController {
             final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
             return new ReadingReply(
                     issue(answer.board(), answer.board().issue(checked).orElseThrow(), snapshot),
-                            WorkAnswers.knownWork(name, answer.board(), answer.work()),
+                            WorkAnswers.knownWork(answer.board(), answer.work(), helds.in(name)),
                     answer.revision(), WorkAnswers.starts(answer.tasks()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
@@ -1903,7 +1914,7 @@ public class BoardController {
     }
 
     private static org.fuin.porelo.planner.app.answers.Story story(
-            final String project,
+            final TaskHelds.Counts held,
             final Board board,
             final Story story,
             final WorkRun.Snapshot snapshot,
@@ -1919,7 +1930,7 @@ public class BoardController {
                 story.labels(),
                 story.link(),
                 issues(board, story, snapshot, counter.minutes()),
-                WorkAnswers.work(project, board, snapshot.runs().get(story.id())),
+                WorkAnswers.work(board, snapshot.runs().get(story.id()), held),
                 storyOpen(counter.story(story)),
                 WorkAnswers.warnings(story.warnings()));
     }

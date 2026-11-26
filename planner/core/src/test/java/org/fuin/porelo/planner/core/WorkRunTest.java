@@ -279,6 +279,91 @@ class WorkRunTest {
     }
 
     @Test
+    void theStartedTasksAreListedWithTheirStartAndWhetherTheyStillWork() {
+        // Harm: a task's held items are never read when no place of its run waits, so its card
+        // shows none after a restart; or an ended task's record is read again every minute.
+        final Fixture f = new Fixture();
+        final var offer = f.order().tasks().getFirst();
+        assertThat(f.run.started()).as("an offer no task took lists nothing").isEmpty();
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
+        final String since =
+                f.record.value.runs().values().iterator().next().offers().getFirst().since();
+        assertThat(since).as("the start is known").isNotNull();
+        assertThat(f.run.started())
+                .as("the task, its start and still at work")
+                .containsExactly(new WorkRun.Started("task", since, true));
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        offer.offer(), WorkRun.Event.ENDED, "box", "workstation", ended("Built")));
+        assertThat(f.run.started())
+                .as("an ended task stays listed, no longer at work")
+                .containsExactly(new WorkRun.Started("task", since, false));
+    }
+
+    @Test
+    void aStartedTaskWhoseStartIsNotKnownIsListedFromItsRunsStart() {
+        // Harm: a task with no start recorded makes the watch read Porelo's records from the
+        // epoch every minute.
+        final Fixture f = new Fixture();
+        final var offer = f.order().tasks().getFirst();
+        final var run =
+                f.run.report(
+                                "task",
+                                new WorkRun.Report(
+                                        offer.offer(),
+                                        WorkRun.Event.STARTED,
+                                        "box",
+                                        "workstation",
+                                        null))
+                        .work();
+        final var bound = run.offers().getFirst();
+        final var unknown =
+                new WorkRun.Offer(
+                        bound.id(),
+                        bound.arguments(),
+                        bound.binding(),
+                        bound.status(),
+                        bound.task(),
+                        bound.containerId(),
+                        bound.machine(),
+                        null,
+                        bound.ended(),
+                        bound.fingerprint(),
+                        bound.following(),
+                        bound.deferred(),
+                        bound.refusal());
+        f.record.value =
+                new WorkRun.Snapshot(
+                        f.record.value.generation(),
+                        Map.of(
+                                run.story(),
+                                new WorkRun.Run(
+                                        run.id(),
+                                        run.story(),
+                                        run.to(),
+                                        run.mode(),
+                                        run.comment(),
+                                        run.coordinator(),
+                                        run.readingRounds(),
+                                        run.issueReadingRounds(),
+                                        run.repositories(),
+                                        run.since(),
+                                        List.of(unknown),
+                                        run.issues(),
+                                        run.stopped(),
+                                        run.halted(),
+                                        run.pending())));
+
+        assertThat(f.run.started()).containsExactly(new WorkRun.Started("task", run.since(), true));
+    }
+
+    @Test
     void aTaskFromAnOlderRecordLearnsItsMachineWhenItEnds() {
         // Prevents unknown legacy machines from stranding work or allowing rebinding.
         final Fixture f = new Fixture();
@@ -4265,6 +4350,27 @@ class WorkRunTest {
         final Fixture f = new Fixture();
         endReviewer(f, reviewerOffered(f));
         return f;
+    }
+
+    @Test
+    void aMergeWithAnItemHeldWaitsUnaskedUntilNoneIsHeldThenGoesOnToReview() {
+        // Harm: merged work moves on to Review while a review item is still held from its run, or
+        // the person is asked about a wait that ends by itself.
+        final Fixture f = reviewedAtThePlace();
+
+        f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 1)));
+        assertThat(
+                        List.of(
+                                f.store.board().issue("AA1").orElseThrow().state(),
+                                String.valueOf(f.run.work("ST1").issues().get("AA1").needsYou()),
+                                String.valueOf(f.run.work("ST1").places().containsKey("AA1"))))
+                .as("an item held: the issue stays, nothing is asked, its place is kept")
+                .containsExactly("Reading", "false", "true");
+
+        f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.MERGED, 0, 0)));
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("none held any more: on to Review")
+                .isEqualTo("Review");
     }
 
     @Test

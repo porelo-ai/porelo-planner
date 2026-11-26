@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -50,14 +51,29 @@ public class Problems {
 
     private final Projects projects;
 
+    private final TaskHelds helds;
+
     /**
-     * Makes the answers.
+     * Makes the answers, which know no task's held items.
      *
      * @param projects the projects the window has given, whose boards an ItemChanged refusal
      *     answers its items from
      */
     public Problems(final Projects projects) {
+        this(projects, new TaskHelds());
+    }
+
+    /**
+     * Makes the answers.
+     *
+     * @param projects the projects the window has given, whose boards an ItemChanged refusal
+     *     answers its items from
+     * @param helds the held items of the tasks, as the place watch read them
+     */
+    @Autowired
+    public Problems(final Projects projects, final TaskHelds helds) {
         this.projects = projects;
+        this.helds = helds;
     }
 
     /**
@@ -385,7 +401,7 @@ public class Problems {
         if (project instanceof String name) {
             try {
                 return BoardController.changed(
-                        BoardController.name(name),
+                        helds.in(BoardController.name(name)),
                         projects.work(BoardController.name(name)),
                         changed.ids());
             } catch (final RuntimeException unreadable) {

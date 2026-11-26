@@ -13,10 +13,13 @@ import java.net.SocketException;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -26,6 +29,8 @@ class PlannerStartsTest {
     private static final Path RUNTIME = create();
 
     @LocalServerPort private int port;
+
+    @Autowired private ApplicationContext context;
 
     @DynamicPropertySource
     static void runtimeDirectory(final DynamicPropertyRegistry registry) {
@@ -66,6 +71,26 @@ class PlannerStartsTest {
                         })
                 .as("a connection to %s:%d", other.getHostAddress(), port)
                 .isInstanceOf(IOException.class);
+    }
+
+    @Test
+    void theAnswersReadTheHeldItemsTheWatchFills() {
+        // Harm: the place watch reads a task's held items into a component no answer reads, so
+        // the card never shows them.
+        final TaskHelds helds = context.getBean(TaskHelds.class);
+
+        assertThat(
+                        List.of(
+                                PlaceWatch.class,
+                                BoardController.class,
+                                EventsController.class,
+                                Problems.class))
+                .allSatisfy(
+                        type ->
+                                assertThat(context.getBean(type))
+                                        .as(type.getSimpleName())
+                                        .extracting("helds")
+                                        .isSameAs(helds));
     }
 
     private static Path create() {

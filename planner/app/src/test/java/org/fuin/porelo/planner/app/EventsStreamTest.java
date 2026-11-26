@@ -110,7 +110,8 @@ class EventsStreamTest {
         final MockMvc mvc =
                 MockMvcBuilders.standaloneSetup(
                                 new BoardController(changes.projects(), changes),
-                                new EventsController(changes, Duration.ofSeconds(2)))
+                                new EventsController(
+                                        changes, Duration.ofSeconds(2), new TaskHelds()))
                         .setControllerAdvice(new Problems(changes.projects()))
                         .build();
         mvc.perform(
