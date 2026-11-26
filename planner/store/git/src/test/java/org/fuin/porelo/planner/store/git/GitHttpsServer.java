@@ -1,14 +1,14 @@
 package org.fuin.porelo.planner.store.git;
 
 import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpsConfigurator;
-import com.sun.net.httpserver.HttpsParameters;
-import com.sun.net.httpserver.HttpsServer;
+import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,18 +20,29 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLSocket;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Serves the bare repositories of one directory over HTTPS through {@code git http-backend}, with a
  * certificate made for this run alone, and asks for a login when one is set.
+ *
+ * <p>TLS ends on a blocking {@link SSLServerSocket}, which hands the plain bytes to the JDK's HTTP
+ * server on loopback: the JDK's own HTTPS server now and then sent git a record its GnuTLS could
+ * not read ("Decryption has failed", "Bad record MAC"), with or without session resumption.
  */
 public final class GitHttpsServer implements AutoCloseable {
 
     private static final String PASS = "test-keystore-of-this-run";
 
-    private final HttpsServer server;
+    private final HttpServer server;
+
+    /** Where git connects: TLS, passed on in plain to {@link #server}. */
+    private final SSLServerSocket front;
+
+    /** The connections the front holds open, closed with it. */
+    private final Queue<Socket> open = new ConcurrentLinkedQueue<>();
 
     private final Path caFile;
 
@@ -42,10 +53,55 @@ public final class GitHttpsServer implements AutoCloseable {
     /** The Authorization header of each request, empty for none, in their order. */
     private final Queue<String> authorizations = new ConcurrentLinkedQueue<>();
 
-    private GitHttpsServer(final HttpsServer server, final Path caFile) {
+    private GitHttpsServer(
+            final HttpServer server, final SSLServerSocket front, final Path caFile) {
         this.server = server;
+        this.front = front;
         this.caFile = caFile;
         server.setExecutor(workers);
+        Thread.ofPlatform().daemon().name("git-https-front").start(this::accepting);
+    }
+
+    /** Takes each TLS connection and passes it on to the plain server, until the front closes. */
+    private void accepting() {
+        while (!front.isClosed()) {
+            final Socket client;
+            try {
+                client = front.accept();
+            } catch (final IOException closed) {
+                return;
+            }
+            open.add(client);
+            workers.execute(() -> passed((SSLSocket) client));
+        }
+    }
+
+    /** Ends TLS on one connection and copies its bytes both ways to the plain server. */
+    private void passed(final SSLSocket client) {
+        try (client;
+                Socket plain =
+                        new Socket(
+                                InetAddress.getLoopbackAddress(), server.getAddress().getPort())) {
+            open.add(plain);
+            client.startHandshake();
+            final InputStream fromClient = client.getInputStream();
+            final OutputStream toPlain = plain.getOutputStream();
+            workers.execute(
+                    () -> {
+                        try {
+                            fromClient.transferTo(toPlain);
+                            plain.shutdownOutput();
+                        } catch (final IOException ended) {
+                            // the other direction ends the connection
+                        }
+                    });
+            plain.getInputStream().transferTo(client.getOutputStream());
+            client.getOutputStream().flush();
+        } catch (final IOException ended) {
+            // the client or the server ended the connection; git reports what it lacked
+        } finally {
+            open.remove(client);
+        }
     }
 
     /**
@@ -160,19 +216,13 @@ public final class GitHttpsServer implements AutoCloseable {
         keys.init(store, PASS.toCharArray());
         final SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(keys.getKeyManagers(), null, null);
-        final HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.setHttpsConfigurator(
-                new HttpsConfigurator(tls) {
-                    @Override
-                    public void configure(final HttpsParameters parameters) {
-                        // The JDK's server now and then sends a TLS 1.3 record git cannot decrypt
-                        // ("GnuTLS recv error (-24)") or resets the link; TLS 1.2 is all git needs.
-                        final SSLParameters tls12 = tls.getDefaultSSLParameters();
-                        tls12.setProtocols(new String[] {"TLSv1.2"});
-                        parameters.setSSLParameters(tls12);
-                    }
-                });
-        return new GitHttpsServer(server, ca);
+        final HttpServer server =
+                HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        final SSLServerSocket front =
+                (SSLServerSocket)
+                        tls.getServerSocketFactory()
+                                .createServerSocket(0, 50, InetAddress.getLoopbackAddress());
+        return new GitHttpsServer(server, front, ca);
     }
 
     /**
@@ -182,7 +232,7 @@ public final class GitHttpsServer implements AutoCloseable {
      * @return its URL
      */
     public String url(final String name) {
-        return "https://localhost:" + server.getAddress().getPort() + "/" + name;
+        return "https://localhost:" + front.getLocalPort() + "/" + name;
     }
 
     /**
@@ -196,6 +246,19 @@ public final class GitHttpsServer implements AutoCloseable {
 
     @Override
     public void close() {
+        try {
+            front.close();
+        } catch (final IOException ignored) {
+            // closing anyway
+        }
+        open.forEach(
+                socket -> {
+                    try {
+                        socket.close();
+                    } catch (final IOException ignored) {
+                        // closing anyway
+                    }
+                });
         server.stop(0);
         workers.shutdownNow();
     }
