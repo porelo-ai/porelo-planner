@@ -12,6 +12,10 @@
     <name>Porelo Planner Git Store</name>
     <description>The planning store in Git, read and written with the person's own Git login</description>
     <packaging>jar</packaging>
+    <properties>
+        <!-- HotSpot's C2, not the Graal JIT: under Graal one TLS handshake in a few thousand derives a wrong key. -->
+        <argLine>-Xmx1g -XX:-UseJVMCICompiler</argLine>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>org.fuin.porelo</groupId>

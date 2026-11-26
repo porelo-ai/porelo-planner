@@ -32,6 +32,8 @@
              writes on a file system without POSIX permissions, as the Windows job's is. The work tools' comparison
              keeps the parent's version. -->
         <porelo.release.plugin.version>0.5.3-SNAPSHOT</porelo.release.plugin.version>
+        <!-- HotSpot's C2, not the Graal JIT: under Graal one TLS handshake in a few thousand derives a wrong key. -->
+        <argLine>-Xmx1g -XX:-UseJVMCICompiler</argLine>
     </properties>
 
     <dependencies>
