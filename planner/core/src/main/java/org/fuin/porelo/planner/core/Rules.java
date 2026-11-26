@@ -19,7 +19,10 @@ public final class Rules {
 
     private Rules() {}
 
-    /** Answers the live blockers that are not known to be closed, including outside waits. */
+    /**
+     * Answers the live blockers not known to be done, neither closed nor in review, including
+     * outside waits.
+     */
     public static List<String> openBlockers(final Dependencies dependencies, final String issue) {
         final Board board = dependencies.board();
         return WorkProposal.openBlockers(board, issue(board, issue));

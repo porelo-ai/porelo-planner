@@ -4001,8 +4001,8 @@ components:
         What is still open of a story or a board. An issue is left to build while it stands neither in a closed state
         nor in the review state: of the states a work rule's work ends in that are neither working nor closed, the one
         latest in the workflow, where the last work ends. An earlier work's end, such as an analysis's, is left to
-        build. An issue left to build is blocked while an issue it waits on stands on the board and is not closed; it then counts as blocked,
-        not under its state.
+        build. An issue left to build is blocked while an issue it waits on stands on the board neither in a closed
+        state nor in the review state; it then counts as blocked, not under its state.
       type: object
       required: [states, blocked, sizes, unsized, left, minutes, unestimated, review]
       properties:
@@ -4215,8 +4215,10 @@ components:
           type: array
           description: >-
             The issues blocking it that the board does not hold, such as those of a repository outside the project.
-            No work is offered for it while any of them, or any of its board blockers, is not done; work already
-            started goes on. Empty when there are none.
+            No work is offered for it while any of them, or any of its board blockers, is not done: a board blocker is
+            done once it stands in the review state or in a closed state, and holds again once it is back in rework;
+            a wait outside the board is done only once its tracker closed it. Work already started goes on. Empty when
+            there are none.
           items:
             $ref: '#/components/schemas/Wait'
           example:

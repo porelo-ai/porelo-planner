@@ -1166,6 +1166,61 @@ class WorkProposalTest {
     }
 
     @Test
+    void aBlockerInReviewOrClosedFreesTheIssueAndOneBackInReworkHoldsItAgain() {
+        // Harm: an issue waits on a blocker its builder has finished until a person closes it, so
+        // the story stalls; or a blocker sent back to rework is built on as if it were done.
+        final Board board =
+                reviewed(waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of("AA1"), List.of()));
+
+        for (final String state : List.of("Review", "Finished")) {
+            assertThat(WorkProposal.openBlockers(with(board, Map.of("AA1", state)), issue(board)))
+                    .as("a blocker in %s holds nothing back", state)
+                    .isEmpty();
+        }
+        for (final String state : List.of("Rework", "Building", "Backlog")) {
+            assertThat(WorkProposal.openBlockers(with(board, Map.of("AA1", state)), issue(board)))
+                    .as("a blocker in %s still holds the issue", state)
+                    .containsExactly("AA1");
+        }
+        assertThat(
+                        offered(
+                                WorkProposal.propose(
+                                        with(board, Map.of("AA1", "Review")), "ST1", "Building")))
+                .as("offered once its blocker stands in review")
+                .contains("BB1");
+    }
+
+    @Test
+    void aBlockerInReviewStillHoldsWhereTheWorkflowHasNoReviewState() {
+        // Harm: a workflow that names no review state frees an issue by a state's name alone.
+        final Board board =
+                waiting(board(WorkRule.Per.REPOSITORY), "BB1", List.of("AA1"), List.of());
+
+        assertThat(WorkProposal.openBlockers(with(board, Map.of("AA1", "Review")), issue(board)))
+                .as("only a closed state counts without a review rule")
+                .containsExactly("AA1");
+    }
+
+    private static Issue issue(final Board board) {
+        return board.issue("BB1").orElseThrow();
+    }
+
+    /** The board with a workflow whose review state is Review, followed by Rework. */
+    private static Board reviewed(final Board board) {
+        return new Board(
+                board.revision(),
+                new Workflow(
+                        List.of("Idea", "Backlog", "Building", "Review", "Rework", "Finished"),
+                        board.workflow().phases(),
+                        board.workflow().closed(),
+                        List.of("Building", "Review", "Finished")),
+                board.stories(),
+                board.issues(),
+                board.work(),
+                board.repositories());
+    }
+
+    @Test
     void anIssueWaitingOutsideTheBoardIsOfferedOnlyWhileItsWaitIsDone() {
         // Harm: work starts on an issue whose blocker in another repository is open or unknown,
         // or a blocker reopened since the last board is taken as still done.

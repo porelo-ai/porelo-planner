@@ -27,8 +27,9 @@ import org.jspecify.annotations.Nullable;
  * of the states a work rule's work ends in that are neither working nor closed, the one latest in
  * the workflow, where the last work ends. An earlier work's end, such as an analysis's, waits for
  * the person's next step and is left to build. An issue left to build is blocked while an issue it
- * waits on stands on the board and is not closed; it then counts as blocked, not under its state.
- * An issue in a state the workflow lacks counts in no state, but in every other figure.
+ * waits on stands on the board and holds it back, neither closed nor in review ({@link
+ * WorkProposal#blockerDone}); it then counts as blocked, not under its state. An issue in a state
+ * the workflow lacks counts in no state, but in every other figure.
  *
  * @param states each state of the workflow, in order, with the number of its issues that are not
  *     blocked
@@ -79,7 +80,7 @@ public record OpenWork(
 
         private final Map<String, List<String>> children = new HashMap<>();
 
-        private final Set<String> open = new HashSet<>();
+        private final Set<String> holding = new HashSet<>();
 
         private final Set<String> review;
 
@@ -98,8 +99,8 @@ public record OpenWork(
                     children.computeIfAbsent(issue.parent(), key -> new ArrayList<>())
                             .add(issue.id());
                 }
-                if (!board.workflow().closed().contains(issue.state())) {
-                    open.add(issue.id());
+                if (!WorkProposal.blockerDone(board, issue)) {
+                    holding.add(issue.id());
                 }
             }
             this.review = reviewStates(board);
@@ -172,7 +173,7 @@ public record OpenWork(
                 // An issue whose wait opened again counts as blocked even while a run works it:
                 // the run goes on, but nothing more of it may start until the wait is done.
                 if (building
-                        && (issue.blockedBy().stream().anyMatch(open::contains)
+                        && (issue.blockedBy().stream().anyMatch(holding::contains)
                                 || issue.waitsOn().stream().anyMatch(Wait::holds))) {
                     blocked++;
                 } else {

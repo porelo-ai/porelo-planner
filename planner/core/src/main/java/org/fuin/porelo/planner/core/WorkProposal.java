@@ -468,9 +468,10 @@ public record WorkProposal(
     }
 
     /**
-     * What holds an issue back from work, in a person's words: each blocker on the board that does
-     * not stand in a closed state, or that the board lacks, and each wait outside the board not
-     * known to be done; empty when nothing does.
+     * What holds an issue back from work, in a person's words: each blocker on the board that
+     * stands neither in the review state, where its builder calls it finished, nor in a closed
+     * state, or that the board lacks, and each wait outside the board not known to be done; empty
+     * when nothing does. A blocker sent back from review to rework holds again.
      *
      * @param board the board
      * @param issue the issue
@@ -480,9 +481,7 @@ public record WorkProposal(
         final List<String> held = new ArrayList<>();
         for (final String blocker : issue.blockedBy()) {
             final boolean done =
-                    board.issue(blocker)
-                            .map(found -> board.workflow().closed().contains(found.state()))
-                            .orElse(false);
+                    board.issue(blocker).map(found -> blockerDone(board, found)).orElse(false);
             if (!done) {
                 held.add(blocker);
             }
@@ -493,6 +492,22 @@ public record WorkProposal(
             }
         }
         return held;
+    }
+
+    /**
+     * Whether a blocker on the board no longer holds the issues it blocks: it stands in a closed
+     * state, or in the review state, where its builder calls it finished. With no review state in
+     * the workflow, only a closed state counts.
+     *
+     * @param board the board
+     * @param blocker the blocker, an issue of the board
+     * @return true when it holds nothing back
+     */
+    public static boolean blockerDone(final Board board, final Issue blocker) {
+        return board.workflow().closed().contains(blocker.state())
+                || StoryState.of(board.workflow(), List.of())
+                        .map(rule -> rule.review().equals(blocker.state()))
+                        .orElse(false);
     }
 
     /**

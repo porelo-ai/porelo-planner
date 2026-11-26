@@ -27,7 +27,24 @@ class OpenWorkTest {
                     List.of(),
                     List.of("Finished", "Rejected"));
 
+    /** A workflow whose review state is Review, followed by Rework. */
+    private static final Workflow REVIEWED =
+            new Workflow(
+                    List.of(
+                            "Idea",
+                            "Backlog",
+                            "Implementing",
+                            "Review",
+                            "Rework",
+                            "Finished",
+                            "Rejected"),
+                    List.of(),
+                    List.of("Finished", "Rejected"),
+                    List.of("Implementing", "Review", "Finished"));
+
     private final List<Issue> issues = new ArrayList<>();
+
+    private Workflow workflow = WORKFLOW;
 
     // A blocked issue counted under its plain state would show a story as ready to build on.
     @Test
@@ -50,6 +67,24 @@ class OpenWorkTest {
         assertThat(free.blocked()).as("its blocker closed").isZero();
         assertThat(count(free.states(), "Backlog")).as("counted under its state").isEqualTo(1);
         assertThat(free.left()).as("only the free one is left").isEqualTo(1);
+    }
+
+    // A blocker its builder finished, counted as holding, would show a story blocked that may go
+    // on;
+    // one sent back to rework, counted as done, would show work free that must wait.
+    @Test
+    void anIssueIsBlockedOnlyWhileItsBlockerStandsNeitherInReviewNorClosed() {
+        workflow = REVIEWED;
+        for (final String state : List.of("Review", "Finished", "Rework", "Implementing")) {
+            issues.clear();
+            issue("own#1", "Backlog", "S", null, null, "own#2");
+            issue("own#2", state, "S", null, null);
+            final boolean holds = state.equals("Rework") || state.equals("Implementing");
+
+            assertThat(story().blocked())
+                    .as("an issue whose blocker stands in %s", state)
+                    .isEqualTo(holds ? 1 : 0);
+        }
     }
 
     // An issue waiting on another repository's counted under its plain state would show a story
@@ -307,7 +342,7 @@ class OpenWorkTest {
     private Board board(final List<String> ids, final boolean whole) {
         return new Board(
                 new Revision("r1"),
-                WORKFLOW,
+                workflow,
                 List.of(
                         new Story(
                                 "own#100", "A story", "Backlog", "High", null, ids, "", null,
