@@ -2701,6 +2701,63 @@ class WorkRunTest {
     }
 
     @Test
+    void aGatePushLandedByItsForwardingStillWaitsSoItsOwnPullRequestIsRead() {
+        // Harm: the gate's forwarding to the task's own pull request, which Porelo reports as a
+        // landing, ends the author's wait, so the points there never send the issue back.
+        final Fixture f = new Fixture();
+        final Map<String, WorkRule> rules =
+                new java.util.LinkedHashMap<>(f.store.board().work().rules());
+        final WorkRule building = rules.get("Building");
+        // A rule that names no reading, as the walk's: nothing reads the landed build.
+        rules.put(
+                "Building",
+                new WorkRule(
+                        building.from(),
+                        "Review",
+                        null,
+                        building.blocked(),
+                        building.per(),
+                        building.modes(),
+                        building.order(),
+                        building.models()));
+        final Board board = f.store.board();
+        f.store.current =
+                new Board(
+                        board.revision(),
+                        board.workflow(),
+                        board.stories(),
+                        board.issues(),
+                        new Work(rules, board.work().faults()),
+                        board.repositories());
+        final Board noReading = f.store.current;
+        final WorkRun.Offered build = waiting(f);
+        assertThat(f.run.report("task", landed(build, "porelo/task")).tasks())
+                .as("no reader offered")
+                .isEmpty();
+
+        assertThat(f.run.waiting())
+                .as("the work still waits where it was left, to be read there")
+                .extracting(WorkRun.Waits::issue)
+                .containsExactly("AA1");
+
+        final Fixture merged = new Fixture();
+        merged.store.current = noReading;
+        merged.run.report("task", landed(waiting(merged), "main"));
+        final ReviewOpen approved =
+                ((PlaceRead.Forwarded) forwarded("task", opened("v1", 0))).atGate();
+        merged.run.placeRead(
+                "ST1", "AA1", new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", approved));
+        assertThat(merged.run.waiting())
+                .as("a landing with no pull request is read once, then no more")
+                .isEmpty();
+
+        f.run.placeRead("ST1", "AA1", forwarded("task", answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
+        assertThat(f.run.work("ST1").places().get("AA1").place())
+                .as("the forwarded work is read at the task's own pull request")
+                .isEqualTo(RunPlace.own());
+    }
+
+    @Test
     void aStartThatReplacesTheRunCarriesItsPlacesWithTheirAuthorRunsVoid() {
         // Harm: a new start forgets where an issue's work waits, or keeps a place whose author
         // run it dropped, so the record no longer opens.

@@ -2163,6 +2163,16 @@ public final class WorkRun implements RefusedEventResave {
         return ended != null && ended.landed().isEmpty() && kept.open();
     }
 
+    /**
+     * Whether a kept place is still read: as {@link #waits}, but a landing does not end it, since
+     * the gate's forwarding to the task's own pull request is reported as one. Porelo's answer read
+     * at the place says whether the work goes on at that pull request or ended there.
+     */
+    private static boolean stillRead(final List<Offer> offers, final IssuePlace kept) {
+        final Offer last = bound(offers, kept);
+        return last == null || last.ended() != null && kept.open();
+    }
+
     /** The offer of a kept place's last author run, or null when the run holds none. */
     private static @Nullable Offer bound(final List<Offer> offers, final IssuePlace kept) {
         final String id = kept.authorRuns().getLast();
@@ -2326,7 +2336,7 @@ public final class WorkRun implements RefusedEventResave {
      */
     private static boolean stillWaits(final Board board, final Run run, final String issue) {
         final IssuePlace kept = run.places().get(issue);
-        if (kept == null || !waits(run.offers(), kept) || bindsIssueAtWork(run, issue)) {
+        if (kept == null || !stillRead(run.offers(), kept) || bindsIssueAtWork(run, issue)) {
             return false;
         }
         final Offer bound = bound(run.offers(), kept);
