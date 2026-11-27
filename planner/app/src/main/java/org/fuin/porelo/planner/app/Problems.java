@@ -32,10 +32,11 @@ import org.springframework.web.servlet.HandlerMapping;
  * detail and what it names in {@code parameters}.
  */
 @RestControllerAdvice
-// An ItemChanged refusal names its items in its parameters, which no handler's return type names,
-// so
-// a native image keeps them for Jackson only when named here.
-@RegisterReflectionForBinding(org.fuin.porelo.planner.app.answers.ChangedItem.class)
+// A handler's ProblemDetail return type does not name the typed parameters Jackson writes.
+@RegisterReflectionForBinding({
+    org.fuin.porelo.planner.app.answers.ChangedItem.class,
+    org.fuin.porelo.planner.app.answers.ProblemParameters.class
+})
 public class Problems {
 
     private static final Logger LOG = LoggerFactory.getLogger(Problems.class);

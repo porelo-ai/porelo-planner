@@ -31,8 +31,21 @@ import org.fuin.porelo.forge.github.model.PrivateUser;
 import org.fuin.porelo.forge.github.model.PublicUser;
 import org.fuin.porelo.forge.github.model.SimpleUser;
 import org.fuin.porelo.forge.github.model.UsersGetAuthenticated200Response;
+import org.fuin.porelo.planner.app.answers.BatchSaved;
+import org.fuin.porelo.planner.app.answers.Breach;
+import org.fuin.porelo.planner.app.answers.Breaches;
+import org.fuin.porelo.planner.app.answers.IssueParts;
+import org.fuin.porelo.planner.app.answers.ItemResult;
+import org.fuin.porelo.planner.app.answers.Outline;
+import org.fuin.porelo.planner.app.answers.OutlineIssue;
+import org.fuin.porelo.planner.app.answers.OutlineStory;
+import org.fuin.porelo.planner.app.answers.Problem;
+import org.fuin.porelo.planner.app.answers.ProblemParameters;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
+import org.fuin.porelo.planner.app.answers.SearchAnswer;
+import org.fuin.porelo.planner.app.answers.SearchMatch;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
+import org.fuin.porelo.planner.app.answers.TextParts;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ChangeCursor;
 import org.fuin.porelo.planner.store.cache.OverlaidItem;
@@ -107,14 +120,28 @@ final class BoundTypes {
                     OverlaidItem.class);
 
     /**
-     * The work record and the outbox on disk, and the answers the window's events carry, as JSON.
+     * The work record and the outbox on disk, and the event and agent answers, as JSON. Each part
+     * has its own check line so a field dropped from a nested answer changes its count too.
      */
     static final List<Class<?>> OWN =
             List.of(
                     WorkRecord.Document.class,
                     CommandOutbox.Document.class,
                     TaskEventReply.class,
-                    ReadingReply.class);
+                    ReadingReply.class,
+                    Outline.class,
+                    OutlineStory.class,
+                    OutlineIssue.class,
+                    IssueParts.class,
+                    TextParts.class,
+                    Breaches.class,
+                    Breach.class,
+                    SearchAnswer.class,
+                    SearchMatch.class,
+                    BatchSaved.class,
+                    ItemResult.class,
+                    Problem.class,
+                    ProblemParameters.class);
 
     /** The forge client's JSON, whose mapper the executable's check reads with. */
     static final String FORGE_JSON = "org.fuin.porelo.forge.github.GitHubJson";

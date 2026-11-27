@@ -35,6 +35,7 @@ import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ForyEncoding;
 import org.jspecify.annotations.Nullable;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The executable's check of its own image: every bound type is filled, written and read back, so a
@@ -62,6 +63,9 @@ final class SerializationCheck {
             List.of("sample", "porelo-ai/sample#1", "2026-01-02T03:04:05Z"); // not-a-citation
 
     private static final Instant WHEN = Instant.parse("2026-01-02T03:04:05Z");
+
+    /** Answers may omit optional fields, unlike the strict work record on disk. */
+    private static final JsonMapper ANSWERS = JsonMapper.builder().build();
 
     /** The forge client's own mapper, with its readers for GitHub's untyped unions. */
     private final ObjectMapper json = forgeMapper();
@@ -121,20 +125,25 @@ final class SerializationCheck {
         }
     }
 
-    /** Writes a filled instance of the planner's own as the work record does, and reads it back. */
+    /** Writes a filled record or answer with the planner's JSON, and reads it back. */
     private static int own(final Class<?> type) {
         final Object sample = sample(type);
-        final String written = WorkRecord.JSON.writerFor(type).writeValueAsString(sample);
-        final Object read = WorkRecord.JSON.readerFor(type).readValue(written);
+        final JsonMapper mapper =
+                type.getPackageName().equals("org.fuin.porelo.planner.app.answers")
+                        ? ANSWERS
+                        : WorkRecord.JSON;
+        final String written = mapper.writerFor(type).writeValueAsString(sample);
+        final Object read = mapper.readerFor(type).readValue(written);
         if (!sample.equals(read)) {
             throw new IllegalStateException("written " + written + ", read back differently");
         }
-        return WorkRecord.JSON.readTree(written).size();
+        return mapper.readTree(written).size();
     }
 
     /**
      * The instance of the planner's own type the check writes and reads back: the outbox and the
-     * work record as the planner writes them, any other type filled.
+     * work record as the planner writes them, every field of an answer filled, including optional
+     * and nullable fields whose loss must change the count.
      *
      * @param type the type
      * @return its sample

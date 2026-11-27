@@ -92,6 +92,22 @@ class ApiMatchesDescriptionTest {
                             "UnlistedIssue",
                             org.fuin.porelo.planner.app.answers.UnlistedIssue.class),
                     Map.entry("RuleBreach", org.fuin.porelo.planner.app.answers.RuleBreach.class),
+                    Map.entry("Outline", org.fuin.porelo.planner.app.answers.Outline.class),
+                    Map.entry(
+                            "OutlineStory", org.fuin.porelo.planner.app.answers.OutlineStory.class),
+                    Map.entry(
+                            "OutlineIssue", org.fuin.porelo.planner.app.answers.OutlineIssue.class),
+                    Map.entry("IssueParts", org.fuin.porelo.planner.app.answers.IssueParts.class),
+                    Map.entry("TextParts", org.fuin.porelo.planner.app.answers.TextParts.class),
+                    Map.entry("Breaches", org.fuin.porelo.planner.app.answers.Breaches.class),
+                    Map.entry("Breach", org.fuin.porelo.planner.app.answers.Breach.class),
+                    Map.entry(
+                            "SearchAnswer", org.fuin.porelo.planner.app.answers.SearchAnswer.class),
+                    Map.entry("SearchMatch", org.fuin.porelo.planner.app.answers.SearchMatch.class),
+                    Map.entry("BatchSaved", org.fuin.porelo.planner.app.answers.BatchSaved.class),
+                    Map.entry("ItemResult", org.fuin.porelo.planner.app.answers.ItemResult.class),
+                    Map.entry("Problem", org.fuin.porelo.planner.app.answers.Problem.class),
+                    Map.entry("ChangedItem", org.fuin.porelo.planner.app.answers.ChangedItem.class),
                     Map.entry("Refreshed", org.fuin.porelo.planner.app.answers.Refreshed.class),
                     Map.entry("Moved", org.fuin.porelo.planner.app.answers.Moved.class),
                     Map.entry("StoppedRun", org.fuin.porelo.planner.app.answers.StoppedRun.class),

@@ -6,13 +6,33 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.aot.hint.RuntimeHints;
+import org.springframework.aot.hint.predicate.RuntimeHintsPredicates;
 
 /**
  * Guards the executable's check of its own image: it must write and read back every type the
  * planner binds, so the native executable's answer can be held to the JVM's.
  */
 class SerializationCheckTest {
+
+    /** Counts include optional and nullable fields, so a sample that leaves one out fails. */
+    private static final Map<Class<?>, Integer> AGENT_ANSWERS =
+            Map.ofEntries(
+                    Map.entry(org.fuin.porelo.planner.app.answers.Outline.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.OutlineStory.class, 5),
+                    Map.entry(org.fuin.porelo.planner.app.answers.OutlineIssue.class, 5),
+                    Map.entry(org.fuin.porelo.planner.app.answers.IssueParts.class, 14),
+                    Map.entry(org.fuin.porelo.planner.app.answers.TextParts.class, 8),
+                    Map.entry(org.fuin.porelo.planner.app.answers.Breaches.class, 2),
+                    Map.entry(org.fuin.porelo.planner.app.answers.Breach.class, 4),
+                    Map.entry(org.fuin.porelo.planner.app.answers.SearchAnswer.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.SearchMatch.class, 5),
+                    Map.entry(org.fuin.porelo.planner.app.answers.BatchSaved.class, 2),
+                    Map.entry(org.fuin.porelo.planner.app.answers.ItemResult.class, 6),
+                    Map.entry(org.fuin.porelo.planner.app.answers.Problem.class, 5),
+                    Map.entry(org.fuin.porelo.planner.app.answers.ProblemParameters.class, 31));
 
     @Test
     void everyBoundTypeIsWrittenAndReadBackAsItWas() {
@@ -43,6 +63,64 @@ class SerializationCheckTest {
         assertThat(lines.getLast())
                 .as("the copy read back holds every record Fory registers")
                 .isEqualTo("BoardCopy " + BoundTypes.COPY.size() + " records");
+        AGENT_ANSWERS.forEach(
+                (type, count) ->
+                        assertThat(lines)
+                                .as("the check reads back every field of %s", type.getSimpleName())
+                                .contains(type.getSimpleName() + " " + count + " values"));
+    }
+
+    @Test
+    void everyAgentAnswerAndItsPartsAreBoundWithEveryFieldFilled() {
+        // Harm: optional fields vanish from a native answer while an empty sample still passes.
+        final RuntimeHints hints = new RuntimeHints();
+        new BoundTypes.Hints().registerHints(hints, null);
+
+        assertThat(BoundTypes.OWN)
+                .as("each answer and its parts have their own check line")
+                .containsAll(AGENT_ANSWERS.keySet());
+        for (final Map.Entry<Class<?>, Integer> answer : AGENT_ANSWERS.entrySet()) {
+            final Class<?> type = answer.getKey();
+            assertThat(RuntimeHintsPredicates.reflection().onType(type).test(hints))
+                    .as("%s kept for binding", type.getSimpleName())
+                    .isTrue();
+            assertThat(RuntimeHintsPredicates.reflection().onType(type.arrayType()).test(hints))
+                    .as("%s kept as a list element", type.getSimpleName())
+                    .isTrue();
+            final tools.jackson.databind.JsonNode filled =
+                    WorkRecord.JSON.valueToTree(SerializationCheck.sample(type));
+            assertThat(filled.size())
+                    .as("every field of %s is written", type.getSimpleName())
+                    .isEqualTo(answer.getValue());
+            for (final java.lang.reflect.RecordComponent field : type.getRecordComponents()) {
+                assertThat(filled.path(field.getName()).isMissingNode())
+                        .as("%s.%s is written", type.getSimpleName(), field.getName())
+                        .isFalse();
+                assertThat(filled.path(field.getName()).isNull())
+                        .as("%s.%s holds a value", type.getSimpleName(), field.getName())
+                        .isFalse();
+            }
+        }
+    }
+
+    @Test
+    void aBatchRefusalReadsBackTheNewProblemParameters() {
+        // Harm: a batch hides the text fault or new item's key that a caller needs to repair it.
+        final Class<?> type = org.fuin.porelo.planner.app.answers.BatchSaved.class;
+        final Object sample = SerializationCheck.sample(type);
+        final tools.jackson.databind.json.JsonMapper json =
+                tools.jackson.databind.json.JsonMapper.builder().build();
+        final String written = json.writerFor(type).writeValueAsString(sample);
+        final Object read = json.readerFor(type).readValue(written);
+        final tools.jackson.databind.JsonNode parameters =
+                json.valueToTree(read).at("/results/0/refusal/parameters");
+
+        assertThat(read).as("the batch including its refusal reads back").isEqualTo(sample);
+        for (final String field : List.of("part", "fault", "found", "key")) {
+            assertThat(parameters.path(field).asString())
+                    .as("the batch refusal keeps %s", field)
+                    .isNotEmpty();
+        }
     }
 
     @Test
@@ -174,7 +252,9 @@ class SerializationCheckTest {
                 .as("every state")
                 .contains(CommandOutbox.State.values());
         assertThat(outbox.earlier()).as("a group kept from another source").isNotEmpty();
-        assertThat(BoundTypes.OWN).contains(CommandOutbox.Document.class);
+        assertThat(BoundTypes.OWN)
+                .as("the outbox has its own check line")
+                .contains(CommandOutbox.Document.class);
     }
 
     @Test
