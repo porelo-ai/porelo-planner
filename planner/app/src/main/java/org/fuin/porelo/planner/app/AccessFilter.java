@@ -84,9 +84,9 @@ public final class AccessFilter implements Filter {
     private static final Pattern RESULT_PATH =
             Pattern.compile("/projects/[^/?#;%]+/tasks/[^/?#;%]+/result");
 
-    /** The raw paths that create a story or an issue. */
+    /** The raw paths that create a story or an issue, or several issues in one board change. */
     private static final Pattern CREATION_PATH =
-            Pattern.compile("/projects/[^/?#;%]+/(stories|issues)");
+            Pattern.compile("/projects/[^/?#;%]+/(stories|issues|changes)");
 
     /** The largest body a proof's request may have. */
     static final int MOST_PROOF = 128;

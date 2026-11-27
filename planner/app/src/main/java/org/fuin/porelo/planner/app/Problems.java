@@ -49,9 +49,7 @@ public class Problems {
 
     /** Reads a refusal's parameters into the record the description names; none is left out. */
     private static final JsonMapper PARAMETERS =
-            JsonMapper.builder()
-                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                    .build();
+            JsonMapper.builder().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
 
     /** The most causes the line names, outermost first. */
     private static final int CAUSES = 4;
@@ -127,7 +125,7 @@ public class Problems {
      * Answers a refusal of one item of a batch as the generated problem record, exactly as the call
      * alone would answer it: the same name, status, words and parameters.
      *
-     * @param refusal the item's refusal, a move's or a work refusal
+     * @param refusal the item's refusal: a move's, a work refusal or the planner's own
      * @return the problem
      */
     static org.fuin.porelo.planner.app.answers.Problem answer(final RuntimeException refusal) {
@@ -140,6 +138,10 @@ public class Problems {
             parameters = refused.parameters();
         } else if (refusal instanceof WorkRefusal work) {
             final Refusal alone = Refusal.work(work);
+            name = alone.name();
+            status = alone.status();
+            parameters = alone.parameters();
+        } else if (refusal instanceof Refusal alone) {
             name = alone.name();
             status = alone.status();
             parameters = alone.parameters();

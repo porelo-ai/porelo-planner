@@ -202,6 +202,9 @@ class ApiMatchesDescriptionTest {
                     Map.entry("BlockedByRequest", EditRequests.BlockedByRequest.class),
                     Map.entry("StateMoves", EditRequests.StateMovesRequest.class),
                     Map.entry("StateMove", EditRequests.StateMoveRequest.class),
+                    Map.entry("BoardChange", BoardChangeRequests.Change.class),
+                    Map.entry("NewItem", BoardChangeRequests.NewItem.class),
+                    Map.entry("ItemUpdate", BoardChangeRequests.Update.class),
                     Map.entry("CommentRequest", EditRequests.CommentRequest.class),
                     Map.entry("ListIssueRequest", EditRequests.ListRequest.class));
 
@@ -301,7 +304,8 @@ class ApiMatchesDescriptionTest {
                         "PUT /projects/{project}/stories/{story}/text",
                         "POST /projects/{project}/issues/{issue}/comments",
                         "POST /projects/{project}/items",
-                        "POST /projects/{project}/states")
+                        "POST /projects/{project}/states",
+                        "POST /projects/{project}/changes")
                 .isEqualTo(served);
     }
 

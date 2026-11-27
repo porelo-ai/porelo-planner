@@ -1,0 +1,286 @@
+package org.fuin.porelo.planner.app;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Fields;
+import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.NewIssue;
+import org.fuin.porelo.planner.store.PlanningStore;
+import org.fuin.porelo.planner.store.ProjectRepository;
+import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.Work;
+import org.fuin.porelo.planner.store.Worker;
+import org.fuin.porelo.planner.store.Workflow;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+class BoardChangeEndpointTest {
+
+    private static final String SOURCE = "{\"repository\": \"git@example.org:a/porelo-store.git\"}";
+
+    /** The issues the store holds, by id, in the order made. */
+    private final Map<String, Issue> issues = new LinkedHashMap<>();
+
+    private final List<NewIssue> made = new ArrayList<>();
+
+    private int revision = 1;
+
+    private MockMvc mvc;
+
+    private ChangesRegistry changes;
+
+    private Board board() {
+        return new Board(
+                new Revision("r" + revision),
+                new Workflow(
+                        List.of("Idea", "Backlog", "Finished"), List.of(), List.of("Finished")),
+                List.of(),
+                List.copyOf(issues.values()),
+                new Work(Map.of(), List.of()),
+                ProjectRepository.named(List.of("porelo-store")));
+    }
+
+    private static Issue stored(
+            final String id,
+            final String title,
+            final @org.jspecify.annotations.Nullable String size,
+            final List<String> blockedBy) {
+        return new Issue(
+                id,
+                "porelo-store",
+                title,
+                "Idea",
+                size,
+                blockedBy,
+                null,
+                null,
+                "Text.",
+                Worker.AGENT,
+                Risk.ORDINARY);
+    }
+
+    @BeforeEach
+    void serve() throws Exception {
+        issues.put("AB1", stored("AB1", "Existing", null, List.of()));
+        final PlanningStore store =
+                new PlanningStore() {
+                    @Override
+                    public Board board() {
+                        return BoardChangeEndpointTest.this.board();
+                    }
+
+                    @Override
+                    public Board refresh() {
+                        return board();
+                    }
+
+                    @Override
+                    public NewIssue.Added createIssue(final Revision seen, final NewIssue issue) {
+                        made.add(issue);
+                        final String id = "AB" + (issues.size() + 1);
+                        issues.put(id, stored(id, issue.title(), issue.size(), List.of()));
+                        revision++;
+                        return new NewIssue.Added(id, board());
+                    }
+
+                    @Override
+                    public Board setFields(
+                            final Revision seen, final String id, final Fields fields) {
+                        final Issue now = issues.get(id);
+                        issues.put(id, stored(id, now.title(), fields.size(), now.blockedBy()));
+                        revision++;
+                        return board();
+                    }
+
+                    @Override
+                    public Board setBlockedBy(
+                            final Revision seen, final String id, final List<String> blockedBy) {
+                        final Issue now = issues.get(id);
+                        issues.put(id, stored(id, now.title(), now.size(), blockedBy));
+                        revision++;
+                        return board();
+                    }
+                };
+        final Projects projects = new Projects((project, repository, branch) -> store);
+        changes =
+                new ChangesRegistry(
+                        projects,
+                        Duration.ofHours(1),
+                        Executors.newSingleThreadScheduledExecutor());
+        final BoardController window = new BoardController(projects, changes);
+        mvc =
+                MockMvcBuilders.standaloneSetup(
+                                window,
+                                new BoardChangeController(
+                                        projects,
+                                        changes,
+                                        window,
+                                        new BoardEdits(projects, changes)))
+                        .setControllerAdvice(new Problems(projects))
+                        .build();
+        mvc.perform(put("/projects/alpha").contentType(MediaType.APPLICATION_JSON).content(SOURCE))
+                .andExpect(status().isNoContent());
+    }
+
+    @AfterEach
+    void close() {
+        changes.close();
+    }
+
+    private ResultActions change(final String body) throws Exception {
+        return mvc.perform(
+                post("/projects/alpha/changes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body));
+    }
+
+    private static String create(final String key, final String blockedBy) {
+        return "{\"key\": \""
+                + key
+                + "\", \"repository\": \"porelo-store\", \"title\": \"Title "
+                + key
+                + "\", \"parts\": {\"whatMustBeTrue\": \"It works.\"}"
+                + (blockedBy.isEmpty() ? "" : ", \"blockedBy\": [" + blockedBy + "]")
+                + "}";
+    }
+
+    @Test
+    void threeNewIssuesOneBlockingAnotherByKeyAndOneUpdateApplyInOneCallWithIdsAnsweredByKey()
+            throws Exception {
+        // Harm: an agent's plan of new issues written without the blocker it named by key, or its
+        // ids lost, so it cannot tell which new issue is which.
+        change(
+                        "{\"creates\": ["
+                                + create("first", "")
+                                + ","
+                                + create("second", "\"first\"")
+                                + ","
+                                + create("third", "")
+                                + "], \"updates\": [{\"issue\": \"AB1\", \"size\": \"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results.length()").value(4))
+                .andExpect(jsonPath("$.results[0].key").value("first"))
+                .andExpect(jsonPath("$.results[0].item").value("AB2"))
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[1].key").value("second"))
+                .andExpect(jsonPath("$.results[1].item").value("AB3"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[2].item").value("AB4"))
+                .andExpect(jsonPath("$.results[3].item").value("AB1"))
+                .andExpect(jsonPath("$.results[3].key").doesNotExist())
+                .andExpect(jsonPath("$.results[3].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.revision").value("r" + revision));
+
+        assertThat(made)
+                .as("the new issues, made in the order sent")
+                .extracting(NewIssue::title)
+                .containsExactly("Title first", "Title second", "Title third");
+        assertThat(issues.get("AB3").blockedBy())
+                .as("the blocker named by key, written as the id made for it")
+                .containsExactly("AB2");
+        assertThat(issues.get("AB1").size()).as("the existing issue's new size").isEqualTo("M");
+    }
+
+    @Test
+    void aBlockerKeyNamingNothingIsRefusedNamingTheKeyWhileTheOthersStand() throws Exception {
+        // Harm: a mistyped key failing the whole plan, or a new issue made without the blocker
+        // the agent meant and no word of it.
+        change("{\"creates\": [" + create("first", "\"frist\"") + "," + create("second", "") + "]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].key").value("first"))
+                .andExpect(jsonPath("$.results[0].item").doesNotExist())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("NoSuchKey"))
+                .andExpect(jsonPath("$.results[0].refusal.parameters.key").value("frist"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"));
+
+        assertThat(made)
+                .as("only the new issue whose references all name something")
+                .extracting(NewIssue::title)
+                .containsExactly("Title second");
+    }
+
+    @Test
+    void aNewIssueWhoseBlockerWasRefusedIsRefusedNamingThatKeyAndIsNotMade() throws Exception {
+        // Harm: a new issue made without the blocker the agent planned for it.
+        change(
+                        "{\"creates\": [{\"key\": \"first\", \"repository\": \"porelo-elsewhere\","
+                                + " \"title\": \"Nowhere\", \"parts\": {\"whatMustBeTrue\": \"X.\"}},"
+                                + create("second", "\"first\"")
+                                + "]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("IssueNotAllowed"))
+                .andExpect(jsonPath("$.results[1].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[1].refusal.title").value("KeyRefused"))
+                .andExpect(jsonPath("$.results[1].refusal.parameters.key").value("first"));
+
+        assertThat(made).as("nothing made").isEmpty();
+    }
+
+    @Test
+    void anUpdateARuleRefusesIsNamedWithItsReasonWhileTheOthersAreSaved() throws Exception {
+        // Harm: one bad update holding back the agent's whole change, or dropped without a word.
+        change(
+                        "{\"updates\": [{\"issue\": \"AB9\", \"size\": \"S\"},"
+                                + " {\"issue\": \"AB1\", \"size\": \"S\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].item").value("AB9"))
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.detail").isNotEmpty())
+                .andExpect(jsonPath("$.results[1].item").value("AB1"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"));
+
+        assertThat(issues.get("AB1").size()).as("the other update saved").isEqualTo("S");
+    }
+
+    @Test
+    void anUpdateOfWhatTheIssueHoldsAlreadyIsUnchanged() throws Exception {
+        // Harm: an agent told it changed what it did not, and a save made for nothing.
+        issues.put("AB1", stored("AB1", "Existing", "M", List.of()));
+        final int before = revision;
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"));
+
+        assertThat(revision).as("no save").isEqualTo(before);
+    }
+
+    @Test
+    void aMalformedChangeIsRefusedWholeBeforeAnythingIsMade() throws Exception {
+        // Harm: half of a malformed change written before its fault is found.
+        for (final String body :
+                List.of(
+                        "{\"creates\": [" + create("same", "") + "," + create("same", "") + "]}",
+                        "{\"creates\": [" + create("first", "") + "], \"deletes\": []}",
+                        "{\"creates\": [{\"key\": \"no spaces\", \"repository\": \"porelo-store\","
+                                + " \"title\": \"T\", \"parts\": {\"whatMustBeTrue\": \"X.\"}}]}",
+                        "{\"creates\": [{\"key\": \"first\", \"repository\": \"porelo-store\","
+                                + " \"title\": \"T\", \"parts\": {\"plan\": \"X.\"}}]}",
+                        "{}")) {
+            change(body)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        }
+
+        assertThat(made).as("nothing made").isEmpty();
+    }
+}

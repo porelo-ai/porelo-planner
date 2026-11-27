@@ -772,6 +772,21 @@ public class BoardController {
                 EditRequests.stateMoves(request, name).moves().stream()
                         .map(move -> new MoveIssues.Ask(move.issue(), move.to(), move.reason()))
                         .toList();
+        try {
+            return moveMany(name, asks);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    /**
+     * Moves many issues as {@code moveIssues} does, without announcing the save.
+     *
+     * @param name the project's checked name
+     * @param asks the moves
+     * @return the revision after the call and what became of each move
+     */
+    BatchSaved moveMany(final String name, final List<MoveIssues.Ask> asks) {
         final Projects.Given given = projects.given(name);
         try {
             return given.work()
@@ -780,8 +795,6 @@ public class BoardController {
                                     movedIssues(name, given.store(), asks, running, runs));
         } catch (final UnsupportedOperationException e) {
             throw movesNotOffered(name);
-        } finally {
-            changes.saved(name);
         }
     }
 
@@ -864,13 +877,31 @@ public class BoardController {
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = name(project);
         final WorkRequests.IssueRequest body = WorkRequests.issue(request);
+        final NewIssue.Added added;
+        try {
+            added = addIssue(name, body);
+        } finally {
+            changes.saved(name);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new IssueAdded(added.id(), added.board().revision().value()));
+    }
+
+    /**
+     * Adds an issue as {@code createIssue} does, without announcing the save, for a caller that
+     * adds several in one call.
+     *
+     * @param name the project's checked name
+     * @param body the new issue
+     * @return the new issue's id and the board after the save
+     */
+    NewIssue.Added addIssue(final String name, final WorkRequests.IssueRequest body) {
         final Basis seen = body.seen();
         if (seen == null) {
             throw NewIssues.refused("seen", "The body names no versions seen.");
         }
-        final NewIssue.Added added;
         try {
-            added = projects.work(name).withRuns(runs -> createIssue(name, seen, body, runs));
+            return projects.work(name).withRuns(runs -> createIssue(name, seen, body, runs));
         } catch (final StoreException.NotSavable e) {
             throw NewIssues.refused(e.field(), String.valueOf(e.getMessage()));
         } catch (final UnsupportedOperationException e) {
@@ -879,11 +910,7 @@ public class BoardController {
                     HttpStatus.NOT_IMPLEMENTED,
                     "This planner does not add issues.",
                     Map.of("project", name));
-        } finally {
-            changes.saved(name);
         }
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new IssueAdded(added.id(), added.board().revision().value()));
     }
 
     private NewIssue.Added createIssue(
@@ -1126,10 +1153,23 @@ public class BoardController {
         final String name = name(project);
         final WorkRequests.WorkerRequest body = WorkRequests.worker(request, checked);
         try {
-            return projects.work(name).worker(checked, () -> saveWorker(name, checked, body));
+            return workerOf(name, checked, body);
         } finally {
             changes.saved(name);
         }
+    }
+
+    /**
+     * Sets who works an issue as {@code setWorker} does, without announcing the save.
+     *
+     * @param name the project's checked name
+     * @param issue the issue's checked id
+     * @param body the new worker and the versions seen
+     * @return the revision after the save, unchanged when the issue had that worker already
+     */
+    WorkerSaved workerOf(
+            final String name, final String issue, final WorkRequests.WorkerRequest body) {
+        return projects.work(name).worker(issue, () -> saveWorker(name, issue, body));
     }
 
     private WorkerSaved saveWorker(
