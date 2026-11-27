@@ -1,0 +1,164 @@
+[
+  {
+    "task": "porelo-default_a1",
+    "project": "default",
+    "repository": "r1",
+    "work": null,
+    "agent": "stub",
+    "model": null,
+    "modelFrom": "agent",
+    "effort": null,
+    "startedAt": "2026-11-27T06:08:58.896311537Z",
+    "endedAt": null,
+    "end": null,
+    "totals": {
+      "requests": 0,
+      "input": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheRead": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheWrite": {
+        "tokens": null,
+        "missing": 0
+      },
+      "output": {
+        "tokens": null,
+        "missing": 0
+      },
+      "reasoning": {
+        "tokens": null,
+        "missing": 0
+      }
+    },
+    "toolCallsAsked": "DID_NOT_ASK",
+    "toolCalls": [],
+    "runs": 0,
+    "workspace": "own",
+    "readLanded": [],
+    "projectServices": true,
+    "writeAs": "author",
+    "rights": [
+      "push",
+      "reply"
+    ],
+    "place": {
+      "gatePush": {
+        "repository": "r1",
+        "name": "a1"
+      }
+    },
+    "held": 0,
+    "updatedAt": "2026-11-27T06:08:58.896657510Z",
+    "reports": []
+  },
+  {
+    "task": "porelo-default_rd1",
+    "project": "default",
+    "repository": "r1",
+    "work": null,
+    "agent": "stub",
+    "model": null,
+    "modelFrom": "agent",
+    "effort": null,
+    "startedAt": "2026-11-27T06:09:21.937389584Z",
+    "endedAt": null,
+    "end": null,
+    "totals": {
+      "requests": 0,
+      "input": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheRead": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheWrite": {
+        "tokens": null,
+        "missing": 0
+      },
+      "output": {
+        "tokens": null,
+        "missing": 0
+      },
+      "reasoning": {
+        "tokens": null,
+        "missing": 0
+      }
+    },
+    "toolCallsAsked": "DID_NOT_ASK",
+    "toolCalls": [],
+    "runs": 0,
+    "workspace": "readOnly",
+    "readLanded": [
+      "a1"
+    ],
+    "projectServices": true,
+    "writeAs": "author",
+    "rights": [
+      "report"
+    ],
+    "held": 0,
+    "updatedAt": "2026-11-27T06:09:21.937679242Z",
+    "reports": []
+  },
+  {
+    "task": "porelo-default_np1",
+    "project": "default",
+    "repository": "r1",
+    "work": null,
+    "agent": "stub",
+    "model": null,
+    "modelFrom": "agent",
+    "effort": null,
+    "startedAt": "2026-11-27T06:09:47.832636569Z",
+    "endedAt": null,
+    "end": null,
+    "totals": {
+      "requests": 0,
+      "input": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheRead": {
+        "tokens": null,
+        "missing": 0
+      },
+      "cacheWrite": {
+        "tokens": null,
+        "missing": 0
+      },
+      "output": {
+        "tokens": null,
+        "missing": 0
+      },
+      "reasoning": {
+        "tokens": null,
+        "missing": 0
+      }
+    },
+    "toolCallsAsked": "DID_NOT_ASK",
+    "toolCalls": [],
+    "runs": 0,
+    "workspace": "own",
+    "readLanded": [],
+    "projectServices": true,
+    "writeAs": "author",
+    "rights": [
+      "reply"
+    ],
+    "place": {
+      "gatePush": {
+        "repository": "r1",
+        "name": "np1"
+      }
+    },
+    "held": 0,
+    "updatedAt": "2026-11-27T06:09:47.832890574Z",
+    "reports": []
+  }
+]

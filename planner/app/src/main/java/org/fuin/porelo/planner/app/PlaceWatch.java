@@ -21,7 +21,6 @@ import org.fuin.porelo.planner.core.PlaceRead;
 import org.fuin.porelo.planner.core.PlaceReviews;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -535,8 +534,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         }
         PlaceRead read;
         try {
-            final ReviewOpen answer =
-                    reviews.open(project, place.place(), RunRole.AUTHOR, place.task());
+            final ReviewOpen answer = reviews.open(project, place.place(), place.task());
             read = new PlaceRead.Opened(place.place(), place.task(), answer);
             if (forwarded(place, answer)) {
                 read = ownRead(project, waits.issue(), place, answer, reviews);
@@ -551,9 +549,9 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
         return work.placeRead(waits.story(), waits.issue(), read);
     }
 
-    /** Whether an author's gate push was forwarded, so its work may go on at its pull request. */
+    /** Whether a task's own gate push was forwarded, so its work may go on at its pull request. */
     private static boolean forwarded(final IssuePlace place, final ReviewOpen answer) {
-        return place.role() == RunRole.AUTHOR
+        return !place.foreign()
                 && place.place().gatePush() != null
                 && answer.decision() == ReviewOpen.Decision.APPROVED
                 && answer.mergedCommit() != null
@@ -576,7 +574,7 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     place.place(),
                     place.task(),
                     atGate,
-                    reviews.open(project, RunPlace.own(), RunRole.AUTHOR, place.task()));
+                    reviews.open(project, RunPlace.own(), place.task()));
         } catch (final PlaceReviews.Refused refused) {
             if (NO_PULL_REQUEST.contains(refused.refusal())) {
                 LOG.info(

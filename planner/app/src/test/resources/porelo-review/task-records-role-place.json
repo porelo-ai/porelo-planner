@@ -19,7 +19,11 @@
     "toolCallsAsked": "ASKED",
     "toolCalls": [],
     "runs": 1,
-    "role": "AUTHOR",
+    "workspace": "own",
+    "rights": ["push", "reply"],
+    "readLanded": [],
+    "writeAs": "author",
+    "projectServices": true,
     "place": {
       "gatePush": {
         "name": "cart"

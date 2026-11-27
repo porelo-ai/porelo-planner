@@ -24,10 +24,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.files.HostSystem;
 import org.fuin.porelo.planner.store.files.Seconds;
 import org.fuin.porelo.wire.LimitFactors;
@@ -114,6 +114,13 @@ public final class PoreloTaskRecords implements TaskRecords {
             Pattern.compile("[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]");
 
     private static final Set<String> ENDS = Set.of("done", "failed", "stopped", "removed");
+
+    /** The most rights or tasks read a record's start names; more is no record of Porelo's. */
+    private static final int MOST_PARTS = 64;
+
+    /** A task's name as Porelo's Start takes it. */
+    private static final java.util.regex.Pattern TASK =
+            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}");
 
     private static final Set<String> ASKED = Set.of("ASKED", "CANNOT_SAY", "DID_NOT_ASK");
 
@@ -308,7 +315,13 @@ public final class PoreloTaskRecords implements TaskRecords {
             totals();
             oneOf(record, "toolCallsAsked", "toolCallsAsked", ASKED);
             final List<TaskRecord.Call> calls = calls();
-            final RunRole role = PoreloPlaces.role(record, "role", "role", this::refused);
+            final Role.Workspace workspace =
+                    PoreloPlaces.workspace(record, "workspace", "workspace", this::refused);
+            if (workspace == null) {
+                // Porelo writes the kind out for every task, so the planner never derives one.
+                throw refused("workspace", "is missing");
+            }
+            parts();
             final RunPlace place = PoreloPlaces.place(record, "place", "place", this::refused);
             final Integer held = heldOrNull();
             final String callerKey = callerKey();
@@ -322,7 +335,7 @@ public final class PoreloTaskRecords implements TaskRecords {
                         endedAt,
                         end == null ? null : TaskRecord.End.valueOf(end.toUpperCase(Locale.ROOT)),
                         calls,
-                        role,
+                        workspace,
                         place,
                         held,
                         callerKey);
@@ -398,6 +411,39 @@ public final class PoreloTaskRecords implements TaskRecords {
                         path, "is empty, longer than 200 characters or holds a control character");
             }
             return ISSUE.matcher(issue).matches() ? issue : null;
+        }
+
+        /**
+         * Checks the parts the record's start recorded beside its workspace, each written out by
+         * Porelo: the rights, the tasks whose landed work it reads, the account it writes as and
+         * whether it has the project's services. The planner keeps its own record of what it handed
+         * Start and derives nothing from these, so they are checked and not kept.
+         */
+        private void parts() {
+            for (final JsonNode right : list("rights")) {
+                if (!right.isTextual() || Role.Right.of(right.textValue()).isEmpty()) {
+                    throw refused("rights", "names a right that is none of Porelo's");
+                }
+            }
+            for (final JsonNode read : list("readLanded")) {
+                if (!read.isTextual() || !TASK.matcher(read.textValue()).matches()) {
+                    throw refused("readLanded", "names no task");
+                }
+            }
+            if (Role.WriteAs.of(text(record, "writeAs", "writeAs")).isEmpty()) {
+                throw refused("writeAs", "is neither author nor review");
+            }
+            if (!present(record, "projectServices", "projectServices").isBoolean()) {
+                throw refused("projectServices", "is neither true nor false");
+            }
+        }
+
+        private JsonNode list(final String name) {
+            final JsonNode value = present(record, name, name);
+            if (!value.isArray() || value.size() > MOST_PARTS) {
+                throw refused(name, "is no list of at most " + MOST_PARTS + " entries");
+            }
+            return value;
         }
 
         /**

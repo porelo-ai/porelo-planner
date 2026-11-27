@@ -5,12 +5,12 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.function.BiFunction;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
+import org.fuin.porelo.planner.store.Role;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Reads a run's role and place as Porelo's answers give them, checking each member, so a reader of
- * Porelo refuses what the contract does not describe instead of guessing it.
+ * Reads a run's workspace and place as Porelo's answers give them, checking each member, so a
+ * reader of Porelo refuses what the contract does not describe instead of guessing it.
  */
 final class PoreloPlaces {
 
@@ -21,15 +21,16 @@ final class PoreloPlaces {
     private PoreloPlaces() {}
 
     /**
-     * Answers a role, or null when the member is absent or null.
+     * Reads the kind of a task's workspace as Porelo recorded it, in Porelo's own words; the
+     * planner derives none, so a word it does not know makes the record unreadable.
      *
      * @param object the object holding it
      * @param name the member's name
      * @param path the member's path, named in a refusal
      * @param refused makes the refusal from a path and what is wrong
-     * @return the role, or null
+     * @return the kind, or null when Porelo recorded none
      */
-    static @Nullable RunRole role(
+    static Role.@Nullable Workspace workspace(
             final JsonNode object,
             final String name,
             final String path,
@@ -41,11 +42,13 @@ final class PoreloPlaces {
         if (!value.isTextual()) {
             throw refused.apply(path, "is neither absent nor a string");
         }
-        try {
-            return RunRole.valueOf(value.textValue());
-        } catch (final IllegalArgumentException ex) {
-            throw refused.apply(path, "is none of [AUTHOR, REVIEWER]");
-        }
+        return Role.Workspace.of(value.textValue())
+                .orElseThrow(
+                        () ->
+                                refused.apply(
+                                        path,
+                                        "is none of [own, foreign, readOnly, allRepositories,"
+                                                + " none]"));
     }
 
     /**

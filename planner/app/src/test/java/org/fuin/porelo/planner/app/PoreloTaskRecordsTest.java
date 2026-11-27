@@ -26,9 +26,9 @@ import org.fuin.porelo.planner.app.PoreloTaskRecords.ProcessRunner;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.Result;
 import org.fuin.porelo.planner.app.PoreloTaskRecords.Runner;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords.Unanswered;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.wire.LimitFactors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -132,49 +132,63 @@ class PoreloTaskRecordsTest {
                                         new TaskRecord.Call(
                                                 "EX13",
                                                 Instant.parse("2026-11-02T11:00:00Z"),
-                                                null))));
+                                                null)),
+                                Role.Workspace.OWN,
+                                null,
+                                null));
     }
 
-    // Prevents the planner from losing where a run works and in which role, or the items held
-    // back from it, as Porelo's record names them.
+    // Prevents the planner from losing where a run works and in which kind of workspace, or the
+    // items held back from it, as Porelo's record names them.
     @Test
-    void aRunsRolePlaceAndHeldItemsAreReadAsTheContractNamesThem() throws Exception {
+    void aRunsWorkspacePlaceAndHeldItemsAreReadAsTheContractNamesThem() throws Exception {
         final ObjectNode record = record();
-        record.put("role", "AUTHOR");
         record.set("place", JSON.readTree("{\"gatePush\": {\"name\": \"cart\"}}"));
         record.put("held", 2);
         final ObjectNode other = record();
         other.put("task", "t-2");
-        other.put("role", "REVIEWER");
+        other.put("workspace", "foreign");
+        other.set("rights", JSON.readTree("[\"openThreads\", \"report\"]"));
+        other.set("readLanded", JSON.readTree("[\"cart\"]"));
+        other.put("writeAs", "review");
+        other.put("projectServices", false);
         other.set(
                 "place",
                 JSON.readTree("{\"gatePush\": {\"repository\": \"shop\", \"name\": \"cart\"}}"));
         final ObjectNode own = record();
         own.put("task", "t-3");
+        own.put("workspace", "allRepositories");
+        own.set("rights", JSON.createArrayNode());
         own.set("place", JSON.readTree("{\"ownPullRequest\": true}"));
         own.putNull("held");
         answer(JSON.createArrayNode().add(record).add(other).add(own));
 
         final List<TaskRecord> records = records().since("porelo-planner", SINCE);
 
-        assertThat(records.get(0).role()).isEqualTo(RunRole.AUTHOR);
+        assertThat(records.get(0).workspace())
+                .as("Porelo's word own")
+                .isEqualTo(Role.Workspace.OWN);
         assertThat(records.get(0).place()).isEqualTo(RunPlace.gate(null, "cart"));
         assertThat(records.get(0).held()).isEqualTo(2);
-        assertThat(records.get(1).role()).isEqualTo(RunRole.REVIEWER);
+        assertThat(records.get(1).workspace())
+                .as("Porelo's word foreign")
+                .isEqualTo(Role.Workspace.FOREIGN);
         assertThat(records.get(1).place()).isEqualTo(RunPlace.gate("shop", "cart"));
-        assertThat(records.get(2).role()).as("absent in the record").isNull();
+        assertThat(records.get(2).workspace())
+                .as("a task holding no right, reading every repository")
+                .isEqualTo(Role.Workspace.ALL_REPOSITORIES);
         assertThat(records.get(2).place()).isEqualTo(new RunPlace(null, null, true));
         assertThat(records.get(2).held()).as("null in the record").isNull();
     }
 
-    // Prevents an older record, which names no role, place or held items, from failing the read.
+    // Prevents a record that names no place or held items from failing the read.
     @Test
-    void aRecordWithoutRoleOrPlaceIsReadWithNone() throws Exception {
+    void aRecordWithoutPlaceOrHeldItemsIsReadWithNone() throws Exception {
         answer(JSON.createArrayNode().add(record()));
 
         final TaskRecord read = records().since("porelo-planner", SINCE).getFirst();
 
-        assertThat(read.role()).isNull();
+        assertThat(read.workspace()).as("the kind Porelo recorded").isEqualTo(Role.Workspace.OWN);
         assertThat(read.place()).isNull();
         assertThat(read.held()).isNull();
     }
@@ -192,12 +206,19 @@ class PoreloTaskRecordsTest {
                 "place={\"gatePush\":{\"name\":\"cart\",\"head\":\"x\"}}",
                 "place={\"ownPullRequest\":false}",
                 "place=\"gate\"",
-                "role=\"OWNER\"",
-                "role=1",
+                "workspace=\"owner\"",
+                "workspace=1",
+                "workspace=null",
+                "rights=[\"fly\"]",
+                "rights=\"push\"",
+                "readLanded=[1]",
+                "readLanded=[\"../x\"]",
+                "writeAs=\"operator\"",
+                "projectServices=\"yes\"",
                 "held=-1",
                 "held=1.5"
             })
-    void aRoleOrPlaceOutsideTheContractFailsTheAnswerNamingIt(final String member)
+    void aPartOrPlaceOutsideTheContractFailsTheAnswerNamingIt(final String member)
             throws Exception {
         final String name = member.substring(0, member.indexOf('='));
         final ObjectNode record = record();
@@ -205,6 +226,42 @@ class PoreloTaskRecordsTest {
         answer(JSON.createArrayNode().add(record));
 
         assertThat(refusal()).contains("field " + name);
+    }
+
+    // Prevents the planner from misreading what a real daemon writes for the parts of a start: the
+    // answer was recorded from tasks started with an author's parts, a reader's and an author's
+    // without the right to push.
+    @Test
+    void theRecordsOfTasksStartedWithTheirPartsAreReadAsPoreloWroteThem() throws Exception {
+        try (var in =
+                PoreloTaskRecordsTest.class.getResourceAsStream(
+                        "/porelo/task-records-parts.json")) {
+            answer = new Result(0, java.util.Objects.requireNonNull(in).readAllBytes(), false, "");
+        }
+
+        final List<TaskRecord> records =
+                records().since("default", Instant.parse("2026-11-27T06:00:00Z"));
+
+        assertThat(records)
+                .as("the workspace Porelo recorded for each task, derived by nobody")
+                .extracting(TaskRecord::workspace)
+                .containsExactly(Role.Workspace.OWN, Role.Workspace.READ_ONLY, Role.Workspace.OWN);
+        assertThat(records)
+                .as("each task's own gate push, and none for the task that only reads")
+                .extracting(TaskRecord::place)
+                .containsExactly(RunPlace.gate("r1", "a1"), null, RunPlace.gate("r1", "np1"));
+    }
+
+    // Prevents the planner from deriving a part Porelo did not write out: a record without its
+    // workspace, rights, read tasks, account or services fails the whole answer, naming the field.
+    @ParameterizedTest
+    @ValueSource(strings = {"workspace", "rights", "readLanded", "writeAs", "projectServices"})
+    void aRecordWithoutAPartOfItsStartFailsTheAnswerNamingIt(final String member) throws Exception {
+        final ObjectNode record = record();
+        record.remove(member);
+        answer(JSON.createArrayNode().add(record));
+
+        assertThat(refusal()).as("the missing part is named").contains("field " + member);
     }
 
     // Prevents a secret of the planner's environment, or a shell, from reaching Porelo.
@@ -960,6 +1017,11 @@ class PoreloTaskRecordsTest {
                             "reasoning": {"tokens": null, "missing": 12}
                           },
                           "toolCallsAsked": "ASKED",
+                          "workspace": "own",
+                          "rights": ["push", "reply"],
+                          "readLanded": [],
+                          "writeAs": "author",
+                          "projectServices": true,
                           "unknownExtra": {"ignored": true},
                           "toolCalls": [
                             {"task": "t-1", "tool": "Bash", "kind": "shell",

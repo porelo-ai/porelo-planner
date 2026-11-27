@@ -18,7 +18,6 @@ import java.util.Set;
 import org.fuin.porelo.planner.core.PlaceReviews;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecords.Unanswered;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.wire.LimitFactors;
@@ -113,16 +112,13 @@ public final class PoreloReviewOpen implements PlaceReviews {
      */
     @Override
     public ReviewOpen open(
-            final String project,
-            final RunPlace place,
-            final @Nullable RunRole role,
-            final @Nullable String task) {
+            final String project, final RunPlace place, final @Nullable String task) {
         Ids.name(project);
         if (place.ownPullRequest() != null && task == null) {
             throw new IllegalArgumentException("A task's own pull request is read with its task");
         }
         final PoreloTaskRecords.Result result =
-                runner.run(command(project, place, role, task), environment);
+                runner.run(command(project, place, task), environment);
         if (result.code() == 69 && !result.cutOff()) {
             throw refusal(result.out());
         }
@@ -145,11 +141,7 @@ public final class PoreloReviewOpen implements PlaceReviews {
     }
 
     /** The command asking Porelo; the one place its options are named. */
-    List<String> command(
-            final String project,
-            final RunPlace place,
-            final @Nullable RunRole role,
-            final @Nullable String task) {
+    List<String> command(final String project, final RunPlace place, final @Nullable String task) {
         final List<String> command = new ArrayList<>();
         command.add(executable.toString());
         command.add(LimitFactors.OPTION);
@@ -171,10 +163,6 @@ public final class PoreloReviewOpen implements PlaceReviews {
             command.add(place.pullRequest());
         } else {
             command.add("--own-pull-request");
-        }
-        if (role != null) {
-            command.add("--role");
-            command.add(role.name());
         }
         if (task != null) {
             command.add("--task");

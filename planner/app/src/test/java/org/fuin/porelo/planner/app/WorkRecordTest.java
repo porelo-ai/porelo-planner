@@ -27,7 +27,6 @@ import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.ReportTaking;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
@@ -246,9 +245,6 @@ class WorkRecordTest {
         final var document = json.readTree(Files.readString(file));
         final ObjectNode offer =
                 (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
-        assertThat(((ObjectNode) offer.path("arguments")).remove("reads"))
-                .as("the reference record holds the tasks a reader reads")
-                .isNotNull();
         assertThat(((ObjectNode) offer.path("ended")).remove("landed"))
                 .as("the reference record holds where the work landed")
                 .isNotNull();
@@ -268,9 +264,6 @@ class WorkRecordTest {
                                                     .getFirst());
             assertThat(older.ended().landed())
                     .as("an end recorded before landings were kept has not landed")
-                    .isEmpty();
-            assertThat(older.arguments().reads())
-                    .as("a task recorded before reads were kept reads no other task")
                     .isEmpty();
         }
     }
@@ -845,6 +838,33 @@ class WorkRecordTest {
     }
 
     @Test
+    void aRecordWhoseTaskHoldsOtherPartsThanItsRulesRoleIsRefused() throws Exception {
+        // Harm: an edited record hands Porelo's Start rights or services the work rules never
+        // gave the task's role.
+        writeTaskRecord("box");
+        final Path file = directory.resolve("porelo-planner/project/work.json");
+        final JsonMapper json = JsonMapper.builder().build();
+        final var document = json.readTree(Files.readString(file));
+        final ObjectNode offer =
+                (ObjectNode) document.path("runs").iterator().next().path("offers").get(0);
+        final ObjectNode role = (ObjectNode) offer.get("arguments").get("role");
+        assertThat(role.get("rights").toString())
+                .as("the fixture's task holds its rule's rights")
+                .isEqualTo(offer.get("binding").get("rule").get("role").get("rights").toString());
+        role.putArray("rights").add("PUSH").add("REPLY").add("RESOLVE_THREADS");
+        Files.writeString(file, json.writeValueAsString(document));
+        try (WorkRecord records =
+                new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
+            assertThatThrownBy(
+                            () ->
+                                    records.open("project", "https://example.org/store.git", null)
+                                            .locked(session -> session.read()))
+                    .as("a task with a right its rule's role does not hold is refused")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    @Test
     void aTaskRecordedWithoutTheTrackersWorkReadsAsNoneAndAForgedOneIsRefused() throws Exception {
         // Harm: an upgrade makes a running story's record unreadable because its tasks were
         // recorded before a start named the tracker's issue, or an edited record hands Porelo's
@@ -890,10 +910,10 @@ class WorkRecordTest {
     }
 
     @Test
-    void aTasksRunRoleAndPlaceAreReadBackAndARecordWithoutThemOpens() throws Exception {
+    void aTasksPlaceIsReadBackAndARecordWithoutItOpens() throws Exception {
         // Harm: an upgrade makes a running story's record unreadable because its tasks were
-        // recorded before runs named a role and a place; or a kept role and place come back
-        // other than written, so a run is started at the wrong place.
+        // recorded before runs named a place; or a kept place comes back other than written, so
+        // a run is started at the wrong place.
         writeTaskRecord("box");
         final Path file = directory.resolve("porelo-planner/project/work.json");
         final JsonMapper json = JsonMapper.builder().build();
@@ -906,7 +926,6 @@ class WorkRecordTest {
                                 .path("offers")
                                 .get(0)
                                 .get("arguments");
-        arguments.remove("runRole");
         arguments.remove("place");
         Files.writeString(file, json.writeValueAsString(document));
         try (WorkRecord records =
@@ -914,8 +933,6 @@ class WorkRecordTest {
             assertThat(arguments(records).place())
                     .as("an older record's task names no place")
                     .isNull();
-            assertThat(arguments(records).runRole()).isNull();
-            arguments.put("runRole", "REVIEWER");
             // As the planner writes a place: every member, the unused ones null.
             final ObjectNode place = arguments.putObject("place");
             place.putObject("gatePush").put("repository", "docs").put("name", "cart");
@@ -923,7 +940,6 @@ class WorkRecordTest {
             place.putNull("ownPullRequest");
             Files.writeString(file, json.writeValueAsString(document));
             records.forget("project");
-            assertThat(arguments(records).runRole()).isEqualTo(RunRole.REVIEWER);
             assertThat(arguments(records).place()).isEqualTo(RunPlace.gate("docs", "cart"));
             arguments
                     .putObject("place")
@@ -987,7 +1003,7 @@ class WorkRecordTest {
             offer.putNull(unbound);
         }
         final ObjectNode arguments = (ObjectNode) offer.get("arguments");
-        arguments.put("runRole", "AUTHOR");
+        arguments.put("again", true);
         final ObjectNode place = arguments.putObject("place");
         place.putObject("gatePush").putNull("repository").put("name", "task");
         place.putNull("pullRequest");
@@ -1039,11 +1055,12 @@ class WorkRecordTest {
         for (final String unbound : List.of("task", "containerId", "machine", "since", "ended")) {
             offer.putNull(unbound);
         }
+        // The building work of an issue the start held back: offered again, leading nothing.
         ((ObjectNode) offer.get("arguments"))
-                .put("role", "BUILDER")
-                .put("runRole", "AUTHOR")
+                .put("lead", false)
+                .put("again", true)
                 .putNull("place");
-        ((ObjectNode) offer.get("binding")).put("role", "BUILDER");
+        ((ObjectNode) offer.get("binding")).put("lead", false);
         ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
         run.putArray("placeOffers").add(freed);
         run.putArray("heldBack").add("AA2");
@@ -1066,9 +1083,13 @@ class WorkRecordTest {
 
             final Map<String, java.util.function.Consumer<ObjectNode>> forged =
                     new java.util.LinkedHashMap<>();
-            forged.put("a reader", at -> part(at, "arguments").put("role", "READER"));
-            forged.put("a reviewer", at -> part(at, "arguments").put("runRole", "REVIEWER"));
-            forged.put("a main", at -> part(at, "binding").put("role", "MAIN"));
+            forged.put(
+                    "a reader",
+                    at ->
+                            ((ObjectNode) part(at, "binding").get("rule"))
+                                    .set("role", role(Roles.READER)));
+            forged.put("not offered again", at -> part(at, "arguments").put("again", false));
+            forged.put("a lead", at -> part(at, "arguments").put("lead", true));
             forged.put(
                     "two issues",
                     at -> {
@@ -1098,7 +1119,9 @@ class WorkRecordTest {
                                 .put("name", "AA1.md")
                                 .put("text", "x");
                     });
-            forged.put("a task's reads", at -> part(at, "arguments").putArray("reads").add("task"));
+            forged.put(
+                    "a task's landed work",
+                    at -> part(at, "arguments").putArray("readLanded").add("task"));
             forged.put("a held id that is none", at -> at.putArray("heldBack").add("not an id"));
             forged.put("a held id twice", at -> at.putArray("heldBack").add("AA2").add("AA2"));
             for (final var each : forged.entrySet()) {
@@ -1111,6 +1134,12 @@ class WorkRecordTest {
                         .isInstanceOf(WorkRefusal.class);
             }
         }
+    }
+
+    /** A role as the work record writes it. */
+    private static tools.jackson.databind.JsonNode role(
+            final org.fuin.porelo.planner.store.Role role) {
+        return WorkRecord.JSON.valueToTree(role);
     }
 
     /** A part of the freed offer of a run as written. */
@@ -1140,7 +1169,7 @@ class WorkRecordTest {
             offer.putNull(unbound);
         }
         final ObjectNode arguments = (ObjectNode) offer.get("arguments");
-        arguments.put("runRole", "AUTHOR");
+        arguments.put("again", true);
         final ObjectNode place = arguments.putObject("place");
         place.putNull("gatePush");
         place.putNull("pullRequest");
@@ -1166,8 +1195,8 @@ class WorkRecordTest {
     void aReviewerAReadOfAPlaceOfferedAndTheHeadItReviewedAreReadBack() throws Exception {
         // Harm: after a restart the reviewer a read offered is lost or refused, so the window never
         // starts it, or the reviewed head is lost, so the same push is reviewed again; an older
-        // record without these fields no longer opens; or a reviewer that is no reader's duty, as
-        // changed on disk, is trusted.
+        // record without the reviewed head no longer opens; or a task at another task's work
+        // whose role reads nothing, as changed on disk, is trusted.
         writePlaceRecord();
         final Path file = directory.resolve("porelo-planner/project/work.json");
         final JsonMapper json = JsonMapper.builder().build();
@@ -1180,14 +1209,16 @@ class WorkRecordTest {
             offer.putNull(unbound);
         }
         final ObjectNode arguments = (ObjectNode) offer.get("arguments");
-        arguments.put("role", "READER").put("runRole", "REVIEWER");
-        arguments.putArray("reads").add("task");
+        arguments.set("role", role(Roles.REVIEWER));
+        arguments.put("lead", false);
         final ObjectNode place = arguments.putObject("place");
         place.putObject("gatePush").putNull("repository").put("name", "task");
         place.putNull("pullRequest");
         place.putNull("ownPullRequest");
-        ((ObjectNode) offer.get("binding")).put("role", "READER").put("state", "Reading");
-        ((ObjectNode) offer.get("binding").get("rule")).put("reviewer", "AT_WORK");
+        ((ObjectNode) offer.get("binding")).put("lead", false).put("state", "Reading");
+        ((ObjectNode) offer.get("binding").get("rule"))
+                .put("blocked", "Rework")
+                .set("role", role(Roles.REVIEWER));
         ((tools.jackson.databind.node.ArrayNode) run.get("offers")).add(offer);
         run.putArray("placeOffers").add(reviewer);
         final String head = "0123456789abcdef0123456789abcdef01234567";
@@ -1198,9 +1229,9 @@ class WorkRecordTest {
                 new WorkRecord(Map.of("XDG_STATE_HOME", directory.toString()), false)) {
             final WorkRun.Run read = run(records);
             assertThat(read.placeOffers()).as("the reviewer read back").containsExactly(reviewer);
-            assertThat(read.offers().getLast().binding().rule().reviewer())
-                    .as("its rule's reviewer read back")
-                    .isEqualTo(WorkRule.Reviewer.AT_WORK);
+            assertThat(read.offers().getLast().binding().role())
+                    .as("its rule's role read back by its name and parts")
+                    .isEqualTo(Roles.REVIEWER);
             assertThat(read.places().get("AA1").reviewed())
                     .as("the reviewed head read back")
                     .isEqualTo(head);
@@ -1212,26 +1243,22 @@ class WorkRecordTest {
             final var older = json.readTree(sound);
             final ObjectNode olderRun = (ObjectNode) older.path("runs").iterator().next();
             ((ObjectNode) olderRun.get("places").get("AA1")).remove("reviewed");
-            for (final var each : olderRun.get("offers")) {
-                ((ObjectNode) each.get("binding").get("rule")).remove("reviewer");
-            }
             Files.writeString(file, json.writeValueAsString(older));
             records.forget("project");
             final WorkRun.Run upgraded = run(records);
             assertThat(upgraded.places().get("AA1").reviewed())
                     .as("an older place names no reviewed head")
                     .isNull();
-            assertThat(upgraded.offers().getFirst().binding().rule().reviewer())
-                    .as("an older rule names no reviewer")
-                    .isNull();
 
             final var tampered = json.readTree(sound);
             final ObjectNode at = (ObjectNode) tampered.path("runs").iterator().next();
-            ((ObjectNode) at.get("offers").get(1).get("binding")).put("role", "BUILDER");
+            ((ObjectNode) at.get("offers").get(1).get("binding").get("rule"))
+                    .putNull("blocked")
+                    .set("role", role(Roles.AUTHOR));
             Files.writeString(file, json.writeValueAsString(tampered));
             records.forget("project");
             assertThatThrownBy(() -> run(records))
-                    .as("a reviewer place offer that is no reader's duty is refused")
+                    .as("a place offer at another task's work whose rule's role reads nothing")
                     .isInstanceOf(WorkRefusal.class);
         }
     }
@@ -1330,8 +1357,9 @@ class WorkRecordTest {
                                         .add("00000000-0000-0000-0000-000000000009"),
                         run -> place(run).put("task", "other"),
                         run ->
-                                ((ObjectNode) run.get("offers").get(0).get("binding"))
-                                        .put("role", "READER"),
+                                ((ObjectNode) run.get("offers").get(0).get("binding").get("rule"))
+                                        .put("blocked", "Rework")
+                                        .set("role", role(Roles.READER)),
                         run -> ((ObjectNode) run.get("offers").get(0)).putNull("containerId"),
                         run -> ((ObjectNode) place(run).get("last")).put("pointsTotal", 0),
                         run ->
@@ -1342,8 +1370,9 @@ class WorkRecordTest {
                                 ((ObjectNode) run.get("offers").get(0).get("binding").get("rule"))
                                         .put("result", "ANALYSIS"),
                         run ->
-                                ((ObjectNode) run.get("offers").get(0).get("arguments"))
-                                        .put("runRole", "REVIEWER"),
+                                ((ObjectNode) run.get("offers").get(0).get("binding").get("rule"))
+                                        .put("blocked", "Rework")
+                                        .set("role", role(Roles.REVIEWER)),
                         run ->
                                 ((ObjectNode) run.get("offers").get(0))
                                         .put("status", "VOID")
@@ -1433,7 +1462,8 @@ class WorkRecordTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Build",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        Roles.forRule(null, null));
         final String id = "00000000-0000-0000-0000-000000000002";
         final var offer =
                 new WorkRun.Offer(
@@ -1441,14 +1471,14 @@ class WorkRecordTest {
                         new WorkOrder.Task(
                                 "alpha",
                                 List.of("AA1"),
-                                "MAIN",
+                                rule.role(),
                                 "codex",
                                 "model",
                                 null,
                                 "AGENT",
                                 "Build"),
                         new NextStep.Binding(
-                                story, "alpha", List.of("AA1"), "MAIN", "Building", "AGENT", rule),
+                                story, "alpha", List.of("AA1"), true, "Building", "AGENT", rule),
                         status,
                         "task",
                         "box",
@@ -1541,7 +1571,7 @@ class WorkRecordTest {
                                 List.of(MADE_UP_ISSUE),
                                 new WorkProposal.Main(
                                         "main",
-                                        "MAIN",
+                                        Roles.AUTHOR,
                                         "codex",
                                         "careful",
                                         "brief",
@@ -1552,7 +1582,7 @@ class WorkRecordTest {
                                                 "sub",
                                                 MADE_UP_ISSUE,
                                                 "helper",
-                                                "BUILDER",
+                                                WorkProposal.HELPER,
                                                 "codex",
                                                 "careful",
                                                 "Building",
@@ -2010,16 +2040,25 @@ class WorkRecordTest {
                         List.of("AGENT"),
                         "Build",
                         Map.of("codex", "model"),
-                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")));
+                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")),
+                        null,
+                        Roles.forRule(null, null));
         final var task =
                 new WorkOrder.Task(
-                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build");
+                        "alpha",
+                        List.of(),
+                        rule.role(),
+                        "codex",
+                        "careful",
+                        "max",
+                        "AGENT",
+                        "Build");
         final var offer =
                 new WorkRun.Offer(
                         "00000000-0000-0000-0000-000000000002",
                         task,
                         new NextStep.Binding(
-                                story, "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                                story, "alpha", List.of(), true, "Building", "AGENT", rule),
                         status,
                         null,
                         null,
@@ -2093,17 +2132,26 @@ class WorkRecordTest {
                         List.of("AGENT"),
                         "Build",
                         Map.of("codex", "model"),
-                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")));
+                        Map.of(Risk.HARM, new WorkRule.ForRisk(Map.of("codex", "careful"), "max")),
+                        null,
+                        Roles.forRule(null, null));
         final var task =
                 new WorkOrder.Task(
-                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build");
+                        "alpha",
+                        List.of(),
+                        rule.role(),
+                        "codex",
+                        "careful",
+                        "max",
+                        "AGENT",
+                        "Build");
         final String since = java.time.Instant.EPOCH.toString();
         final var offer =
                 new WorkRun.Offer(
                         "00000000-0000-0000-0000-000000000002",
                         task,
                         new NextStep.Binding(
-                                story, "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                                story, "alpha", List.of(), true, "Building", "AGENT", rule),
                         status,
                         "task",
                         "box",

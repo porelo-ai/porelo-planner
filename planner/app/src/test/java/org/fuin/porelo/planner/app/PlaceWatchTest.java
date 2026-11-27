@@ -21,7 +21,6 @@ import org.fuin.porelo.planner.core.PlaceRead;
 import org.fuin.porelo.planner.core.PlaceReviews;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.TaskRecords;
 import org.fuin.porelo.planner.core.WorkRun;
@@ -61,7 +60,7 @@ class PlaceWatchTest {
             new PlaceWatch(
                             p -> new Fake(WorkRun.PlaceOutcome.KEPT),
                             (project, from) -> List.of(record("box")),
-                            (project, place, role, task) -> answer(),
+                            (project, place, task) -> answer(),
                             saved::add,
                             helds,
                             scheduler,
@@ -85,7 +84,7 @@ class PlaceWatchTest {
 
     @Test
     void aWaitingPlaceIsReadByItsTasksRecordThenByWhatIsOpenThereForItsAuthor() {
-        // Harm: what is open is asked for another role or task than the kept one, so the owner's
+        // Harm: what is open is asked for another task than the kept one, so the owner's
         // points look answered; or a change reaches no window until the next store poll.
         final Fake work = new Fake(WorkRun.PlaceOutcome.KEPT);
         final List<String> asked = new ArrayList<>();
@@ -97,8 +96,8 @@ class PlaceWatchTest {
                             since.add(from);
                             return List.of(record("box-other"), record("box"));
                         },
-                        (project, place, role, task) -> {
-                            asked.add(project + " " + place + " " + role + " " + task);
+                        (project, place, task) -> {
+                            asked.add(project + " " + place + " " + task);
                             return answer();
                         },
                         saved::add,
@@ -122,7 +121,7 @@ class PlaceWatchTest {
                         });
         assertThat(asked)
                 .as("asked for the author, by the kept task")
-                .containsExactly("project " + RunPlace.gate(null, "task") + " AUTHOR task");
+                .containsExactly("project " + RunPlace.gate(null, "task") + " task");
         assertThat(since)
                 .as("records from a little before the run's start")
                 .containsExactly(WHEN.minus(PlaceWatch.SKEW));
@@ -133,7 +132,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> same,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -156,7 +155,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -181,7 +180,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> idle,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -199,7 +198,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> waiting,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -239,11 +238,11 @@ class PlaceWatchTest {
                                                 null,
                                                 null,
                                                 List.of(),
-                                                RunRole.AUTHOR,
+                                                org.fuin.porelo.planner.store.Role.Workspace.OWN,
                                                 null,
                                                 2),
                                         record("box")),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -261,7 +260,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(heldRecord("box-held", 5)),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -290,7 +289,7 @@ class PlaceWatchTest {
                             since.add(from);
                             return List.of(heldRecord("box-held", count.getFirst()));
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -329,7 +328,7 @@ class PlaceWatchTest {
                             since.add(from);
                             return List.of(heldRecord("box-ended", 3));
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -370,7 +369,7 @@ class PlaceWatchTest {
                             since.add(from);
                             return List.of(heldRecord("box-held", count.getFirst()));
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -400,7 +399,7 @@ class PlaceWatchTest {
                             since.add(from);
                             return List.of();
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -436,7 +435,7 @@ class PlaceWatchTest {
                         (project, from) -> {
                             throw new TaskRecords.Unanswered("unreachable");
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -455,7 +454,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> refused,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
+                        (project, place, task) -> {
                             throw new PlaceReviews.Refused("PlaceUnreadable", "Unreachable");
                         },
                         saved::add,
@@ -476,7 +475,7 @@ class PlaceWatchTest {
                         (project, from) -> {
                             throw new TaskRecords.Unanswered("/home/someone/bin/porelo timed out");
                         },
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -520,8 +519,8 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> answered,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
-                            asked.add(place + " " + role + " " + task);
+                        (project, place, task) -> {
+                            asked.add(place + " " + task);
                             return place.ownPullRequest() == null ? gate : own;
                         },
                         saved::add,
@@ -535,16 +534,14 @@ class PlaceWatchTest {
                         new PlaceRead.Forwarded(RunPlace.gate(null, "task"), "task", gate, own));
         assertThat(asked)
                 .as("the own pull request asked for the same author task")
-                .containsExactly(
-                        RunPlace.gate(null, "task") + " AUTHOR task",
-                        RunPlace.own() + " AUTHOR task");
+                .containsExactly(RunPlace.gate(null, "task") + " task", RunPlace.own() + " task");
 
         for (final String none : List.of("NoPullRequest", "UnknownForge")) {
             final Fake absent = new Fake(WorkRun.PlaceOutcome.KEPT);
             new PlaceWatch(
                             p -> absent,
                             (project, from) -> List.of(),
-                            (project, place, role, task) -> {
+                            (project, place, task) -> {
                                 if (place.ownPullRequest() == null) {
                                     return gate;
                                 }
@@ -565,7 +562,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> unreadable,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
+                        (project, place, task) -> {
                             if (place.ownPullRequest() == null) {
                                 return gate;
                             }
@@ -588,7 +585,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> unanswered,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
+                        (project, place, task) -> {
                             if (place.ownPullRequest() == null) {
                                 return gate;
                             }
@@ -611,7 +608,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> new Fake(WorkRun.PlaceOutcome.KEPT),
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
+                        (project, place, task) -> {
                             openAsked.add(String.valueOf(place));
                             return answer();
                         },
@@ -638,7 +635,7 @@ class PlaceWatchTest {
             new PlaceWatch(
                             p -> new Fake(WorkRun.PlaceOutcome.NEEDS_YOU),
                             (project, from) -> List.of(),
-                            (project, place, role, task) -> {
+                            (project, place, task) -> {
                                 throw new PlaceReviews.Refused("NoPullRequest", null);
                             },
                             saved::add,
@@ -649,7 +646,7 @@ class PlaceWatchTest {
             new PlaceWatch(
                             p -> new Fake(WorkRun.PlaceOutcome.KEPT),
                             (project, from) -> List.of(),
-                            (project, place, role, task) -> {
+                            (project, place, task) -> {
                                 if (place.ownPullRequest() == null) {
                                     return gate;
                                 }
@@ -694,7 +691,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -711,7 +708,7 @@ class PlaceWatchTest {
         new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -729,7 +726,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         Executors.newSingleThreadScheduledExecutor(),
@@ -752,7 +749,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> answer(),
+                        (project, place, task) -> answer(),
                         saved::add,
                         helds,
                         scheduler,
@@ -792,7 +789,7 @@ class PlaceWatchTest {
                 new PlaceWatch(
                         p -> work,
                         (project, from) -> List.of(),
-                        (project, place, role, task) -> {
+                        (project, place, task) -> {
                             most.accumulateAndGet(running.incrementAndGet(), Math::max);
                             reads.incrementAndGet();
                             first.countDown();
@@ -909,7 +906,7 @@ class PlaceWatchTest {
                 null,
                 null,
                 List.of(),
-                RunRole.AUTHOR,
+                org.fuin.porelo.planner.store.Role.Workspace.OWN,
                 null,
                 held);
     }
@@ -924,7 +921,7 @@ class PlaceWatchTest {
                 null,
                 null,
                 List.of(),
-                RunRole.AUTHOR,
+                org.fuin.porelo.planner.store.Role.Workspace.OWN,
                 null,
                 null);
     }

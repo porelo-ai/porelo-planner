@@ -29,7 +29,6 @@ import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReportTaking;
 import org.fuin.porelo.planner.core.ReviewOpen;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.StageOrder;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRefusal;
@@ -1070,10 +1069,6 @@ public final class WorkRecord implements AutoCloseable {
                             object.putNull(newer);
                         }
                     }
-                    if (offer.path("arguments") instanceof ObjectNode arguments
-                            && !arguments.has("reads")) {
-                        arguments.putArray("reads");
-                    }
                     if (offer.path("ended") instanceof ObjectNode ended) {
                         if (!ended.has("landed")) {
                             ended.putArray("landed");
@@ -1082,14 +1077,11 @@ public final class WorkRecord implements AutoCloseable {
                             ended.putNull("outcome");
                         }
                     }
-                    // A record written before runs named a role and a place names neither, so
-                    // Start's defaults hold for it.
-                    if (offer.path("arguments") instanceof ObjectNode arguments) {
-                        for (final String newer : List.of("runRole", "place")) {
-                            if (!arguments.has(newer)) {
-                                arguments.putNull(newer);
-                            }
-                        }
+                    // A record written before runs named a place names none, so Start's default
+                    // holds for it.
+                    if (offer.path("arguments") instanceof ObjectNode arguments
+                            && !arguments.has("place")) {
+                        arguments.putNull("place");
                     }
                     // A record written before the risks names no effort and no rule's risks.
                     if (offer.path("arguments") instanceof ObjectNode arguments
@@ -1114,11 +1106,6 @@ public final class WorkRecord implements AutoCloseable {
                     if (offer.path("binding").path("rule") instanceof ObjectNode rule
                             && !rule.has("result")) {
                         rule.putNull("result");
-                    }
-                    // A rule recorded before reviewers ran is read by a reader.
-                    if (offer.path("binding").path("rule") instanceof ObjectNode rule
-                            && !rule.has("reviewer")) {
-                        rule.putNull("reviewer");
                     }
                     // A refusal kept before a forge's missing right was told names no right.
                     if (offer.path("refusal") instanceof ObjectNode refusal
@@ -1224,7 +1211,7 @@ public final class WorkRecord implements AutoCloseable {
                             new TaskEventReply(
                                     "",
                                     WorkAnswers.knownWork(run, issue -> false),
-                                    WorkAnswers.starts(offers));
+                                    WorkAnswers.starts(offers, run.places()));
                     // Revision changes and cancellation must fit beside the work answer.
                     if (JSON.writeValueAsBytes(answer).length + END_RESERVE > MOST_RECORD) {
                         throw WorkRefusal.recordUnavailable(project, "The work record is full.");
@@ -1232,6 +1219,12 @@ public final class WorkRecord implements AutoCloseable {
                 }
             } catch (final JacksonException failed) {
                 throw unavailable(project, "The work record cannot be written as JSON.");
+            } catch (final IllegalStateException unservable) {
+                // An offer no start order can be made of must not be saved as if it could start.
+                throw unavailable(
+                        project,
+                        "The work record holds an offer that cannot be started: "
+                                + unservable.getMessage());
             }
         }
 
@@ -1260,13 +1253,19 @@ public final class WorkRecord implements AutoCloseable {
                                             new WorkRun.Snapshot(0, Map.of(run.story(), run))),
                                     WorkAnswers.knownWork(board, run, TaskHelds.Counts.NONE),
                                     board.revision().value(),
-                                    WorkAnswers.starts(offers));
+                                    WorkAnswers.starts(offers, run.places()));
                     if (JSON.writeValueAsBytes(answer).length + 65536 > MOST_RECORD) {
                         throw WorkRefusal.recordUnavailable(project, "The work record is full.");
                     }
                 }
             } catch (final JacksonException failed) {
                 throw unavailable(project, "The work record cannot be written as JSON.");
+            } catch (final IllegalStateException unservable) {
+                // An offer no start order can be made of must not be saved as if it could start.
+                throw unavailable(
+                        project,
+                        "The work record holds an offer that cannot be started: "
+                                + unservable.getMessage());
             }
         }
 
@@ -1485,13 +1484,22 @@ public final class WorkRecord implements AutoCloseable {
                                     if (machine != null) {
                                         WorkRun.checkedMachine(machine);
                                     }
+                                    // The parts Start is handed are the rule's role's, and a role
+                                    // the work rules would not load is none a record may hold.
+                                    final org.fuin.porelo.planner.store.Role role =
+                                            offer.arguments().role();
+                                    if (role == null
+                                            || !role.equals(offer.binding().role())
+                                            || !role.broken().isEmpty()) {
+                                        throw new IllegalArgumentException(
+                                                "an offer fails its check");
+                                    }
                                     present(
-                                            offer.arguments().role(),
                                             offer.arguments().agent(),
                                             offer.arguments().model(),
                                             offer.arguments().mode(),
                                             offer.arguments().prompt(),
-                                            offer.binding().role(),
+                                            offer.binding().role().name(),
                                             offer.binding().state(),
                                             offer.binding().mode(),
                                             offer.binding().rule().done(),
@@ -1529,9 +1537,7 @@ public final class WorkRecord implements AutoCloseable {
                                             || offer.arguments().basis().length() > 4000
                                             || !givenFits(offer.arguments())
                                             || offer.arguments().work() != null
-                                                    && offer.arguments()
-                                                            .role()
-                                                            .equals("DISCUSSION")) {
+                                                    && offer.arguments().discussion()) {
                                         throw new IllegalArgumentException(
                                                 "an offer fails its check");
                                     }
@@ -1600,8 +1606,8 @@ public final class WorkRecord implements AutoCloseable {
         /**
          * Refuses a kept place of an issue the run does not hold, one whose reviewed head is no
          * commit, one whose run started by hand started at no instant, or one whose author run is
-         * no ended or void builder's offer of the run owning the issue that pushes its work as its
-         * author, bound to the place's task in a container.
+         * no ended or void offer of the run owning the issue whose role pushes work, bound to the
+         * place's task in a container.
          */
         private static void checkedPlace(
                 final WorkRun.Run run, final String issue, final IssuePlace place) {
@@ -1627,10 +1633,7 @@ public final class WorkRecord implements AutoCloseable {
                                 o ->
                                         o.id().equals(id)
                                                 && o.binding().issues().contains(issue)
-                                                && Set.of("MAIN", "BUILDER")
-                                                        .contains(o.binding().role())
-                                                && o.binding().rule().result() == null
-                                                && o.arguments().runRole() != RunRole.REVIEWER
+                                                && o.binding().role().pushesWork()
                                                 && Set.of("ENDED", "VOID").contains(o.status())
                                                 && o.ended() != null
                                                 && place.task().equals(o.task())
@@ -1642,9 +1645,10 @@ public final class WorkRecord implements AutoCloseable {
 
         /**
          * Refuses an offer a read of a kept place or a freed issue made that is named twice, or
-         * that is neither an author's offer of the run at a gate push or at its task's own pull
-         * request, nor a reviewer's, as a reader, at a place, nor an author's builder at no place
-         * of one issue of the run's, that hands back no result and reads nothing.
+         * that is neither an offer of the run sent back to its own work at a gate push or at its
+         * task's own pull request, nor one that reads another task's work at a place, nor the
+         * building work at no place of one issue of the run's, that hands back no result and reads
+         * nothing.
          */
         private static void checkedPlaceOffers(final WorkRun.Run run) {
             if (Set.copyOf(run.placeOffers()).size() != run.placeOffers().size()) {
@@ -1656,9 +1660,7 @@ public final class WorkRecord implements AutoCloseable {
                                 o ->
                                         o.id().equals(id)
                                                 && (o.arguments().place() != null
-                                                                && (o.arguments().runRole()
-                                                                                        == RunRole
-                                                                                                .AUTHOR
+                                                                && (o.arguments().again()
                                                                                 && (o.arguments()
                                                                                                         .place()
                                                                                                         .gatePush()
@@ -1667,13 +1669,10 @@ public final class WorkRecord implements AutoCloseable {
                                                                                                         .place()
                                                                                                         .ownPullRequest()
                                                                                                 != null)
-                                                                        || o.arguments().runRole()
-                                                                                        == RunRole
-                                                                                                .REVIEWER
+                                                                        || o.arguments()
+                                                                                        .atAnothersWork()
                                                                                 && o.binding()
-                                                                                        .role()
-                                                                                        .equals(
-                                                                                                "READER"))
+                                                                                        .reading())
                                                         || WorkRun.freedOffer(run, o)
                                                                 && o.binding()
                                                                         .story()
@@ -1747,8 +1746,7 @@ public final class WorkRecord implements AutoCloseable {
                 result != null
                         && java.util.Arrays.stream(WorkRule.Result.values())
                                 .anyMatch(kind -> kind.file().equals(result));
-        if (result != null
-                && (task.role().equals("DISCUSSION") || !stage || task.role().equals("READER"))) {
+        if (result != null && (task.discussion() || !stage || task.reading())) {
             return false;
         }
         // An ended stage's offer is kept compacted, its result named and its files dropped.
