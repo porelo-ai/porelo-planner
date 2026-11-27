@@ -21,7 +21,7 @@ import org.fuin.porelo.planner.store.UnlistedIssue;
 /**
  * Checks the edits a person keeps the board with by hand - an issue's fields, a story's issues, an
  * issue's blockers, a comment - against the board the caller read, before the store writes
- * anything; a refusal never repeats what was sent beyond the board's own ids.
+ * anything; a text refusal repeats only a bounded offending line beside the board's own ids.
  */
 public final class Edits {
 
@@ -273,22 +273,41 @@ public final class Edits {
         String title = edit.title();
         if (title != null) {
             if (BREAKS.matcher(title).find()) {
+                final String[] lines = title.split("\\R", -1);
                 throw refused(
-                        id, "title", "The title must be one line without control characters.");
+                        new TextEdit.Refused(
+                                id,
+                                "title",
+                                TextEdit.Fault.BLANK_LINE,
+                                lines.length > 1 ? lines[1] : title,
+                                "The title must be one line without control characters."),
+                        "title");
             }
             title = title.strip();
             if (title.isEmpty() || title.codePointCount(0, title.length()) > MOST_TITLE) {
                 throw refused(
-                        id, "title", "The title must have 1 to " + MOST_TITLE + " characters.");
+                        new TextEdit.Refused(
+                                id,
+                                "title",
+                                TextEdit.Fault.LENGTH,
+                                "",
+                                "The title must have 1 to " + MOST_TITLE + " characters."),
+                        "title");
             }
         }
         for (final Map.Entry<TextEdit.Part, String> part : edit.written().entrySet()) {
             final String text = part.getValue();
             if (text.isBlank() || text.codePointCount(0, text.length()) > MOST_PART) {
                 throw refused(
-                        id,
-                        member(part.getKey()),
-                        "A part must have 1 to " + MOST_PART + " characters and not be blank.");
+                        new TextEdit.Refused(
+                                id,
+                                part.getKey().heading(),
+                                text.isBlank() ? TextEdit.Fault.BLANK_LINE : TextEdit.Fault.LENGTH,
+                                text,
+                                "A part must have 1 to "
+                                        + MOST_PART
+                                        + " characters and not be blank."),
+                        member(part.getKey()));
             }
         }
         return new TextEdit(edit.kind(), title, edit.written(), edit.removed(), edit.labels());
@@ -353,6 +372,23 @@ public final class Edits {
         parameters.put("item", item);
         parameters.put("field", field);
         parameters.put("reason", reason);
+        return new Moves.Refused(REFUSED, reason, parameters);
+    }
+
+    /**
+     * Carries a refused text's repair location into the edit refusal the app answers.
+     *
+     * @param refused the store's or text check's refusal
+     * @param field the request member, or empty when the store names only a heading
+     * @return the edit refusal with its part, fault and bounded offending line
+     */
+    public static Moves.Refused refused(final TextEdit.Refused refused, final String field) {
+        final String reason = String.valueOf(refused.getMessage());
+        final Map<String, String> parameters =
+                new LinkedHashMap<>(refused(refused.item(), field, reason).parameters());
+        parameters.put("part", refused.part());
+        parameters.put("fault", refused.fault().name());
+        parameters.put("found", refused.found());
         return new Moves.Refused(REFUSED, reason, parameters);
     }
 

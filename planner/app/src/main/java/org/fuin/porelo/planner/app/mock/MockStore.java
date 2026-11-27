@@ -792,7 +792,7 @@ public final class MockStore implements PlanningStore {
         final List<String> labels =
                 story ? storyOf(board, id).labels() : issueOf(board, id).labels();
         final String newTitle = edit.title() == null ? title : edit.title();
-        final String newText = written(id, text, edit);
+        final String newText = BodySections.edited(id, text, edit);
         final List<String> asked = edit.labels();
         // The topic labels it carries asked again, in any order, are kept as they stand.
         final List<String> newLabels =
@@ -846,29 +846,6 @@ public final class MockStore implements PlanningStore {
         }
         current = saved(withItems(board, stories, issues), NOTHING);
         return current;
-    }
-
-    /** The text with the edit's parts removed and written, or the refusal in fixed words. */
-    private static String written(final String id, final String text, final TextEdit edit) {
-        try {
-            BodySections body = BodySections.read(text);
-            for (final TextEdit.Part part : TextEdit.Part.values()) {
-                if (edit.removed().contains(part)) {
-                    body = body.without(BodySections.Part.of(part));
-                }
-            }
-            // Removed first, as the GitHub store does, so a body that ends within the limit is
-            // taken.
-            for (final TextEdit.Part part : TextEdit.Part.values()) {
-                final String given = edit.written().get(part);
-                if (given != null) {
-                    body = body.withEdited(BodySections.Part.of(part), given);
-                }
-            }
-            return body.text();
-        } catch (final IllegalArgumentException e) {
-            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
-        }
     }
 
     /** Takes a comment and keeps nothing of it: the board shows no comment. */

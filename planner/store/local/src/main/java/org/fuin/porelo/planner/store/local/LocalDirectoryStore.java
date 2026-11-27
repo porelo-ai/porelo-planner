@@ -540,7 +540,11 @@ public final class LocalDirectoryStore implements PlanningStore {
                             final String body = BodySections.edited(id, item.body(), edit);
                             if (body.contains(LocalItem.STAGES_LINE)) {
                                 throw new TextEdit.Refused(
-                                        id, "the text holds the line the stages start with");
+                                        id,
+                                        "",
+                                        TextEdit.Fault.SECTIONS,
+                                        "",
+                                        "the text holds the line the stages start with");
                             }
                             final String title = edit.title();
                             if (title != null && !title.equals(item.title())) {

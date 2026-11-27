@@ -403,11 +403,7 @@ public class BoardEdits {
                                                     .revision()
                                                     .value();
                                 } catch (final TextEdit.Refused refused) {
-                                    // The store's words are fixed and never repeat the text.
-                                    throw Edits.refused(
-                                            refused.item(),
-                                            "",
-                                            String.valueOf(refused.getMessage()));
+                                    throw Edits.refused(refused, "");
                                 }
                                 saved(
                                         edit.kind() == TextEdit.Kind.STORY

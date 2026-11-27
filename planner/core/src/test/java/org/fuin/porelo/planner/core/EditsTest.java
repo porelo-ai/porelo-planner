@@ -328,6 +328,84 @@ class EditsTest {
     }
 
     @Test
+    void textBoundsNameThePartAndFaultForTheCaller() {
+        // Harm: bounds rejected before reaching the store still need a repair location.
+        final Moves.Refused title =
+                refusal(
+                        () ->
+                                Edits.text(
+                                        board,
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "x".repeat(Edits.MOST_TITLE + 1),
+                                                Map.of(),
+                                                Set.of())));
+        assertThat(title.parameters())
+                .as("the title length fault")
+                .containsEntry("part", "title")
+                .containsEntry("fault", "LENGTH")
+                .containsEntry("found", "");
+        final Moves.Refused plan =
+                refusal(
+                        () ->
+                                Edits.text(
+                                        board,
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(
+                                                        TextEdit.Part.PLAN,
+                                                        "x".repeat(Edits.MOST_PART + 1)),
+                                                Set.of())));
+        assertThat(plan.parameters())
+                .as("the plan length fault")
+                .containsEntry("field", "plan")
+                .containsEntry("part", "Plan")
+                .containsEntry("fault", "LENGTH")
+                .containsEntry("found", "");
+        final Moves.Refused lines =
+                refusal(
+                        () ->
+                                Edits.text(
+                                        board,
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                "One\nTwo",
+                                                Map.of(),
+                                                Set.of())));
+        assertThat(lines.parameters())
+                .as("the title's forbidden line break")
+                .containsEntry("part", "title")
+                .containsEntry("fault", "BLANK_LINE")
+                .containsEntry("found", "Two");
+    }
+
+    @Test
+    void aBlankPartNamesTheWhitespaceRejectedBeforeTheStore() {
+        // Harm: early validation must retain the same repair information as the store.
+        final Moves.Refused blank =
+                refusal(
+                        () ->
+                                Edits.text(
+                                        board,
+                                        "AB1",
+                                        new TextEdit(
+                                                TextEdit.Kind.ISSUE,
+                                                null,
+                                                Map.of(TextEdit.Part.PLAN, "   "),
+                                                Set.of())));
+        assertThat(blank.parameters())
+                .as("the blank plan's offending line")
+                .containsEntry("part", "Plan")
+                .containsEntry("fault", "BLANK_LINE")
+                .containsEntry("found", "   ");
+        assertThat(blank.getMessage()).as("the detail names the part").contains("Plan");
+    }
+
+    @Test
     void aTitleWithALineBreakOrOutOfBoundsAndABlankOrTooLongPartAreRefused() {
         // A line break in a title breaks the tracker's one-line head; a blank part would leave a
         // lead or a heading with nothing under it, a part past the tracker's limit is cut off.

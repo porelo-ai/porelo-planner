@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -10,6 +11,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
@@ -23,6 +25,7 @@ import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.github.BodySections;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +34,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /** The edits by hand as the window sends them: each answer and refusal mapped to HTTP. */
 class EditsEndpointTest {
@@ -559,6 +564,60 @@ class EditsEndpointTest {
                 .andExpect(jsonPath("$.title").value("LabelsNotKept"))
                 .andExpect(jsonPath("$.parameters.repository").value("porelo-store"))
                 .andExpect(jsonPath("$.parameters.item").value("AB1"));
+    }
+
+    @Test
+    void bothTextEndpointsAnswerThePartFaultAndOffendingLine() throws Exception {
+        // Harm: the window cannot direct a correction when HTTP drops the store's fault.
+        for (final boolean story : List.of(false, true)) {
+            final String id = story ? "ST1" : "AB1";
+            final TextEdit.Part part = story ? TextEdit.Part.GAIN : TextEdit.Part.PLAN;
+            failure =
+                    catchThrowableOfType(
+                            TextEdit.Refused.class,
+                            () ->
+                                    BodySections.edited(
+                                            id,
+                                            "",
+                                            new TextEdit(
+                                                    part.of(),
+                                                    null,
+                                                    Map.of(part, "First line.\n## Unexpected"),
+                                                    Set.of())));
+            assertThat(failure).as("the real store parser refuses the heading").isNotNull();
+            final String answer =
+                    send(
+                                    "PUT",
+                                    (story ? "/stories/" : "/issues/") + id + "/text",
+                                    "{\""
+                                            + (story ? "gain" : "plan")
+                                            + "\": \"First line.\\n## Unexpected\", \"seen\": "
+                                            + Seens.of(current)
+                                            + "}")
+                            .andReturn()
+                            .getResponse()
+                            .getContentAsString();
+            final JsonNode problem = JsonMapper.builder().build().readTree(answer);
+            assertThat(problem.path("status").asInt()).as("the HTTP refusal status").isEqualTo(422);
+            assertThat(problem.path("title").asText())
+                    .as("the contract refusal name")
+                    .isEqualTo("EditNotAllowed");
+            final JsonNode parameters = problem.path("parameters");
+            final String heading = story ? "What a user gains" : "Plan";
+            assertThat(parameters.path("part").asText())
+                    .as("the affected heading")
+                    .isEqualTo(heading);
+            assertThat(parameters.path("fault").asText())
+                    .as("the machine-readable fault")
+                    .isEqualTo("HEADING");
+            assertThat(parameters.path("found").asText())
+                    .as("the offending line")
+                    .isEqualTo("## Unexpected");
+            assertThat(problem.path("detail").asText())
+                    .as("the refusal's repair words")
+                    .contains(heading, "heading", "## Unexpected");
+        }
+        assertThat(written).as("neither refused edit is saved").isEmpty();
     }
 
     @Test

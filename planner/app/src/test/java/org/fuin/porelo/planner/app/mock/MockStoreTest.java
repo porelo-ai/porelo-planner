@@ -2,10 +2,12 @@ package org.fuin.porelo.planner.app.mock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,6 +36,27 @@ class MockStoreTest {
     private static final Revision FIRST = new Revision("mock@1");
 
     private final MockStore store = MockStore.fromClassPath().copy();
+
+    @Test
+    void theMockRefusesAHeadingInAPartNamingThePartAndTheHeadingFound() {
+        // Harm: the window's mock would hide the repair information the real store gives.
+        final Board before = store.board();
+        final String id = before.issues().getFirst().id();
+        final TextEdit edit =
+                new TextEdit(
+                        TextEdit.Kind.ISSUE,
+                        null,
+                        Map.of(TextEdit.Part.PLAN, "First.\n## Unexpected"),
+                        Set.of());
+        final TextEdit.Refused refused =
+                catchThrowableOfType(
+                        TextEdit.Refused.class, () -> store.setText(before.revision(), id, edit));
+        assertThat(refused).as("the mock refuses the malformed plan").isNotNull();
+        assertThat(refused.part()).as("the affected part").isEqualTo("Plan");
+        assertThat(refused.fault()).as("the heading fault").isEqualTo(TextEdit.Fault.HEADING);
+        assertThat(refused.found()).as("the heading found").isEqualTo("## Unexpected");
+        assertThat(store.board()).as("a refusal leaves the board unchanged").isEqualTo(before);
+    }
 
     // Prevents the window's planning tests from starting the mock board's analysis as work that
     // pushes, with no issue text and no result to hand in.

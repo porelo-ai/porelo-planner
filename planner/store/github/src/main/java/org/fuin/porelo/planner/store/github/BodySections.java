@@ -186,27 +186,54 @@ public final class BodySections {
      * @param held the body as the store holds it
      * @param edit the parts to remove and write
      * @return the new body
-     * @throws TextEdit.Refused in fixed words, which never repeat the body, when it cannot be
+     * @throws TextEdit.Refused naming the part, fault and bounded offending line when it cannot be
      *     written as asked
      */
     public static String edited(final String id, final String held, final TextEdit edit) {
+        String named = "";
         try {
             BodySections body = read(held);
+            if (!edit.written().isEmpty() || !edit.removed().isEmpty()) {
+                body.unambiguous();
+            }
             for (final TextEdit.Part part : TextEdit.Part.values()) {
                 if (edit.removed().contains(part)) {
+                    named = part.heading();
                     body = body.without(Part.of(part));
                 }
             }
             for (final TextEdit.Part part : TextEdit.Part.values()) {
                 final String text = edit.written().get(part);
                 if (text != null) {
+                    named = part.heading();
                     body = body.withEdited(Part.of(part), text);
                 }
             }
             return body.text();
+        } catch (final ContentFault e) {
+            throw new TextEdit.Refused(id, named, e.fault, e.found, String.valueOf(e.getMessage()));
         } catch (final IllegalArgumentException e) {
-            // The words here, an ambiguous body's repair too, are fixed and never repeat it.
-            throw new TextEdit.Refused(id, String.valueOf(e.getMessage()));
+            throw new TextEdit.Refused(
+                    id,
+                    named,
+                    e instanceof TooLong ? TextEdit.Fault.LENGTH : TextEdit.Fault.SECTIONS,
+                    "",
+                    String.valueOf(e.getMessage()));
+        }
+    }
+
+    /** Keeps the fault where it is detected, before the edit supplies its part's real name. */
+    private static final class ContentFault extends IllegalArgumentException {
+        private static final long serialVersionUID = 1L;
+
+        private final TextEdit.Fault fault;
+
+        private final String found;
+
+        private ContentFault(final TextEdit.Fault fault, final String found, final String reason) {
+            super(reason);
+            this.fault = fault;
+            this.found = found;
         }
     }
 
@@ -620,6 +647,13 @@ public final class BodySections {
 
     /** The first fault of one kind of HTML block, or empty. */
     private Optional<String> html(final Html kind) {
+        return htmlFault(kind).map(HtmlFault::repair);
+    }
+
+    /** A fault of an HTML block: what to repair and the number of the line that opened it. */
+    private record HtmlFault(String repair, int line) {}
+
+    private Optional<HtmlFault> htmlFault(final Html kind) {
         int depth = 0;
         int opened = -1;
         for (int at = 0; at < lines.size(); at++) {
@@ -630,12 +664,14 @@ public final class BodySections {
             final Shape shape = shape(text);
             if (depth > 0 && shape != null && shape.level() <= 2) {
                 return Optional.of(
-                        "the "
-                                + kind.named()
-                                + " opened in "
-                                + place(opened)
-                                + " holds a heading-shaped line, so where its section ends is"
-                                + " unclear");
+                        new HtmlFault(
+                                "the "
+                                        + kind.named()
+                                        + " opened in "
+                                        + place(opened)
+                                        + " holds a heading-shaped line, so where its section ends"
+                                        + " is unclear",
+                                opened));
             }
             int from = 0;
             while (true) {
@@ -662,7 +698,9 @@ public final class BodySections {
         }
         if (depth > 0) {
             return Optional.of(
-                    "the " + kind.named() + " opened in " + place(opened) + " never closes");
+                    new HtmlFault(
+                            "the " + kind.named() + " opened in " + place(opened) + " never closes",
+                            opened));
         }
         return Optional.empty();
     }
@@ -864,12 +902,32 @@ public final class BodySections {
 
     /** The text's lines, refused when blank or when they would open a part of their own. */
     private static List<String> content(final Part part, final String text) {
-        final String lf = text.replace("\r\n", "\n").strip();
-        if (lf.isEmpty() || lf.indexOf('\r') >= 0) {
-            throw new IllegalArgumentException("A part of the body is blank or breaks lines oddly");
+        final String normalized = text.replace("\r\n", "\n");
+        final String lf = normalized.strip();
+        if (lf.isEmpty()) {
+            throw new ContentFault(
+                    TextEdit.Fault.BLANK_LINE,
+                    normalized,
+                    "A part of the body is blank or breaks lines oddly");
+        }
+        if (lf.indexOf('\r') >= 0) {
+            final String before = normalized.substring(0, normalized.indexOf('\r'));
+            throw new ContentFault(
+                    TextEdit.Fault.BLANK_LINE,
+                    before.substring(before.lastIndexOf('\n') + 1),
+                    "A part of the body is blank or breaks lines oddly");
         }
         final List<String> content = new ArrayList<>(List.of(lf.split("\n", -1)));
+        final List<String> original = List.of(normalized.split("\n", -1));
+        final int skipped =
+                (int)
+                        normalized
+                                .substring(0, normalized.indexOf(lf))
+                                .chars()
+                                .filter(character -> character == '\n')
+                                .count();
         final Fence fence = new Fence();
+        String opened = "";
         for (int at = 0; at < content.size(); at++) {
             final String line = content.get(at);
             // The line as it will stand: a leading part's first one follows its lead.
@@ -877,17 +935,49 @@ public final class BodySections {
                     at == 0 && part.leading() && part != Part.COVERS
                             ? part.label() + " " + line
                             : line;
+            final boolean wasOpen = fence.open();
             final boolean code = fence.inside(standing);
+            if (!wasOpen && fence.open()) {
+                opened = original.get(skipped + at);
+            }
             final Shape shape = code ? null : shape(standing);
             if (shape != null && shape.level() <= 2
                     || part.leading() && (line.isBlank() || lead(line) != null)) {
-                throw new IllegalArgumentException(
-                        "A part of the body holds a heading, a lead or a blank line that would"
-                                + " open a part of its own");
+                final TextEdit.Fault fault =
+                        shape != null && shape.level() <= 2
+                                ? TextEdit.Fault.HEADING
+                                : line.isBlank() ? TextEdit.Fault.BLANK_LINE : TextEdit.Fault.LEAD;
+                final String what =
+                        switch (fault) {
+                            case HEADING -> "a heading";
+                            case LEAD -> "a lead";
+                            default -> "a blank line";
+                        };
+                throw new ContentFault(
+                        fault,
+                        original.get(skipped + at),
+                        "A part of the body holds " + what + " that would open a part of its own");
             }
         }
         if (fence.open()) {
-            throw new IllegalArgumentException("A part of the body leaves a code block open");
+            throw new ContentFault(
+                    TextEdit.Fault.CODE_BLOCK,
+                    opened,
+                    "A part of the body leaves a code block open");
+        }
+        final BodySections body = read(lf);
+        for (final Html kind : HTML) {
+            final Optional<HtmlFault> fault = body.htmlFault(kind);
+            if (fault.isPresent()) {
+                throw new ContentFault(
+                        kind.named().equals("HTML comment")
+                                ? TextEdit.Fault.HTML_COMMENT
+                                : TextEdit.Fault.OPEN_BLOCK,
+                        original.get(skipped + fault.get().line()),
+                        "A part of the body leaves its "
+                                + kind.named()
+                                + " open or its sections unclear");
+            }
         }
         return content;
     }

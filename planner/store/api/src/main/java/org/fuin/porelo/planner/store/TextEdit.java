@@ -84,6 +84,46 @@ public record TextEdit(
         public boolean removable() {
             return removable;
         }
+
+        /**
+         * Answers the part's heading as a refusal names it.
+         *
+         * @return its heading, or {@code covers} for the paragraph without a heading
+         */
+        public String heading() {
+            return switch (this) {
+                case COVERS -> "covers";
+                case WHY_THIS_SIZE -> "Why this size";
+                case WHAT_MUST_BE_TRUE -> "What must be true";
+                case PLAN -> "Plan";
+                case ACCEPTANCE -> "Acceptance";
+                case OPEN_QUESTIONS -> "Open questions";
+                case TO_BE_CHECKED -> "To be checked";
+                case FINDINGS -> "Findings";
+                case GAIN -> "What a user gains";
+                case TEST -> "The test";
+            };
+        }
+    }
+
+    /** What prevents a part of a text from being written. */
+    public enum Fault {
+        /** A heading would open another part. */
+        HEADING,
+        /** A lead would open another paragraph. */
+        LEAD,
+        /** A paragraph or title contains a forbidden line break or is blank. */
+        BLANK_LINE,
+        /** A code fence is left open. */
+        CODE_BLOCK,
+        /** An HTML comment leaves the sections unclear. */
+        HTML_COMMENT,
+        /** An HTML block leaves the sections unclear. */
+        OPEN_BLOCK,
+        /** A title, part or body is outside its length bounds. */
+        LENGTH,
+        /** The body's sections cannot be told apart. */
+        SECTIONS
     }
 
     /**
@@ -146,14 +186,19 @@ public record TextEdit(
     }
 
     /**
-     * The refusal of a text the store cannot write as asked, in fixed words that never repeat the
-     * text: a heading, a lead or an open block in it, a body grown past what the store takes, or a
-     * body whose parts cannot be told apart.
+     * The refusal of a text the store cannot write as asked, naming its part, the fault and at most
+     * the first 200 characters of the offending line.
      */
     public static final class Refused extends RuntimeException {
         private static final long serialVersionUID = 1L;
 
         private final String item;
+
+        private final String part;
+
+        private final Fault fault;
+
+        private final String found;
 
         /**
          * Names the item and why.
@@ -162,8 +207,64 @@ public record TextEdit(
          * @param reason why, in fixed words
          */
         public Refused(final String item, final String reason) {
-            super(reason);
+            this(item, "", Fault.SECTIONS, "", reason);
+        }
+
+        /**
+         * Names the item, part and fault, repeating only the bounded offending line.
+         *
+         * @param item the story's or issue's id
+         * @param part the heading, {@code title}, or empty when no one part is named
+         * @param fault what is wrong
+         * @param found the offending line; ignored for length and section faults
+         * @param reason why, in fixed words
+         */
+        public Refused(
+                final String item,
+                final String part,
+                final Fault fault,
+                final String found,
+                final String reason) {
+            super(
+                    (part.isEmpty() ? "" : part + ": ")
+                            + reason
+                            + (excerpt(fault, found).isEmpty()
+                                    ? ""
+                                    : " Found: " + excerpt(fault, found)));
             this.item = item;
+            this.part = part;
+            this.fault = fault;
+            this.found = excerpt(fault, found);
+        }
+
+        private static String excerpt(final Fault fault, final String found) {
+            if (fault == Fault.LENGTH || fault == Fault.SECTIONS) {
+                return "";
+            }
+            final String line = found.split("\\R", 2)[0];
+            final int length = Math.min(200, line.codePointCount(0, line.length()));
+            return line.substring(0, line.offsetByCodePoints(0, length));
+        }
+
+        /**
+         * @return the affected heading, title, or empty when no one part is named
+         */
+        public String part() {
+            return part;
+        }
+
+        /**
+         * @return what prevents the write
+         */
+        public Fault fault() {
+            return fault;
+        }
+
+        /**
+         * @return at most the first 200 characters of the offending line
+         */
+        public String found() {
+            return found;
         }
 
         /**
