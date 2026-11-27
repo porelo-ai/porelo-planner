@@ -56,8 +56,16 @@ public final class StoryRules {
      * @param item the story's or the issue's id
      * @param rule the rule broken
      * @param words what is broken, in fixed words and ids only
+     * @param issues the issues the breach names: the open issue a story's priority is below, or the
+     *     issue that stands in no story
      */
-    public record Breach(String item, Rule rule, String words) {}
+    public record Breach(String item, Rule rule, String words, List<String> issues) {
+
+        /** Copies the issues. */
+        public Breach {
+            issues = List.copyOf(issues);
+        }
+    }
 
     /**
      * Answers every breach on a board: each story's in the board's order, then each issue's.
@@ -90,7 +98,8 @@ public final class StoryRules {
                                 Rule.ISSUE_IN_NO_STORY,
                                 issue.id()
                                         + " stands past the workflow's first state in no"
-                                        + " story."));
+                                        + " story.",
+                                List.of(issue.id())));
             }
         }
         return List.copyOf(breaches);
@@ -168,7 +177,8 @@ public final class StoryRules {
                 new Breach(
                         story.id(),
                         Rule.STORY_PRIORITY_BELOW_ISSUE,
-                        story.id() + " has a lower priority than its open issue " + highest + "."));
+                        story.id() + " has a lower priority than its open issue " + highest + ".",
+                        List.of(highest)));
     }
 
     private static Set<String> withSubIssues(
