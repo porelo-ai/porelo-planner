@@ -79,6 +79,73 @@
       "Finished"
     ]
   },
+  "roles": {
+    "author": {
+      "end": "PUSHES_WORK",
+      "workspace": "own",
+      "readLanded": false,
+      "projectServices": true,
+      "writeAs": "author",
+      "rights": [
+        "push",
+        "reply"
+      ]
+    },
+    "reviewer": {
+      "end": "GIVES_POINTS",
+      "workspace": "foreign",
+      "readLanded": false,
+      "projectServices": false,
+      "writeAs": "review",
+      "rights": [
+        "reply",
+        "openThreads"
+      ]
+    },
+    "tester": {
+      "end": "REPORTS_FINDINGS",
+      "workspace": "foreign",
+      "readLanded": false,
+      "projectServices": false,
+      "writeAs": "review",
+      "rights": [
+        "openThreads",
+        "report"
+      ]
+    },
+    "screener": {
+      "end": "GIVES_POINTS",
+      "workspace": "foreign",
+      "readLanded": false,
+      "projectServices": false,
+      "writeAs": "review",
+      "rights": [
+        "reply",
+        "openThreads",
+        "reject"
+      ]
+    },
+    "analyst": {
+      "end": "HANDS_BACK_RESULT",
+      "workspace": "readOnly",
+      "readLanded": false,
+      "projectServices": true,
+      "writeAs": "author",
+      "rights": [
+        "report"
+      ]
+    },
+    "reader": {
+      "end": "REPORTS_FINDINGS",
+      "workspace": "readOnly",
+      "readLanded": true,
+      "projectServices": true,
+      "writeAs": "review",
+      "rights": [
+        "report"
+      ]
+    }
+  },
   "work": {
     "In analysis": {
       "from": [
@@ -103,7 +170,8 @@
         "claude": "claude-opus-5-5"
       },
       "risks": {},
-      "result": "ANALYSIS"
+      "result": "ANALYSIS",
+      "role": "analyst"
     },
     "Under estimation": {
       "from": [
@@ -128,7 +196,8 @@
         "claude": "claude-opus-5-5"
       },
       "risks": {},
-      "result": "ESTIMATE"
+      "result": "ESTIMATE",
+      "role": "analyst"
     },
     "Implementing": {
       "from": [
@@ -158,7 +227,8 @@
           "effort": "high"
         }
       },
-      "result": null
+      "result": null,
+      "role": "author"
     },
     "Reading": {
       "from": [
@@ -183,7 +253,8 @@
         "claude": "claude-opus-5-5"
       },
       "risks": {},
-      "result": null
+      "result": null,
+      "role": "reader"
     },
     "Reworking": {
       "from": [
@@ -208,7 +279,8 @@
         "claude": "claude-opus-5-5"
       },
       "risks": {},
-      "result": null
+      "result": null,
+      "role": "author"
     },
     "Finishing": {
       "from": [
@@ -233,7 +305,8 @@
         "claude": "claude-opus-5-5"
       },
       "risks": {},
-      "result": null
+      "result": null,
+      "role": "author"
     }
   },
   "faults": [],

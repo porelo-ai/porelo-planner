@@ -14,6 +14,7 @@ import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 
@@ -37,6 +38,9 @@ public final class MockSeed {
     private static final String BUILT = "Implementing";
 
     private static final String REVIEWED = "Reading";
+
+    /** The board's role that reads another task's work at its place and gives points there. */
+    public static final String READS_AT_PLACE = "reviewer";
 
     private static final Instant AT = Instant.parse("2026-11-25T08:00:00Z");
 
@@ -96,7 +100,7 @@ public final class MockSeed {
                                             true,
                                             null,
                                             "mock-open")));
-            if (outcome != WorkRun.PlaceOutcome.REVIEWER) {
+            if (outcome != WorkRun.PlaceOutcome.READING_OFFERED) {
                 throw new IllegalStateException(
                         "The mock's pushed work was read as " + outcome + ", not a reviewer");
             }
@@ -104,14 +108,22 @@ public final class MockSeed {
         }
     }
 
-    /** The board whose built work goes on to a reading rule that names a reviewer at its place. */
+    /**
+     * The board whose built work goes on to a reading rule whose role reads the work at its place.
+     */
     private static Board reviewed(final Board board) {
         final Map<String, WorkRule> rules = new LinkedHashMap<>(board.work().rules());
         final WorkRule built = rules.get(BUILT);
         final WorkRule reading = rules.get(REVIEWED);
-        if (built == null || reading == null) {
+        final Role reviewer = board.work().roles().get(READS_AT_PLACE);
+        if (built == null || reading == null || reviewer == null) {
             throw new IllegalStateException(
-                    "The mock board has no rule " + BUILT + " or " + REVIEWED);
+                    "The mock board has no rule "
+                            + BUILT
+                            + " or "
+                            + REVIEWED
+                            + ", or no role "
+                            + READS_AT_PLACE);
         }
         rules.put(
                 BUILT,
@@ -126,7 +138,7 @@ public final class MockSeed {
                         built.models(),
                         built.risks(),
                         built.result(),
-                        built.reviewer()));
+                        built.role()));
         rules.put(
                 REVIEWED,
                 new WorkRule(
@@ -140,13 +152,13 @@ public final class MockSeed {
                         reading.models(),
                         reading.risks(),
                         null,
-                        WorkRule.Reviewer.AT_WORK));
+                        reviewer));
         return new Board(
                 board.revision(),
                 board.workflow(),
                 board.stories(),
                 board.issues(),
-                new Work(rules, board.work().faults()),
+                new Work(rules, board.work().faults(), board.work().seed(), board.work().roles()),
                 board.repositories());
     }
 }

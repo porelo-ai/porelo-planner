@@ -19,6 +19,7 @@ import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -69,6 +70,8 @@ public final class MockStore implements PlanningStore {
      * @param revision the board's fixed revision
      * @param repositories the project's repositories, its own first
      * @param workflow the states, phases and closed states
+     * @param roles the roles of the project's tasks by name, in the shape of {@code
+     *     stories/work.yml}
      * @param work the work rule per working state, in the shape of {@code stories/work.yml}
      * @param faults what the store could not read, in words
      * @param stories every story
@@ -79,6 +82,7 @@ public final class MockStore implements PlanningStore {
             String revision,
             List<String> repositories,
             Workflow workflow,
+            Map<String, RoleFile> roles,
             Map<String, RuleFile> work,
             List<String> faults,
             List<StoryFile> stories,
@@ -149,6 +153,7 @@ public final class MockStore implements PlanningStore {
      * @param models the model per agent
      * @param risks what the rule chooses per risk, by the risk's name, or null for nothing
      * @param result what the stage hands back instead of pushing, or null when it pushes
+     * @param role the name of the role its task takes, one of the board's roles
      */
     record RuleFile(
             List<String> from,
@@ -160,7 +165,27 @@ public final class MockStore implements PlanningStore {
             String order,
             Map<String, String> models,
             @Nullable Map<String, RiskFile> risks,
-            WorkRule.@Nullable Result result) {}
+            WorkRule.@Nullable Result result,
+            String role) {}
+
+    /**
+     * One role as {@code stories/work.yml} writes it, under its name.
+     *
+     * @param end how its task ends, by the end kind's name
+     * @param workspace its workspace, in Porelo's word
+     * @param readLanded whether its task also reads the forwarded work of the tasks whose build it
+     *     reads
+     * @param projectServices whether its task has the project's services
+     * @param writeAs the account written as at a pull request, in Porelo's word
+     * @param rights its rights, in Porelo's words
+     */
+    record RoleFile(
+            String end,
+            String workspace,
+            boolean readLanded,
+            boolean projectServices,
+            String writeAs,
+            List<String> rights) {}
 
     /**
      * What a rule of the mock board chooses for one risk.
@@ -239,10 +264,12 @@ public final class MockStore implements PlanningStore {
         } catch (final RuntimeException e) {
             throw new IllegalStateException("The mock board is not sound: " + e.getMessage(), e);
         }
+        final Map<String, Role> roles = new LinkedHashMap<>();
+        file.roles().forEach((name, role) -> roles.put(name, role(name, role)));
         final Map<String, WorkRule> rules = new LinkedHashMap<>();
-        file.work().forEach((state, rule) -> rules.put(state, rule(state, rule)));
+        file.work().forEach((state, rule) -> rules.put(state, rule(state, rule, roles)));
         // Corrections are offered as the Git store offers them: for an issue's state alone.
-        final Work work = new Work(rules, file.faults());
+        final Work work = new Work(rules, file.faults(), Map.of(), roles);
         final org.fuin.porelo.planner.store.Correction move =
                 org.fuin.porelo.planner.store.Correction.ofState(file.workflow(), work);
         return new Board(
@@ -315,7 +342,45 @@ public final class MockStore implements PlanningStore {
                 .toList();
     }
 
-    private static WorkRule rule(final String state, final RuleFile rule) {
+    private static Role role(final String name, final RoleFile role) {
+        final Role read =
+                new Role(
+                        name,
+                        Role.End.valueOf(role.end()),
+                        Role.Workspace.of(role.workspace())
+                                .orElseThrow(() -> unsound(name, "workspace")),
+                        role.readLanded(),
+                        role.projectServices(),
+                        Role.WriteAs.of(role.writeAs()).orElseThrow(() -> unsound(name, "writeAs")),
+                        role.rights().stream()
+                                .map(
+                                        right ->
+                                                Role.Right.of(right)
+                                                        .orElseThrow(() -> unsound(name, "rights")))
+                                .toList());
+        if (!read.broken().isEmpty()) {
+            throw new IllegalStateException(
+                    "The mock board's role " + name + " breaks " + read.broken());
+        }
+        return read;
+    }
+
+    private static IllegalStateException unsound(final String role, final String member) {
+        return new IllegalStateException(
+                "The mock board's role " + role + " has a " + member + " Porelo does not know");
+    }
+
+    private static WorkRule rule(
+            final String state, final RuleFile rule, final Map<String, Role> roles) {
+        final Role role = roles.get(rule.role());
+        if (role == null) {
+            throw new IllegalStateException(
+                    "The mock board's rule for "
+                            + state
+                            + " names the role '"
+                            + rule.role()
+                            + "', which its roles do not define");
+        }
         final WorkRule.Per per =
                 switch (rule.per()) {
                     case "story" -> WorkRule.Per.STORY;
@@ -338,7 +403,8 @@ public final class MockStore implements PlanningStore {
                 rule.order(),
                 rule.models(),
                 risks(rule.risks()),
-                rule.result());
+                rule.result(),
+                role);
     }
 
     private static Map<Risk, WorkRule.ForRisk> risks(final @Nullable Map<String, RiskFile> risks) {

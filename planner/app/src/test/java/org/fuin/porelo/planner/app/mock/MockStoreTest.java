@@ -17,6 +17,7 @@ import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -63,6 +64,48 @@ class MockStoreTest {
         assertThat(board.work().rules().get("Under estimation").result())
                 .as("the estimation hands back its result too")
                 .isEqualTo(WorkRule.Result.ESTIMATE);
+    }
+
+    @Test
+    void theMockBoardDefinesTheDocumentationsRolesAndItsRulesNameThem() {
+        // Harm: the window's planning tests never see a role the project adds, or a judgment
+        // among its rights, so the screen is held to role words the planner no longer serves.
+        final Board board = MockStore.fromClassPath().board();
+        final Map<String, Role> roles = board.work().roles();
+
+        assertThat(roles.keySet())
+                .as("the roles the mock board defines")
+                .containsExactly("author", "reviewer", "tester", "screener", "analyst", "reader");
+        assertThat(roles.get("tester"))
+                .as("the tester by its name and parts")
+                .isEqualTo(
+                        new Role(
+                                "tester",
+                                Role.End.REPORTS_FINDINGS,
+                                Role.Workspace.FOREIGN,
+                                false,
+                                false,
+                                Role.WriteAs.REVIEW,
+                                List.of(Role.Right.OPEN_THREADS, Role.Right.REPORT)));
+        assertThat(roles.get("screener").rights())
+                .as("the screener's rights, its judgment among them")
+                .containsExactly(Role.Right.REPLY, Role.Right.OPEN_THREADS, Role.Right.REJECT);
+        assertThat(roles.get("screener").end()).isEqualTo(Role.End.GIVES_POINTS);
+        assertThat(roles.values())
+                .as("every role sound, as Start would take it")
+                .allSatisfy(role -> assertThat(role.broken()).as(role.name()).isEmpty());
+        assertThat(
+                        board.work().rules().entrySet().stream()
+                                .map(rule -> rule.getKey() + "=" + rule.getValue().role().name())
+                                .toList())
+                .as("the role each rule names")
+                .containsExactly(
+                        "In analysis=analyst",
+                        "Under estimation=analyst",
+                        "Implementing=author",
+                        "Reading=reader",
+                        "Reworking=author",
+                        "Finishing=author");
     }
 
     @Test
@@ -474,7 +517,12 @@ class MockStoreTest {
                                                 WorkRule.Per.STORY,
                                                 List.of("UNATTENDED"),
                                                 "Build {story}",
-                                                Map.of("codex", "gpt"))),
+                                                Map.of("codex", "gpt"),
+                                                MockStore.fromClassPath()
+                                                        .board()
+                                                        .work()
+                                                        .roles()
+                                                        .get("author"))),
                                 List.of()));
         final MockStore mock = new MockStore(board);
         final List<Moves.Move> moves =

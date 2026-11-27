@@ -45,7 +45,7 @@ public class MockController {
 
     private static final String RESET = "/mock/reset";
 
-    private static final String REVIEWER = "/mock/projects/{project}/reviewer";
+    private static final String REVIEW_OFFER = "/mock/projects/{project}/reviewer";
 
     private static final String HELD = "/mock/projects/{project}/held";
 
@@ -112,11 +112,12 @@ public class MockController {
      * @return no content, or not found for a project not given
      * @throws NoResourceFoundException outside the mock mode, as for any unknown path
      */
-    @PostMapping(REVIEWER)
+    @PostMapping(REVIEW_OFFER)
     public ResponseEntity<Void> reviewer(@PathVariable("project") final String project)
             throws NoResourceFoundException {
         if (mode.getIfAvailable() == null) {
-            throw new NoResourceFoundException(HttpMethod.POST, REVIEWER, REVIEWER.substring(1));
+            throw new NoResourceFoundException(
+                    HttpMethod.POST, REVIEW_OFFER, REVIEW_OFFER.substring(1));
         }
         if (!records.plant(project, MockSeed.of(MockStore.fromClassPath().board()))) {
             return ResponseEntity.notFound().build();

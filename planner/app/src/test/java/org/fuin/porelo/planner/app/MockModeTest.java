@@ -357,12 +357,13 @@ class MockModeTest {
         assertThat(starts.size()).as("one start waits").isEqualTo(1);
         assertThat(
                         List.of(
-                                starts.at("/0/runRole").asString(),
-                                starts.at("/0/role").asString(),
+                                starts.at("/0/role/name").asString(),
+                                starts.at("/0/role/endKind").asString(),
+                                starts.at("/0/role/workspace").asString(),
                                 starts.at("/0/place/gatePush/name").asString(),
                                 starts.at("/0/issues/0").asString()))
                 .as("a reviewer reading at the gate push the issue's work waits at")
-                .containsExactly("REVIEWER", "READER", "mock-author", "PJ58");
+                .containsExactly("reviewer", "GIVES_POINTS", "foreign", "mock-author", "PJ58");
 
         call(runtime, "POST", "/mock/reset", null);
         call(runtime, "PUT", "/projects/reviewed", SOURCE);
