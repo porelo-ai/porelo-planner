@@ -38,6 +38,8 @@ import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.Writes;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WorkRunTest {
 
@@ -1962,6 +1964,179 @@ class WorkRunTest {
                 .as("the refused landing offers no second reader")
                 .isEqualTo(snapshot);
         assertThat(f.store.saves).as("the refused landing writes nothing").isEqualTo(saves);
+    }
+
+    @Test
+    void aBuildersEndLandedOnItsOwnTasksBranchWaitsAtItsOwnPullRequest() {
+        // Harm: work the gate forwarded before its end was read, or that landed on the task's
+        // branch with no gate at all, waits at a gate push that is gone or never was, is marked
+        // unreadable there, and never reaches the task's pull request.
+        final Fixture f = new Fixture();
+        // Without a reviewer rule, the landed work goes on at the own pull request.
+        noReading(f);
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z",
+                                true,
+                                "",
+                                "Built",
+                                0,
+                                List.of(landing("porelo/task")))));
+
+        assertThat(f.run.work("ST1").places())
+                .as("the task's own pull request is the issue's place")
+                .containsExactly(
+                        Map.entry("AA1", IssuePlace.atGate("task", build.offer()).forwarded()));
+        assertThat(f.run.waiting())
+                .as("read there")
+                .extracting(WorkRun.Waits::issue)
+                .containsExactly("AA1");
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                new PlaceRead.Opened(
+                                        RunPlace.own(),
+                                        "task",
+                                        answer(ReviewOpen.Decision.OPEN, 0, 0, 0))))
+                .as("its answer read at the own pull request")
+                .isNotIn(WorkRun.PlaceOutcome.PLACE_CHANGED, WorkRun.PlaceOutcome.NEEDS_YOU);
+    }
+
+    @Test
+    void aBuildersEndLandedOnItsOwnTasksBranchKeepsNoPlaceWhereAReaderReadsTheLandedWork() {
+        // Harm: work a reader is offered to read where it landed is also read at the task's own
+        // pull request every minute, and judged there once the reader stops.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+
+        final WorkRun.Answer answer =
+                f.run.report(
+                        "task",
+                        new WorkRun.Report(
+                                build.offer(),
+                                WorkRun.Event.ENDED,
+                                "box",
+                                "workstation",
+                                new WorkRun.Ended(
+                                        "2026-01-01T00:00:00Z",
+                                        true,
+                                        "",
+                                        "Built",
+                                        0,
+                                        List.of(landing("porelo/task")))));
+
+        assertThat(answer.tasks()).as("a reader offered for the landed work").isNotEmpty();
+        assertThat(f.run.work("ST1").places()).as("no place kept").isEmpty();
+    }
+
+    @Test
+    void aReworkAtTheOwnPullRequestEndsAsItsTasksOwnWorkAndCountsItsAuthorRuns() {
+        // Harm: the rework's end is taken for another task's while the forwarded work waits, so
+        // the issue never moves on; or its review rounds start counting anew.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = waiting(f);
+        assertThat(
+                        f.run.placeRead(
+                                "ST1",
+                                "AA1",
+                                forwarded("task", answer(ReviewOpen.Decision.OPEN, 1, 0, 0))))
+                .as("the points at the own pull request send the author back")
+                .isEqualTo(WorkRun.PlaceOutcome.REWORK);
+        final WorkRun.Offer rework = f.run.work("ST1").offers().getLast();
+        f.run.report(
+                "task",
+                new WorkRun.Report(rework.id(), WorkRun.Event.STARTED, "box", "workstation", null));
+
+        // Its push waits at the gate again.
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        rework.id(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z", true, "", "Answered", 0, List.of())));
+
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("no place change asked")
+                .isNotEqualTo("PLACE_CHANGED");
+        assertThat(f.run.work("ST1").places().get("AA1").authorRuns())
+                .as("both author runs counted at the task's place")
+                .containsExactly(build.offer(), rework.id());
+    }
+
+    @Test
+    void aForwardWithNoPullRequestYetKeepsTheWorkWaitingAtTheOwnPullRequestUntilOneOpens() {
+        // Harm: where the gate's Approve pushes the branch only and the pull request is opened
+        // later, the approved gate push is taken for the work's end, and the pull request opened
+        // after it is never read.
+        final Fixture f = new Fixture();
+        noReading(f);
+        waiting(f);
+
+        assertThat(f.run.placeRead("ST1", "AA1", forwarded("task", null)))
+                .as("the person is told no pull request is there yet")
+                .isEqualTo(WorkRun.PlaceOutcome.NEEDS_YOU);
+        assertThat(f.run.work("ST1").places().get("AA1").place())
+                .as("the work waits at the task's own pull request")
+                .isEqualTo(RunPlace.own());
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("its reason")
+                .isEqualTo("PLACE_UNREADABLE");
+        assertThat(f.run.waiting())
+                .as("still read")
+                .extracting(WorkRun.Waits::issue)
+                .containsExactly("AA1");
+
+        f.run.placeRead(
+                "ST1",
+                "AA1",
+                new PlaceRead.Opened(
+                        RunPlace.own(), "task", answer(ReviewOpen.Decision.OPEN, 0, 0, 0)));
+        assertThat(f.run.work("ST1").issues().get("AA1").reason())
+                .as("the pull request opened ends the stop")
+                .isEqualTo("NONE");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"porelo/other", "work/built"})
+    void aBuildersEndLandedOnAnotherBranchThanItsOwnTasksKeepsNoGatePlace(final String branch) {
+        // Harm: work that landed elsewhere is read at a gate push it never had, every minute,
+        // and the issue marked unreadable once that push is gone.
+        final Fixture f = new Fixture();
+        final WorkRun.Offered build = f.order().tasks().getFirst();
+        f.start(build);
+
+        f.run.report(
+                "task",
+                new WorkRun.Report(
+                        build.offer(),
+                        WorkRun.Event.ENDED,
+                        "box",
+                        "workstation",
+                        new WorkRun.Ended(
+                                "2026-01-01T00:00:00Z",
+                                true,
+                                "",
+                                "Built",
+                                0,
+                                List.of(landing(branch)))));
+
+        assertThat(f.run.work("ST1").places())
+                .as("no gate place for work landed on %s", branch)
+                .isEmpty();
     }
 
     @Test
@@ -5545,8 +5720,8 @@ class WorkRunTest {
                         board.repositories());
     }
 
-    /** The gate push of task, forwarded, and the answer at its own pull request. */
-    private static PlaceRead forwarded(final String task, final ReviewOpen own) {
+    /** The gate push of task, forwarded, and the answer at its own pull request, if one is open. */
+    private static PlaceRead forwarded(final String task, final @Nullable ReviewOpen own) {
         return new PlaceRead.Forwarded(
                 RunPlace.gate(null, task),
                 task,

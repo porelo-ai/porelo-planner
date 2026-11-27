@@ -1,0 +1,2 @@
+title: Work the gate forwarded waits at the task's own pull request until one opens, also when its end was read after the forward or it landed with no gate.
+type: fixed

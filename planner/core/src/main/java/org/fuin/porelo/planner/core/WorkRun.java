@@ -1905,6 +1905,12 @@ public final class WorkRun implements RefusedEventResave {
                                     ended.answer());
                     final boolean authored = judgment instanceof WorkEnds.Done && author(known);
                     final boolean atGate = authored && ended.landed().isEmpty();
+                    // Work landed on the task's own branch, by the gate's forwarding before the
+                    // end was read or with no gate at all, goes on at the task's own pull request.
+                    final boolean atOwn =
+                            authored
+                                    && ended.landed().stream()
+                                            .anyMatch(l -> l.branch().equals("porelo/" + task));
                     // An issue whose kept push still waits takes no step from another's end,
                     // landed or not.
                     final Map<String, String> elsewhere =
@@ -1927,7 +1933,30 @@ public final class WorkRun implements RefusedEventResave {
                                 draft.unavailable.put(id, why);
                             });
                     if (atGate) {
-                        keepPlaces(draft, known, task, writes, deferred, elsewhere.keySet());
+                        keepPlaces(
+                                draft,
+                                known,
+                                IssuePlace.atGate(task, known.id()),
+                                writes,
+                                deferred,
+                                elsewhere.keySet());
+                    } else if (atOwn) {
+                        // A task offered for the landed work reads it where it landed, and an
+                        // issue whose next step is unavailable asks the person: no place waits.
+                        final Set<String> read = new HashSet<>(elsewhere.keySet());
+                        next.tasks().forEach(p -> read.addAll(p.task().issues()));
+                        read.addAll(next.unavailable().keySet());
+                        known.binding().issues().stream()
+                                .filter(read::contains)
+                                .filter(id -> !elsewhere.containsKey(id))
+                                .forEach(draft.places::remove);
+                        keepPlaces(
+                                draft,
+                                known,
+                                IssuePlace.atGate(task, known.id()).forwarded(),
+                                writes,
+                                deferred,
+                                read);
                     } else if (authored) {
                         // Its work landed: no place of its issues waits for it any more.
                         known.binding().issues().stream()
@@ -2164,7 +2193,9 @@ public final class WorkRun implements RefusedEventResave {
         for (final String id : known.binding().issues()) {
             final IssuePlace kept = draft.places.get(id);
             if (kept != null
-                    && !(kept.task().equals(task) && kept.same(own, known.binding().repository()))
+                    && !(kept.task().equals(task)
+                            && (kept.same(own, known.binding().repository())
+                                    || RunPlace.own().equals(kept.place())))
                     && waits(draft.offers, kept)) {
                 elsewhere.put(
                         id,
@@ -2202,31 +2233,49 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Keeps where an author's ended work waits at the gate, for each issue its end moved or left to
-     * follow its children: its own task's push. The same place counts the run once more; a place
-     * whose push no longer waits is replaced; an issue kept elsewhere keeps its place.
+     * Keeps where an author's ended work waits, for each issue its end moved or left to follow its
+     * children: its own task's push at the gate, or its task's own pull request once that push was
+     * forwarded. The same place counts the run once more; another place is replaced; an issue kept
+     * elsewhere keeps its place.
      */
     private static void keepPlaces(
             final Draft draft,
             final Offer known,
-            final String task,
+            final IssuePlace here,
             final Writes writes,
             final List<String> deferred,
             final Set<String> elsewhere) {
-        final IssuePlace here = IssuePlace.atGate(task, known.id());
+        final String task = here.task();
         for (final String id : known.binding().issues()) {
             if (elsewhere.contains(id)
                     || !writes.issues().containsKey(id) && !deferred.contains(id)) {
                 continue;
             }
             final IssuePlace kept = draft.places.get(id);
-            draft.places.put(
-                    id,
+            final boolean same =
                     kept != null
-                                    && kept.task().equals(task)
-                                    && kept.same(here.place(), known.binding().repository())
-                            ? kept.usedBy(known.id())
-                            : here);
+                            && kept.task().equals(task)
+                            && kept.same(here.place(), known.binding().repository());
+            // The task's work moved between its gate push and its own pull request: its author
+            // runs go on counting there, nothing read at the new place yet.
+            final boolean moved =
+                    kept != null
+                            && !same
+                            && kept.task().equals(task)
+                            && kept.foreign() == here.foreign()
+                            && (RunPlace.own().equals(kept.place())
+                                    || RunPlace.own().equals(here.place()));
+            final IssuePlace next;
+            if (kept == null) {
+                next = here;
+            } else if (same) {
+                next = kept.usedBy(known.id());
+            } else if (moved) {
+                next = kept.at(here.place()).usedBy(known.id());
+            } else {
+                next = here;
+            }
+            draft.places.put(id, next);
         }
     }
 
@@ -2241,7 +2290,9 @@ public final class WorkRun implements RefusedEventResave {
             return true;
         }
         final Ended ended = last.ended();
-        return ended != null && ended.landed().isEmpty() && kept.open();
+        return ended != null
+                && (ended.landed().isEmpty() || RunPlace.own().equals(kept.place()))
+                && kept.open();
     }
 
     /**
@@ -2953,8 +3004,7 @@ public final class WorkRun implements RefusedEventResave {
         final PlaceRead found =
                 given instanceof PlaceRead.Forwarded forwarded
                         ? switched
-                                ? new PlaceRead.Opened(
-                                        kept.place(), forwarded.task(), forwarded.own())
+                                ? ownRead(kept, forwarded)
                                 : new PlaceRead.Opened(
                                         forwarded.gate(), forwarded.task(), forwarded.atGate())
                         : given;
@@ -2983,7 +3033,7 @@ public final class WorkRun implements RefusedEventResave {
         if (unread != null) {
             if (progress.needsYou()
                     && !(progress.reason().equals("NEXT_STEP_UNAVAILABLE")
-                            && reworkAsked(board, issue, kept, bound))) {
+                            && reworkAsked(board, issue, switched ? left : kept, bound))) {
                 // Asked already, for this reason or another, which stands; a switch is kept. The
                 // ask that no rework could be offered for the place's points gives way, since
                 // the place it was judged at can no longer be read.
@@ -3023,7 +3073,7 @@ public final class WorkRun implements RefusedEventResave {
         if (before.needsYou()
                 && before.reason().equals("NEXT_STEP_UNAVAILABLE")
                 && now != kept
-                && reworkAsked(board, issue, kept, bound)) {
+                && reworkAsked(board, issue, switched ? left : kept, bound)) {
             // The ask that no rework could be offered for the points at the place stands only
             // while the place's answer still holds them: a new head or an approval there is
             // judged afresh, and asks again when its points still find no rework.
@@ -3721,6 +3771,21 @@ public final class WorkRun implements RefusedEventResave {
                                     + expected
                                     + ", where its work waits";
         };
+    }
+
+    /**
+     * What is read at the task's own pull request a forwarded gate push moved the work to: while
+     * Porelo finds none from the task's branch, the work waits there unread, saying why, and is
+     * read again until one opens.
+     */
+    private static PlaceRead ownRead(final IssuePlace kept, final PlaceRead.Forwarded forwarded) {
+        final ReviewOpen own = forwarded.own();
+        return own == null
+                ? new PlaceRead.Unread(
+                        kept.place(),
+                        forwarded.task(),
+                        "Porelo finds no pull request from the task's branch yet")
+                : new PlaceRead.Opened(kept.place(), forwarded.task(), own);
     }
 
     /**

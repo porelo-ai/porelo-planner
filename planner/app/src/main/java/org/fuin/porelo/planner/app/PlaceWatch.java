@@ -559,9 +559,11 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
     }
 
     /**
-     * What is open at the task's own pull request once its gate push was forwarded: the gate's
-     * answer alone where Porelo finds no pull request from the task's branch, and no answer at all
-     * where it cannot say, so the forwarding is never taken for the work's end.
+     * What is open at the task's own pull request once its gate push was forwarded: nothing yet
+     * where the push went to the task's branch and Porelo finds no pull request from it, so the
+     * work waits there until one opens; the gate's answer alone where it went elsewhere or the
+     * forge is none Porelo knows; and no answer at all where it cannot say, so the forwarding is
+     * never taken for the work's end.
      */
     private static PlaceRead ownRead(
             final String project,
@@ -576,6 +578,18 @@ public final class PlaceWatch implements ChangesRegistry.Follower, AutoCloseable
                     atGate,
                     reviews.open(project, RunPlace.own(), place.task()));
         } catch (final PlaceReviews.Refused refused) {
+            if ("NoPullRequest".equals(refused.refusal())
+                    && ("porelo/" + place.task()).equals(atGate.mergedHead())) {
+                // Forwarded to the task's branch with its pull request not opened yet.
+                LOG.info(
+                        "Porelo found no pull request yet where issue {} of project {} waits at"
+                                + " {}, so its work waits for one: {}",
+                        LogText.of(issue),
+                        LogText.of(project),
+                        LogText.of(RunPlace.own()),
+                        logged(refused));
+                return new PlaceRead.Forwarded(place.place(), place.task(), atGate, null);
+            }
             if (NO_PULL_REQUEST.contains(refused.refusal())) {
                 LOG.info(
                         "Porelo found no pull request where issue {} of project {} waits at {},"

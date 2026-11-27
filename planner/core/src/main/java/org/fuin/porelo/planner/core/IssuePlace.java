@@ -262,6 +262,16 @@ public record IssuePlace(
     }
 
     /**
+     * The same task's work at another place, for the same author runs, nothing read there yet.
+     *
+     * @param moved the place the work waits at now
+     * @return the place
+     */
+    public IssuePlace at(final RunPlace moved) {
+        return new IssuePlace(moved, foreign, task, authorRuns, null, null, again);
+    }
+
+    /**
      * The place with a run the person started by hand in its task working there, or with none.
      *
      * @param since when that run started, or null once it ended

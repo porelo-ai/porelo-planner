@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.core;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What was read of an issue's kept place from Porelo: a task's record, what is open there, or why
@@ -44,9 +45,10 @@ public sealed interface PlaceRead
      * @param gate the gate push asked about
      * @param task the task asked for, by its name within the project
      * @param atGate the gate's answer, APPROVED with the forwarded commit
-     * @param own the answer at the task's own pull request
+     * @param own the answer at the task's own pull request, or null while Porelo finds no pull
+     *     request from the task's branch yet
      */
-    record Forwarded(RunPlace gate, String task, ReviewOpen atGate, ReviewOpen own)
+    record Forwarded(RunPlace gate, String task, ReviewOpen atGate, @Nullable ReviewOpen own)
             implements PlaceRead {
         /**
          * Refuses a missing part, a place that is no gate push and a gate that forwarded nothing.
@@ -55,7 +57,6 @@ public sealed interface PlaceRead
             Objects.requireNonNull(gate, "gate");
             Objects.requireNonNull(task, "task");
             Objects.requireNonNull(atGate, "atGate");
-            Objects.requireNonNull(own, "own");
             if (gate.gatePush() == null) {
                 throw new IllegalArgumentException("Only a gate push forwards its work");
             }

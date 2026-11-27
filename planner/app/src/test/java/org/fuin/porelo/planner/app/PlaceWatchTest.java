@@ -553,9 +553,16 @@ class PlaceWatchTest {
                             Duration.ofMinutes(1))
                     .readAll("project");
             assertThat(absent.reads)
-                    .as("no pull request from the task's branch (" + none + "): the gate's answer")
+                    .as("no pull request from the task's branch (" + none + ")")
                     .containsExactly(
-                            new PlaceRead.Opened(RunPlace.gate(null, "task"), "task", gate));
+                            none.equals("NoPullRequest")
+                                    // Forwarded to porelo/task: its pull request may open later.
+                                    ? new PlaceRead.Forwarded(
+                                            RunPlace.gate(null, "task"), "task", gate, null)
+                                    // A forge Porelo does not know never has one: the gate's
+                                    // answer stands.
+                                    : new PlaceRead.Opened(
+                                            RunPlace.gate(null, "task"), "task", gate));
         }
 
         final Fake unreadable = new Fake(WorkRun.PlaceOutcome.NEEDS_YOU);
