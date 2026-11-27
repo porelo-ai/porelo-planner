@@ -913,11 +913,18 @@ public final class FieldsBoardWriter implements BoardWriter {
                 continue;
             }
             final ItemView child = issueItem(current, id);
-            if (child.parentIssueId() != null) {
+            final @Nullable String holder = holderOf(current, id, story);
+            if (holder != null) {
+                // Taken from the story that holds it in the same call, which changes that story
+                // too.
+                plan.read(holder, storyItem(current, holder));
+                plan.link(Link.Kind.MOVE_SUB, story, parent, child);
+            } else if (child.parentIssueId() != null) {
                 throw new StoreException.NotSavable(
                         story, "the issue " + id + " has a parent on GitHub already");
+            } else {
+                plan.link(Link.Kind.ADD_SUB, story, parent, child);
             }
-            plan.link(Link.Kind.ADD_SUB, story, parent, child);
             order.add(id);
         }
         final List<String> wanted = issues.stream().filter(id -> order.contains(id)).toList();
@@ -1099,6 +1106,28 @@ public final class FieldsBoardWriter implements BoardWriter {
     }
 
     /** The item of a story on the board, or the refusal that it has none. */
+    /**
+     * The other story of the board whose sub-issue on GitHub an issue is, or null when it is no
+     * story's or the given story's own.
+     */
+    private static @Nullable String holderOf(
+            final Snapshot current, final String issue, final String story) {
+        final String parent = issueItem(current, issue).parentIssueId();
+        if (parent == null) {
+            return null;
+        }
+        for (final Story other : current.board().stories()) {
+            final @Nullable ItemView item = current.items().get(other.id());
+            if (!other.id().equals(story)
+                    && other.issues().contains(issue)
+                    && item != null
+                    && parent.equals(item.issueId())) {
+                return other.id();
+            }
+        }
+        return null;
+    }
+
     private static ItemView storyItem(final Snapshot current, final String id) {
         final ItemView item = current.items().get(id);
         if (item == null || current.board().story(id).isEmpty()) {
@@ -1329,7 +1358,9 @@ public final class FieldsBoardWriter implements BoardWriter {
             targets.add(id);
             final String toId = idOf(to);
             items.putIfAbsent(toId, to);
-            if (kind == Link.Kind.ADD_SUB || kind == Link.Kind.REMOVE_SUB) {
+            if (kind == Link.Kind.ADD_SUB
+                    || kind == Link.Kind.REMOVE_SUB
+                    || kind == Link.Kind.MOVE_SUB) {
                 // A sub-issue's parent changes with the link; a blocker's own state does not.
                 targets.add(toId);
             }
@@ -1854,6 +1885,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                         github.addSubIssue(token, owner, from.repository(), from.number(), to);
                 case REMOVE_SUB ->
                         github.removeSubIssue(token, owner, from.repository(), from.number(), to);
+                case MOVE_SUB ->
+                        github.moveSubIssue(token, owner, from.repository(), from.number(), to);
                 case ORDER -> {
                     final ItemView after = link.after();
                     final ItemView before = link.before();
@@ -2198,6 +2231,7 @@ public final class FieldsBoardWriter implements BoardWriter {
         enum Kind {
             ADD_SUB,
             REMOVE_SUB,
+            MOVE_SUB,
             ORDER,
             ADD_BLOCKER,
             REMOVE_BLOCKER

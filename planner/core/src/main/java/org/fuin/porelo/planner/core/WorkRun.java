@@ -4411,10 +4411,10 @@ public final class WorkRun implements RefusedEventResave {
 
     /**
      * Saves a story's new issue list under the record's lock, refusing it while a started task
-     * works an issue it takes out, or one of its sub-issues: the task's results would no longer
-     * belong to the story. The board is read, checked and compared with the list under the lock, so
-     * an issue hung in and started meanwhile is never taken out unseen, and a stale or wrong list
-     * is refused as such before any run is asked.
+     * works an issue it takes out or takes from another story, or one of its sub-issues: the task's
+     * results would no longer belong to the story it works for. The board is read, checked and
+     * compared with the list under the lock, so an issue hung in and started meanwhile is never
+     * taken out unseen, and a stale or wrong list is refused as such before any run is asked.
      *
      * @param story the story's id
      * @param issues the story's new issue list
@@ -4436,8 +4436,16 @@ public final class WorkRun implements RefusedEventResave {
                     final Board board = store.board();
                     check.accept(board);
                     final Set<String> owned = new HashSet<>();
-                    board.story(story).map(Story::issues).orElse(List.of()).stream()
+                    final List<String> before =
+                            board.story(story).map(Story::issues).orElse(List.of());
+                    before.stream()
                             .filter(issue -> !issues.contains(issue))
+                            .forEach(issue -> owned.addAll(withSubIssues(board, issue)));
+                    // One hung in from another story leaves that story's run as one taken out.
+                    board.stories().stream()
+                            .filter(other -> !other.id().equals(story))
+                            .flatMap(other -> other.issues().stream())
+                            .filter(issue -> issues.contains(issue) && !before.contains(issue))
                             .forEach(issue -> owned.addAll(withSubIssues(board, issue)));
                     refuseOwned(read(session), owned, Set.of());
                     return save.apply(board);

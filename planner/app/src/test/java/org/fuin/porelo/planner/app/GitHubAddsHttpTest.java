@@ -153,6 +153,16 @@ class GitHubAddsHttpTest {
         }
 
         @Override
+        public void moveSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            // GitHub takes it.
+        }
+
+        @Override
         public Batch<String> setFieldValues(
                 final String token,
                 final String projectId,

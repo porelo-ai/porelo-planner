@@ -59,23 +59,6 @@ public final class WorkRefusal extends RuntimeException {
     }
 
     /**
-     * Refuses a new story over an issue another story holds, naming the issue, that story and the
-     * field of the request that named it.
-     *
-     * @param issue the issue's id
-     * @param story the story holding it, by its id, or empty when it is not known
-     * @param field the field of the request, such as {@code existing[0]}
-     * @return the refusal
-     */
-    public static WorkRefusal issueInStory(
-            final String issue, final String story, final String field) {
-        return new WorkRefusal(
-                "IssueInStory",
-                "The issue belongs to another story; an issue has one story.",
-                Map.of("issue", issue, "story", story, "field", field));
-    }
-
-    /**
      * Refuses a batch of moves whose preview, computed again before the save, answers another
      * digest than the one the person confirmed; it names nothing the window could send back.
      *

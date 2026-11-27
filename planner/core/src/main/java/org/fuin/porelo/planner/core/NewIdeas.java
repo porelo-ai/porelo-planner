@@ -1,10 +1,8 @@
 package org.fuin.porelo.planner.core;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
@@ -133,11 +131,8 @@ public final class NewIdeas {
     /**
      * Checks a story to be made over issues that stand on the board, and answers what the store
      * saves. Each issue must stand on the board in an open state of the workflow, be no story and
-     * no sub-issue, be held back by no warning, be named once and belong to no other story; one
-     * that belongs to a story of the same title whose body carries this request's {@link
-     * StoryFromIssues#marker() marker} and whose every issue is named too is let through, since
-     * that is the story a cut-off save of the same request made, and the store takes it or refuses
-     * the issue before it writes.
+     * no sub-issue, be held back by no warning and be named once; one another story holds leaves
+     * that story in the same save, as a story's list moves it.
      *
      * @param board the board the story is saved against
      * @param story the story, or null when it is missing or no object
@@ -145,8 +140,8 @@ public final class NewIdeas {
      * @param shape the faults of the body's shape the reader found, each by its field
      * @return the story the store saves, its texts without the spaces around them
      * @throws WorkRefusal {@code IdeaRefused} listing at most {@value #MOST_FAULTS} faults, each
-     *     refused issue named by its id, or, with none, {@code IssueInStory} naming the first issue
-     *     another story holds, that story and its field
+     *     refused issue named by its id; an issue another story holds is no fault, since it leaves
+     *     that story when the new one is saved
      */
     public static StoryFromIssues checkFromIssues(
             final Board board,
@@ -161,36 +156,17 @@ public final class NewIdeas {
         } else if (existing.size() > Edits.MOST_ISSUES) {
             faults.add("existing: A story holds at most " + Edits.MOST_ISSUES + " issues.");
         }
-        final Map<String, org.fuin.porelo.planner.store.Story> holder = new HashMap<>();
-        for (final org.fuin.porelo.planner.store.Story other : board.stories()) {
-            other.issues().forEach(id -> holder.putIfAbsent(id, other));
-        }
         final Set<String> named = new HashSet<>();
-        final String marker =
-                StoryFromIssues.marker(head.title(), head.gain(), head.test(), existing);
-        @Nullable WorkRefusal held = null;
         for (int index = 0; index < existing.size() && !faults.full(); index++) {
             final String id = existing.get(index);
             final String fault = existingFault(board, id, named);
             if (fault != null) {
                 faults.add("existing[" + index + "]: " + fault);
-                continue;
-            }
-            final org.fuin.porelo.planner.store.Story other = holder.get(id);
-            if (held == null
-                    && other != null
-                    && !madeBefore(other, head.title(), marker, existing)) {
-                held = WorkRefusal.issueInStory(id, other.id(), "existing[" + index + "]");
             }
         }
         if (!faults.list.isEmpty()) {
             throw WorkRefusal.ideaRefused(
                     "The story cannot be made from these issues.", faults.list, null);
-        }
-        if (held != null) {
-            // A malformed request is told first; an issue held elsewhere is a conflict of the
-            // board.
-            throw held;
         }
         return new StoryFromIssues(
                 head.title(), head.gain(), head.test(), head.priority(), existing);

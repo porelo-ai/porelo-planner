@@ -197,16 +197,12 @@ class BoardEditsTest {
     }
 
     @Test
-    void aSecondStoryForAnIssueIsRefusedAndWritesNothing() {
-        // An issue has one story on a tracker that allows one parent; a second would steal it.
-        final Moves.Refused refused =
-                (Moves.Refused)
-                        catchThrowable(
-                                () ->
-                                        edits.setStoryIssues(
-                                                "alpha", "ST1", seen(), List.of("AB1", "AB3")));
-        assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
-        assertThat(written).as("nothing written").isEmpty();
+    void anIssueOfAnotherStoryMovesIntoTheStoryInOneWrite() {
+        // An issue filed under the wrong story moves with one write, never two a failure splits.
+        edits.setStoryIssues("alpha", "ST1", seen(), List.of("AB1", "AB3"));
+        assertThat(written)
+                .as("one write of the story's list")
+                .containsExactly("issues ST1 [AB1, AB3]");
     }
 
     @Test

@@ -234,6 +234,18 @@ public interface ProjectWrites {
     void addSubIssue(String token, String owner, String repository, int number, long subIssueId);
 
     /**
+     * Makes an issue a sub-issue of another, after the sub-issues it has, taking it from the parent
+     * it has in the same call.
+     *
+     * @param token the person's token
+     * @param owner the owner of both repositories
+     * @param repository the new parent's repository
+     * @param number the new parent's number
+     * @param subIssueId the sub-issue's id in REST, {@link Created#databaseId}
+     */
+    void moveSubIssue(String token, String owner, String repository, int number, long subIssueId);
+
+    /**
      * Takes a sub-issue from its parent; it stays an issue of its own.
      *
      * @param token the person's token
@@ -455,6 +467,16 @@ public interface ProjectWrites {
                     final int number,
                     final long subIssueId) {
                 rest.addSubIssue(token, owner, repository, number, subIssueId, false);
+            }
+
+            @Override
+            public void moveSubIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long subIssueId) {
+                rest.addSubIssue(token, owner, repository, number, subIssueId, true);
             }
 
             @Override

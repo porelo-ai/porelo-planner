@@ -353,6 +353,16 @@ class FieldsBoardWriterEditsTest {
         }
 
         @Override
+        public void moveSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            link("moveSubIssue " + repository + "#" + number + " " + subIssueId);
+        }
+
+        @Override
         public void removeSubIssue(
                 final String token,
                 final String owner,
@@ -656,6 +666,39 @@ class FieldsBoardWriterEditsTest {
                         "removeSubIssue example-project#9 1002",
                         "addSubIssue example-project#9 1003",
                         "reprioritizeSubIssue example-project#9 1003 after null before 1001");
+    }
+
+    @Test
+    void anIssueAnotherStoryHoldsMovesToTheStoryInOneCallWithBothStoriesRead() {
+        // Harm: an issue left under two stories, or taken from its story by a second call a
+        // failure separates from the first; or the story it leaves changed by a person meanwhile.
+        final String other = "example-project#8";
+        final ItemView otherStory = item(other, Map.of(), null, List.of(THREE), List.of());
+        final ItemView held = item(THREE, Map.of(), other, List.of(), List.of());
+        final Snapshot base = snapshot(List.of(ONE, TWO), story, one, two, held, otherStory);
+        final Board read = base.board();
+        final List<Story> stories = new ArrayList<>(read.stories());
+        stories.add(new Story(other, "Other", "Idea", "High", null, List.of(THREE), "", null));
+        final Snapshot current =
+                new Snapshot(
+                        new Board(
+                                read.revision(),
+                                read.workflow(),
+                                stories,
+                                read.issues().stream()
+                                        .filter(issue -> !issue.id().equals(other))
+                                        .toList(),
+                                read.work(),
+                                read.repositories()),
+                        base.items(),
+                        base.config());
+        final GitHub github = new GitHub().holding(story, one, two, held, otherStory);
+
+        github.writer().setStoryIssues(current, SHOWN, STORY, List.of(ONE, TWO, THREE));
+
+        assertThat(github.calls)
+                .as("the read of both stories and the issue, then one move")
+                .containsExactly("issueBoard", "moveSubIssue example-project#9 1003");
     }
 
     @Test

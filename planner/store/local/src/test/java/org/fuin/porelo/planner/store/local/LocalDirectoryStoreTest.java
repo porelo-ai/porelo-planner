@@ -607,7 +607,7 @@ class LocalDirectoryStoreTest {
     }
 
     @Test
-    void aStoryFromIssuesTakesNoIssueAnotherStoryHolds() throws Exception {
+    void aStoryFromIssuesTakesAnIssueAnotherStoryHoldsOutOfThatStory() throws Exception {
         // Harm: an issue ends in two stories, and a work rule counts it under the wrong one.
         final LocalDirectoryStore store = store();
         final NewIssue.Added first = issue(store);
@@ -616,19 +616,50 @@ class LocalDirectoryStoreTest {
                         first.board().revision(),
                         new StoryFromIssues("One", "Gain", "Test", "High", List.of(first.id())));
 
-        assertThatThrownBy(
-                        () ->
-                                store.createStoryFromIssues(
-                                        story.board().revision(),
-                                        new StoryFromIssues(
-                                                "Two",
-                                                "Gain",
-                                                "Test",
-                                                "High",
-                                                List.of(first.id()))))
-                .as("the issue's story is named")
-                .isInstanceOf(StoreException.InStory.class)
-                .hasMessageContaining(story.story());
+        final NewIdea.Added moved =
+                store.createStoryFromIssues(
+                        story.board().revision(),
+                        new StoryFromIssues("Two", "Gain", "Test", "High", List.of(first.id())));
+
+        assertThat(moved.board().story(moved.story()).orElseThrow().issues())
+                .as("the new story holds the issue")
+                .containsExactly(first.id());
+        assertThat(moved.board().story(story.story()).orElseThrow().issues())
+                .as("the story it left stays, without it")
+                .isEmpty();
+        assertThat(moved.board().issue(first.id()).orElseThrow().warnings())
+                .as("parent and lists agree")
+                .isEmpty();
+    }
+
+    @Test
+    void anIssueHungIntoAStoryLeavesTheStoryThatHeldItInOneSave() throws Exception {
+        // Harm: an issue stands in two stories, or moving it takes two saves a failure splits.
+        final LocalDirectoryStore store = store();
+        final NewIssue.Added first = issue(store);
+        final NewIdea.Added from =
+                store.createStoryFromIssues(
+                        first.board().revision(),
+                        new StoryFromIssues("From", "Gain", "Test", "High", List.of(first.id())));
+        final NewIssue.Added second = issue(store);
+        final NewIdea.Added to =
+                store.createStoryFromIssues(
+                        second.board().revision(),
+                        new StoryFromIssues("To", "Gain", "Test", "High", List.of(second.id())));
+
+        final Board moved =
+                store.setStoryIssues(
+                        to.board().revision(), to.story(), List.of(second.id(), first.id()));
+
+        assertThat(moved.story(to.story()).orElseThrow().issues())
+                .as("the story it joined")
+                .containsExactly(second.id(), first.id());
+        assertThat(moved.story(from.story()).orElseThrow().issues())
+                .as("the story it left stays, without it")
+                .isEmpty();
+        assertThat(store().board().issue(first.id()).orElseThrow().warnings())
+                .as("read back, parent and lists agree")
+                .isEmpty();
     }
 
     private static final StageEntry STAGE =

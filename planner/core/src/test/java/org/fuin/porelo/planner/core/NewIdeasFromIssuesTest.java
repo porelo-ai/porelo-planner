@@ -82,30 +82,6 @@ class NewIdeasFromIssuesTest {
         return new NewIdeas.Story(" " + title + " ", "People find stories", "Tag one", "High");
     }
 
-    private static WorkRefusal refused(final String title, final List<String> existing) {
-        final WorkRefusal refused =
-                catchThrowableOfType(
-                        WorkRefusal.class,
-                        () -> NewIdeas.checkFromIssues(BOARD, head(title), existing, List.of()));
-        assertThat(refused).as("the refusal of %s under %s", existing, title).isNotNull();
-        return refused;
-    }
-
-    /** Asserts the 409 that names the issue another story holds, that story and its field. */
-    private static void inStory(
-            final String title,
-            final List<String> existing,
-            final String issue,
-            final String story,
-            final int index) {
-        final WorkRefusal refused = refused(title, existing);
-        assertThat(refused.name()).as("the refusal's name").isEqualTo("IssueInStory");
-        assertThat(refused.parameters())
-                .as("the issue, its story and the field naming it")
-                .isEqualTo(
-                        Map.of("issue", issue, "story", story, "field", "existing[" + index + "]"));
-    }
-
     private static List<String> faults(final List<String> existing) {
         final WorkRefusal refused =
                 catchThrowableOfType(
@@ -160,28 +136,22 @@ class NewIdeasFromIssuesTest {
     }
 
     @Test
-    void anIssueAnotherStoryHoldsIsAConflictNamingTheIssueItsStoryAndItsField() {
-        // Harm: an issue of another story answered as a malformed request, so the window's
-        // conflict path never runs and the person is not told which story holds it.
-        inStory("A new story", List.of("a#6", "a#1"), "a#1", "ST1", 1);
-    }
-
-    @Test
-    void onlyTheStoryCarryingTheMarkerOfTheSameRequestIsLetThroughAndNoOther() {
-        // Harm: a save cut off after it hung an issue can never be finished, since its own
-        // story holds the issue; or a person's own story, or one another request made, is
-        // extended by a call that says it makes a new one.
-        final StoryFromIssues retried =
-                NewIdeas.checkFromIssues(
-                        BOARD, head("Tag stories"), List.of("a#5", "a#6"), List.of());
-        assertThat(retried.existing())
-                .as("the issues of the same request sent again, one held by its earlier story")
-                .containsExactly("a#5", "a#6");
-
-        inStory("Another title", List.of("a#5", "a#6"), "a#5", "ST2", 0);
-        inStory("Tag stories", List.of("a#5", "a#6", "a#2"), "a#5", "ST2", 0);
-        inStory("Held", List.of("a#1", "a#8"), "a#1", "ST1", 0);
-        inStory("Held", List.of("a#1", "a#6"), "a#1", "ST1", 0);
+    void anIssueAnotherStoryHoldsIsTakenIntoTheNewStory() {
+        // Harm: an issue filed under the wrong story cannot be gathered into a new one, or a save
+        // cut off after it hung an issue can never be finished, since its own story holds it.
+        for (final List<String> existing :
+                List.of(
+                        List.of("a#6", "a#1"),
+                        List.of("a#5", "a#6"),
+                        List.of("a#5", "a#6", "a#2"),
+                        List.of("a#1", "a#8"))) {
+            assertThat(
+                            NewIdeas.checkFromIssues(
+                                            BOARD, head("Another title"), existing, List.of())
+                                    .existing())
+                    .as("the issues of %s, one or more held by another story", existing)
+                    .isEqualTo(existing);
+        }
     }
 
     @Test

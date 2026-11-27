@@ -665,7 +665,10 @@ public final class MockStore implements PlanningStore {
         return current;
     }
 
-    /** Sets a story's issue list in memory; an open story's state follows them again. */
+    /**
+     * Sets a story's issue list in memory, an issue another story holds leaving it; an open story's
+     * state follows them again.
+     */
     @Override
     public synchronized Board setStoryIssues(
             final Revision revision, final String story, final List<String> issues) {
@@ -677,7 +680,7 @@ public final class MockStore implements PlanningStore {
             return board;
         }
         final List<Story> stories = new ArrayList<>();
-        for (final Story known : board.stories()) {
+        for (final Story known : leaving(board.stories(), issues, story)) {
             stories.add(
                     known.id().equals(story)
                             ? new Story(
@@ -696,6 +699,37 @@ public final class MockStore implements PlanningStore {
         }
         current = saved(withItems(board, stories, board.issues()), NOTHING);
         return current;
+    }
+
+    /**
+     * The stories with each issue named taken out of every story but the one it moves to, which
+     * keeps its own list.
+     */
+    private static List<Story> leaving(
+            final List<Story> stories, final List<String> issues, final @Nullable String to) {
+        final List<Story> left = new ArrayList<>();
+        for (final Story known : stories) {
+            if (known.id().equals(to) || known.issues().stream().noneMatch(issues::contains)) {
+                left.add(known);
+                continue;
+            }
+            left.add(
+                    new Story(
+                                    known.id(),
+                                    known.title(),
+                                    known.state(),
+                                    known.priority(),
+                                    known.size(),
+                                    known.issues().stream()
+                                            .filter(id -> !issues.contains(id))
+                                            .toList(),
+                                    known.description(),
+                                    known.link(),
+                                    known.issuesWhole(),
+                                    known.warnings())
+                            .withLabels(known.labels()));
+        }
+        return left;
     }
 
     /** Sets an issue's blockers in memory. */
@@ -924,8 +958,8 @@ public final class MockStore implements PlanningStore {
      * carrying the request's marker; its state follows its issues' as every story's here does, and
      * nothing reaches a repository. The same request sent again takes the story carrying its marker
      * that holds named issues alone, hangs the ones it lacks, and answers the board unchanged when
-     * it lacks none, so no story is made twice. A closed issue, a sub-issue or an issue another
-     * story holds is refused, as the GitHub store refuses it.
+     * it lacks none, so no story is made twice. A closed issue or a sub-issue is refused, as the
+     * GitHub store refuses it; an issue another story holds leaves that story.
      */
     @Override
     public synchronized NewIdea.Added createStoryFromIssues(
@@ -956,13 +990,10 @@ public final class MockStore implements PlanningStore {
                 throw new StoreException.NotSavable(
                         id, "the issue is a sub-issue of " + issue.parent());
             }
-            for (final Story other : board.stories()) {
-                if (other != taken && other.issues().contains(id)) {
-                    throw new StoreException.InStory(id, other.id(), "existing[" + index + "]");
-                }
-            }
         }
-        final List<Story> stories = new ArrayList<>(board.stories());
+        // An issue another story holds leaves it, as a story's list moves it.
+        final List<Story> stories =
+                leaving(board.stories(), story.existing(), taken == null ? null : taken.id());
         final String id;
         if (taken != null) {
             id = taken.id();

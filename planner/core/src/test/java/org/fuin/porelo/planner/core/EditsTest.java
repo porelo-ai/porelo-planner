@@ -107,17 +107,12 @@ class EditsTest {
     }
 
     @Test
-    void anIssueOfAnotherStoryIsRefusedAsASecondParentNamingTheStory() {
-        // An issue has one story on a tracker that allows one parent; a second would be lost.
-        final Moves.Refused refused =
-                refusal(() -> Edits.storyIssues(board, "ST3", List.of("AB3")));
-
-        assertThat(refused.name()).as("the refusal").isEqualTo(Edits.REFUSED);
-        assertThat(refused.parameters())
-                .as("the story edited and the member refused")
-                .containsEntry("item", "ST3")
-                .containsEntry("field", "issues");
-        assertThat(refused.getMessage()).as("the story that holds it").contains("ST2");
+    void anIssueOfAnotherStoryMovesIntoTheStoryEdited() {
+        // Harm: an issue filed under the wrong story stays there, or needs two saves a failure
+        // between them splits.
+        assertThat(Edits.storyIssues(board, "ST3", List.of("AB3")))
+                .as("the list changes, the issue leaving ST2 in the same save")
+                .isTrue();
     }
 
     @Test

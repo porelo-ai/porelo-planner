@@ -1174,9 +1174,9 @@ class MockStoreTest {
     }
 
     @Test
-    void theSameStoryFromIssuesSentAgainTakesItsStoryAndAnIssueOfAnotherStoryIsRefused() {
+    void theSameStoryFromIssuesSentAgainTakesItsStoryAndAnIssueOfAnotherStoryMovesIntoTheNewOne() {
         // Harm: the window's planning tests run against a mock that makes a second story over
-        // the same issue when a request is sent again, or hangs an issue another story holds,
+        // the same issue when a request is sent again, or leaves an issue under two stories,
         // which no real store does.
         final Board board = store.board();
         final java.util.Set<String> held = new java.util.HashSet<>();
@@ -1215,24 +1215,16 @@ class MockStoreTest {
                         .orElseThrow();
         final String taken =
                 other.issues().stream().filter(id -> open(board, id)).findFirst().orElseThrow();
-        assertThatThrownBy(
-                        () ->
-                                store.createStoryFromIssues(
-                                        again.board().revision(),
-                                        new StoryFromIssues(
-                                                other.title(),
-                                                "A gain.",
-                                                "A test.",
-                                                "High",
-                                                List.of(taken))))
-                .as("an issue another story holds")
-                .isInstanceOfSatisfying(
-                        StoreException.InStory.class,
-                        e -> {
-                            assertThat(e.subject()).as("the issue").isEqualTo(taken);
-                            assertThat(e.story()).as("its story").isEqualTo(other.id());
-                        });
-        assertThat(store.board()).as("the board after the refusal").isEqualTo(again.board());
+        final NewIdea.Added moved =
+                store.createStoryFromIssues(
+                        again.board().revision(),
+                        new StoryFromIssues(
+                                "Another story", "A gain.", "A test.", "High", List.of(taken)));
+        assertThat(moved.board().stories())
+                .as("one story holding the issue taken from another, the new one")
+                .filteredOn(story -> story.issues().contains(taken))
+                .extracting(Story::id)
+                .containsExactly(moved.story());
     }
 
     @Test

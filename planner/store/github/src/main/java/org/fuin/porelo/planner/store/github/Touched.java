@@ -272,6 +272,18 @@ public final class Touched {
             }
 
             @Override
+            public void moveSubIssue(
+                    final String token,
+                    final String owner,
+                    final String repository,
+                    final int number,
+                    final long subIssueId) {
+                numbered(repository, number);
+                databaseId(subIssueId);
+                writes.moveSubIssue(token, owner, repository, number, subIssueId);
+            }
+
+            @Override
             public void removeSubIssue(
                     final String token,
                     final String owner,

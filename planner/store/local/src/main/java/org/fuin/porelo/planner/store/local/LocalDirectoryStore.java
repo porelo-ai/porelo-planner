@@ -375,7 +375,9 @@ public final class LocalDirectoryStore implements PlanningStore {
                                                     + " takes issues of the workflow only");
                                 }
                                 final String holder = holder(plan.now, item);
-                                if (holder != null && !holder.equals(takenId)) {
+                                if (holder != null
+                                        && !holder.equals(takenId)
+                                        && !leaves(plan, holder, id)) {
                                     throw new StoreException.InStory(
                                             id, holder, "existing[" + index + "]");
                                 }
@@ -469,7 +471,9 @@ public final class LocalDirectoryStore implements PlanningStore {
                             for (final String id : wanted) {
                                 final LocalItem child = issue(plan.now, id);
                                 final String holder = holder(plan.now, child);
-                                if (holder != null && !holder.equals(story)) {
+                                if (holder != null
+                                        && !holder.equals(story)
+                                        && !leaves(plan, holder, id)) {
                                     throw new StoreException.NotSavable(
                                             story, "the issue " + id + " stands under " + holder);
                                 }
@@ -738,6 +742,24 @@ public final class LocalDirectoryStore implements PlanningStore {
             story.links(ISSUES, list);
         }
         return item.id();
+    }
+
+    /**
+     * Takes an issue out of the list of the story it stands under, for a story it moves to; an
+     * issue it stands under is no story, and it stays there.
+     *
+     * @return whether the holder is a story the issue left
+     */
+    private static boolean leaves(final Plan plan, final String holder, final String issue) {
+        final LocalItem from = plan.now.items().get(holder);
+        if (from == null || !from.story()) {
+            return false;
+        }
+        final List<String> list = new ArrayList<>(plan.edit(from).links(ISSUES));
+        if (list.remove(issue)) {
+            plan.edit(from).links(ISSUES, list);
+        }
+        return true;
     }
 
     /** The story or issue an issue stands under, by its head or a story's list, or null. */

@@ -723,22 +723,10 @@ class EditsEndpointTest {
     }
 
     @Test
-    void anIssueAnotherStoryHoldsIsAConflictNamingTheIssueItsStoryAndItsField() throws Exception {
-        // Harm: an issue of another story answered as a malformed request, whether core or the
-        // store finds the story, so the window's conflict path never runs.
-        send(
-                        "POST",
-                        "/stories",
-                        "{"
-                                + HEAD
-                                + ", \"existing\": [\"AB2\", \"AB1\"], \"seen\": "
-                                + Seens.of(current)
-                                + "}")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.title").value("IssueInStory"))
-                .andExpect(jsonPath("$.parameters.issue").value("AB1"))
-                .andExpect(jsonPath("$.parameters.story").value("ST1"))
-                .andExpect(jsonPath("$.parameters.field").value("existing[1]"));
+    void anIssueTheStoreFindsUnderAnotherParentIsAConflictNamingTheIssueTheParentAndItsField()
+            throws Exception {
+        // Harm: an issue hung under an issue on the tracker answered as a malformed request, so
+        // the window's conflict path never runs; one another story holds moves instead.
         failure = new StoreException.InStory("AB2", "porelo-store#9", "existing[0]");
         send(
                         "POST",

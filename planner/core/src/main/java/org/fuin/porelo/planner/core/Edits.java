@@ -123,9 +123,9 @@ public final class Edits {
     }
 
     /**
-     * Checks a story's new issue list: every issue named once, on the board, held by no other story
-     * and no sub-issue of an issue, since an issue belongs to one story; an issue hung in or taken
-     * out is held back by nothing.
+     * Checks a story's new issue list: every issue named once, on the board and no sub-issue of an
+     * issue; an issue another story holds moves from it, since an issue belongs to one story. An
+     * issue hung in or taken out, and a story one leaves, is held back by nothing.
      *
      * @param board the board the store holds
      * @param story the story's id
@@ -169,10 +169,9 @@ public final class Edits {
             notHeld(board, id, story, "issues");
             final String other = holder.get(id);
             if (other != null) {
-                throw refused(
-                        story,
-                        "issues",
-                        "The issue " + id + " belongs to " + other + "; an issue has one story.");
+                // Hung in, it leaves the story that holds it in the same save, which that story's
+                // own hold would refuse.
+                notHeld(board, other, story, "issues");
             }
             if (issue.parent() != null) {
                 throw refused(

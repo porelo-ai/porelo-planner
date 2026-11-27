@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -392,7 +393,8 @@ final class NewItems {
      * @param unchanged given the board's item of a story taken, or null, reads the issues and that
      *     item again, refuses the write when one changed since the board was read, and answers each
      *     issue's id in REST by its node id
-     * @throws StoreException.InStory when an issue hangs under another parent on GitHub
+     * @throws StoreException.InStory when an issue hangs under a parent on GitHub that is no story
+     *     of the board; a story's sub-issue moves from it
      * @throws StoreException.StaleRevision when an issue or the story taken changed since the board
      *     was read
      */
@@ -404,13 +406,19 @@ final class NewItems {
         final String projectId = begin(token);
         over = List.copyOf(existing);
         final ProjectWrites.@Nullable Created taken = madeBefore(token, story, null, List.of());
+        final Set<String> moved = new HashSet<>();
         for (int index = 0; index < existing.size(); index++) {
             final Over issue = existing.get(index);
             final @Nullable String parent = issue.item().parentIssueId();
-            if (parent != null && (taken == null || !parent.equals(taken.nodeId()))) {
-                throw new StoreException.InStory(
-                        issue.id(), parentNamed(parent), "existing[" + index + "]");
+            if (parent == null || taken != null && parent.equals(taken.nodeId())) {
+                continue;
             }
+            final String named = parentNamed(parent);
+            if (current.board().story(named).isEmpty()) {
+                throw new StoreException.InStory(issue.id(), named, "existing[" + index + "]");
+            }
+            // A story's sub-issue leaves that story in the same call that hangs it in.
+            moved.add(issue.id());
         }
         final Map<String, Long> databaseIds =
                 unchanged.apply(taken == null ? null : onBoard(story.repository, taken.number()));
@@ -434,7 +442,8 @@ final class NewItems {
                     Objects.requireNonNull(
                             databaseIds.get(issue.item().issueId()),
                             "an issue hung was not read before the write"),
-                    story.repository);
+                    story.repository,
+                    moved.contains(issue.id()));
         }
     }
 
@@ -559,7 +568,8 @@ final class NewItems {
                     parent,
                     planned.reference(),
                     planned.made().databaseId(),
-                    planned.repository);
+                    planned.repository,
+                    false);
         }
         writePriority(token, planned, preserved);
         setValues(token, projectId, planned, standing);
@@ -570,25 +580,38 @@ final class NewItems {
         }
     }
 
-    /** Makes an issue the last sub-issue of its story, at the pace of this write's calls. */
+    /**
+     * Makes an issue the last sub-issue of its story, at the pace of this write's calls; one moved
+     * leaves the parent it has in the same call.
+     */
     private void hang(
             final String token,
             final Parent parent,
             final String reference,
             final long databaseId,
-            final String repository) {
+            final String repository,
+            final boolean moved) {
         try {
             // Made again after a lost answer: a link GitHub made is refused then, so the write
             // stops partly saved and the next try finds it linked.
             pace().again(
                             "the sub-issue " + reference + " of " + parent.reference(),
                             () -> {
-                                github.addSubIssue(
-                                        token,
-                                        current.config().project().owner(),
-                                        parent.repository(),
-                                        parent.number(),
-                                        databaseId);
+                                if (moved) {
+                                    github.moveSubIssue(
+                                            token,
+                                            current.config().project().owner(),
+                                            parent.repository(),
+                                            parent.number(),
+                                            databaseId);
+                                } else {
+                                    github.addSubIssue(
+                                            token,
+                                            current.config().project().owner(),
+                                            parent.repository(),
+                                            parent.number(),
+                                            databaseId);
+                                }
                                 return null;
                             });
         } catch (final RuntimeException e) {

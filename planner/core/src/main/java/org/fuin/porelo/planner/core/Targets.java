@@ -57,9 +57,10 @@ public final class Targets {
     }
 
     /**
-     * The story and every issue it gains or loses. For a story the board does not hold as one item,
-     * the story and every issue the edit names: {@link Edits#unchanged} then reports missing
-     * versions first and refuses the story as changed after.
+     * The story, every issue it gains or loses and every other story an issue it gains leaves,
+     * since that story's list changes too. For a story the board does not hold as one item, the
+     * story and every issue the edit names: {@link Edits#unchanged} then reports missing versions
+     * first and refuses the story as changed after.
      */
     private static Set<String> membership(final Board board, final Operation.SetStoryIssues edit) {
         final Story story = board.story(edit.story()).orElse(null);
@@ -75,6 +76,13 @@ public final class Targets {
         ids.add(edit.story());
         before.stream().filter(id -> !after.contains(id)).forEach(ids::add);
         after.stream().filter(id -> !before.contains(id)).forEach(ids::add);
+        for (final Story other : board.stories()) {
+            if (!other.id().equals(edit.story())
+                    && other.issues().stream()
+                            .anyMatch(id -> after.contains(id) && !before.contains(id))) {
+                ids.add(other.id());
+            }
+        }
         return Set.copyOf(ids);
     }
 

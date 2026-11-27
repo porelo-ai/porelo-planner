@@ -522,6 +522,21 @@ class FieldsBoardWriterTest {
         }
 
         @Override
+        public void moveSubIssue(
+                final String token,
+                final String owner,
+                final String repository,
+                final int number,
+                final long subIssueId) {
+            calls.add("moveSubIssue");
+            final RuntimeException failure = linksBeforeFailing-- > 0 ? null : linkFailures.poll();
+            if (failure != null) {
+                throw failure;
+            }
+            subIssues.add(repository + "#" + number + " < " + subIssueId);
+        }
+
+        @Override
         public FoundPage issuesCreatedSince(
                 final String token,
                 final String owner,
@@ -4427,22 +4442,10 @@ class FieldsBoardWriterTest {
                         .typed(IssueMapping.STORY_TYPE);
         final ItemView held = under(standing("A1", 1), other.issueId());
         final GitHub inOther = new GitHub().holding(other, held, b);
-        assertThatThrownBy(
-                        () ->
-                                inOther.writer()
-                                        .createStoryFromIssues(
-                                                snapshot(other, held, b), SHOWN, overTwo()))
-                .as("an issue another story of the board holds, which core did not see")
-                .isInstanceOfSatisfying(
-                        StoreException.InStory.class,
-                        e -> {
-                            assertThat(e.subject()).as("the issue").isEqualTo("A1");
-                            assertThat(e.story()).as("the story holding it").isEqualTo("ST5");
-                            assertThat(e.field()).as("its field").isEqualTo("existing[1]");
-                        });
+        inOther.writer().createStoryFromIssues(snapshot(other, held, b), SHOWN, overTwo());
         assertThat(inOther.calls)
-                .as("nothing made over an issue of another story")
-                .doesNotContain("createIssue");
+                .as("an issue another story of the board holds moves from it in one call")
+                .contains("createIssue", "moveSubIssue");
 
         final ItemView c = standing("A1", 1);
         final GitHub changed =

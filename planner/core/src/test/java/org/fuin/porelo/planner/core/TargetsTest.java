@@ -84,7 +84,7 @@ class TargetsTest {
                 new Example(new Operation.SetStoryText("ST1"), Set.of("ST1")),
                 new Example(
                         new Operation.SetStoryIssues("ST1", List.of("AB2", "AB3")),
-                        Set.of("ST1", "AB1", "AB3")),
+                        Set.of("ST1", "AB1", "AB3", "ST3")),
                 new Example(
                         new Operation.SetStoryIssues("ST1", List.of("AB2", "AB1")), Set.of("ST1")),
                 new Example(new Operation.StoryFromIdea(), Set.of()),
