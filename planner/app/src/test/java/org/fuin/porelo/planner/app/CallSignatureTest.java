@@ -23,10 +23,7 @@ class CallSignatureTest {
     }
 
     private static AccessToken token() throws Exception {
-        final Constructor<AccessToken> made =
-                AccessToken.class.getDeclaredConstructor(byte[].class);
-        made.setAccessible(true);
-        return made.newInstance((Object) TOKEN.getBytes(StandardCharsets.US_ASCII));
+        return tokenOf(TOKEN);
     }
 
     @Test
@@ -62,5 +59,58 @@ class CallSignatureTest {
         assertThat(CallSignature.base64(CallSignature.proof(token, 4711, count(32))))
                 .as("the proof")
                 .isEqualTo("oODykTsTVjhY8BiPkAiMsEQ9--YGs0x_nHExTNHyrXk");
+    }
+
+    @Test
+    void theFormsAreTheOnesTheAgentsToolServerSigns() throws Exception {
+        // Harm: the agents' tool server signs by these same values; a field moved on either side
+        // makes every agent call fail on the person's computer alone.
+        final AccessToken token = tokenOf("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8");
+        final byte[] nonce = from(100, 16);
+        assertThat(CallSignature.base64(nonce)).as("the nonce").isEqualTo("ZGVmZ2hpamtsbW5vcHFycw");
+        assertThat(
+                        CallSignature.header(
+                                1_764_000_000L,
+                                nonce,
+                                CallSignature.request(
+                                        token,
+                                        "POST",
+                                        "/projects/p/moves?x=1",
+                                        "127.0.0.1:41234",
+                                        "application/json",
+                                        "{\"a\":1}".getBytes(StandardCharsets.UTF_8),
+                                        1_764_000_000L,
+                                        nonce)))
+                .as("the request's header")
+                .isEqualTo(
+                        "porelo-planner-request-1;t=1764000000;n=ZGVmZ2hpamtsbW5vcHFycw;"
+                                + "s=mzk3aNeJvNxWu2bLGrFJnBzwo-0Hizqcanwo41mhO_c");
+        assertThat(
+                        CallSignature.answerHeader(
+                                CallSignature.answer(
+                                        token,
+                                        nonce,
+                                        200,
+                                        "{\"ok\":true}".getBytes(StandardCharsets.UTF_8))))
+                .as("the answer's header")
+                .isEqualTo("porelo-planner-answer-1;s=C4oEI-9hOCKwI6pKOnvr0qt-xkx0KVZg0J0M6_yIcU8");
+        assertThat(CallSignature.base64(CallSignature.proof(token, 41_234, from(200, 32))))
+                .as("the proof")
+                .isEqualTo("i_GGT6A769tJy81GkQoj2SAFmcJafS8Wu8ik66-BsOA");
+    }
+
+    private static byte[] from(final int first, final int bytes) {
+        final byte[] counted = new byte[bytes];
+        for (int at = 0; at < bytes; at++) {
+            counted[at] = (byte) (first + at);
+        }
+        return counted;
+    }
+
+    private static AccessToken tokenOf(final String text) throws Exception {
+        final Constructor<AccessToken> made =
+                AccessToken.class.getDeclaredConstructor(byte[].class);
+        made.setAccessible(true);
+        return made.newInstance((Object) text.getBytes(StandardCharsets.US_ASCII));
     }
 }
