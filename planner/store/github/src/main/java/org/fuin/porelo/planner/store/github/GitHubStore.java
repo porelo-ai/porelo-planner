@@ -1860,6 +1860,11 @@ public final class GitHubStore implements PlanningStore {
         return moved;
     }
 
+    private static @Nullable String parentOf(final GitHubGraphQl.@Nullable ProjectItem item) {
+        final GitHubGraphQl.BoardIssue issue = item == null ? null : item.issue();
+        return issue == null ? null : issue.parentId();
+    }
+
     private static Set<String> childrenOf(final GitHubGraphQl.@Nullable ProjectItem item) {
         final GitHubGraphQl.BoardIssue issue = item == null ? null : item.issue();
         final Set<String> children = new LinkedHashSet<>();
@@ -2453,12 +2458,23 @@ public final class GitHubStore implements PlanningStore {
     /**
      * Reads the items given by id, and with them, at one moment, every sub-issue a parent among
      * them gained or lost since the board held, which the board may not hold yet: a child's place
-     * comes from its own item, so a parent read alone would stand without it.
+     * comes from its own item, so a parent read alone would stand without it. A read child that has
+     * another parent than the board held has its held parent read too, which lists it still.
      */
     private Reread fetchWithChildren(final Snapshot held, final Touched.Ids ids) {
         final Reread delta = parts.reader().fetch(configNow(), held, ids, Map.of());
         final Set<String> children = new LinkedHashSet<>();
-        delta.put().forEach((id, item) -> children.addAll(movedChildren(held.raw().get(id), item)));
+        delta.put()
+                .forEach(
+                        (id, item) -> {
+                            children.addAll(movedChildren(held.raw().get(id), item));
+                            // A child moved to another parent also leaves the parent held, whose
+                            // sub-issues the board lists it under until that parent is read.
+                            final @Nullable String was = parentOf(held.raw().get(id));
+                            if (was != null && !was.equals(parentOf(item))) {
+                                children.add(was);
+                            }
+                        });
         children.removeAll(delta.issues());
         if (children.isEmpty()) {
             return delta;

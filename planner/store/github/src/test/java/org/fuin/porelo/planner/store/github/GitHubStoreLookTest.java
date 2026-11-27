@@ -1038,6 +1038,50 @@ class GitHubStoreLookTest {
                 .contains(Objects.requireNonNull(placed).id());
     }
 
+    @Test
+    void anIssueASaveMovedToAnotherStoryShowsOnlyUnderTheNewStory() {
+        // Harm: the story an issue was moved from is not read again after the save, so the board
+        // holds the issue under both stories until the next whole read.
+        final GitHub github = new GitHub();
+        final Held oldStory = github.add(1, true, "Old");
+        final Held child = github.add(2, false, "Child");
+        final Held newStory = github.add(3, true, "New");
+        oldStory.subs.add(child.id);
+        child.parent = oldStory.id;
+        final AtomicReference<Consumer<ProjectWrites>> saving =
+                new AtomicReference<>(
+                        writes -> {
+                            writes.moveSubIssue(TOKEN, OWNER, "example-project", 3, 12L);
+                            oldStory.subs.remove(child.id);
+                            newStory.subs.add(child.id);
+                            child.parent = newStory.id;
+                        });
+        final GitHubStore store = store(github, saving);
+        store.refresh();
+        store.poll();
+        final Board before = store.board();
+        assertThat(storyNumbered(before, 1).issues())
+                .as("the issue under its old story before the save")
+                .contains("example-project#2");
+
+        save(store);
+
+        final Board after = store.board();
+        assertThat(storyNumbered(after, 1).issues())
+                .as("the old story no longer lists the moved issue")
+                .doesNotContain("example-project#2");
+        assertThat(storyNumbered(after, 3).issues())
+                .as("the new story lists the moved issue")
+                .containsExactly("example-project#2");
+    }
+
+    private static Story storyNumbered(final Board board, final int number) {
+        return board.stories().stream()
+                .filter(story -> story.id().equals("example-project#" + number))
+                .findFirst()
+                .orElseThrow();
+    }
+
     /** A write that says it began and stays at GitHub until released. */
     private static Consumer<ProjectWrites> held(
             final CountDownLatch began, final CountDownLatch release) {

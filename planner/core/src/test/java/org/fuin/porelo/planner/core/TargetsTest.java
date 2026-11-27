@@ -90,7 +90,7 @@ class TargetsTest {
                 new Example(new Operation.StoryFromIdea(), Set.of()),
                 new Example(
                         new Operation.CreateStoryFromIssues(FROM_ISSUES),
-                        Set.of("AB1", "AB2", "ST2")),
+                        Set.of("AB1", "AB2", "ST1", "ST2")),
                 new Example(new Operation.AddUnlistedIssue("sample#7"), Set.of("sample#7")),
                 new Example(
                         new Operation.OrderStoryWork("ST1", Set.of("AB1", "AB2", "AB3")),
@@ -170,6 +170,16 @@ class TargetsTest {
         assertThat(Targets.of(first, new Operation.CreateStoryFromIssues(FROM_ISSUES)))
                 .as("no earlier story is invented")
                 .containsExactlyInAnyOrder("AB1", "AB2");
+    }
+
+    @Test
+    void aStoryFromIssuesChecksTheStoryAnIssueLeavesButNotOneThatHoldsNoNamedIssue() {
+        // Harm: an issue moved out of its story by a new story changes that story unchecked, so a
+        // concurrent edit of the old story is overwritten.
+        assertThat(Targets.of(board(), new Operation.CreateStoryFromIssues(FROM_ISSUES)))
+                .as("ST1 loses AB1 and AB2, ST3 loses nothing")
+                .contains("ST1")
+                .doesNotContain("ST3");
     }
 
     @Test

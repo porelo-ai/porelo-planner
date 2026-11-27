@@ -399,7 +399,9 @@ paths:
         first, so the new story never takes it over. A StoryFromIssuesRequest makes a story over issues that stand on
         the board: each must be an open issue of the workflow and no sub-issue of another issue, and is refused
         otherwise, each refused id named in the IdeaRefused answer. An issue another story holds leaves that story in
-        the same save, as setStoryIssues moves it, and the story it leaves stays, if need be without issues; an issue
+        the same save, as setStoryIssues moves it, and the story it leaves stays, if need be without issues, while an
+        issue another story holds only under Also needs in its body is refused, since this call never changes that body;
+        an issue
         a started task works, or one of its sub-issues, refuses the call (WorkRunning) and nothing is made. The issues
         become the story's issues in the order named and keep their own fields, and the story's state follows theirs. Every issue named is a target: it is checked against the version `seen` holds
         for it, read again from the tracker where the store keeps one, before anything is written; an issue changed
@@ -529,7 +531,8 @@ paths:
         named once and is one of the board's; an issue that is a sub-issue of another issue is refused
         (EditNotAllowed). An issue hung in that another story holds moves: it leaves that story's list and joins this
         one in the same save, all or none, both stories checked against the versions `seen` holds for them; on GitHub
-        the sub-issue moves from one parent to the other, and the story it leaves stays, if need be without issues. A
+        the sub-issue moves from one parent to the other, and the story it leaves stays, if need be without issues. An issue another
+        story holds only under Also needs in its body is refused, since this call never changes that body. A
         list is refused (EditNotAllowed) for a story the board
         shows only in part, since a list written whole would drop the issue not shown, and a list that hangs in or
         takes out an issue a warning holds back; one kept in the list may be reordered. An issue a started task works,

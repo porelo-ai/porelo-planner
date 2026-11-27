@@ -700,6 +700,13 @@ public final class FieldsBoardWriter implements BoardWriter {
                                 + " workflow only");
             }
             plan.read(id, item);
+            final @Nullable String holder = holderOf(current, id, "");
+            if (holder != null) {
+                // The issue leaves that story in the same call, which changes that story too.
+                plan.read(holder, storyItem(current, holder));
+            } else if (alsoNeedsHolder(current, id, "") instanceof final String also) {
+                throw alsoNeedsRefused("", id, also);
+            }
             existing.add(new NewItems.Over(id, item));
         }
         final NewItems adding = new NewItems(github, refusals, clock, current, this::paceOf);
@@ -919,6 +926,8 @@ public final class FieldsBoardWriter implements BoardWriter {
                 // too.
                 plan.read(holder, storyItem(current, holder));
                 plan.link(Link.Kind.MOVE_SUB, story, parent, child);
+            } else if (alsoNeedsHolder(current, id, story) instanceof final String lister) {
+                throw alsoNeedsRefused(story, id, lister);
             } else if (child.parentIssueId() != null) {
                 throw new StoreException.NotSavable(
                         story, "the issue " + id + " has a parent on GitHub already");
@@ -1126,6 +1135,32 @@ public final class FieldsBoardWriter implements BoardWriter {
             }
         }
         return null;
+    }
+
+    /**
+     * The other story of the board that lists an issue, which no parent link of it ties to that
+     * story, so only its {@code Also needs} body section holds it; null when there is none.
+     */
+    static @Nullable String alsoNeedsHolder(
+            final Snapshot current, final String issue, final String story) {
+        for (final Story other : current.board().stories()) {
+            if (!other.id().equals(story) && other.issues().contains(issue)) {
+                return other.id();
+            }
+        }
+        return null;
+    }
+
+    /** The refusal of an issue another story's Also needs holds, which no write here changes. */
+    static StoreException.NotSavable alsoNeedsRefused(
+            final String story, final String issue, final String holder) {
+        return new StoreException.NotSavable(
+                story,
+                "the issue "
+                        + issue
+                        + " stands under Also needs in the body of "
+                        + holder
+                        + ", which this write does not change");
     }
 
     private static ItemView storyItem(final Snapshot current, final String id) {

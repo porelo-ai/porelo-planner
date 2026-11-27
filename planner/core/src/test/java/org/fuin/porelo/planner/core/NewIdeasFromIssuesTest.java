@@ -155,6 +155,38 @@ class NewIdeasFromIssuesTest {
     }
 
     @Test
+    void anIssueOfAStoryHeldBackByAWarningIsRefusedSinceItWouldLeaveThatStory() {
+        // Harm: a new story takes an issue out of a story a person's hand edit left held back,
+        // changing that story where no planner write may.
+        final Board held =
+                new Board(
+                        BOARD.revision(),
+                        BOARD.workflow(),
+                        List.of(
+                                story("ST1", "Held", "", "a#1")
+                                        .withWarnings(List.of(Warning.unknownWorker()))),
+                        BOARD.issues(),
+                        BOARD.work(),
+                        BOARD.repositories(),
+                        List.of(),
+                        "example-org");
+        assertThat(held.holdsWork("ST1")).as("ST1 held back").isPresent();
+        final WorkRefusal refused =
+                catchThrowableOfType(
+                        WorkRefusal.class,
+                        () ->
+                                NewIdeas.checkFromIssues(
+                                        held,
+                                        head("A new story"),
+                                        List.of("a#6", "a#1"),
+                                        List.of()));
+        assertThat(refused).as("the refusal").isNotNull();
+        assertThat(refused.parameters().get("faults"))
+                .as("the fault names the place of the issue and the hold of its story")
+                .isEqualTo(List.of("existing[1]: " + held.holdsWork("ST1").orElseThrow()));
+    }
+
+    @Test
     void aStoryOverMoreIssuesThanAStoryHoldsIsRefused() {
         // Harm: a story the reader's bound never saw made over more issues than any story holds.
         final List<String> many = new java.util.ArrayList<>();

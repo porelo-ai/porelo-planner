@@ -208,6 +208,38 @@ class FieldsBoardWriterTest {
                 CONFIG);
     }
 
+    /** The snapshot with the story's issues as the board lists them, whatever links hold them. */
+    private static Snapshot listing(
+            final Snapshot base, final String story, final String... issues) {
+        final Board read = base.board();
+        final List<Story> stories =
+                read.stories().stream()
+                        .map(
+                                each ->
+                                        each.id().equals(story)
+                                                ? new Story(
+                                                        each.id(),
+                                                        each.title(),
+                                                        each.state(),
+                                                        each.priority(),
+                                                        null,
+                                                        List.of(issues),
+                                                        each.description(),
+                                                        each.link())
+                                                : each)
+                        .toList();
+        return new Snapshot(
+                new Board(
+                        read.revision(),
+                        read.workflow(),
+                        stories,
+                        read.issues(),
+                        read.work(),
+                        read.repositories()),
+                base.items(),
+                base.config());
+    }
+
     /** An issue as GitHub's read by id gives it, with the field values the item holds. */
     private static @Nullable String upper(final @Nullable String reason) {
         return reason == null ? null : reason.toUpperCase(java.util.Locale.ROOT);
@@ -291,6 +323,7 @@ class FieldsBoardWriterTest {
         private int commentsTried;
         private final List<String> standing = new ArrayList<>();
         private final List<String> calls = new ArrayList<>();
+        private final List<String> readIds = new ArrayList<>();
         private final Map<String, List<Found>> made = new LinkedHashMap<>();
         private final Deque<String> creating = new ArrayDeque<>();
         private final List<String> added = new ArrayList<>();
@@ -409,6 +442,7 @@ class FieldsBoardWriterTest {
         public GitHubGraphQl.IssueBoard issueBoard(
                 final String token, final List<String> issueIds, final String projectId) {
             calls.add("issueBoard");
+            readIds.addAll(issueIds);
             assertThat(token).as("the token of the read").isEqualTo(TOKEN);
             assertThat(projectId).as("the project read").isEqualTo("PVT_7");
             return new GitHubGraphQl.IssueBoard(
@@ -4442,10 +4476,15 @@ class FieldsBoardWriterTest {
                         .typed(IssueMapping.STORY_TYPE);
         final ItemView held = under(standing("A1", 1), other.issueId());
         final GitHub inOther = new GitHub().holding(other, held, b);
-        inOther.writer().createStoryFromIssues(snapshot(other, held, b), SHOWN, overTwo());
+        inOther.writer()
+                .createStoryFromIssues(
+                        listing(snapshot(other, held, b), "ST5", "A1"), SHOWN, overTwo());
         assertThat(inOther.calls)
                 .as("an issue another story of the board holds moves from it in one call")
                 .contains("createIssue", "moveSubIssue");
+        assertThat(inOther.readIds)
+                .as("the story the issue leaves is read with the issue before the write")
+                .contains(other.issueId(), held.issueId());
 
         final ItemView c = standing("A1", 1);
         final GitHub changed =
@@ -4468,6 +4507,34 @@ class FieldsBoardWriterTest {
         assertThat(changed.calls)
                 .as("nothing made over a changed issue")
                 .doesNotContain("createIssue", "addSubIssue");
+    }
+
+    @Test
+    void anIssueAnotherStoryHoldsOnlyUnderAlsoNeedsRefusesTheStoryBeforeAnythingIsMade() {
+        // Harm: the issue is hung under the new story and stays listed in the other story's body,
+        // so the board shows it under two stories.
+        final ItemView other =
+                item("ST5", "example-project", 5, true, "", Map.of())
+                        .typed(IssueMapping.STORY_TYPE);
+        final ItemView a = standing("A1", 1);
+        final ItemView b = standing("B2", 2);
+        final GitHub github = new GitHub().holding(other, a, b);
+
+        assertThatThrownBy(
+                        () ->
+                                github.writer()
+                                        .createStoryFromIssues(
+                                                listing(snapshot(other, a, b), "ST5", "A1"),
+                                                SHOWN,
+                                                overTwo()))
+                .as("an issue only another story's Also needs holds")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e ->
+                                assertThat(e.getMessage())
+                                        .as("it names the issue and the story")
+                                        .contains("A1", "ST5", "Also needs", "does not change"));
+        assertThat(github.calls).as("no call made").isEmpty();
     }
 
     @Test

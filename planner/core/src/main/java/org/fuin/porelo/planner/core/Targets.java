@@ -92,6 +92,10 @@ public final class Targets {
             if (NewIdeas.madeBefore(story, asked.title(), asked.marker(), asked.existing())) {
                 ids.add(story.id());
             }
+            // A story an issue leaves changes too, as a story's list that takes the issue does.
+            if (story.issues().stream().anyMatch(asked.existing()::contains)) {
+                ids.add(story.id());
+            }
         }
         return Set.copyOf(ids);
     }

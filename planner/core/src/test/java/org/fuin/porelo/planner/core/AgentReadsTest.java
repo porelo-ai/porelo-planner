@@ -214,8 +214,7 @@ class AgentReadsTest {
         assertThat(AgentReads.search(board, List.of("latency"), LINES).matches())
                 .as("the word in no part as text, the word in a part as that part alone")
                 .extracting(AgentReads.Match::id, AgentReads.Match::found)
-                .containsExactly(
-                        tuple("AB1", List.of("text")), tuple("AB2", List.of("plan")));
+                .containsExactly(tuple("AB1", List.of("text")), tuple("AB2", List.of("plan")));
     }
 
     @Test

@@ -374,6 +374,7 @@ public final class LocalDirectoryStore implements PlanningStore {
                                                     + " stands outside the workflow; a new story"
                                                     + " takes issues of the workflow only");
                                 }
+                                alsoNeeded(plan.now, id, takenId, "");
                                 final String holder = holder(plan.now, item);
                                 if (holder != null
                                         && !holder.equals(takenId)
@@ -470,6 +471,7 @@ public final class LocalDirectoryStore implements PlanningStore {
                                     issues.subList(0, issues.size() - also.size());
                             for (final String id : wanted) {
                                 final LocalItem child = issue(plan.now, id);
+                                alsoNeeded(plan.now, id, story, story);
                                 final String holder = holder(plan.now, child);
                                 if (holder != null
                                         && !holder.equals(story)
@@ -764,6 +766,34 @@ public final class LocalDirectoryStore implements PlanningStore {
             plan.edit(from).links(ISSUES, list);
         }
         return true;
+    }
+
+    /**
+     * Refuses an issue that another story's board lists only under {@code Also needs} in its body,
+     * where no head link places it, since this write does not change that body.
+     *
+     * @param except the story the issue goes to, or an earlier try's, which may list it, or null
+     * @param refused the item the refusal names, empty for a story not made yet
+     */
+    private static void alsoNeeded(
+            final LocalReader.Snapshot now,
+            final String issue,
+            final @Nullable String except,
+            final String refused) {
+        for (final Story other : now.board().stories()) {
+            final LocalItem item = now.items().get(other.id());
+            if (!other.id().equals(except)
+                    && other.issues().contains(issue)
+                    && (item == null || !item.links(ISSUES).contains(issue))) {
+                throw new StoreException.NotSavable(
+                        refused,
+                        "the issue "
+                                + issue
+                                + " stands under Also needs in the body of "
+                                + other.id()
+                                + ", which this write does not change");
+            }
+        }
     }
 
     /** The story or issue an issue stands under, by its head or a story's list, or null. */

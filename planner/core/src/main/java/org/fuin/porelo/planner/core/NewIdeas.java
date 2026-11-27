@@ -198,6 +198,16 @@ public final class NewIdeas {
             // A held issue is neither added to nor taken from a story, whatever else it allows.
             return held.get();
         }
+        for (final org.fuin.porelo.planner.store.Story other : board.stories()) {
+            if (other.issues().contains(id)) {
+                // The issue leaves that story in the same save, which the story's own hold would
+                // refuse.
+                final java.util.Optional<String> otherHeld = board.holdsWork(other.id());
+                if (otherHeld.isPresent()) {
+                    return otherHeld.get();
+                }
+            }
+        }
         if (board.workflow().closed().contains(issue.state())) {
             return "The issue "
                     + id

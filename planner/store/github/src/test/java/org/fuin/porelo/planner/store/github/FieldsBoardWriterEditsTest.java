@@ -203,6 +203,7 @@ class FieldsBoardWriterEditsTest {
     private static final class GitHub implements ProjectWrites {
         private final Map<String, IssueOnBoard> held = new LinkedHashMap<>();
         private final List<String> calls = new ArrayList<>();
+        private final List<String> readIds = new ArrayList<>();
         private final List<List<FieldValue>> mutations = new ArrayList<>();
         private final List<Update> updates = new ArrayList<>();
         private @Nullable RuntimeException updateFailure;
@@ -289,6 +290,7 @@ class FieldsBoardWriterEditsTest {
         public GitHubGraphQl.IssueBoard issueBoard(
                 final String token, final List<String> issueIds, final String projectId) {
             calls.add("issueBoard");
+            readIds.addAll(issueIds);
             return new GitHubGraphQl.IssueBoard(
                     issueIds.stream().map(held::get).toList(),
                     new GraphQlCost(1, 4999, Instant.EPOCH));
@@ -668,6 +670,23 @@ class FieldsBoardWriterEditsTest {
                         "reprioritizeSubIssue example-project#9 1003 after null before 1001");
     }
 
+    /** The board of the base snapshot with a second story, "Other", that lists THREE. */
+    private static Snapshot withOtherStory(final Snapshot base, final String other) {
+        final Board read = base.board();
+        final List<Story> stories = new ArrayList<>(read.stories());
+        stories.add(new Story(other, "Other", "Idea", "High", null, List.of(THREE), "", null));
+        return new Snapshot(
+                new Board(
+                        read.revision(),
+                        read.workflow(),
+                        stories,
+                        read.issues().stream().filter(issue -> !issue.id().equals(other)).toList(),
+                        read.work(),
+                        read.repositories()),
+                base.items(),
+                base.config());
+    }
+
     @Test
     void anIssueAnotherStoryHoldsMovesToTheStoryInOneCallWithBothStoriesRead() {
         // Harm: an issue left under two stories, or taken from its story by a second call a
@@ -675,23 +694,9 @@ class FieldsBoardWriterEditsTest {
         final String other = "example-project#8";
         final ItemView otherStory = item(other, Map.of(), null, List.of(THREE), List.of());
         final ItemView held = item(THREE, Map.of(), other, List.of(), List.of());
-        final Snapshot base = snapshot(List.of(ONE, TWO), story, one, two, held, otherStory);
-        final Board read = base.board();
-        final List<Story> stories = new ArrayList<>(read.stories());
-        stories.add(new Story(other, "Other", "Idea", "High", null, List.of(THREE), "", null));
         final Snapshot current =
-                new Snapshot(
-                        new Board(
-                                read.revision(),
-                                read.workflow(),
-                                stories,
-                                read.issues().stream()
-                                        .filter(issue -> !issue.id().equals(other))
-                                        .toList(),
-                                read.work(),
-                                read.repositories()),
-                        base.items(),
-                        base.config());
+                withOtherStory(
+                        snapshot(List.of(ONE, TWO), story, one, two, held, otherStory), other);
         final GitHub github = new GitHub().holding(story, one, two, held, otherStory);
 
         github.writer().setStoryIssues(current, SHOWN, STORY, List.of(ONE, TWO, THREE));
@@ -699,6 +704,36 @@ class FieldsBoardWriterEditsTest {
         assertThat(github.calls)
                 .as("the read of both stories and the issue, then one move")
                 .containsExactly("issueBoard", "moveSubIssue example-project#9 1003");
+        assertThat(github.readIds)
+                .as("the story the issue leaves is read with the story and the issue")
+                .contains(otherStory.issueId(), story.issueId(), held.issueId());
+    }
+
+    @Test
+    void anIssueAnotherStoryHoldsOnlyUnderAlsoNeedsIsRefusedWithoutACall() {
+        // Harm: the issue is hung under the story and stays listed in the other story's body, so
+        // the board shows it under two stories.
+        final String other = "example-project#8";
+        final ItemView otherStory = item(other, Map.of(), null, List.of(), List.of());
+        final ItemView listed = item(THREE, Map.of(), null, List.of(), List.of());
+        final Snapshot current =
+                withOtherStory(
+                        snapshot(List.of(ONE, TWO), story, one, two, listed, otherStory), other);
+        final GitHub github = new GitHub().holding(story, one, two, listed, otherStory);
+
+        final StoreException.NotSavable refused =
+                catchThrowableOfType(
+                        StoreException.NotSavable.class,
+                        () ->
+                                github.writer()
+                                        .setStoryIssues(
+                                                current, SHOWN, STORY, List.of(ONE, TWO, THREE)));
+
+        assertThat(refused).as("the refusal").isNotNull();
+        assertThat(refused.getMessage())
+                .as("it names the issue and the story whose Also needs holds it")
+                .contains(THREE, other, "Also needs", "does not change");
+        assertThat(github.calls).as("no call made").isEmpty();
     }
 
     @Test

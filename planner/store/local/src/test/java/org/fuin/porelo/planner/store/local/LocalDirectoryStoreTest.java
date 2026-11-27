@@ -9,6 +9,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +27,7 @@ import org.fuin.porelo.planner.store.StageEntry;
 import org.fuin.porelo.planner.store.StageMetrics;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.fuin.porelo.planner.store.TrackedProject;
@@ -660,6 +662,90 @@ class LocalDirectoryStoreTest {
         assertThat(store().board().issue(first.id()).orElseThrow().warnings())
                 .as("read back, parent and lists agree")
                 .isEmpty();
+    }
+
+    /** Three issues and a story over the first, its body naming the second under Also needs. */
+    private LocalDirectoryStore alsoNeedsBoard(final List<String> ids) throws Exception {
+        final LocalDirectoryStore store = store();
+        final NewIssue.Added first = issue(store);
+        final NewIssue.Added second = issue(store);
+        final NewIssue.Added third = issue(store);
+        ids.addAll(List.of(first.id(), second.id(), third.id()));
+        store.createStoryFromIssues(
+                third.board().revision(),
+                new StoryFromIssues("Holder", "Gain", "Test", "High", List.of(first.id())));
+        edit("plans-1.md", text -> text + "\n## Also needs\n\n- " + second.id() + "\n");
+        return store;
+    }
+
+    @Test
+    void anIssueAnotherStoryHoldsOnlyUnderAlsoNeedsIsRefusedForAStoryListAndForANewStory()
+            throws Exception {
+        // Harm: the issue is added to the story and stays listed in the other story's body, so it
+        // stands in two stories, and the body is never edited to make it one.
+        final List<String> ids = new ArrayList<>();
+        final LocalDirectoryStore store = alsoNeedsBoard(ids);
+        final Board board = store.refresh();
+        assertThat(board.story("plans#1").orElseThrow().issues())
+                .as("the holder lists the second issue by its body")
+                .containsExactly(ids.get(0), ids.get(1));
+        final String holder = Files.readString(items.resolve("plans-1.md"));
+
+        assertThatThrownBy(
+                        () ->
+                                store.createStoryFromIssues(
+                                        board.revision(),
+                                        new StoryFromIssues(
+                                                "New",
+                                                "Gain",
+                                                "Test",
+                                                "High",
+                                                List.of(ids.get(1), ids.get(2)))))
+                .as("a new story over an issue only an Also needs line holds")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e ->
+                                assertThat(e.getMessage())
+                                        .as("it names the issue and the story")
+                                        .contains(ids.get(1), "plans#1", "Also needs"));
+
+        assertThat(Files.readString(items.resolve("plans-1.md")))
+                .as("the holder's body is never edited")
+                .isEqualTo(holder);
+        assertThat(store().board().stories())
+                .as("no story was made")
+                .extracting(Story::id)
+                .containsExactly("plans#1");
+    }
+
+    @Test
+    void aStoryListTakingAnIssueAnotherStoryHoldsOnlyUnderAlsoNeedsIsRefused() throws Exception {
+        // Harm: the story takes the issue while another story's body still lists it.
+        final List<String> ids = new ArrayList<>();
+        final LocalDirectoryStore store = alsoNeedsBoard(ids);
+        final Board board = store.refresh();
+        final NewIdea.Added other =
+                store.createStoryFromIssues(
+                        board.revision(),
+                        new StoryFromIssues("Other", "Gain", "Test", "High", List.of(ids.get(2))));
+
+        assertThatThrownBy(
+                        () ->
+                                store.setStoryIssues(
+                                        other.board().revision(),
+                                        other.story(),
+                                        List.of(ids.get(2), ids.get(1))))
+                .as("a story list over an issue only an Also needs line holds")
+                .isInstanceOfSatisfying(
+                        StoreException.NotSavable.class,
+                        e ->
+                                assertThat(e.getMessage())
+                                        .as("it names the issue and the story")
+                                        .contains(ids.get(1), "plans#1", "Also needs"));
+
+        assertThat(store().board().issue(ids.get(1)).orElseThrow().parent())
+                .as("the issue was not hung under the story")
+                .isNull();
     }
 
     private static final StageEntry STAGE =

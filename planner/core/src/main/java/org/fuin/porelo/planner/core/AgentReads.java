@@ -281,7 +281,13 @@ public final class AgentReads {
                 places.putAll(split.parts());
             }
             // A section of the person's own or a second paragraph is in no part, yet still text.
-            matched(issue.id(), Kind.ISSUE, issue.title(), issue.state(), places, patterns,
+            matched(
+                            issue.id(),
+                            Kind.ISSUE,
+                            issue.title(),
+                            issue.state(),
+                            places,
+                            patterns,
                             issue.text())
                     .ifPresent(all::add);
         }
