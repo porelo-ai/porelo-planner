@@ -100,7 +100,8 @@ class CorrectionsEndpointTest {
                                         WorkRule.Per.STORY,
                                         List.of("AGENT"),
                                         "Build it.",
-                                        Map.of("claude", "claude-opus-5-5"))),
+                                        Map.of("claude", "claude-opus-5-5"),
+                                        Roles.forRule(null, null))),
                         List.of()));
     }
 

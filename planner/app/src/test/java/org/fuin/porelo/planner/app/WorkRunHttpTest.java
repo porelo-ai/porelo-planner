@@ -675,10 +675,10 @@ class WorkRunHttpTest {
         final JsonNode landed =
                 call("/tasks/build/events", event(offer, "LANDED", "", List.of(LANDING)), 200);
         assertThat(landed.path("tasks").size()).as("the landing offers one reader").isEqualTo(1);
-        assertThat(landed.at("/tasks/0/role").asString())
+        assertThat(landed.at("/tasks/0/role/endKind").asString())
                 .as("the offer is the build's reading")
-                .isEqualTo("READER");
-        assertThat(landed.at("/tasks/0/reads"))
+                .isEqualTo("REPORTS_FINDINGS");
+        assertThat(landed.at("/tasks/0/readLanded"))
                 .as("the window starts the reader naming the build's task")
                 .hasSize(1)
                 .first()
@@ -691,10 +691,7 @@ class WorkRunHttpTest {
                         landed.path("work")
                                 .path("tasks")
                                 .valueStream()
-                                .filter(
-                                        t ->
-                                                t.path("role").asString().equals("BUILDER")
-                                                        || t.path("role").asString().equals("MAIN"))
+                                .filter(t -> t.at("/role/endKind").asString().equals("PUSHES_WORK"))
                                 .findFirst()
                                 .orElseThrow()
                                 .at("/ended/landed/0/commit")
@@ -714,7 +711,7 @@ class WorkRunHttpTest {
                 .isEqualTo(again.at("/parameters/reason").asString());
         assertThat(
                         projects.work("project").work("ST1").offers().stream()
-                                .filter(o -> o.binding().role().equals("READER"))
+                                .filter(o -> o.binding().role().reportsFindings())
                                 .count())
                 .as("the resend offered no second reader")
                 .isEqualTo(1);
@@ -1299,7 +1296,7 @@ class WorkRunHttpTest {
                                                                 story,
                                                                 offer.binding().repository(),
                                                                 offer.binding().issues(),
-                                                                offer.binding().role(),
+                                                                offer.binding().lead(),
                                                                 offer.binding().state(),
                                                                 offer.binding().mode(),
                                                                 offer.binding().rule()),
@@ -1444,7 +1441,8 @@ class WorkRunHttpTest {
                             WorkRule.Per.REPOSITORY,
                             List.of("AGENT"),
                             "Build {story} {issues}",
-                            Map.of("codex", "model"));
+                            Map.of("codex", "model"),
+                            Roles.forRule(null, null));
             final WorkRule read =
                     new WorkRule(
                             List.of("Building", "Reworking"),
@@ -1454,7 +1452,8 @@ class WorkRunHttpTest {
                             WorkRule.Per.REPOSITORY,
                             List.of("AGENT"),
                             "Read {issues}",
-                            Map.of("codex", "model"));
+                            Map.of("codex", "model"),
+                            Roles.forRule("Reworking", null));
             final WorkRule rework =
                     new WorkRule(
                             List.of("Reading"),
@@ -1464,7 +1463,8 @@ class WorkRunHttpTest {
                             WorkRule.Per.REPOSITORY,
                             List.of("AGENT"),
                             "Rework {issues}",
-                            Map.of("codex", "model"));
+                            Map.of("codex", "model"),
+                            Roles.forRule(null, null));
             current =
                     new Board(
                             new Revision("r1"),

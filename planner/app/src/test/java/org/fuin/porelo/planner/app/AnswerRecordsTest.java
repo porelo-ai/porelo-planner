@@ -199,7 +199,7 @@ class AnswerRecordsTest {
                         "WorkRule.per",
                         "Issue.worker",
                         "Issue.attention",
-                        "PlanWorkTask.role",
+                        "PlanningStartTask.kind",
                         "Finding.severity",
                         "TaskEnded.outcome",
                         "MoveWarning.kind",
@@ -235,6 +235,9 @@ class AnswerRecordsTest {
             }
             if (raw == Map.class) {
                 return Map.of("claude", sample(parameterized.getActualTypeArguments()[1]));
+            }
+            if (raw == java.util.Set.class) {
+                return java.util.Set.of(sample(parameterized.getActualTypeArguments()[0]));
             }
             throw new IllegalArgumentException("No sample for " + type);
         }

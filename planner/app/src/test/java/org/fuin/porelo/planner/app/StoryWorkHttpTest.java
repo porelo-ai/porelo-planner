@@ -44,9 +44,9 @@ class StoryWorkHttpTest {
             """
             {"project":"project","story":"ST1","to":"Building","mode":"AGENT","seen":"SEEN",
              "repositories":[{"repository":"alpha","issues":["AA1","AA1.1"],
-              "main":{"name":"main","role":"MAIN","agent":"codex","model":"model-a",
+              "main":{"name":"main","role":{"name":"author"},"agent":"codex","model":"model-a",
                       "brief":"Build {story}: {issues}; {tasks}"},
-              "subAgents":[{"id":"alpha/AA1.1/BUILDER","issue":"AA1.1","name":"builder","kind":"BUILDER",
+              "subAgents":[{"id":"alpha/AA1.1/helper","issue":"AA1.1","name":"builder","kind":"HELPER",
                             "agent":"codex","model":"model-a","workingState":"Building",
                             "brief":"AA1.1 — Child\\nKeep the data.","choice":"KEEP"}]}],
              "comment":"Keep the proposal.","readingRounds":2,"issueReadingRounds":[{"issue":"AA1.1","rounds":3}]}
@@ -99,7 +99,8 @@ class StoryWorkHttpTest {
                                                 WorkRule.Per.REPOSITORY,
                                                 List.of("AGENT"),
                                                 "Build {story}: {issues}; {tasks}",
-                                                Map.of("codex", "model-a"))),
+                                                Map.of("codex", "model-a"),
+                                                Roles.forRule(null, null))),
                                 List.of()),
                         org.fuin.porelo.planner.store.ProjectRepository.named(
                                 List.of("project", "alpha")));
@@ -160,7 +161,7 @@ class StoryWorkHttpTest {
                                 .get("kind")
                                 .asString())
                 .as("reading does not start with implementation")
-                .isEqualTo("BUILDER");
+                .isEqualTo("HELPER");
         final JsonNode order = json(call(BASE + "/work", SELECTED), 200);
         assertThat(order.propertyNames())
                 .as("the response is an order, not a fabricated running record")
@@ -172,13 +173,17 @@ class StoryWorkHttpTest {
                         "offer",
                         "repository",
                         "issues",
+                        "kind",
                         "role",
+                        "opensTerminal",
                         "agent",
                         "model",
                         "chosenBy",
                         "mode",
                         "prompt",
-                        "reads");
+                        "rights",
+                        "readLanded",
+                        "projectServices");
         assertThat(order.get("tasks").get(1).get("prompt").asString())
                 .as("the selected operator comment reaches helpers")
                 .contains("Keep the proposal.", "Keep the data.")
@@ -261,21 +266,35 @@ class StoryWorkHttpTest {
                 .containsExactlyInAnyOrder(
                         "offer",
                         "issues",
-                        "role",
+                        "kind",
+                        "opensTerminal",
                         "agent",
                         "model",
                         "chosenBy",
                         "mode",
                         "prompt",
-                        "reads");
+                        "readOnly",
+                        "allRepositories",
+                        "rights",
+                        "readLanded",
+                        "projectServices");
         assertThat(
                         List.of(
-                                task.get("role").asString(),
+                                task.get("kind").asString(),
                                 task.get("mode").asString(),
                                 task.get("agent").asString(),
                                 task.get("model").asString()))
                 .as("a conversation with the rule's agent")
-                .containsExactly("DISCUSSION", "AGENT", "codex", "model-a");
+                .containsExactly("discussion", "AGENT", "codex", "model-a");
+        assertThat(
+                        List.of(
+                                task.get("rights").toString(),
+                                task.get("readLanded").toString(),
+                                task.get("projectServices").asBoolean(),
+                                task.get("readOnly").asBoolean(),
+                                task.get("allRepositories").asBoolean()))
+                .as("every repository read only, with the project's services, and its report")
+                .containsExactly("[\"report\"]", "[]", true, true, true);
         assertThat(task.get("issues").size()).as("no issue is the discussion's").isZero();
         assertThat(task.get("prompt").asString())
                 .as("the brief names both repositories and the person's words")
@@ -413,7 +432,8 @@ class StoryWorkHttpTest {
                                                 rule.per(),
                                                 rule.modes(),
                                                 rule.order(),
-                                                models)),
+                                                models,
+                                                rule.role())),
                                 List.of()),
                         board.repositories());
         final JsonNode proposal = json(call(BASE + "/proposal", "{\"to\":\"Building\"}"), 200);
@@ -429,8 +449,8 @@ class StoryWorkHttpTest {
                                 BASE + "/work",
                                 withMain(forgedOffer)
                                         .replace(
-                                                "\"role\":\"MAIN\",\"agent\":\"codex\",\"model\":\"model-a\"",
-                                                "\"role\":\"MAIN\",\"agent\":\"forged\",\"model\":\"x\"")),
+                                                "\"role\":{\"name\":\"author\"},\"agent\":\"codex\",\"model\":\"model-a\"",
+                                                "\"role\":{\"name\":\"author\"},\"agent\":\"forged\",\"model\":\"x\"")),
                         400);
         assertThat(refused.get("type").asString())
                 .as(
@@ -535,7 +555,9 @@ class StoryWorkHttpTest {
                                                 rule.models(),
                                                 Map.of(
                                                         Risk.HARM,
-                                                        new WorkRule.ForRisk(Map.of(), "max")))),
+                                                        new WorkRule.ForRisk(Map.of(), "max")),
+                                                null,
+                                                rule.role())),
                                 List.of()),
                         board.repositories());
     }
@@ -606,7 +628,13 @@ class StoryWorkHttpTest {
                         MINIMAL.replace(
                                 "\"project\":\"project\"", "\"project\":\"private-password\""),
                         MINIMAL.replace("\"to\":\"Building\"", "\"to\":\"private-password\""),
-                        MINIMAL.strip() + " ".repeat(65536))) {
+                        MINIMAL.strip() + " ".repeat(65536),
+                        // A role sent back is an object whose name the work rules define.
+                        SELECTED.replace("{\"name\":\"author\"}", "\"author\""),
+                        SELECTED.replace("{\"name\":\"author\"}", "{\"name\":7}"),
+                        SELECTED.replace("{\"name\":\"author\"}", "{\"end\":\"push\"}"),
+                        SELECTED.replace(
+                                "{\"name\":\"author\"}", "{\"name\":\"private-password\"}"))) {
             final MockHttpServletResponse response = call(BASE + "/work", malformed);
             final JsonNode problem = json(response, 400);
             assertThat(problem.get("type").asString())

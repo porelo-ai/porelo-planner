@@ -239,7 +239,8 @@ class WorkerEndpointTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Implement {issues}",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        Roles.forRule(null, null));
         current =
                 new Board(
                         new Revision("r1"),

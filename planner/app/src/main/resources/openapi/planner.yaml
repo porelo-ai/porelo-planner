@@ -145,7 +145,7 @@ paths:
         Only in the mock mode (`porelo-planner --mock`), for the window's tests: gives the project a run whose
         pushed work waits at its author's gate push, with a reviewer offered there, as the planner's own flow makes
         it on the mock board as first served. The project's work then holds that run alone, in place of any run it
-        held, and its `starts` the reviewer, with runRole REVIEWER, role READER and the gate push as its place; the
+        held, and its `starts` the reviewer, by its role's name and parts and with the gate push as its place; the
         mock board itself is left as it is, and a reset forgets the run. Outside the mock mode a POST here answers 404, as for a path that does not exist.
       tags: [mock]
       responses:
@@ -622,7 +622,7 @@ paths:
       operationId: discussIdea
       summary: Offer a task that discusses an idea
       description: >-
-        Answers one task for Porelo's Start that discusses an idea with the person: role DISCUSSION, no repository,
+        Answers one task for Porelo's Start that discusses an idea with the person: kind discussion, no role, no repository,
         no issues, mode AGENT, and as agent and model the first agent and model of the first sound work rule whose
         names are 1 to 128 UTF-16 code units, as defaults the person may change; it names no result file. The window
         starts it with every repository of the project read only, passing the offer as Start's callerKey. The task
@@ -679,7 +679,7 @@ paths:
       description: >-
         Computes a proposal from one board and its sound work rule. The first mode and ordered model entry are the
         defaults. Only open issues and open sub-issues in their parent's repository participate. Each sub-issue has
-        one BUILDER; reading belongs to the later run. Starts nothing and changes neither state nor revision.
+        one helper that builds; reading belongs to the later run. Starts nothing and changes neither state nor revision.
         The JSON body is at most 65536 bytes. An unknown target state is InvalidSettings.
       tags: [work]
       requestBody:
@@ -1650,7 +1650,7 @@ paths:
         carries the refusal and no container, since no task started. The offer stays offered, and a later Start of it
         is still possible, which clears the refusal; the issues of the offer ask the person with START_REFUSED, and
         the refusal's name, parameters and words stand in `startRefusal` of each. A rework at the place its issue
-        keeps that is refused as NotTheTasksPush or RoleNotAllowed says the place changed instead, as PLACE_CHANGED.
+        keeps that is refused as NotTheTasksPush says the place changed instead, as PLACE_CHANGED.
         The planner judges no name: any well-shaped one stands as given. REFUSED for an offer that ended, or that
         already stands refused, is a resend, answered with what stands and recorded once; for an offer Porelo started
         it is refused as TaskEventConflict. LANDED reports once where a build's work landed after its ENDED,
@@ -4864,11 +4864,13 @@ components:
         name:
           type: string
         role:
-          type: string
-          enum: [MAIN, READER]
           description: >-
-            MAIN for work that builds; READER for a reading started by hand, which starts one reader per issue
-            reading the issue's last landed build, with no helpers.
+            The role the work rule offers this task, as the project's work rules define it: one that pushes work for
+            work that builds; one that reports findings for a reading started by hand, which starts one task per
+            issue reading the issue's last landed build, with no helpers. The planner's words: of a role sent back
+            only the name is read, and it must be the offered one.
+          allOf:
+            - $ref: '#/components/schemas/TaskRole'
         agent:
           type: string
           minLength: 1
@@ -4928,7 +4930,7 @@ components:
           type: string
         kind:
           type: string
-          description: The participant's role; only BUILDER is proposed at start.
+          description: The helper's kind inside its main task, the planner's own word; a helper is no task and has no role.
         agent:
           type: string
         model:
@@ -5051,10 +5053,17 @@ components:
           description: The person's first words of the idea, not blank, counted in Unicode code points.
     PlanningStartTask:
       type: object
-      required: [offer, issues, role, agent, model, mode, prompt, reads]
+      additionalProperties: false
+      required: [offer, kind, issues, agent, model, mode, prompt, rights, readLanded, projectServices]
       description: >-
-        repository is present for MAIN, BUILDER and READER and absent for DISCUSSION; result is present only for
-        MAIN or BUILDER of a stage that hands back its result instead of pushing, and given only for them.
+        One task for Porelo's Start. The members `readOnly`, `allRepositories`, `noGate`, `place`, `rights`,
+        `readLanded`, `writeAs` and `projectServices` are named as Start takes them and are handed to it as given:
+        the window derives none of them and adds none. The order has no other member for Start's parts, and none for
+        `credentials`, `clearance` or `upstream`, which the planner never hands on. No member names the kind of the
+        workspace: `readOnly` (with `allRepositories` where every repository is read) is read only, `noGate` is no
+        workspace, a `place` at another task's push or pull request is that task's work, and anything else is the
+        task's own work. repository and role are present for work and absent for a discussion; result is present
+        only for a task whose role hands back a result, and given only for it.
       properties:
         offer:
           type: string
@@ -5066,9 +5075,42 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IssueId'
-        role:
+        kind:
           type: string
-          enum: [MAIN, BUILDER, READER, DISCUSSION]
+          enum: [work, discussion]
+          description: >-
+            work for a task a work rule offers, which names its role; discussion for the task that discusses an idea
+            with the person, which names none.
+        role:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            The role bound to the offer, as the project's work rules define it, for the person to read; Start is
+            handed no role. Present for work, absent for a discussion.
+          allOf:
+            - $ref: '#/components/schemas/TaskRole'
+        task:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            The name of the existing Porelo task Start is to run again, handed to Start as its task as given:
+            present exactly for an author sent back to its own work, at its task's gate push or at its task's own
+            pull request, and absent for every new task. Never present where the place is another task's work.
+          allOf:
+            - $ref: '#/components/schemas/TaskLabel'
+        ownTask:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: >-
+            Present only as true: Start is asked under a task name of the window's own choosing, one no task of the
+            project holds, never the repository's own task. Set for a task that reads another task's work and for
+            the building work of an issue the run's Start held back; absent for every other. Never present together
+            with `task`.
+        opensTerminal:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: >-
+            Present only as true, on at most one task of an answer: the first task with mode AGENT whose role pushes
+            work, or a discussion's own task. The window opens its terminal on that task; when none qualifies, none
+            is marked.
         agent:
           type: string
         model:
@@ -5107,13 +5149,46 @@ components:
             16 files, each text at most 65536 UTF-8 bytes, all together at most 1048576.
           items:
             $ref: '#/components/schemas/GivenFile'
-        reads:
+        readOnly:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: Start's `readOnly`, present only as true, for a task that only reads.
+        allRepositories:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: Start's `allRepositories`, present only as true, for a task that reads every repository of the project.
+        noGate:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+          description: Start's `noGate`, present only as true, for a task without a workspace.
+        rights:
+          type: array
+          maxItems: 9
+          uniqueItems: true
+          description: >-
+            Start's `rights`, always named and never left to Porelo's default: the actions and judgments of the
+            task's role in one list. An empty list is a task holding no right.
+          items:
+            $ref: '#/components/schemas/Right'
+        readLanded:
           type: array
           description: >-
-            The Porelo task names whose work a READER reads, so Porelo's gate gives it their branches read only;
-            empty for every other role.
+            Start's `readLanded`, always named: the Porelo task names whose forwarded work the task also reads, so
+            Porelo's gate gives it their branches read only; empty for none.
           items:
             $ref: '#/components/schemas/TaskLabel'
+        projectServices:
+          type: boolean
+          description: >-
+            Start's `projectServices`, always named: whether the task has the project's services; always false for a
+            task at another task's work.
+        writeAs:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          description: >-
+            Start's `writeAs`, the account the task's released words are written as; present only where the place is
+            a pull request, since Start refuses it anywhere else.
+          allOf:
+            - $ref: '#/components/schemas/WriteAs'
         work:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           description: >-
@@ -5121,19 +5196,13 @@ components:
             stage's task of a project a tracker keeps, never on a discussion's, and absent, never null, otherwise.
           allOf:
             - $ref: '#/components/schemas/TrackedWork'
-        runRole:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          type: string
-          enum: [AUTHOR, REVIEWER]
-          description: >-
-            The run's role Start is handed as its `role`: AUTHOR for one that writes the work, REVIEWER for one that
-            reviews another's. Absent for an author at its own task's gate push, which Start takes as the default.
         place:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           description: >-
-            Where the run works, handed to Start as its `place` unchanged; absent for the task's own gate push, which
-            Start takes as the default. An AUTHOR's gate push names the task it resumes: Start is given that name as
-            its task.
+            Where the run works, handed to Start as its `place` unchanged; absent only for a new task's own gate
+            push, which Start takes as the default. A task at another task's work always names its place, the one
+            push or pull request it reads, which alone tells Start whose work it is. The gate push of a task sent
+            back to its own work is that task's own, and the order's `task` names it.
           allOf:
             - $ref: '#/components/schemas/RunPlace'
 
@@ -5210,6 +5279,65 @@ components:
     TaskLabel:
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$'
+    Right:
+      type: string
+      enum: [push, reply, openThreads, resolveThreads, start, stop, done, report, reject]
+      description: >-
+        One of Porelo's fixed words for what a task may do, as its Start takes them: the actions at its place
+        (push, reply, openThreads, resolveThreads), the rights of its own endpoint (start, stop, done, report) and
+        the one judgment, reject. What each allows is Porelo's to say.
+    WriteAs:
+      type: string
+      enum: [author, review]
+      description: >-
+        The account a task's released words are written as at a pull request, in Porelo's words: author, the
+        account that opened it, or review, the forge's account for reviews.
+    TaskRole:
+      type: object
+      additionalProperties: false
+      required: [name, endKind, workspace, readLanded, projectServices, writeAs, rights]
+      description: >-
+        A role of the project's tasks, as its work rules define it: a name, how its task ends and the parts of a
+        start. The planner knows no role by its name, so a role a project adds is served like any other; Porelo is
+        never handed a role, only the parts.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[^\u0000-\u001F\u007F-\u009F\u2028\u2029]+(?![\s\S])'
+          description: >-
+            The role's name in the project's work rules, shown as given; the work rules load no name that holds a
+            control character or a format character, such as one that changes the direction of text.
+        endKind:
+          type: string
+          enum: [PUSHES_WORK, REPORTS_FINDINGS, GIVES_POINTS, HANDS_BACK_RESULT]
+          description: >-
+            How a task of the role ends, from the planner's fixed list: it pushes work, reports findings, gives
+            points at a place, or hands back a result. A role that may reject ends as GIVES_POINTS and holds reject
+            among its rights.
+        workspace:
+          type: string
+          enum: [own, foreign, readOnly, allRepositories, none]
+          description: >-
+            The kind of the role's workspace, in the words Porelo's task row records it by: the task's own work,
+            another task's work, read only for one repository or for all, or no workspace. Shown only; a start order
+            tells the workspace by Start's own members.
+        readLanded:
+          type: boolean
+          description: Whether a task of the role also reads the forwarded work of the tasks whose build it reads.
+        projectServices:
+          type: boolean
+          description: Whether a task of the role has the project's services; never true for another task's work.
+        writeAs:
+          $ref: '#/components/schemas/WriteAs'
+        rights:
+          type: array
+          maxItems: 9
+          uniqueItems: true
+          description: The role's actions and judgments in one list; empty for a role holding no right.
+          items:
+            $ref: '#/components/schemas/Right'
     RefName:
       type: string
       minLength: 1
@@ -5336,8 +5464,8 @@ components:
           description: >-
             The outcome the task declared, copied unchanged from Porelo's end record; absent when it declared none.
             BLOCKED and FAILED leave the task's issues in their state under Needs you, whatever finished says, and why
-            carries the task's reason; DONE and an absent outcome are judged by finished and unpushed, and a READER's
-            by finished and its findings alone, since a reader delivers only its answer.
+            carries the task's reason; DONE and an absent outcome are judged by finished and unpushed, and the end of
+            a task whose role reports findings by finished and its findings alone, since it delivers only its answer.
     ReadingRequest:
       type: object
       additionalProperties: false
@@ -5565,14 +5693,14 @@ components:
           maxItems: 64
           description: >-
             The run's offers made without a request of the window's, which wait for their Start: an author sent back
-            to answer the points open at the gate push its work waits at, with runRole AUTHOR and that push as its
-            place, started under that push's name; an author sent back to answer the points open at its task's own
-            pull request, once Porelo forwarded the gate push there, with runRole AUTHOR and place ownPullRequest,
-            started under the same task's name; or, where the reading rule names a reviewer, a reviewer of a new
-            head at the place the work waits at, with runRole REVIEWER, role READER and that place, started under a
-            task name of its own, never the name of the task whose work it reviews; or the building work of an issue
-            the run's Start held back by a blocker or a wait not done, once each of them stands in review or closed,
-            with runRole AUTHOR, role BUILDER, no place and no result, for that one issue, which the run's
+            to answer the points open at the gate push its work waits at, with the role that built the work and that
+            push as its place, started under that push's name; an author sent back to answer the points open at its
+            task's own pull request, once Porelo forwarded the gate push there, with the same role and place
+            ownPullRequest, started under the same task's name; or, where the reading rule names a role that reads
+            another task's work, a task of that role at a new head at the place the work waits at, with that place,
+            started under a task name of its own, never the name of the task whose work it reads; or the building
+            work of an issue the run's Start held back by a blocker or a wait not done, once each of them stands in
+            review or closed, with the building rule's role, no place and no result, for that one issue, which the run's
             repositories then list, started under a task name of its own, and served only while nothing holds the
             issue back on the board as it stands. The window starts each once, through the callback it gives for
             offers it did not ask for; empty when none waits, and for a stopped or halted run.
@@ -5580,7 +5708,7 @@ components:
             $ref: '#/components/schemas/PlanningStartTask'
     PlanWorkTask:
       type: object
-      required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, effort, role, since, atWork, ended]
+      required: [task, containerId, machine, repository, issues, state, done, mode, agent, model, effort, role, readLanded, since, atWork, ended]
       properties:
         task:
           type: string
@@ -5617,8 +5745,14 @@ components:
             The effort the task's order said it starts with, as the person's order sent it back; null when nobody
             said, as for a task that started by itself, never the offered effort.
         role:
-          type: string
-          enum: [MAIN, BUILDER, READER]
+          description: The role the task was started with, as the project's work rules defined it then.
+          allOf:
+            - $ref: '#/components/schemas/TaskRole'
+        readLanded:
+          type: array
+          description: The Porelo task names whose forwarded work the task was started to read besides; empty for none.
+          items:
+            $ref: '#/components/schemas/TaskLabel'
         since:
           type: string
         atWork:
@@ -5627,19 +5761,11 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TaskEnded'
             - type: 'null'
-        runRole:
-          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
-          type: string
-          enum: [AUTHOR, REVIEWER]
-          description: >-
-            Porelo's role of the run, as the offer the task was bound to handed it to Start, beside the duty `role`
-            above: AUTHOR for a run that writes the work, REVIEWER for one that reviews another's. Absent for an
-            author at its own task's gate push, which Start takes as the default.
         place:
           x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
           description: >-
-            Where the run works, as the offer the task was bound to handed it to Start. Absent for the task's own gate
-            push, which Start takes as the default. A pull request is an address from outside, to be shown as plain
+            Where the run works, as the offer the task was bound to handed it to Start. Absent for a new task's own
+            gate push, which Start takes as the default. A pull request is an address from outside, to be shown as plain
             text and never opened by itself.
           allOf:
             - $ref: '#/components/schemas/RunPlace'
@@ -5663,8 +5789,9 @@ components:
           type: string
           enum: [NONE, BLOCKING_FINDINGS, ROUND_LIMIT, UNPUSHED, FAILED, BLOCKED, STOPPED, INVALID_FINDINGS, SAVE_REFUSED, NEXT_STEP_UNAVAILABLE, PLACE_CHANGED, REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, START_REFUSED, PLACE_CLOSED, MERGED_OTHER_HEAD, MANUAL]
           description: >-
-            Why the issue needs attention, NONE if it does not; MANUAL says a person now works it, so no further task
-            of the run takes it and it needs nobody's attention. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
+            Why the issue needs attention, NONE if it does not; MANUAL says a person now works it by hand, so no further
+            task of the run takes it, no role is bound to it and it needs nobody's attention; it is shown as the
+            person's. BLOCKING_FINDINGS and ROUND_LIMIT both stop a
             reading with blocking findings, readingStopped true: below the readings granted and at them.
             INVALID_FINDINGS stops a reading whose findings could not be read, readingStopped true, with a round
             counted, roundsMost raised by one without using up the limit, and no findings kept: the person has the same
@@ -5675,7 +5802,7 @@ components:
             raised by one without using up the limit, and no findings kept.
             PLACE_CHANGED says what was read where the issue's work waits, or another author's end, named another task
             or place than the run keeps, or that Porelo refused to start the issue's rework at its kept place as
-            NotTheTasksPush or RoleNotAllowed; the kept place stands and nothing moved.
+            NotTheTasksPush; the kept place stands and nothing moved.
             START_REFUSED says Porelo refused to start the issue's offered task, with `startRefusal` naming why; the
             offer stays offered and nothing moved.
             REJECTED_WITHOUT_POINTS, REVIEW_ROUNDS_USED, PLACE_UNREADABLE, PLACE_CLOSED and MERGED_OTHER_HEAD stop an
@@ -5708,7 +5835,9 @@ components:
           $ref: '#/components/schemas/TaskRefusal'
           description: >-
             What Porelo refused the Start of the issue's offered task with, present while that refusal stands, the
-            reason being START_REFUSED, or PLACE_CHANGED for a rework refused as NotTheTasksPush or RoleNotAllowed.
+            reason being START_REFUSED, or PLACE_CHANGED for a rework refused as NotTheTasksPush. A
+            StartRuleBroken names its `rule` and `detail` in the refusal's parameters as Porelo gave them, and a
+            RightsChanged names nothing.
     Finding:
       type: object
       required: [number, severity, text]

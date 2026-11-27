@@ -28,9 +28,10 @@ import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReviewOpen;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.store.Role;
+import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.cache.BoardCopy;
 import org.fuin.porelo.planner.store.cache.ForyEncoding;
 import org.jspecify.annotations.Nullable;
@@ -173,7 +174,7 @@ final class SerializationCheck {
         final IssuePlace place =
                 new IssuePlace(
                         RunPlace.gate("sample", "task"),
-                        RunRole.AUTHOR,
+                        false,
                         "task",
                         List.of("00000000-0000-0000-0000-000000000002"),
                         IssuePlace.Review.of(answer));
@@ -181,7 +182,7 @@ final class SerializationCheck {
         final IssuePlace forwarded =
                 new IssuePlace(
                                 RunPlace.gate(null, "task"),
-                                RunRole.AUTHOR,
+                                false,
                                 "task",
                                 List.of("00000000-0000-0000-0000-000000000003"),
                                 IssuePlace.Review.of(
@@ -214,7 +215,7 @@ final class SerializationCheck {
                         List.of(),
                         List.of(),
                         WHEN.toString(),
-                        List.of(rework()),
+                        List.of(rework(), review()),
                         Map.of(
                                 "AA1",
                                 NextStep.Progress.start(2),
@@ -224,7 +225,7 @@ final class SerializationCheck {
                         false,
                         null,
                         Map.of("AA1", place, "AA2", forwarded),
-                        List.of(REWORK)));
+                        List.of(REWORK, REVIEW)));
         return new WorkRecord.Document(
                 filled.version(),
                 filled.project(),
@@ -241,13 +242,38 @@ final class SerializationCheck {
     /** The id of the author's rework a read of its kept push offered. */
     static final String REWORK = "00000000-0000-0000-0000-000000000004";
 
+    /** The id of the reading of the author's push at its gate push, offered beside the rework. */
+    static final String REVIEW = "00000000-0000-0000-0000-000000000005";
+
+    /** A role that builds: it pushes its own work with the project's services. */
+    static final Role BUILDING =
+            new Role(
+                    "author",
+                    Role.End.PUSHES_WORK,
+                    Role.Workspace.OWN,
+                    false,
+                    true,
+                    Role.WriteAs.AUTHOR,
+                    List.of(Role.Right.PUSH, Role.Right.REPLY));
+
+    /** A role that reads another task's work at its place and gives points there. */
+    static final Role READING =
+            new Role(
+                    "reviewer",
+                    Role.End.GIVES_POINTS,
+                    Role.Workspace.FOREIGN,
+                    false,
+                    false,
+                    Role.WriteAs.REVIEW,
+                    List.of(Role.Right.REPLY, Role.Right.OPEN_THREADS));
+
     /** An author's rework offered at its kept push, as a read of that place offers it. */
     private static WorkRun.Offer rework() {
         final WorkOrder.Task task =
                 new WorkOrder.Task(
                                 "sample",
                                 List.of("AA1"),
-                                "BUILDER",
+                                BUILDING,
                                 "agent",
                                 "model",
                                 null,
@@ -259,29 +285,95 @@ final class SerializationCheck {
                                 null,
                                 List.of(),
                                 null)
-                        .at(RunRole.AUTHOR, RunPlace.gate(null, "task"));
-        return new WorkRun.Offer(
+                        .again(RunPlace.gate(null, "task"));
+        return offer(
                 REWORK,
                 task,
-                new NextStep.Binding(
-                        "ST1",
-                        "sample",
-                        List.of("AA1"),
-                        "BUILDER",
+                new WorkRule(
+                        List.of("Reading"),
+                        "Review",
+                        "Reading",
+                        null,
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Rework {issues}",
+                        Map.of("agent", "model"),
+                        Map.of(),
+                        null,
+                        BUILDING),
+                "Reworking",
+                new NextStep.Settings("AGENT", "agent", "model"),
+                new WorkRun.StartRefusal(
+                        "AdapterNotInstalled", Map.of("adapter", "maven"), "Not installed."));
+    }
+
+    /** A reading of the author's work at its gate push, which it reads through that place. */
+    private static WorkRun.Offer review() {
+        final WorkOrder.Task task =
+                new WorkOrder.Task(
+                                "sample",
+                                List.of("AA1"),
+                                READING,
+                                "agent",
+                                "model",
+                                null,
+                                "AGENT",
+                                "Read the work at the gate push task.",
+                                List.of(),
+                                "",
+                                null,
+                                null,
+                                List.of(),
+                                null)
+                        .at(RunPlace.gate(null, "task"));
+        return offer(
+                REVIEW,
+                task,
+                new WorkRule(
+                        List.of("Review"),
+                        "Reading",
+                        null,
                         "Reworking",
-                        "AGENT",
-                        new org.fuin.porelo.planner.store.WorkRule(
-                                List.of("Reading"),
-                                "Review",
-                                "Reading",
-                                null,
-                                org.fuin.porelo.planner.store.WorkRule.Per.REPOSITORY,
-                                List.of("AGENT"),
-                                "Rework {issues}",
-                                Map.of("agent", "model"),
-                                Map.of(),
-                                null,
-                                org.fuin.porelo.planner.store.WorkRule.Reviewer.AT_WORK)),
+                        WorkRule.Per.REPOSITORY,
+                        List.of("AGENT"),
+                        "Read {issues}",
+                        Map.of("agent", "model"),
+                        Map.of(),
+                        null,
+                        READING),
+                "Reading");
+    }
+
+    /** An offer no person chose settings for and Porelo refused no start of. */
+    private static WorkRun.Offer offer(
+            final String id, final WorkOrder.Task task, final WorkRule rule, final String state) {
+        return new WorkRun.Offer(
+                id,
+                task,
+                new NextStep.Binding("ST1", "sample", List.of("AA1"), false, state, "AGENT", rule),
+                "OFFERED",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "",
+                List.of(),
+                List.of(),
+                null);
+    }
+
+    private static WorkRun.Offer offer(
+            final String id,
+            final WorkOrder.Task task,
+            final WorkRule rule,
+            final String state,
+            final NextStep.Settings rework,
+            final WorkRun.StartRefusal refusal) {
+        return new WorkRun.Offer(
+                id,
+                task,
+                new NextStep.Binding("ST1", "sample", List.of("AA1"), false, state, "AGENT", rule),
                 "OFFERED",
                 null,
                 null,
@@ -294,9 +386,8 @@ final class SerializationCheck {
                 null,
                 false,
                 "",
-                new NextStep.Settings("AGENT", "agent", "model"),
-                new WorkRun.StartRefusal(
-                        "AdapterNotInstalled", Map.of("adapter", "maven"), "Not installed."));
+                rework,
+                refusal);
     }
 
     /**

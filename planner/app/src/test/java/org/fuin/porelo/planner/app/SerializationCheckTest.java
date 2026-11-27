@@ -98,29 +98,49 @@ class SerializationCheckTest {
         final org.fuin.porelo.planner.core.WorkRun.Run run = record.runs().get("ST1");
 
         assertThat(run.placeOffers())
-                .as("the read's offer")
-                .containsExactly(SerializationCheck.REWORK);
+                .as("the read's offers")
+                .containsExactly(SerializationCheck.REWORK, SerializationCheck.REVIEW);
         final org.fuin.porelo.planner.core.WorkRun.Offer rework =
                 run.offers().stream()
                         .filter(o -> o.id().equals(SerializationCheck.REWORK))
                         .findFirst()
                         .orElseThrow();
-        assertThat(List.of(rework.arguments().runRole(), rework.arguments().place()))
-                .as("its role and place")
+        assertThat(
+                        List.of(
+                                rework.arguments().role(),
+                                rework.arguments().again(),
+                                rework.arguments().place()))
+                .as("its role, offered again, and its place")
                 .containsExactly(
-                        org.fuin.porelo.planner.core.RunRole.AUTHOR,
+                        SerializationCheck.BUILDING,
+                        true,
                         org.fuin.porelo.planner.core.RunPlace.gate(null, "task"));
+        assertThat(
+                        run.offers().stream()
+                                .filter(o -> o.id().equals(SerializationCheck.REVIEW))
+                                .map(o -> o.binding().role())
+                                .toList())
+                .as("the reading's role, read back by its name and parts")
+                .containsExactly(SerializationCheck.READING);
         assertThat(run.places().values().stream().flatMap(place -> place.authorRuns().stream()))
                 .as("no kept place counts the offered rework as an author run")
                 .doesNotContain(SerializationCheck.REWORK);
         final var work = WorkAnswers.knownWork(run, issue -> false);
-        assertThat(work.starts()).as("the window's start of it").hasSize(1);
+        assertThat(work.starts())
+                .as("the window's starts of the rework and the reading")
+                .extracting(
+                        start -> start.offer(), start -> start.role().name(), start -> start.task())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                SerializationCheck.REWORK, "author", "task"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                SerializationCheck.REVIEW, "reviewer", null));
         assertThat(
                         WorkRecord.JSON.writeValueAsString(
                                 new org.fuin.porelo.planner.app.answers.TaskEventReply(
                                         "", work, List.of())))
                 .as("the work answer with its start is written")
-                .contains(SerializationCheck.REWORK);
+                .contains(SerializationCheck.REWORK, SerializationCheck.REVIEW);
     }
 
     @Test

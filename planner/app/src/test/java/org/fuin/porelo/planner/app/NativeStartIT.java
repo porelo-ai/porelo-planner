@@ -239,7 +239,7 @@ class NativeStartIT {
                                         "{\"idea\":\"An idea\"}"))
                         .as("a discussion's brief carries the idea format from the image")
                         .startsWith("200 ")
-                        .contains("\"role\":\"DISCUSSION\"", "idea-1.json");
+                        .contains("\"kind\":\"discussion\"", "idea-1.json");
                 final String stories = call(address, "GET", "/projects/alpha/stories", null);
                 final String revision =
                         json.readTree(stories.substring(4)).path("revision").asString();
@@ -453,7 +453,7 @@ class NativeStartIT {
                 assertThat(call(address, "GET", "/projects/any/stories/ST14/work", null))
                         .as("the reviewer's order served" + log)
                         .startsWith("200 ")
-                        .contains("\"runRole\":\"REVIEWER\"");
+                        .contains("\"role\":{\"name\":\"reviewer\"", "\"ownTask\":true");
                 assertThat(call(address, "POST", "/mock/reset", null))
                         .as("a reset" + log)
                         .startsWith("204 ");

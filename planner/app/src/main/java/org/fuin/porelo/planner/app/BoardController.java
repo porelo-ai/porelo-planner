@@ -1667,7 +1667,8 @@ public class BoardController {
         if (!board.workflow().states().contains(to)) {
             throw WorkRefusal.invalidSettings();
         }
-        final WorkRequests.Request body = WorkRequests.request(json, story.state(), to);
+        final WorkRequests.Request body =
+                WorkRequests.request(json, story.state(), to, board.work().roles());
         if (!project.equals(body.project()) || !checked.equals(body.story())) {
             throw WorkRefusal.invalidSettings();
         }
@@ -1715,7 +1716,7 @@ public class BoardController {
             return new TaskEventReply(
                     answer.revision(),
                     WorkAnswers.knownWork(answer.board(), answer.work(), helds.in(name)),
-                    WorkAnswers.starts(answer.tasks()));
+                    WorkAnswers.starts(answer.tasks(), answer.work().places()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
         } finally {
@@ -1835,8 +1836,9 @@ public class BoardController {
             final WorkRun.Snapshot snapshot = new WorkRun.Snapshot(0, Map.of(story, answer.work()));
             return new ReadingReply(
                     issue(answer.board(), answer.board().issue(checked).orElseThrow(), snapshot),
-                            WorkAnswers.knownWork(answer.board(), answer.work(), helds.in(name)),
-                    answer.revision(), WorkAnswers.starts(answer.tasks()));
+                    WorkAnswers.knownWork(answer.board(), answer.work(), helds.in(name)),
+                    answer.revision(),
+                    WorkAnswers.starts(answer.tasks(), answer.work().places()));
         } catch (final UnsupportedOperationException unavailable) {
             throw notOffered(name);
         } finally {

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.TaskRecord;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.jspecify.annotations.Nullable;
@@ -156,7 +155,7 @@ class TaskHeldsTest {
                 null,
                 null,
                 List.of(),
-                RunRole.AUTHOR,
+                org.fuin.porelo.planner.store.Role.Workspace.OWN,
                 null,
                 held);
     }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.ReadingCycle;
 import org.fuin.porelo.planner.core.WorkRun;
@@ -28,7 +29,7 @@ class WorkAnswersTest {
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
                                 "alpha",
                                 List.of("alpha#2", "alpha#4"),
-                                "MAIN",
+                                Roles.AUTHOR,
                                 "codex",
                                 "model",
                                 null,
@@ -51,15 +52,15 @@ class WorkAnswersTest {
                         null);
     }
 
-    // Harm: the window hands Start no role or place, or one the planner did not offer, so a run
-    // works at the wrong place; an offer without them must name none, so Start takes its defaults.
+    // Harm: the window hands Start no place, or one the planner did not offer, so a run works at
+    // the wrong place; an offer without one must name none, so Start takes its default.
     @Test
-    void aStartHandsTheWindowTheRunsRoleAndPlaceOnlyWhereTheOfferNamesThem() throws Exception {
+    void aStartHandsTheWindowThePlaceOnlyWhereTheOfferNamesIt() throws Exception {
         final org.fuin.porelo.planner.core.WorkOrder.Task task =
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
                         "alpha",
                         List.of("alpha#2"),
-                        "MAIN",
+                        Roles.AUTHOR,
                         "codex",
                         "model",
                         null,
@@ -71,31 +72,31 @@ class WorkAnswersTest {
                                 new WorkRun.Offered("o-1", task),
                                 new WorkRun.Offered(
                                         "o-2",
-                                        task.at(
-                                                org.fuin.porelo.planner.core.RunRole.AUTHOR,
+                                        task.again(
                                                 org.fuin.porelo.planner.core.RunPlace.gate(
                                                         "docs", "cart"))),
                                 new WorkRun.Offered(
                                         "o-3",
-                                        task.at(
-                                                org.fuin.porelo.planner.core.RunRole.REVIEWER,
+                                        Roles.as(
+                                                task,
+                                                Roles.REVIEWER,
                                                 new org.fuin.porelo.planner.core.RunPlace(
                                                         null,
                                                         "https://github.com/owner/shop/pull/7",
                                                         null)))));
         final com.fasterxml.jackson.databind.ObjectMapper json =
                 new com.fasterxml.jackson.databind.ObjectMapper();
-        assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("runRole"))
-                .as("no role written where the offer names none")
+        assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("place"))
+                .as("no place written where the offer names none")
                 .isFalse();
-        assertThat(json.readTree(json.writeValueAsString(starts.get(0))).has("place")).isFalse();
         assertThat(json.readTree(json.writeValueAsString(starts.get(1))).get("place").toString())
                 .as("the gate push alone, with its repository")
                 .isEqualTo("{\"gatePush\":{\"repository\":\"docs\",\"name\":\"cart\"}}");
-        assertThat(starts.get(1).runRole())
-                .isEqualTo(
-                        org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.AUTHOR);
+        assertThat(starts.get(1).role().name())
+                .as("the role by its name beside the place")
+                .isEqualTo("author");
         assertThat(json.readTree(json.writeValueAsString(starts.get(2))).get("place").toString())
+                .as("the pull request alone")
                 .isEqualTo("{\"pullRequest\":\"https://github.com/owner/shop/pull/7\"}");
         assertThat(
                         json.readTree(
@@ -112,9 +113,7 @@ class WorkAnswersTest {
                                         new org.fuin.porelo.planner.core.RunPlace(
                                                 null, null, true))))
                 .isEqualTo("{\"ownPullRequest\":true}");
-        assertThat(starts.get(2).runRole())
-                .isEqualTo(
-                        org.fuin.porelo.planner.app.answers.PlanningStartTask.RunRoleEnum.REVIEWER);
+        assertThat(starts.get(2).role().name()).isEqualTo("reviewer");
     }
 
     @Test
@@ -126,25 +125,19 @@ class WorkAnswersTest {
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
                                 "alpha",
                                 List.of("AA1"),
-                                "BUILDER",
+                                rule.role(),
                                 "codex",
                                 "model",
                                 null,
                                 "AGENT",
                                 "Build.")
-                        .at(org.fuin.porelo.planner.core.RunRole.AUTHOR, null);
+                        .again(null);
         final WorkRun.Offer freed =
                 new WorkRun.Offer(
                         "00000000-0000-0000-0000-000000000003",
                         task,
                         new NextStep.Binding(
-                                "ST1",
-                                "alpha",
-                                List.of("AA1"),
-                                "BUILDER",
-                                "Building",
-                                "AGENT",
-                                rule),
+                                "ST1", "alpha", List.of("AA1"), false, "Building", "AGENT", rule),
                         "OFFERED",
                         null,
                         null,
@@ -197,12 +190,13 @@ class WorkAnswersTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Build",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        java.util.Objects.requireNonNull(arguments.role()));
         return new WorkRun.Offer(
                 id,
                 arguments,
                 new NextStep.Binding(
-                        "ST1", "alpha", List.of(), arguments.role(), "Building", "AGENT", rule),
+                        "ST1", "alpha", List.of(), arguments.lead(), "Building", "AGENT", rule),
                 "STARTED",
                 task,
                 "box-" + task,
@@ -239,7 +233,14 @@ class WorkAnswersTest {
             final NextStep.Progress progress, final WorkRun.StartRefusal refusal) {
         final org.fuin.porelo.planner.core.WorkOrder.Task task =
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
-                        "alpha", List.of("AA1"), "MAIN", "codex", "model", null, "AGENT", "Build.");
+                        "alpha",
+                        List.of("AA1"),
+                        Roles.AUTHOR,
+                        "codex",
+                        "model",
+                        null,
+                        "AGENT",
+                        "Build.");
         final WorkRun.Offer offered = started("a", "task", task);
         final WorkRun.Offer refused =
                 new WorkRun.Offer(
@@ -249,7 +250,7 @@ class WorkAnswersTest {
                                 "ST1",
                                 "alpha",
                                 List.of("AA1"),
-                                "MAIN",
+                                true,
                                 "Building",
                                 "AGENT",
                                 offered.binding().rule()),
@@ -321,26 +322,32 @@ class WorkAnswersTest {
     // Harm: a reviewer's card is shown as an author's, or a task shows the place or the held items
     // of another task, so the person reads the wrong run.
     @Test
-    void eachStartedTaskAnswersItsOwnRunRolePlaceAndHeldItems() {
+    void eachStartedTaskAnswersItsOwnRolePlaceAndHeldItems() {
         final org.fuin.porelo.planner.core.WorkOrder.Task base =
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
-                        "alpha", List.of(), "MAIN", "codex", "model", null, "AGENT", "Build.");
+                        "alpha",
+                        List.of(),
+                        Roles.AUTHOR,
+                        "codex",
+                        "model",
+                        null,
+                        "AGENT",
+                        "Build.");
         final WorkRun.Offer author = started("a", "task-author", base);
         final WorkRun.Offer reviewer =
                 started(
                         "b",
                         "task-reviewer",
-                        base.at(
-                                org.fuin.porelo.planner.core.RunRole.REVIEWER,
+                        Roles.as(
+                                base,
+                                Roles.REVIEWER,
                                 new org.fuin.porelo.planner.core.RunPlace(
                                         null, "https://github.com/owner/shop/pull/7", null)));
         final WorkRun.Offer resumed =
                 started(
                         "c",
                         "task-resumed",
-                        base.at(
-                                org.fuin.porelo.planner.core.RunRole.AUTHOR,
-                                org.fuin.porelo.planner.core.RunPlace.gate("docs", "cart")));
+                        base.again(org.fuin.porelo.planner.core.RunPlace.gate("docs", "cart")));
         final TaskHelds helds = new TaskHelds();
         helds.read(
                 "project",
@@ -368,19 +375,19 @@ class WorkAnswersTest {
         assertThat(tasks)
                 .extracting(
                         org.fuin.porelo.planner.app.answers.PlanWorkTask::task,
-                        t -> String.valueOf(t.runRole()),
+                        t -> t.role().name(),
                         t -> String.valueOf(t.place()),
                         org.fuin.porelo.planner.app.answers.PlanWorkTask::held)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("task-author", "null", "null", null),
+                        org.assertj.core.groups.Tuple.tuple("task-author", "author", "null", null),
                         org.assertj.core.groups.Tuple.tuple(
                                 "task-reviewer",
-                                "REVIEWER",
+                                "reviewer",
                                 String.valueOf(WorkAnswers.place(reviewer.arguments().place())),
                                 4),
                         org.assertj.core.groups.Tuple.tuple(
                                 "task-resumed",
-                                "AUTHOR",
+                                "author",
                                 String.valueOf(WorkAnswers.place(resumed.arguments().place())),
                                 null));
         assertThat(tasks.get(1).place().pullRequest())
@@ -598,7 +605,7 @@ class WorkAnswersTest {
                                 "ST1",
                                 "alpha",
                                 List.of("AA1"),
-                                "MAIN",
+                                true,
                                 "Building",
                                 "AGENT",
                                 ended.binding().rule()),
@@ -643,7 +650,7 @@ class WorkAnswersTest {
                                 "ST1",
                                 "alpha",
                                 List.of("AA1", "AA2"),
-                                "MAIN",
+                                true,
                                 "Building",
                                 "AGENT",
                                 ended.binding().rule()),
@@ -742,8 +749,15 @@ class WorkAnswersTest {
         return new WorkRun.Offer(
                 "00000000-0000-0000-0000-000000000002",
                 new org.fuin.porelo.planner.core.WorkOrder.Task(
-                        "alpha", List.of(), "MAIN", "codex", "careful", "max", "AGENT", "Build"),
-                new NextStep.Binding("ST1", "alpha", List.of(), "MAIN", "Building", "AGENT", rule),
+                        "alpha",
+                        List.of(),
+                        rule.role(),
+                        "codex",
+                        "careful",
+                        "max",
+                        "AGENT",
+                        "Build"),
+                new NextStep.Binding("ST1", "alpha", List.of(), true, "Building", "AGENT", rule),
                 status,
                 "task",
                 "box",
@@ -798,7 +812,8 @@ class WorkAnswersTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Build {story} {issues}",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        Roles.forRule(null, null));
         return new Board(
                 new Revision("r1"),
                 new Workflow(List.of("Backlog", "Building", "Review"), List.of(), List.of()),
@@ -827,7 +842,7 @@ class WorkAnswersTest {
         final org.fuin.porelo.planner.core.WorkRun.Offer author =
                 new org.fuin.porelo.planner.core.WorkRun.Offer(
                         "00000000-0000-0000-0000-000000000002",
-                        rework.arguments().at(null, null),
+                        rework.arguments().standing(false, false, null),
                         rework.binding(),
                         "ENDED",
                         "task",
@@ -841,7 +856,7 @@ class WorkAnswersTest {
                         null);
         final org.fuin.porelo.planner.core.WorkRun.Offer order =
                 new org.fuin.porelo.planner.core.WorkRun.Offer(
-                        "00000000-0000-0000-0000-000000000005",
+                        "00000000-0000-0000-0000-000000000006",
                         rework.arguments(),
                         rework.binding(),
                         "OFFERED",
@@ -877,8 +892,241 @@ class WorkAnswersTest {
         assertThat(starts.stream().map(s -> s.offer()).toList())
                 .as("the rework alone")
                 .containsExactly(rework.id());
-        assertThat(String.valueOf(starts.getFirst().runRole()) + " " + starts.getFirst().place())
-                .as("with its role and place")
-                .contains("AUTHOR", "task");
+        assertThat(
+                        starts.getFirst().role().name()
+                                + " "
+                                + starts.getFirst().task()
+                                + " "
+                                + starts.getFirst().place())
+                .as("with its role, the task it runs again and its place")
+                .contains("author", "task");
+    }
+
+    /** The served start orders of the tasks given, one offer each, in their order. */
+    private static List<com.fasterxml.jackson.databind.JsonNode> served(
+            final Map<String, org.fuin.porelo.planner.core.IssuePlace> places,
+            final org.fuin.porelo.planner.core.WorkOrder.Task... tasks)
+            throws Exception {
+        final List<WorkRun.Offered> offers = new java.util.ArrayList<>();
+        for (final org.fuin.porelo.planner.core.WorkOrder.Task task : tasks) {
+            offers.add(new WorkRun.Offered("o-" + offers.size(), task));
+        }
+        final com.fasterxml.jackson.databind.ObjectMapper json =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        final List<com.fasterxml.jackson.databind.JsonNode> served = new java.util.ArrayList<>();
+        for (final var start : WorkAnswers.starts(offers, places)) {
+            served.add(json.readTree(json.writeValueAsString(start)));
+        }
+        return served;
+    }
+
+    private static org.fuin.porelo.planner.core.WorkOrder.Task task(
+            final org.fuin.porelo.planner.store.Role role, final String mode) {
+        return new org.fuin.porelo.planner.core.WorkOrder.Task(
+                "alpha", List.of("AA1"), role, "codex", "model", null, mode, "Work.");
+    }
+
+    private static final org.fuin.porelo.planner.core.RunPlace PULL_REQUEST =
+            new org.fuin.porelo.planner.core.RunPlace(
+                    null, "https://github.com/owner/shop/pull/7", null);
+
+    // Harm: an offer or a task of a role the project adds is refused, or served without what its
+    // task may do, so the person starts it blind or not at all.
+    @Test
+    void anOfferAndATaskOfAProjectsOwnRoleAreServedWithItsNameAndParts() throws Exception {
+        final org.fuin.porelo.planner.core.WorkProposal proposal =
+                new org.fuin.porelo.planner.core.WorkProposal(
+                        List.of("AGENT"),
+                        List.of(
+                                new org.fuin.porelo.planner.core.WorkProposal.Repository(
+                                        "alpha",
+                                        List.of("AA1"),
+                                        new org.fuin.porelo.planner.core.WorkProposal.Main(
+                                                "main", Roles.TESTER, "codex", "model", "Test."),
+                                        List.of())),
+                        "START",
+                        "",
+                        1,
+                        List.of(),
+                        new Revision("r1"),
+                        List.of());
+        final com.fasterxml.jackson.databind.ObjectMapper json =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        final String tester =
+                "{\"name\":\"tester\",\"endKind\":\"REPORTS_FINDINGS\",\"workspace\":\"foreign\","
+                        + "\"readLanded\":false,\"projectServices\":false,\"writeAs\":\"review\","
+                        + "\"rights\":[\"openThreads\",\"report\"]}";
+
+        assertThat(
+                        json.writeValueAsString(
+                                WorkAnswers.proposal(proposal)
+                                        .repositories()
+                                        .getFirst()
+                                        .main()
+                                        .role()))
+                .as("the offer's role by its name and parts")
+                .isEqualTo(tester);
+        final WorkRun.Offer started =
+                started(
+                        "a",
+                        "task-tester",
+                        Roles.as(task(Roles.TESTER, "AGENT"), Roles.TESTER, PULL_REQUEST));
+        assertThat(
+                        json.writeValueAsString(
+                                WorkAnswers.knownWork(runOf(started), issue -> false)
+                                        .tasks()
+                                        .getFirst()
+                                        .role()))
+                .as("the started task's role alike")
+                .isEqualTo(tester);
+    }
+
+    // Harm: a stage's task is started without the rights, the landed work or the services its
+    // role names, so Porelo's defaults decide what it may do.
+    @Test
+    void aStartOrderOfARoleThatHandsBackAResultNamesEveryMemberStartTakesFromIt() throws Exception {
+        final org.fuin.porelo.planner.core.WorkOrder.Task stage =
+                new org.fuin.porelo.planner.core.WorkOrder.Task(
+                        "alpha",
+                        List.of("AA1"),
+                        Roles.ANALYST,
+                        "codex",
+                        "model",
+                        null,
+                        "UNATTENDED",
+                        "Analyze.",
+                        List.of(),
+                        "",
+                        null,
+                        "analysis.json",
+                        List.of(),
+                        null);
+
+        final com.fasterxml.jackson.databind.JsonNode order = served(Map.of(), stage).getFirst();
+
+        final Set<String> members = new java.util.TreeSet<>();
+        order.fieldNames().forEachRemaining(members::add);
+        assertThat(members)
+                .as("Start's members from the role, and no other")
+                .containsExactlyInAnyOrder(
+                        "offer",
+                        "repository",
+                        "issues",
+                        "kind",
+                        "role",
+                        "agent",
+                        "model",
+                        "mode",
+                        "prompt",
+                        "result",
+                        "readOnly",
+                        "rights",
+                        "readLanded",
+                        "projectServices");
+        assertThat(
+                        List.of(
+                                order.get("kind").asText(),
+                                order.get("rights").toString(),
+                                order.get("readLanded").toString(),
+                                order.get("projectServices").asBoolean(),
+                                order.get("readOnly").asBoolean()))
+                .containsExactly("work", "[\"report\"]", "[]", true, true);
+    }
+
+    // Harm: a role holding no right is started with Porelo's default rights, an account to write
+    // as reaches Start where it refuses one, or a task at another task's work starts at its own.
+    @Test
+    void rightsAreAlwaysNamedWriteAsOnlyAtAPullRequestAndAnotherTasksWorkOnlyAtItsPlace()
+            throws Exception {
+        final org.fuin.porelo.planner.store.Role holdsNothing =
+                new org.fuin.porelo.planner.store.Role(
+                        "watcher",
+                        org.fuin.porelo.planner.store.Role.End.REPORTS_FINDINGS,
+                        org.fuin.porelo.planner.store.Role.Workspace.NONE,
+                        false,
+                        false,
+                        org.fuin.porelo.planner.store.Role.WriteAs.REVIEW,
+                        List.of());
+        final org.fuin.porelo.planner.core.WorkOrder.Task author = task(Roles.AUTHOR, "AGENT");
+
+        final List<com.fasterxml.jackson.databind.JsonNode> orders =
+                served(
+                        Map.of(
+                                "AA1",
+                                org.fuin.porelo.planner.core.IssuePlace.atGate(
+                                        "alpha-author-aa1",
+                                        "00000000-0000-0000-0000-000000000009")),
+                        task(holdsNothing, "UNATTENDED"),
+                        author.again(
+                                org.fuin.porelo.planner.core.RunPlace.gate(
+                                        null, "alpha-author-aa1")),
+                        author.again(org.fuin.porelo.planner.core.RunPlace.own()),
+                        Roles.as(author, Roles.REVIEWER, PULL_REQUEST),
+                        author.again(null));
+
+        assertThat(orders.getFirst().get("rights").toString())
+                .as("a role holding no right")
+                .isEqualTo("[]");
+        assertThat(orders.getFirst().path("noGate").asBoolean()).as("and no workspace").isTrue();
+        assertThat(orders)
+                .as("writeAs, the task run again and a name of the window's own, by place")
+                .extracting(
+                        order -> order.path("writeAs").asText("absent"),
+                        order -> order.path("task").asText("absent"),
+                        order -> order.path("ownTask").asText("absent"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("absent", "absent", "absent"),
+                        org.assertj.core.groups.Tuple.tuple("absent", "alpha-author-aa1", "absent"),
+                        org.assertj.core.groups.Tuple.tuple("author", "alpha-author-aa1", "absent"),
+                        org.assertj.core.groups.Tuple.tuple("review", "absent", "true"),
+                        org.assertj.core.groups.Tuple.tuple("absent", "absent", "true"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> served(Map.of(), Roles.as(author, Roles.REVIEWER, null)))
+                .as("another task's work at no place is never served")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("o-0");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () ->
+                                served(
+                                        Map.of(),
+                                        author.again(org.fuin.porelo.planner.core.RunPlace.own())))
+                .as("a rework at its own pull request whose kept place is unknown")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("o-0");
+    }
+
+    // Harm: the window opens its terminal on a reading or a helper, on two tasks, or on one the
+    // person does not work with.
+    @Test
+    void theTerminalOpensOnTheFirstAgentTaskThatPushesWorkAlone() throws Exception {
+        final List<com.fasterxml.jackson.databind.JsonNode> orders =
+                served(
+                        Map.of(),
+                        Roles.as(task(Roles.AUTHOR, "AGENT"), Roles.REVIEWER, PULL_REQUEST),
+                        task(Roles.AUTHOR, "UNATTENDED"),
+                        task(Roles.AUTHOR, "AGENT"),
+                        task(Roles.AUTHOR, "AGENT"));
+
+        assertThat(orders)
+                .extracting(order -> order.path("opensTerminal").asText("absent"))
+                .containsExactly("absent", "absent", "true", "absent");
+        assertThat(
+                        served(
+                                        Map.of(),
+                                        task(Roles.READER, "AGENT"),
+                                        task(Roles.AUTHOR, "UNATTENDED"))
+                                .stream()
+                                .filter(order -> order.has("opensTerminal"))
+                                .count())
+                .as("none where none qualifies")
+                .isZero();
+        assertThat(
+                        WorkAnswers.discussion(
+                                        "o-1",
+                                        new org.fuin.porelo.planner.core.IdeaDiscussion(
+                                                "codex", "model", null, "AGENT", "Discuss.", ""))
+                                .opensTerminal())
+                .as("a discussion's own task")
+                .isTrue();
     }
 }

@@ -3,10 +3,13 @@ package org.fuin.porelo.planner.app;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.fuin.porelo.planner.app.answers.Finding;
 import org.fuin.porelo.planner.app.answers.GivenFile;
 import org.fuin.porelo.planner.app.answers.IssueReadingRounds;
@@ -22,18 +25,21 @@ import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.StoryWorkOrder;
 import org.fuin.porelo.planner.app.answers.StoryWorkProposal;
 import org.fuin.porelo.planner.app.answers.TaskEnded;
+import org.fuin.porelo.planner.app.answers.TaskRole;
 import org.fuin.porelo.planner.app.answers.TrackedWork;
+import org.fuin.porelo.planner.app.answers.WriteAs;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
+import org.fuin.porelo.planner.core.IssuePlace;
 import org.fuin.porelo.planner.core.NextStep;
 import org.fuin.porelo.planner.core.OpenWork;
 import org.fuin.porelo.planner.core.RunPlace;
-import org.fuin.porelo.planner.core.RunRole;
 import org.fuin.porelo.planner.core.WorkEnds;
 import org.fuin.porelo.planner.core.WorkOrder;
 import org.fuin.porelo.planner.core.WorkProposal;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Role;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,12 +50,21 @@ public final class WorkAnswers {
 
     private WorkAnswers() {}
 
+    /**
+     * Answers the task that discusses an idea with the person: no role, every repository of the
+     * project read only, the project's services, and only its report to hand back; its own task
+     * opens the window's terminal.
+     */
     static PlanningStartTask discussion(final String offer, final IdeaDiscussion discussion) {
         return new PlanningStartTask(
                 offer,
                 null,
                 List.of(),
-                PlanningStartTask.RoleEnum.DISCUSSION,
+                PlanningStartTask.KindEnum.DISCUSSION,
+                null,
+                null,
+                null,
+                true,
                 discussion.agent(),
                 discussion.model(),
                 discussion.effort(),
@@ -58,10 +73,41 @@ public final class WorkAnswers {
                 discussion.prompt(),
                 null,
                 null,
+                true,
+                true,
+                null,
+                rights(List.of(Role.Right.REPORT)),
                 List.of(),
+                true,
                 null,
                 null,
                 null);
+    }
+
+    /**
+     * Answers a role as the description names it: its name, how its task ends and its parts, each
+     * in Porelo's words. Every answer that carries a role maps it here.
+     *
+     * @param role the role, as the project's work rules define it
+     * @return the role's answer
+     */
+    static TaskRole role(final Role role) {
+        return new TaskRole(
+                role.name(),
+                TaskRole.EndKindEnum.fromValue(role.end().name()),
+                TaskRole.WorkspaceEnum.fromValue(role.workspace().word()),
+                role.readLanded(),
+                role.projectServices(),
+                WriteAs.fromValue(role.writeAs().word()),
+                rights(role.rights()));
+    }
+
+    /** Answers rights in Porelo's words, in the order given. */
+    private static Set<org.fuin.porelo.planner.app.answers.Right> rights(
+            final List<Role.Right> rights) {
+        return rights.stream()
+                .map(right -> org.fuin.porelo.planner.app.answers.Right.fromValue(right.word()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     static StoryWorkProposal proposal(final WorkProposal proposal) {
@@ -112,50 +158,143 @@ public final class WorkAnswers {
                         correction.kind(), correction.choices());
     }
 
+    /** Answers a person's order; its tasks are new, so none runs a kept task again. */
     static StoryWorkOrder order(final WorkRun.Order order) {
-        return new StoryWorkOrder(order.revision(), starts(order.tasks()));
+        return new StoryWorkOrder(order.revision(), starts(order.tasks(), Map.of()));
     }
 
+    /**
+     * Answers offers as Start takes them, for a caller that holds no run's kept places: a rework at
+     * its task's own pull request, which only the kept place names, is refused.
+     *
+     * @param tasks the offers
+     * @return their start orders
+     */
     static List<PlanningStartTask> starts(final List<WorkRun.Offered> tasks) {
+        return starts(tasks, Map.of());
+    }
+
+    /**
+     * Answers offers as Start takes them, each with the members of its role and place and nothing
+     * else, the first that qualifies opening the window's terminal.
+     *
+     * @param tasks the offers
+     * @param places the run's kept places, by issue, which name the task a rework runs again
+     * @return their start orders
+     * @throws IllegalStateException for an offer Start must not be handed: one at another task's
+     *     work without a place, a rework whose kept place is not known, or one without a role
+     */
+    static List<PlanningStartTask> starts(
+            final List<WorkRun.Offered> tasks, final Map<String, IssuePlace> places) {
+        final @Nullable String terminal =
+                tasks.stream()
+                        .filter(offer -> opensTerminal(offer.task()))
+                        .map(WorkRun.Offered::offer)
+                        .findFirst()
+                        .orElse(null);
         return tasks.stream()
-                .map(
-                        offer -> {
-                            final WorkOrder.Task task = offer.task();
-                            final WorkOrder.Tracked work = task.work();
-                            final RunRole runRole = task.runRole();
-                            final RunPlace place = task.place();
-                            return new PlanningStartTask(
-                                    offer.offer(),
-                                    task.repository(),
-                                    task.issues(),
-                                    PlanningStartTask.RoleEnum.fromValue(task.role()),
-                                    task.agent(),
-                                    task.model(),
-                                    task.effort(),
-                                    said(task.basis()),
-                                    task.mode(),
-                                    task.prompt(),
-                                    task.result(),
-                                    task.given().isEmpty()
-                                            ? null
-                                            : task.given().stream()
-                                                    .map(
-                                                            given ->
-                                                                    new GivenFile(
-                                                                            given.name(),
-                                                                            given.text()))
-                                                    .toList(),
-                                    task.reads(),
-                                    work == null
-                                            ? null
-                                            : new TrackedWork(work.issue(), work.phase()),
-                                    runRole == null
-                                            ? null
-                                            : PlanningStartTask.RunRoleEnum.fromValue(
-                                                    runRole.name()),
-                                    place == null ? null : place(place));
-                        })
+                .map(offer -> start(offer, places, offer.offer().equals(terminal)))
                 .toList();
+    }
+
+    /**
+     * Whether the window opens its terminal on a task: an agent's task whose role pushes work, or a
+     * discussion's own.
+     */
+    private static boolean opensTerminal(final WorkOrder.Task task) {
+        final Role role = task.role();
+        return role == null || task.mode().equals("AGENT") && role.pushesWork();
+    }
+
+    private static PlanningStartTask start(
+            final WorkRun.Offered offer,
+            final Map<String, IssuePlace> places,
+            final boolean terminal) {
+        final WorkOrder.Task task = offer.task();
+        final Role role = task.role();
+        if (role == null) {
+            throw new IllegalStateException("The offer " + offer.offer() + " names no role");
+        }
+        final RunPlace place = task.place();
+        // Start would take a task at another task's work without its place as one at its own.
+        if (role.readsAnothersWork() && place == null) {
+            throw new IllegalStateException(
+                    "The offer " + offer.offer() + " reads another task's work at no place");
+        }
+        final WorkOrder.Tracked work = task.work();
+        final Role.Workspace workspace = role.workspace();
+        return new PlanningStartTask(
+                offer.offer(),
+                task.repository(),
+                task.issues(),
+                PlanningStartTask.KindEnum.WORK,
+                role(role),
+                rerun(offer, places),
+                ownTask(task),
+                terminal ? true : null,
+                task.agent(),
+                task.model(),
+                task.effort(),
+                said(task.basis()),
+                task.mode(),
+                task.prompt(),
+                task.result(),
+                task.given().isEmpty()
+                        ? null
+                        : task.given().stream()
+                                .map(given -> new GivenFile(given.name(), given.text()))
+                                .toList(),
+                workspace == Role.Workspace.READ_ONLY
+                                || workspace == Role.Workspace.ALL_REPOSITORIES
+                        ? true
+                        : null,
+                workspace == Role.Workspace.ALL_REPOSITORIES ? true : null,
+                workspace == Role.Workspace.NONE ? true : null,
+                rights(role.rights()),
+                task.readLanded(),
+                role.projectServices(),
+                // Start refuses an account to write as anywhere but at a pull request.
+                place != null && (place.pullRequest() != null || place.ownPullRequest() != null)
+                        ? WriteAs.fromValue(role.writeAs().word())
+                        : null,
+                work == null ? null : new TrackedWork(work.issue(), work.phase()),
+                place == null ? null : place(place));
+    }
+
+    /**
+     * Whether Start is asked under a task name of the window's own choosing: for a task at another
+     * task's work, never under that task's name, and for the building work of an issue the run's
+     * start held back, which has no task of its own yet; null, absent, for every other.
+     */
+    private static @Nullable Boolean ownTask(final WorkOrder.Task task) {
+        return task.atAnothersWork() || task.again() && task.place() == null ? true : null;
+    }
+
+    /**
+     * The task a rework runs again: an author sent back to its own work at its task's gate push,
+     * which names it, or at its task's own pull request, whose kept place names it; null for a new
+     * task and for one at another task's work.
+     */
+    private static @Nullable String rerun(
+            final WorkRun.Offered offer, final Map<String, IssuePlace> places) {
+        final WorkOrder.Task task = offer.task();
+        final RunPlace place = task.place();
+        if (!task.again() || place == null || task.atAnothersWork()) {
+            return null;
+        }
+        final RunPlace.GatePush gate = place.gatePush();
+        if (gate != null) {
+            return gate.name();
+        }
+        if (place.ownPullRequest() == null) {
+            return null;
+        }
+        final IssuePlace kept = places.get(task.issues().getFirst());
+        if (kept == null) {
+            throw new IllegalStateException(
+                    "The rework offer " + offer.offer() + " has no kept place to name its task");
+        }
+        return kept.task();
     }
 
     /** Answers a run's place as Start is handed it, its one member present and no other. */
@@ -228,15 +367,16 @@ public final class WorkAnswers {
                                                 // The effort its order said it uses, never the
                                                 // offer's.
                                                 o.arguments().used(),
-                                                PlanWorkTask.RoleEnum.fromValue(
-                                                        o.arguments().role()),
+                                                // The role the task was started with, which
+                                                // its offer's rule bound.
+                                                role(
+                                                        Objects.requireNonNull(
+                                                                o.arguments().role(),
+                                                                "a run's task has a role")),
+                                                o.arguments().readLanded(),
                                                 String.valueOf(o.since()),
                                                 WorkRun.atWork(run, o, board),
                                                 ended(o.ended()),
-                                                o.arguments().runRole() == null
-                                                        ? null
-                                                        : PlanWorkTask.RunRoleEnum.fromValue(
-                                                                o.arguments().runRole().name()),
                                                 o.arguments().place() == null
                                                         ? null
                                                         : place(o.arguments().place()),
@@ -245,9 +385,15 @@ public final class WorkAnswers {
         return new PlanWork(
                 run.id(),
                 tasks,
-                tasks.stream()
-                        .filter(t -> t.role() == PlanWorkTask.RoleEnum.MAIN && t.atWork())
-                        .map(PlanWorkTask::task)
+                // The task that leads its repository's building work and is at work coordinates.
+                run.offers().stream()
+                        .filter(
+                                o ->
+                                        o.task() != null
+                                                && o.arguments().lead()
+                                                && o.binding().role().pushesWork()
+                                                && WorkRun.atWork(run, o, board))
+                        .map(o -> String.valueOf(o.task()))
                         .findFirst()
                         .orElse(null),
                 run.since(),
@@ -277,7 +423,7 @@ public final class WorkAnswers {
                                             person ? null : startRefusal(run, entry.getKey(), p));
                                 })
                         .toList(),
-                starts(starts));
+                starts(starts, run.places()));
     }
 
     /**
@@ -489,7 +635,7 @@ public final class WorkAnswers {
                 repository.issues(),
                 new PlanWorker(
                         main.name(),
-                        PlanWorker.RoleEnum.fromValue(main.role()),
+                        role(main.role()),
                         main.agent(),
                         main.model(),
                         main.brief(),

@@ -346,7 +346,8 @@ class StageResultHttpTest {
                             "Analyze {story}: {issues}; {tasks}",
                             Map.of("codex", "model"),
                             Map.of(),
-                            WorkRule.Result.ANALYSIS),
+                            WorkRule.Result.ANALYSIS,
+                            Roles.forRule(null, WorkRule.Result.ANALYSIS)),
                     List.of("Backlog", "In analysis", "Analyzed", "Finished"),
                     "Backlog",
                     List.of("AA1"));
@@ -384,7 +385,8 @@ class StageResultHttpTest {
                             "Check {story}: {issues}; {tasks}",
                             Map.of("codex", "model"),
                             Map.of(),
-                            WorkRule.Result.READINESS),
+                            WorkRule.Result.READINESS,
+                            Roles.forRule(null, WorkRule.Result.READINESS)),
                     List.of("Estimated", READINESS, "Backlog", "Finished"),
                     "Estimated",
                     List.of("AA1", "AA2"));

@@ -99,6 +99,8 @@ final class FixtureProject implements AutoCloseable {
                         """,
                 "stories/work.yml",
                 """
+                        roles:
+                          author: {end: push, workspace: own, rights: [push, reply]}
                         work:
                           Implementing:
                             from: [Backlog]
@@ -107,6 +109,7 @@ final class FixtureProject implements AutoCloseable {
                             modes: [UNATTENDED]
                             order: "Build {issues}."
                             models: {claude: claude-opus-5-5}
+                            role: author
                         """,
                 "stories/README.md",
                 "# Stories\n",

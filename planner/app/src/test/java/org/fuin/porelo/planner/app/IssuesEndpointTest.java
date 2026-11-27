@@ -79,7 +79,8 @@ class IssuesEndpointTest {
                                         WorkRule.Per.REPOSITORY,
                                         List.of("build"),
                                         "Build",
-                                        Map.of("agent", "model"))),
+                                        Map.of("agent", "model"),
+                                        Roles.forRule(null, null))),
                         List.of()),
                 org.fuin.porelo.planner.store.ProjectRepository.named(
                         List.of("porelo-store", "porelo-other")));

@@ -22,6 +22,7 @@ import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Ids;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TopicLabels;
 import org.fuin.porelo.planner.store.Version;
@@ -94,7 +95,8 @@ public final class WorkRequests {
      * The main as the window sends it back, with the effort chosen, null for none.
      *
      * @param name its name
-     * @param role its role
+     * @param role its role, the work rules' role of the name sent back; the rest of the role sent
+     *     back is the planner's own and is never taken
      * @param agent its agent
      * @param model its model
      * @param brief its brief
@@ -104,7 +106,7 @@ public final class WorkRequests {
      */
     public record Main(
             String name,
-            String role,
+            Role role,
             String agent,
             String model,
             String brief,
@@ -126,7 +128,7 @@ public final class WorkRequests {
      * @param id its id
      * @param issue its issue
      * @param name its name
-     * @param kind its role
+     * @param kind its kind, the planner's word for a helper
      * @param agent its agent
      * @param model its model
      * @param workingState its working state
@@ -977,7 +979,21 @@ public final class WorkRequests {
         return text(body, "to");
     }
 
-    static Request request(final JsonNode body, final String from, final String to) {
+    /**
+     * Reads a start's body, the role of each repository's main taken from the work rules by the
+     * name sent back.
+     *
+     * @param body the body
+     * @param from the story's state
+     * @param to the state the work goes toward
+     * @param roles the roles the project's work rules define, by name
+     * @return the checked request
+     */
+    static Request request(
+            final JsonNode body,
+            final String from,
+            final String to,
+            final Map<String, Role> roles) {
         fields(
                 body,
                 Set.of(
@@ -997,7 +1013,7 @@ public final class WorkRequests {
         if (body.has("repositories")) {
             repositories = new ArrayList<>();
             for (final JsonNode repository : array(body, "repositories")) {
-                repositories.add(repository(repository));
+                repositories.add(repository(repository, roles));
             }
         } else {
             repositories = null;
@@ -1151,7 +1167,7 @@ public final class WorkRequests {
                 request.issues());
     }
 
-    private static Repository repository(final JsonNode node) {
+    private static Repository repository(final JsonNode node, final Map<String, Role> roles) {
         fields(node, Set.of("repository", "issues", "main", "subAgents"));
         final List<String> issues = new ArrayList<>();
         for (final JsonNode issue : array(node, "issues")) {
@@ -1167,7 +1183,7 @@ public final class WorkRequests {
         final Main worker =
                 new Main(
                         text(main, "name"),
-                        text(main, "role"),
+                        role(main, roles),
                         text(main, "agent"),
                         text(main, "model"),
                         text(main, "brief"),
@@ -1237,6 +1253,22 @@ public final class WorkRequests {
                                                 sub.effort(),
                                                 ""))
                         .toList());
+    }
+
+    /**
+     * The role of a main sent back: an object whose string name the work rules define, which alone
+     * is read; a changed role is the core's to refuse against the one offered.
+     */
+    private static Role role(final JsonNode main, final Map<String, Role> roles) {
+        final JsonNode role = main.path("role");
+        if (!role.isObject()) {
+            throw WorkRefusal.invalidSettings();
+        }
+        final Role defined = roles.get(text(role, "name"));
+        if (defined == null) {
+            throw WorkRefusal.invalidSettings();
+        }
+        return defined;
     }
 
     /** An effort sent back: absent or null for none, else a sound name. */

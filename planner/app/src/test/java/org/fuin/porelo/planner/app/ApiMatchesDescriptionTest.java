@@ -118,6 +118,7 @@ class ApiMatchesDescriptionTest {
                             "PlanRepositoryWork",
                             org.fuin.porelo.planner.app.answers.PlanRepositoryWork.class),
                     Map.entry("PlanWorker", org.fuin.porelo.planner.app.answers.PlanWorker.class),
+                    Map.entry("TaskRole", org.fuin.porelo.planner.app.answers.TaskRole.class),
                     Map.entry("PlanOffer", org.fuin.porelo.planner.app.answers.PlanOffer.class),
                     Map.entry(
                             "PlanAssignment",
@@ -283,6 +284,25 @@ class ApiMatchesDescriptionTest {
                         "POST /projects/{project}/issues/{issue}/comments",
                         "POST /projects/{project}/items")
                 .isEqualTo(served);
+    }
+
+    @Test
+    void aStartOrderNamesNoMemberForAPartThePlannerNeverHandsOnAndTakesNoOther() {
+        // Harm: a member the window would hand Start unread, such as credentials, a clearance or
+        // an upstream, or a role word Start no longer takes, reaches Porelo with the order.
+        final JsonNode order = description.at("/components/schemas/PlanningStartTask");
+        final Set<String> members = new TreeSet<>();
+        order.path("properties").fieldNames().forEachRemaining(members::add);
+        assertThat(members)
+                .as("the start order's members")
+                .isNotEmpty()
+                .doesNotContain("credentials", "clearance", "upstream", "runRole", "reads");
+        assertThat(order.path("additionalProperties").isBoolean())
+                .as("the start order says whether it takes other members")
+                .isTrue();
+        assertThat(order.path("additionalProperties").asBoolean())
+                .as("the start order takes no other member")
+                .isFalse();
     }
 
     @Test
@@ -820,6 +840,13 @@ class ApiMatchesDescriptionTest {
             assertThat(field.path("$ref").asText())
                     .as("%s refers to the versions seen", name)
                     .isEqualTo("#/components/schemas/Seen");
+            return;
+        }
+        if (raw == org.fuin.porelo.planner.store.Role.class) {
+            // A role sent back is read by its name alone and taken from the work rules.
+            assertThat(field.at("/allOf/0/$ref").asText())
+                    .as("%s refers to the role's schema", name)
+                    .isEqualTo("#/components/schemas/TaskRole");
             return;
         }
         if (raw.isRecord()) {

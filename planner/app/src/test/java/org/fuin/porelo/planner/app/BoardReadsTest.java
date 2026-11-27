@@ -74,7 +74,8 @@ class BoardReadsTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("UNATTENDED"),
                         "Build {issues}.",
-                        Map.of("claude", "claude-opus-5-5")));
+                        Map.of("claude", "claude-opus-5-5"),
+                        Roles.forRule(null, null)));
         rules.put(
                 "Finished",
                 new WorkRule(
@@ -85,7 +86,8 @@ class BoardReadsTest {
                         WorkRule.Per.STORY,
                         List.of("AGENT"),
                         "Close it.",
-                        Map.of("claude", "claude-opus-5-5")));
+                        Map.of("claude", "claude-opus-5-5"),
+                        Roles.forRule(null, null)));
         return new Board(
                 new Revision("porelo-store@c1"),
                 new Workflow(
