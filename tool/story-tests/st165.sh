@@ -85,6 +85,8 @@ EOF
     st_copy "$OWN" issues/workflow.yml planner/app/src/test/resources/work/porelo-sample/issues/workflow.yml
     printf "# Issues\n\nThe project's own issues.\n" | st_write "$OWN" issues/README.md
     st_write "$OWN" stories/work.yml <<'EOF'
+roles:
+  author: {end: push, workspace: own, rights: [push, reply]}
 work:
   Implementing:
     from: [Backlog]
@@ -93,6 +95,7 @@ work:
     modes: [UNATTENDED]
     order: "Build {issues}."
     models: {claude: claude-opus-5-5}
+    role: author
 EOF
     printf '# Stories\n' | st_write "$OWN" stories/README.md
     story ST1 "A Story Set Right" Backlog AB01 AB02

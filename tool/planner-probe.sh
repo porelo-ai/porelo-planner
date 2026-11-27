@@ -259,7 +259,8 @@ work)
         elif (.work.tasks | any(.atWork)) then "started"
         elif (.work.tasks | all(.ended != null)) then "ended"
         else "unclear" end' <<<"$reply")
-    jq -r '.work.tasks[]? | "  task \(.task) \(.role) \(.repository) \(.state)->\(.done) \(.agent)/\(.model) atWork=\(.atWork) finished=\(.ended.finished // "-") unpushed=\(.ended.unpushed // "-")"' <<<"$reply"
+    # A task is shown by its role's name and the parts it was started with, never by a role word of Porelo's.
+    jq -r '.work.tasks[]? | "  task \(.task) role=\(.role.name) end=\(.role.endKind) workspace=\(.role.workspace) rights=\(.role.rights | join(",")) writeAs=\(.role.writeAs) services=\(.role.projectServices) readLanded=\(.readLanded | join(",")) place=\(.place // "-" | tostring) \(.repository) \(.state)->\(.done) \(.agent)/\(.model) atWork=\(.atWork) finished=\(.ended.finished // "-") unpushed=\(.ended.unpushed // "-")"' <<<"$reply"
     [[ $got == "$want" ]] || fail "work $1" "$want" "$got"
     pass "$1's run is $want"
     ;;
