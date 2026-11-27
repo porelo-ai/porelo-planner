@@ -3269,11 +3269,17 @@ components:
         gone:
           type: boolean
         issue:
-          $ref: '#/components/schemas/Issue'
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          allOf:
+            - $ref: '#/components/schemas/Issue'
         story:
-          $ref: '#/components/schemas/Story'
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          allOf:
+            - $ref: '#/components/schemas/Story'
         unlisted:
-          $ref: '#/components/schemas/UnlistedIssue'
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          allOf:
+            - $ref: '#/components/schemas/UnlistedIssue'
 
     Level:
       type: object
@@ -6412,20 +6418,28 @@ components:
       additionalProperties: false
       properties:
         covers:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         whyThisSize:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         whatMustBeTrue:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         plan:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         acceptance:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         openQuestions:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         toBeChecked:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
         findings:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           type: string
     IssueParts:
       description: One issue with its fields and its text by parts.
@@ -6463,9 +6477,11 @@ components:
             - $ref: '#/components/schemas/TextParts'
             - type: 'null'
         text:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: The whole text, given only when its parts are null.
           type: string
         fault:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: The first thing to repair, given only when the parts are null.
           type: string
     Breaches:
@@ -6712,18 +6728,24 @@ components:
           description: The item's id; for a new issue, its id when it stands, otherwise null.
           type: [string, 'null']
         key:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: A new issue's key, as sent.
-          $ref: '#/components/schemas/ItemKey'
+          allOf:
+            - $ref: '#/components/schemas/ItemKey'
         outcome:
           type: string
           enum: [SAVED, UNCHANGED, REFUSED]
         state:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: A moved issue's state after the batch.
           type: string
         raised:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: For a story's priority, the issues raised with it.
           type: array
           items:
             $ref: '#/components/schemas/IssueId'
         refusal:
-          $ref: '#/components/schemas/Problem'
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          allOf:
+            - $ref: '#/components/schemas/Problem'
