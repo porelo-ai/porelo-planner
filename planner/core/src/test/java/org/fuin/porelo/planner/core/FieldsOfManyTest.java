@@ -219,14 +219,66 @@ class FieldsOfManyTest {
                 .as("the refusal of the breach")
                 .isEqualTo("EditNotAllowed");
         assertThat(judged.items().getLast().raised())
-                .as("the issue the call names is never raised; the one it does not name is")
-                .containsExactly("PL3");
+                .as("the refused issue and the one the call does not name are raised")
+                .containsExactly("PL1", "PL3");
         assertThat(judged.steps())
                 .as(
                         "the story, the raised issue and the issue the call set, nothing for the"
                                 + " refused one")
                 .extracting(FieldsOfMany.Step::targets)
-                .containsExactly(Set.of("ST1"), Set.of("PL2"), Set.of("PL3"));
+                .containsExactly(Set.of("ST1"), Set.of("PL2"), Set.of("PL1"), Set.of("PL3"));
+    }
+
+    @Test
+    void aStoryLoweredBesideAHigherPriorityRefusedForItsIssueRaisesThatIssueAndNamesIt() {
+        // Harm: a story saved below an issue whose sent priority was refused, with no word of it.
+        final FieldsOfMany.Judged judged =
+                judge(
+                        board(List.of(story("ST1", "Medium", "PL1")), issue("PL1", "Medium")),
+                        List.of(priority("PL1", "High")),
+                        List.of(new FieldsOfMany.StoryAsk("ST1", "Low")));
+
+        assertThat(judged.items())
+                .as("the sent priority is refused for the issue, the story is saved")
+                .extracting(FieldsOfMany.Item::item, FieldsOfMany.Item::outcome)
+                .containsExactly(
+                        tuple("PL1", FieldsOfMany.Outcome.REFUSED),
+                        tuple("ST1", FieldsOfMany.Outcome.SAVED));
+        assertThat(judged.items().getLast().raised())
+                .as("the issue is raised by the rule and named")
+                .containsExactly("PL1");
+        assertThat(judged.steps())
+                .as("the story's priority, then the issue set to it")
+                .containsExactly(
+                        new FieldsOfMany.Priority("ST1", "Low"),
+                        new FieldsOfMany.SetIssue(
+                                "PL1",
+                                new Fields(
+                                        Set.of(Fields.Field.PRIORITY), null, null, "Low", null)));
+    }
+
+    @Test
+    void aStoryLoweredBesideAJoinOfAHigherIssueSavesNoBreachUnnamed() {
+        // Harm: a story saved at Low over an issue at High that joined it in the same call.
+        final FieldsOfMany.Judged judged =
+                judge(
+                        board(
+                                List.of(story("ST1", "Medium", "PL1"), story("ST2", "Low", "PL2")),
+                                issue("PL1", "Low"),
+                                issue("PL2", "High")),
+                        List.of(joining("PL2", "ST1")),
+                        List.of(new FieldsOfMany.StoryAsk("ST1", "Low")));
+
+        assertThat(judged.steps())
+                .as("no write of the story's priority stands beside the join that breaches it")
+                .noneMatch(step -> step instanceof FieldsOfMany.Priority);
+        assertThat(judged.items().getLast())
+                .as("the story is refused, not saved below the joined issue")
+                .satisfies(
+                        item ->
+                                assertThat(item.outcome())
+                                        .as("outcome")
+                                        .isEqualTo(FieldsOfMany.Outcome.REFUSED));
     }
 
     @Test

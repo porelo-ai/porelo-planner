@@ -244,6 +244,25 @@ class FieldsOfManyEndpointTest {
     }
 
     @Test
+    void aStoryLoweredBesideAHigherPriorityRefusedForItsIssueRaisesThatIssueAndNamesIt()
+            throws Exception {
+        // Harm: a story saved below an issue whose sent priority was refused, with no word of it.
+        setFields(
+                        "{\"issues\": [{\"issue\": \"AB4\", \"priority\": \"Medium\"}],"
+                                + " \"stories\": ["
+                                + "{\"story\": \"ST2\", \"priority\": \"Lowest\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].item").value("AB4"))
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[1].raised[0]").value("AB4"));
+
+        assertThat(written)
+                .as("the story's priority, then the issue raised to it, not to what was sent")
+                .containsExactly("ST2 priority Lowest", "AB4 priority Lowest");
+    }
+
+    @Test
     void anIssueTheRulesRefuseIsNamedWithItsRefusalWhileTheOthersAreSaved() throws Exception {
         // Harm: one refused issue holding back the others, or dropped without its refusal.
         setFields(

@@ -389,11 +389,8 @@ public final class FieldsOfMany {
                     raised.put(stories.get(j).story(), new ArrayList<>());
                 }
             }
-            // An issue refused for its priority is left as it is, so it is judged as if it fit.
-            final Map<String, String> assumed = new HashMap<>();
             while (true) {
                 final Map<String, String> issuePriorities = new HashMap<>(sent);
-                issuePriorities.putAll(assumed);
                 issuePriorities.putAll(raisedTo);
                 final StoryRules.@Nullable Breach breach = breach(issuePriorities);
                 if (breach == null) {
@@ -403,9 +400,10 @@ public final class FieldsOfMany {
                 final String to = Objects.requireNonNull(given.get(story));
                 final String issue = breach.issues().getFirst();
                 if (sent.containsKey(issue)) {
-                    // The priority sent for the issue stands, so the breach is the issue's.
+                    // The priority sent for the issue breaches, so it is refused for the issue;
+                    // the issue then stands as the board holds it, and the rule raises it as any
+                    // other, so no breach is saved unnamed.
                     sent.remove(issue);
-                    assumed.put(issue, to);
                     for (int i = 0; i < issues.size(); i++) {
                         if (issueRefusal[i] == null && issues.get(i).issue().equals(issue)) {
                             issueRefusal[i] =
@@ -460,7 +458,8 @@ public final class FieldsOfMany {
                             .map(
                                     story -> {
                                         final @Nullable String to = given.get(story.id());
-                                        return to == null ? story : story.withPriority(to);
+                                        final Story held = members(story);
+                                        return to == null ? held : held.withPriority(to);
                                     })
                             .toList(),
                     board.issues().stream()
@@ -476,6 +475,45 @@ public final class FieldsOfMany {
                     board.owner(),
                     board.unlisted(),
                     board.repositoryWarnings());
+        }
+
+        /** The story with the issues of it as the call's joins leave them. */
+        private Story members(final Story story) {
+            final Map<String, String> joined = new HashMap<>();
+            for (final Map.Entry<String, List<Integer>> entry : joining.entrySet()) {
+                for (final int i : live(entry.getValue())) {
+                    joined.put(issues.get(i).issue(), entry.getKey());
+                }
+            }
+            if (joined.isEmpty()) {
+                return story;
+            }
+            final List<String> after = new ArrayList<>();
+            for (final String id : story.issues()) {
+                if (!joined.containsKey(id) || story.id().equals(joined.get(id))) {
+                    after.add(id);
+                }
+            }
+            joined.forEach(
+                    (id, to) -> {
+                        if (to.equals(story.id()) && !after.contains(id)) {
+                            after.add(id);
+                        }
+                    });
+            return new Story(
+                    story.id(),
+                    story.title(),
+                    story.state(),
+                    story.priority(),
+                    story.size(),
+                    after,
+                    story.description(),
+                    story.link(),
+                    story.issuesWhole(),
+                    story.closedAt(),
+                    story.warnings(),
+                    story.version(),
+                    story.labels());
         }
 
         private Judged answer() {
