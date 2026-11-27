@@ -13,7 +13,7 @@ Map<String, dynamic> _ended({required bool finished, int unpushed = 0}) => {
   'unpushed': unpushed,
 };
 
-Map<String, dynamic> _task(String name, String issue, Map<String, dynamic> ended, {String role = 'BUILDER'}) => {
+Map<String, dynamic> _task(String name, String issue, Map<String, dynamic> ended, {String role = 'author'}) => {
   'task': name,
   'containerId': 'box-$name',
   'machine': 'local',
@@ -24,7 +24,8 @@ Map<String, dynamic> _task(String name, String issue, Map<String, dynamic> ended
   'mode': 'AGENT',
   'agent': 'codex',
   'model': 'model',
-  'role': role,
+  'role': mockRole(role),
+  'readLanded': <String>[],
   'since': '2026-01-01T00:00:00Z',
   'atWork': false,
   'ended': ended,

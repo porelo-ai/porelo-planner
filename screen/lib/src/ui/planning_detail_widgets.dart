@@ -1,6 +1,7 @@
 import '../client.dart' show planningTopicLabelOf, planningTopicLabels;
 import '../models.dart';
-import '../story_work_order.dart' show PlanningRunPlace;
+import '../story_work_order.dart' show PlanningEndKind, PlanningRunPlace, PlanningTaskRole, planningJudgment;
+import '../work_reply.dart' show validTaskLabel;
 
 import 'package:flutter/material.dart';
 
@@ -103,7 +104,7 @@ class PlanningTaskLink extends StatelessWidget {
     super.key,
   });
 
-  /// The task as the planner served it, whose duty role, run role, place and held items are shown under its name.
+  /// The task as the planner served it, whose role, place and held items are shown under its name.
   final PlanWorkTask? run;
 
   /// The task's full name.
@@ -161,15 +162,26 @@ class PlanningTaskLink extends StatelessWidget {
 /// The most characters of a place from outside the screen shows.
 const planningMostPlaceText = 120;
 
+/// [text] from outside the screen on one line, cleaned of what reorders or hides it and cut to [most] code points.
+String _cut(String text, {int most = planningMostPlaceText, bool multiline = false}) {
+  final shown = planningShown(text, multiline: multiline);
+  final runes = shown.runes.toList();
+  return runes.length <= most ? shown : '${String.fromCharCodes(runes.take(most))}…';
+}
+
+/// The most characters of a helper's kind the screen shows.
+const planningMostKindText = 64;
+
+/// A helper's kind as served, on one line, cleaned of what reorders or hides it and cut to the code points a kind
+/// may have, since the planner may name any word; empty, it is not reported.
+String planningKindText(String kind) {
+  final shown = _cut(kind, most: planningMostKindText);
+  return shown.trim().isEmpty ? 'not reported' : shown;
+}
+
 /// What a served place says, as plain text: a pull request's address is cut to a bounded length and never a link.
 String planningPlaceText(PlanningRunPlace? place) {
-  String cut(String text) {
-    final shown = planningShown(text, multiline: false);
-    final runes = shown.runes.toList();
-    return runes.length <= planningMostPlaceText
-        ? shown
-        : '${String.fromCharCodes(runes.take(planningMostPlaceText))}…';
-  }
+  String cut(String text) => _cut(text);
 
   if (place == null) return "the task's own gate push";
   if (place.pullRequest case final address?) return 'pull request ${cut(address)}';
@@ -178,11 +190,76 @@ String planningPlaceText(PlanningRunPlace? place) {
   return 'gate push of task ${cut(place.gatePush ?? '')}${repository == null ? '' : ' in ${cut(repository)}'}';
 }
 
-/// A run's duty role beside Porelo's run role, its place and its held items, as served.
+/// A run's role with what it may do, its place and its held items, as served.
 String planningRunFacts(PlanWorkTask task) =>
-    '${planningValue(task.role)} · run role ${task.runRole == 'REVIEWER' ? 'reviewer' : 'author'}'
+    '${planningRoleText(task.role, readLanded: task.readLanded)}'
     ' · at ${task.placeUnreadable ? 'a place the screen cannot read' : planningPlaceText(task.place)}'
     ' · held ${task.held ?? 'unknown'}';
+
+/// A role by its name, with how its task ends, its workspace, its rights apart from the judgment, what it reads
+/// besides, the account it writes as and whether it has the project's services. [readLanded] names the tasks whose
+/// work a started task reads besides; null for an offer, which says only whether its role reads any.
+String planningRoleText(PlanningTaskRole? role, {List<String>? readLanded}) {
+  if (role == null) return 'role not reported';
+  final rights = [
+    for (final right in role.rights)
+      if (right != planningJudgment) right,
+  ];
+  // A task is named only by a label Porelo gives; any other text served as one is not shown.
+  final reads = readLanded
+      ?.map((task) => validTaskLabel(task) ? task : 'a task the screen cannot name')
+      .toSet()
+      .join(', ');
+  return [
+    'role ${planningShown(role.name, multiline: false)}',
+    switch (role.endKind) {
+      PlanningEndKind.pushesWork => 'pushes work',
+      PlanningEndKind.reportsFindings => 'reports findings',
+      PlanningEndKind.givesPoints => 'gives points',
+      PlanningEndKind.handsBackResult => 'hands back a result',
+    },
+    switch (role.workspace) {
+      'own' => 'in its own work',
+      'foreign' => "in another task's work",
+      'readOnly' => 'reads one repository',
+      'allRepositories' => 'reads every repository',
+      _ => 'no workspace',
+    },
+    rights.isEmpty ? 'holds no right' : 'rights: ${rights.join(', ')}',
+    if (role.rights.contains(planningJudgment)) 'judgment: $planningJudgment',
+    if (reads == null && role.readLanded)
+      'also reads the work of the tasks whose build it reads'
+    else if (reads != null && reads.isNotEmpty)
+      'also reads the work of $reads',
+    role.writeAs == 'author' ? 'writes as the author' : 'writes as the review account',
+    role.projectServices ? "with the project's services" : "without the project's services",
+  ].join(' · ');
+}
+
+/// What Porelo refused a start with, in words: the rule and the detail a broken start rule names, and any other refusal
+/// by its name, each with Porelo's own words after it.
+String planningStartRefusalWords(PlanningStartRefusal refusal) {
+  // Each part within the planner's own bounds, cleaned and cut as a place is; a value empty once cleaned is unnamed.
+  String said(String key) {
+    final value = _cut(refusal.parameters[key] ?? '');
+    return value.trim().isEmpty ? 'not named' : value;
+  }
+
+  final name = RegExp(r'^[A-Za-z0-9]{1,64}$').hasMatch(refusal.name)
+      ? refusal.name
+      : 'a refusal the screen cannot name';
+  final words = switch (name) {
+    'StartRuleBroken' => 'Porelo refused the start: it breaks the rule ${said('rule')}: ${said('detail')}',
+    'RightsChanged' => 'Porelo refused the start: the rights differ from those the task started with',
+    _ => 'Porelo refused the start: $name',
+  };
+  final detail = _cut(refusal.detail, most: 1000, multiline: true);
+  return detail.trim().isEmpty ? words : '$words. $detail';
+}
+
+/// What the screen says of an issue a person works by hand, the planner's reason MANUAL, which no task works and no
+/// role is bound to.
+const planningByHandWords = "Worked by hand: a person's, with no role";
 
 /// A reported time in the person's own zone to the minute, with its date only when it is not today, or the reported
 /// text when it is no time.

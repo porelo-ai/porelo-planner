@@ -8,6 +8,7 @@ import '../models.dart';
 import '../run_attention.dart';
 import '../story_work.dart';
 import 'actions.dart';
+import 'planning_detail_widgets.dart' show planningStartRefusalWords;
 import 'story_work_wizard.dart';
 import 'style.dart';
 
@@ -183,6 +184,9 @@ class _StoryWorkAttentionViewState extends State<StoryWorkAttentionView> {
                   multiline: false,
                 ),
               ),
+              if (row.board.workOf(row.story)?.issues.where((item) => item.issue == issue.id).firstOrNull?.startRefusal
+                  case final refusal?)
+                Text(planningStartRefusalWords(refusal), key: Key('story-work-start-refused ${issue.id}')),
               if (widget.onPutAway case final putAway? when !widget.resolved)
                 if (row.putAwayOn(widget.machine) case final kept?)
                   Tooltip(

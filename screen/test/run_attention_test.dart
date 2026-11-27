@@ -123,7 +123,8 @@ void main() {
     // so its issue is taken as done and nobody opens its why.
     test('a declared blocked or failed end raises its own reason and no other', () {
       PlanWorkTask task(String role, String? outcome) => PlanWorkTask.from({
-        'role': role,
+        'role': mockRole(role),
+        'readLanded': <String>[],
         'issues': ['A'],
         'ended': {
           'at': '2026-01-01T00:00:00Z',
@@ -134,21 +135,19 @@ void main() {
           'outcome': ?outcome,
         },
       });
-      final blocked = task('READER', 'BLOCKED');
+      final blocked = task('tester', 'BLOCKED');
       expect(planningEndRaised('BLOCKED', blocked), isTrue, reason: 'the blocked end raises BLOCKED');
       expect(planningEndRaised('INVALID_FINDINGS', blocked), isFalse, reason: 'a blocked reader is no bad reading');
       expect(planningEndRaised('FAILED', blocked), isFalse, reason: 'a blocked end is not a failure');
-      expect(
-        planningEndRaised('FAILED', task('BUILDER', 'FAILED')),
-        isTrue,
-        reason: 'a declared failure raises FAILED',
-      );
-      expect(planningEndRaised('BLOCKED', task('BUILDER', 'DONE')), isFalse, reason: 'a done end raises nothing');
-      expect(planningEndRaised('BLOCKED', task('BUILDER', null)), isFalse, reason: 'no outcome raises nothing');
+      expect(planningEndRaised('FAILED', task('author', 'FAILED')), isTrue, reason: 'a declared failure raises FAILED');
+      expect(planningEndRaised('BLOCKED', task('author', 'DONE')), isFalse, reason: 'a done end raises nothing');
+      expect(planningEndRaised('BLOCKED', task('author', null)), isFalse, reason: 'no outcome raises nothing');
       expect(planningTaskEndReasons, contains('BLOCKED'), reason: "a blocked end's result can be opened");
       final work = PlanWork.from({
         'tasks': [
           {
+            'role': mockRole('author'),
+            'readLanded': <String>[],
             'ended': {
               'at': '',
               'finished': true,

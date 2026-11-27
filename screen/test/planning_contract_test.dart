@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
 void main() {
@@ -10,6 +11,8 @@ void main() {
         'tasks': [
           {
             'task': 'story-repo',
+            'role': mockRole('author'),
+            'readLanded': <String>[],
             'ended': {
               'finished': false,
               'unpushed': 0,

@@ -108,6 +108,40 @@ Future<List<(String?, String)>> _page(
   return opened;
 }
 
+/// A task of PL1 at a pull request, started with [role] and reading [readLanded] besides.
+Map<String, dynamic> _roleTask(String task, Map<String, dynamic> role, {List<String> readLanded = const []}) => {
+  'task': task,
+  'containerId': 'c-$task',
+  'machine': 'local',
+  'repository': 'repo',
+  'issues': ['PL1'],
+  'state': 'Reading',
+  'done': 'Review',
+  'mode': 'AGENT',
+  'agent': 'agent',
+  'model': 'model',
+  'role': role,
+  'readLanded': readLanded,
+  'since': '2026-01-02T03:04:05Z',
+  'atWork': true,
+  'ended': null,
+  'place': {'pullRequest': 'https://github.com/owner/shop/pull/7'},
+  'held': 0,
+};
+
+/// The run's record of [issue], with [more] over a step that stands under no reason.
+Map<String, dynamic> _workIssue(String issue, Map<String, dynamic> more) => {
+  'issue': issue,
+  'rounds': 0,
+  'roundsMost': 2,
+  'atWork': false,
+  'needsYou': false,
+  'readingStopped': false,
+  'findings': <Map<String, dynamic>>[],
+  'reason': 'NONE',
+  ...more,
+};
+
 List<String> _copies(WidgetTester tester) {
   final copied = <String>[];
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -280,7 +314,8 @@ void main() {
           'mode': 'AGENT',
           'agent': 'agent',
           'model': 'model',
-          'role': 'MAIN',
+          'role': mockRole('author'),
+          'readLanded': <String>[],
           'since': '2026-01-02T03:04:05Z',
           'atWork': false,
           'ended': {'at': '2026-01-02T04:05:06Z', 'finished': true, 'why': '', 'answer': ''},
@@ -322,7 +357,8 @@ void main() {
           'mode': 'AGENT',
           'agent': 'agent',
           'model': 'model',
-          'role': 'MAIN',
+          'role': mockRole('author'),
+          'readLanded': <String>[],
           'since': '2026-01-02T03:04:05Z',
           'atWork': true,
         },
@@ -345,7 +381,7 @@ void main() {
 
   // Harm: the person cannot tell a reviewer's run from an author's, nor where it works or what it holds, and a place
   // from outside is opened by the screen on its own.
-  testWidgets('a task of the issue shows its run role, place and held items as plain text', (tester) async {
+  testWidgets('a task of the issue shows its role, place and held items as plain text', (tester) async {
     final data = _board();
     ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
       'atWork': true,
@@ -361,10 +397,10 @@ void main() {
           'mode': 'AGENT',
           'agent': 'agent',
           'model': 'model',
-          'role': 'READER',
+          'role': mockRole('reviewer'),
+          'readLanded': <String>[],
           'since': '2026-01-02T03:04:05Z',
           'atWork': true,
-          'runRole': 'REVIEWER',
           'place': {'pullRequest': 'https://github.com/owner/shop/pull/7'},
           'held': 2,
         },
@@ -373,7 +409,7 @@ void main() {
     await _page(tester, data, taskUnavailable: (_) => null);
 
     final facts = tester.widget<Text>(find.byKey(const Key('planning-task-run pi-4')));
-    expect(facts.data, contains('run role reviewer'));
+    expect(facts.data, startsWith('role reviewer · gives points'));
     expect(facts.data, contains('at pull request https://github.com/owner/shop/pull/7'));
     expect(facts.data, endsWith('held 2'));
     expect(
@@ -381,6 +417,113 @@ void main() {
       findsNothing,
       reason: 'the place is text, never a link the screen opens',
     );
+  });
+
+  // Harm: a role the project's work rules add is shown as unknown, so the person cannot tell what the task may do
+  // nor that it reads another task's work.
+  testWidgets('a task of a role the project names shows its name, what it reads besides and its rights', (
+    tester,
+  ) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': true,
+      'tasks': [
+        _roleTask(
+          'pi-5',
+          {
+            'name': 'tester',
+            'endKind': 'REPORTS_FINDINGS',
+            'workspace': 'foreign',
+            'readLanded': true,
+            'projectServices': false,
+            'writeAs': 'review',
+            'rights': ['openThreads', 'report'],
+          },
+          readLanded: ['build-cart'],
+        ),
+      ],
+    };
+    await _page(tester, data, taskUnavailable: (_) => null);
+
+    final facts = tester.widget<Text>(find.byKey(const Key('planning-task-run pi-5'))).data!;
+    expect(facts, contains('tester'), reason: 'the role by the name the work rules give it');
+    expect(facts, contains("in another task's work"), reason: 'its workspace');
+    expect(facts, contains('also reads the work of build-cart'), reason: 'what it reads besides');
+    expect(facts, contains('rights: openThreads, report'), reason: 'what it may do');
+    expect(facts, contains('writes as the review account'));
+    expect(facts, contains("without the project's services"));
+  });
+
+  // Harm: a role that may reject the work is shown like one that only gives points, so the person does not know a
+  // task can turn the work down.
+  testWidgets('a task whose role may reject shows the judgment apart from its rights', (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': true,
+      'tasks': [
+        _roleTask('pi-6', {
+          'name': 'screener',
+          'endKind': 'GIVES_POINTS',
+          'workspace': 'foreign',
+          'readLanded': false,
+          'projectServices': false,
+          'writeAs': 'review',
+          'rights': ['reply', 'openThreads', 'reject'],
+        }),
+      ],
+    };
+    await _page(tester, data, taskUnavailable: (_) => null);
+
+    final facts = tester.widget<Text>(find.byKey(const Key('planning-task-run pi-6'))).data!;
+    expect(facts, contains('screener'));
+    expect(facts, contains('rights: reply, openThreads ·'));
+    expect(facts, contains('judgment: reject'));
+    expect(facts, isNot(contains('also reads')), reason: 'the role reads nothing besides');
+  });
+
+  // Harm: Porelo refused a start for a rule the role breaks, and the person is not told which rule nor by what,
+  // so they cannot set the role right.
+  testWidgets('a start refused for a broken rule shows the rule and what breaks it', (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': false,
+      'tasks': <Map<String, dynamic>>[],
+      'issues': [
+        _workIssue('PL1', {
+          'needsYou': true,
+          'reason': 'START_REFUSED',
+          'startRefusal': {
+            'name': 'StartRuleBroken',
+            'parameters': {'rule': 'pushWithoutOwnWork', 'detail': 'readOnly'},
+            'detail': '',
+          },
+        }),
+      ],
+    };
+    await _page(tester, data);
+
+    final said = tester.widget<Text>(find.byKey(const Key('planning-start-refused PL1'))).data!;
+    expect(said, contains('the rule pushWithoutOwnWork'));
+    expect(said, contains('readOnly'));
+  });
+
+  // Harm: an issue a person works by hand is shown as an agent's task with a role, so the person reads rights nobody
+  // held.
+  testWidgets("an issue worked by hand is shown as the person's, with no role", (tester) async {
+    final data = _board();
+    ((data['stories'] as List).first as Map<String, dynamic>)['work'] = {
+      'atWork': false,
+      'tasks': <Map<String, dynamic>>[],
+      'issues': [
+        _workIssue('PL1', {'reason': 'MANUAL'}),
+      ],
+    };
+    await _page(tester, data);
+
+    final said = tester.widget<Text>(find.byKey(const Key('planning-by-hand PL1'))).data!;
+    expect(said, contains('by hand'));
+    expect(said, contains("a person's"));
+    expect(find.textContaining('rights:'), findsNothing, reason: 'no role, so no rights');
   });
 
   // Harm: a direction override in an id or a task's name reorders what a tooltip or a link says.

@@ -152,11 +152,18 @@ class MockPlanningSource implements PlanningSource {
     ideas.add((project, idea));
     return PlanningTaskOrder.from({
       'offer': work.nextOffer(),
+      'kind': 'discussion',
+      'opensTerminal': true,
       'issues': <String>[],
-      'role': 'DISCUSSION',
       'agent': 'codex',
       'model': 'mock-model',
       'mode': 'AGENT',
+      // It reads every repository of the project and reports the idea back, with no workspace of its own.
+      'readOnly': true,
+      'allRepositories': true,
+      'rights': ['report'],
+      'readLanded': <String>[],
+      'projectServices': true,
       'prompt': 'Discuss this idea with the person, change nothing, and once they agree report it back.\n\n$idea',
     });
   }
@@ -164,7 +171,7 @@ class MockPlanningSource implements PlanningSource {
   /// Simulates the window's confirmed starts separately from preparing a planner order.
   Future<PlanningTaskStarted> simulateStart(String project, String story, PlanningTaskOrder task) async {
     // A discussion belongs to no story, so no run on the board records it.
-    if (task.role == 'DISCUSSION') {
+    if (task.discussion) {
       return PlanningTaskStarted(task: 'discussion-${task.offer}', container: 'mock-discussion-${task.offer}');
     }
     final result = work.startTask(project, story, task);

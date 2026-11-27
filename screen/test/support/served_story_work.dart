@@ -1,6 +1,7 @@
+import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
-/// A proposal with the MAIN and sub-issue BUILDER served by the planner.
+/// A proposal with the author's main task and a helper that builds the sub-issue, served by the planner.
 Map<String, dynamic> servedProposal() => {
   'revision': 'r1',
   'modes': ['AGENT', 'UNATTENDED'],
@@ -12,13 +13,19 @@ Map<String, dynamic> servedProposal() => {
     {
       'repository': 'repo',
       'issues': ['PR1', 'PR1.1'],
-      'main': {'name': 'main', 'role': 'MAIN', 'agent': 'codex', 'model': 'main-model', 'brief': 'Complete the story.'},
+      'main': {
+        'name': 'main',
+        'role': mockRole('author'),
+        'agent': 'codex',
+        'model': 'main-model',
+        'brief': 'Complete the story.',
+      },
       'subAgents': [
         {
           'id': 'builder',
           'issue': 'PR1.1',
           'name': 'builder',
-          'kind': 'BUILDER',
+          'kind': planningHelper,
           'agent': 'codex',
           'model': 'builder-model',
           'workingState': 'Building',
@@ -35,20 +42,21 @@ Map<String, dynamic> servedOrder() => {
   'revision': 'r1',
   'tasks': [
     {
+      ...servedStart('author'),
       'offer': servedOffer(1),
+      'opensTerminal': true,
       'repository': 'repo',
       'issues': ['PR1', 'PR1.1'],
-      'role': 'MAIN',
       'agent': 'codex',
       'model': 'main-model',
       'mode': 'AGENT',
       'prompt': '  Complete the story.\n```\n{literal}\n```\n',
     },
     {
+      ...servedStart('author'),
       'offer': servedOffer(2),
       'repository': 'repo',
       'issues': ['PR1.1'],
-      'role': 'BUILDER',
       'agent': 'codex',
       'model': 'builder-model',
       'mode': 'AGENT',
@@ -71,17 +79,35 @@ StoryWorkRequest servedRequest({List<StoryWorkChoice> choices = const [], bool d
 /// Stable UUIDs that distinguish offers without inventing runtime identities.
 String servedOffer(int number) => '00000000-0000-4000-8000-${number.toRadixString(16).padLeft(12, '0')}';
 
-/// A single-issue continuation, distinct from the initial MAIN and helper order.
-Map<String, dynamic> servedFollowUp(int number, {String role = 'READER'}) => {
+/// The members of a work order bound to the stand-in board's role [role]: its kind, the role, its rights, what it
+/// reads besides, whether it has the project's services and its workspace in Start's words, as the planner hands
+/// them to Start. A role at another task's work is started under a task name of the window's own; its place is the
+/// caller's to name.
+Map<String, dynamic> servedStart(String role, {List<String>? readLanded}) {
+  final bound = mockRole(role);
+  return {
+    'kind': 'work',
+    'role': bound,
+    'rights': bound['rights'],
+    // A role that reads landed work reads the builder's besides, as core names it; no other role names any.
+    'readLanded': readLanded ?? (bound['readLanded'] == true ? ['builder-task'] : <String>[]),
+    'projectServices': bound['projectServices'],
+    ...planningWorkspaceMembers(bound['workspace'] as String),
+    if (bound['workspace'] == 'foreign') 'ownTask': true,
+  };
+}
+
+/// A single-issue continuation of the role [role], distinct from the initial main and helper order: by default a
+/// reader, which reads the builder's landed work.
+Map<String, dynamic> servedFollowUp(int number, {String role = 'reader'}) => {
+  ...servedStart(role),
   'offer': servedOffer(number),
   'repository': 'repo',
   'issues': ['PR1'],
-  'role': role,
   'agent': 'codex',
-  'model': role == 'READER' ? 'reader-model' : 'builder-model',
+  'model': role == 'author' ? 'builder-model' : 'reader-model',
   'mode': 'AGENT',
   'prompt': 'Continue this issue.\n',
-  'reads': role == 'READER' ? ['builder-task'] : <String>[],
 };
 
 /// After the last running task ends, an OFFERED continuation does not count as active work.
@@ -137,7 +163,8 @@ Map<String, dynamic> servedRunTask({String task = 'main-task', bool active = tru
   'mode': 'AGENT',
   'agent': 'codex',
   'model': 'main-model',
-  'role': 'READER',
+  'role': mockRole('reader'),
+  'readLanded': ['builder-task'],
   'since': '',
   'atWork': active,
   'ended': ended,

@@ -358,8 +358,8 @@ class PlanWork {
       starts = _starts(map['starts'], _planList(map['repositories'], PlanRepositoryWork.from));
 
   /// Reads the offers the window starts without asking, each once by its offer; one that cannot be read, or that is
-  /// no author's builder or reviewer's reader of one issue the run works in its repository, is left out and never
-  /// started.
+  /// neither work pushed again nor a reading of the work at its place, for one issue the run works in its repository,
+  /// is left out and never started.
   static List<PlanningTaskOrder> _starts(Object? value, List<PlanRepositoryWork> repositories) {
     if (value is! List) return const [];
     final starts = <PlanningTaskOrder>[];
@@ -368,14 +368,15 @@ class PlanWork {
       try {
         final order = PlanningTaskOrder.from(entry);
         final repository = repositories.where((repo) => repo.repository == order.repository).firstOrNull;
-        // Only an author sent back to a place it resumes, its gate push or its task's own pull request, as a builder
-        // that pushes its work, an author building an issue its run held back, at no place, or a reviewer of the work
-        // at its place, a reader, starts without the person, each for one issue of the run's.
+        // Only a task that pushes work, sent back to a place it resumes, its gate push or its task's own pull request,
+        // or building an issue its run held back, at no place, or a task that reads the work at its place, starts
+        // without the person, each for one issue of the run's.
+        final role = order.role;
         final resumes = order.place?.gatePush != null || order.place?.ownPullRequest == true;
-        final author = order.runRole == 'AUTHOR' && resumes && order.role == 'BUILDER';
-        final freed = order.runRole == 'AUTHOR' && order.place == null && order.role == 'BUILDER';
-        final reviewer = order.runRole == 'REVIEWER' && order.place != null && order.role == 'READER';
-        if ((author || freed || reviewer) &&
+        final pushes = role != null && role.pushesWork && (resumes || order.place == null);
+        // A reading is never at its own task's work.
+        final reads = role != null && role.readsWork && order.place != null && !order.place!.ownPullRequest;
+        if ((pushes || reads) &&
             order.result == null &&
             order.issues.length == 1 &&
             repository != null &&
@@ -387,13 +388,16 @@ class PlanWork {
         continue;
       }
     }
+    // The planner marks at most one task of an answer to open the window's terminal; with more, which one the person
+    // works with cannot be told, so none of them starts without the person.
+    if (starts.where((order) => order.opensTerminal).length > 1) return const [];
     return List.unmodifiable(starts);
   }
 
   /// The run's offers made without a request of the window's, which the window starts through the hook it gives for
-  /// them: an author sent back to the push its work waits at, started under that push's name, or to its task's own
-  /// pull request, an author building an issue its run held back once nothing holds it, or a reviewer of the work at
-  /// its place, the last two started under a task name of their own.
+  /// them: work sent back to the push it waits at, started under that push's name, or to its task's own pull request,
+  /// the building of an issue its run held back once nothing holds it, or a task that reads the work at its place, the
+  /// last two started under a task name of their own.
   final List<PlanningTaskOrder> starts;
 
   /// The run the planner drew when the work started, compared only for equality; null from a planner without it.
@@ -463,11 +467,11 @@ class PlanWorkTask {
       mode = _planText(map, 'mode'),
       agent = _planText(map, 'agent'),
       model = _planText(map, 'model'),
-      role = _planText(map, 'role'),
+      role = PlanningTaskRole.fromJson(map['role']),
+      readLanded = _planStrings(map['readLanded']),
       since = _planText(map, 'since'),
       atWork = map['atWork'] is bool ? map['atWork'] as bool : null,
       ended = map['ended'] is Map<String, dynamic> ? WorkEnded.from(map['ended'] as Map<String, dynamic>) : null,
-      runRole = map['runRole'] is String ? map['runRole'] as String : null,
       place = _readPlace(map['place']),
       placeUnreadable = map['place'] != null && _readPlace(map['place']) == null,
       held = map['held'] is int && (map['held'] as int) >= 0 ? map['held'] as int : null;
@@ -481,10 +485,14 @@ class PlanWorkTask {
     }
   }
 
-  /// Porelo's run role, `AUTHOR` or `REVIEWER`; null where Start's default, an author, holds.
-  final String? runRole;
+  /// The role the task was started with, as the project's work rules defined it then. The contract requires it, so
+  /// a task whose role cannot be read refuses the whole answer, never stands as a builder by default.
+  final PlanningTaskRole role;
 
-  /// Where the run works; null for the task's own gate push, and where [placeUnreadable].
+  /// The Porelo task names whose forwarded work the task was started to read besides; empty for none.
+  final List<String> readLanded;
+
+  /// Where the run works; null for a new task's own gate push, and where [placeUnreadable].
   final PlanningRunPlace? place;
 
   /// Whether the planner served a place the screen refuses, which is shown as unreadable and never as a default.
@@ -494,8 +502,8 @@ class PlanWorkTask {
   /// record of the task, which is not none held. Shown, never judged.
   final int? held;
 
-  /// The task, containerId, repository, state, done, mode, agent, model, role, since reported by the daemon.
-  final String task, containerId, repository, state, done, mode, agent, model, role, since;
+  /// The task, containerId, repository, state, done, mode, agent, model, since reported by the daemon.
+  final String task, containerId, repository, state, done, mode, agent, model, since;
 
   /// The machine name as reported, preserved verbatim.
   final String? machine;
@@ -2095,7 +2103,7 @@ class PlanWorker {
   /// Preserves each field independently.
   PlanWorker.from(Map<String, dynamic> map)
     : name = _planText(map, 'name'),
-      role = _planText(map, 'role'),
+      role = PlanningTaskRole.read(map['role']),
       agent = _planText(map, 'agent'),
       model = _planText(map, 'model'),
       brief = _planText(map, 'brief'),
@@ -2117,8 +2125,8 @@ class PlanWorker {
   /// Its name.
   final String name;
 
-  /// Its role.
-  final String role;
+  /// The role the work rule offers the task, as the project's work rules define it; null where it cannot be read.
+  final PlanningTaskRole? role;
 
   /// Its agent.
   final String agent;
@@ -2285,7 +2293,11 @@ class WorkEnded {
   String get reason => [why, answer].where((text) => text.isNotEmpty).join('\n');
 }
 
-/// One proposed participant, including the reader.
+/// The planner's word for a helper, the one kind of helper a start keeps or changes; a helper is no task and has no
+/// role.
+const planningHelper = 'HELPER';
+
+/// One proposed helper inside its repository's main task.
 class PlanAssignment {
   /// Reads the fields reported by the daemon.
   PlanAssignment.from(Map<String, dynamic> map)
@@ -2307,11 +2319,11 @@ class PlanAssignment {
   /// Where the rule's choice of agent, model and effort came from, as the planner says it; null when unsaid.
   final String? chosenBy;
 
-  /// The id, issue, name, role, agent, model, workingState, brief, choice reported by the daemon.
+  /// The id, issue, name, kind, agent, model, workingState, brief, choice reported by the daemon.
   final String id, issue, name, kind, agent, model, workingState, brief, choice;
 
-  /// The assignment kind, presented beside worker roles.
-  String get role => kind;
+  /// Whether it is of the planner's helper kind, the one a start may keep or change.
+  bool get isHelper => kind == planningHelper;
 
   /// Serializes the complete record with its stable identity.
   Map<String, dynamic> toMap() => {
@@ -2367,7 +2379,7 @@ class PlanRepositoryWork {
     'issues': issues,
     'main': {
       'name': main.name,
-      'role': main.role,
+      'role': main.role?.toJson(),
       'agent': main.agent,
       'model': main.model,
       'brief': main.brief,
@@ -2591,7 +2603,7 @@ class StoryWorkRequest {
     final choice = subAgents.where((each) => each.repository == repository && each.name == sub.id).firstOrNull;
     final selected = {
       ...sub.toMap(),
-      'choice': sub.role != 'BUILDER' ? 'DROP' : choice?.choice ?? sub.choice,
+      'choice': !sub.isHelper ? 'DROP' : choice?.choice ?? sub.choice,
       if (choice?.choice == 'CHANGE') 'agent': choice!.agent,
       if (choice?.choice == 'CHANGE') 'model': choice!.model,
     };
@@ -2734,16 +2746,17 @@ class ReadingResolution {
       revision = _planText(map, 'revision'),
       tasks = readFollowUps(map, readWork(map['work']));
 
-  /// Checks the exact issue and role authorized by the reading choice before Start.
+  /// Checks the exact issue and the kind of task the reading choice authorized before Start: one more round reads
+  /// the work again, a rework pushes it.
   void checkDecision(String decidedIssue, String choice) {
-    final role = switch (choice) {
-      'ONE_MORE_ROUND' => 'READER',
-      'REWORK' => 'BUILDER',
-      _ => null,
+    bool fits(PlanningTaskRole? role) => switch (choice) {
+      'ONE_MORE_ROUND' => role?.readsWork == true,
+      'REWORK' => role?.pushesWork == true,
+      _ => false,
     };
     if (issue?.id != decidedIssue ||
         issue?.readingStopped != false ||
-        tasks.any((task) => task.role != role || task.issues.single != decidedIssue)) {
+        tasks.any((task) => !fits(task.role) || task.issues.single != decidedIssue)) {
       throw const FormatException('The reading answer does not confirm this decision.');
     }
   }

@@ -235,7 +235,9 @@ class StoryWork extends ChangeNotifier {
     if (proposal == null) return 'The planner has not proposed the work yet.';
     for (final repo in proposal.repositories) {
       final name = planningShown(repo.repository);
-      if (!(repo.main.role == 'MAIN' || repo.main.role == 'READER' && repo.subAgents.isEmpty)) {
+      final role = repo.main.role;
+      // A reading has no helpers; any role the rule offers is one the planner's work rules define.
+      if (role == null || role.readsWork && repo.subAgents.isNotEmpty) {
         return 'The planner proposed no main agent for $name.';
       }
       final main = repositories[repo.repository];
@@ -246,12 +248,12 @@ class StoryWork extends ChangeNotifier {
         final what = '${planningShown(sub.name)} in $name';
         switch (chosen?.choice) {
           case 'KEEP':
-            if (sub.role != 'BUILDER' || sub.agent.isEmpty || sub.model.isEmpty) return 'Change or drop $what.';
+            if (!sub.isHelper || sub.agent.isEmpty || sub.model.isEmpty) return 'Change or drop $what.';
             if (_assignmentProblem(what, sub.agent, sub.model, sub.effort) case final problem?) return problem;
           case 'DROP':
             break;
           case 'CHANGE':
-            if (sub.role != 'BUILDER') return 'Drop $what.';
+            if (!sub.isHelper) return 'Drop $what.';
             if (_assignmentProblem(what, chosen!.agent, chosen.model, chosen.effort) case final problem?) {
               return problem;
             }
@@ -366,7 +368,7 @@ class StoryWork extends ChangeNotifier {
           choices[(repo.repository, sub.id)] = StoryWorkChoice(
             repository: repo.repository,
             name: sub.id,
-            choice: sub.role != 'BUILDER' ? 'DROP' : sub.choice,
+            choice: !sub.isHelper ? 'DROP' : sub.choice,
           );
         }
       }
@@ -507,7 +509,7 @@ class StoryWork extends ChangeNotifier {
 
   /// Selects Keep, Change or Drop; Change requires an explicitly chosen model.
   void choose(String repository, PlanAssignment sub, String choice, {String? agent, String? model, String? effort}) {
-    if (busy || !current || sub.role != 'BUILDER') return;
+    if (busy || !current || !sub.isHelper) return;
     final previous = choices[(repository, sub.id)];
     final before = previous?.choice == 'CHANGE' ? previous : null;
     final next = agent ?? previous?.agent ?? sub.agent;

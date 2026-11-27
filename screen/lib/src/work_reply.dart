@@ -23,19 +23,12 @@ PlanWork readWork(Object? value) {
   }
   for (final task in (value['tasks'] as List).cast<Map<String, dynamic>>()) {
     if (task['atWork'] is! bool || !task.containsKey('machine') || !task.containsKey('ended')) _bad('task');
-    for (final field in [
-      'task',
-      'containerId',
-      'repository',
-      'state',
-      'done',
-      'mode',
-      'agent',
-      'model',
-      'role',
-      'since',
-    ]) {
+    for (final field in ['task', 'containerId', 'repository', 'state', 'done', 'mode', 'agent', 'model', 'since']) {
       if (task[field] is! String) _bad('task $field');
+    }
+    PlanningTaskRole.fromJson(task['role']);
+    if (task['readLanded'] is! List || (task['readLanded'] as List).any((name) => name is! String)) {
+      _bad('task readLanded');
     }
     if (task['atWork'] == true &&
         (!validTaskLabel(task['task'] as String) || !validTaskLabel(task['containerId'] as String))) {
@@ -88,7 +81,8 @@ List<PlanningTaskOrder> readFollowUps(Map<String, dynamic> map, PlanWork work) {
   final offers = <String>{};
   for (final task in tasks) {
     if (!offers.add(task.offer!)) _bad('repeated offer');
-    if (!{'READER', 'BUILDER'}.contains(task.role) ||
+    // A follow-up reads the work again or pushes it again; a discussion or a stage's result is none.
+    if (!(task.role?.readsWork == true || task.role?.pushesWork == true) ||
         task.issues.length != 1 ||
         !{'AGENT', 'UNATTENDED'}.contains(task.mode) ||
         work.tasks.isEmpty ||
@@ -98,6 +92,8 @@ List<PlanningTaskOrder> readFollowUps(Map<String, dynamic> map, PlanWork work) {
     final repo = work.repositories.where((repo) => repo.repository == task.repository).firstOrNull;
     if (repo == null || !task.issues.every(repo.issues.contains)) _bad('follow-up scope');
   }
+  // At most one task of an answer opens the window's terminal, as in a start order.
+  if (tasks.where((task) => task.opensTerminal).length > 1) _bad('follow-ups opening more than one terminal');
   return List.unmodifiable(tasks);
 }
 

@@ -198,16 +198,28 @@ class WindowStandIn extends ChangeNotifier {
   }
 }
 
-/// A planner order's fields, as the log shows them.
+/// A planner order's fields as Start is handed them, as the log shows them: the members of the order's role, never the
+/// role, which Start is not handed.
 Map<String, Object?> orderFields(PlanningTaskOrder task) => {
   'offer': task.offer,
   'repository': task.repository,
   'issues': task.issues,
-  'role': task.role,
+  'kind': task.kind,
   'agent': task.agent,
   'model': task.model,
   'mode': task.mode,
   'prompt': task.prompt,
+  'rights': task.rights,
+  'readLanded': task.readLanded,
+  'projectServices': task.projectServices,
+  if (task.opensTerminal) 'opensTerminal': true,
+  if (task.readOnly) 'readOnly': true,
+  if (task.allRepositories) 'allRepositories': true,
+  if (task.noGate) 'noGate': true,
+  if (task.writeAs != null) 'writeAs': task.writeAs,
+  if (task.task != null) 'task': task.task,
+  if (task.ownTask) 'ownTask': true,
+  if (task.place != null) 'place': task.place!.toJson(),
 };
 
 /// The window's place, moved by the screen and by hand; the screen's moves are logged.

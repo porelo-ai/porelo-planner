@@ -40,7 +40,7 @@ Map<String, dynamic> _proposal(String model) => {
     {
       'repository': 'repo',
       'issues': <String>[],
-      'main': {'name': 'main', 'role': 'MAIN', 'agent': 'agent', 'model': model, 'brief': 'Work'},
+      'main': {'name': 'main', 'role': mockRole('author'), 'agent': 'agent', 'model': model, 'brief': 'Work'},
       'subAgents': <Map<String, dynamic>>[],
     },
   ],
@@ -102,7 +102,13 @@ void main() {
       {
         'repository': 'repo',
         'issues': <String>[],
-        'main': {'name': 'main', 'role': 'MAIN', 'agent': 'changed-agent', 'model': 'chosen-model', 'brief': 'Work'},
+        'main': {
+          'name': 'main',
+          'role': mockRole('author'),
+          'agent': 'changed-agent',
+          'model': 'chosen-model',
+          'brief': 'Work',
+        },
         'subAgents': <Map<String, dynamic>>[],
       },
     ]);
@@ -258,12 +264,12 @@ void main() {
         {
           'repository': 'repo',
           'issues': <String>[],
-          'main': {'name': 'main', 'role': 'MAIN', 'agent': 'agent', 'model': 'model', 'brief': 'Work'},
+          'main': {'name': 'main', 'role': mockRole('author'), 'agent': 'agent', 'model': 'model', 'brief': 'Work'},
           'subAgents': [
             {
               'id': 'reader',
               'issue': 'item',
-              'kind': 'BUILDER',
+              'kind': planningHelper,
               'workingState': 'Reading',
               'brief': 'Read',
               'choice': 'KEEP',
@@ -365,12 +371,12 @@ void main() {
         {
           'repository': 'repo',
           'issues': ['PR1'],
-          'main': {'name': 'main', 'role': 'MAIN', 'agent': 'agent', 'model': 'model', 'brief': 'Work'},
+          'main': {'name': 'main', 'role': mockRole('author'), 'agent': 'agent', 'model': 'model', 'brief': 'Work'},
           'subAgents': [
             {
               'id': 'reader',
               'issue': 'PR1',
-              'kind': 'BUILDER',
+              'kind': planningHelper,
               'workingState': 'Reading',
               'brief': 'Read',
               'choice': 'KEEP',

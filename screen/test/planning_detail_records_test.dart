@@ -126,7 +126,7 @@ void main() {
       PlanWork.from({
         'tasks': [
           false,
-          {'task': 'task'},
+          {'task': 'task', 'role': mockRole('author'), 'readLanded': <String>[]},
         ],
       }).tasks.map((task) => task.task),
       ['task'],
@@ -166,7 +166,7 @@ void main() {
         'repository': 'frontend',
         'whatMustBeTrue': 'First\nSecond',
         'subAgents': [
-          {'name': 'Reader', 'role': 'READER', 'agent': 'Agent', 'model': 'Model', 'brief': 'Read only'},
+          {'name': 'Reader', 'role': mockRole('tester'), 'agent': 'Agent', 'model': 'Model', 'brief': 'Read only'},
         ],
       },
     });
@@ -176,8 +176,8 @@ void main() {
     expect(issue.whatMustBeTrue, ['First\nSecond']);
     final agent = issue.subAgents.single;
     expect(
-      [agent.name, agent.role, agent.agent, agent.model, agent.brief],
-      ['Reader', 'READER', 'Agent', 'Model', 'Read only'],
+      [agent.name, agent.role?.name, agent.agent, agent.model, agent.brief],
+      ['Reader', 'tester', 'Agent', 'Model', 'Read only'],
     );
     expect(PlanWorker.from({'model': false}).model, isEmpty);
   });

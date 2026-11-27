@@ -6,6 +6,7 @@ import '../hooks.dart';
 import '../models.dart';
 import '../planning_board.dart';
 import '../story_work.dart';
+import 'planning_detail_widgets.dart' show planningKindText, planningRoleText;
 import 'style.dart';
 
 /// What a proposal the board has moved past says.
@@ -318,6 +319,7 @@ class _StoryWorkSteps {
           'Issues: ${repo.issues.isEmpty ? 'none' : repo.issues.join(', ')}',
           key: Key('story-work-issues ${repo.repository}'),
         ),
+        Text(planningRoleText(repo.main.role), key: Key('story-work-role ${repo.repository}')),
         if (work.passedOver[repo.repository] case final passed?)
           Text(passed, key: Key('story-work-passed-over ${repo.repository}')),
         ..._assignment(
@@ -337,7 +339,7 @@ class _StoryWorkSteps {
           choose: ({agent, model, effort}) =>
               work.chooseMain(repo.repository, agent: agent, model: model, effort: effort),
         ),
-        for (final sub in repo.subAgents) _sub(repo.repository, sub, _enabled && sub.role == 'BUILDER'),
+        for (final sub in repo.subAgents) _sub(repo.repository, sub, _enabled && sub.isHelper),
         ExpansionTile(
           title: Text('The work order for ${_said(repo.task)}'),
           children: [
@@ -469,7 +471,7 @@ class _StoryWorkSteps {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('${_said(sub.name)} · ${_said(sub.role)} · ${_said(sub.agent)} · ${_said(sub.model)}'),
+          Text('${_said(sub.name)} · ${planningKindText(sub.kind)} · ${_said(sub.agent)} · ${_said(sub.model)}'),
           if (sub.brief.isNotEmpty) Text(_said(sub.brief, multiline: true)),
           Wrap(
             spacing: Space.small,
@@ -711,7 +713,13 @@ class _StoryWorkWizardState extends State<StoryWorkWizard> {
           ),
         if (work.problem case final problem?) Text(problem, key: const Key('story-work-error')),
         for (final task in work.tasks) ...[
-          Text(_said('${task.order.repository} · ${task.order.role} · ${task.order.issues.join(', ')}')),
+          Text(
+            _said(
+              '${task.order.repository} · ${planningRoleText(task.order.role, readLanded: task.order.readLanded)}'
+              ' · ${task.order.issues.join(', ')}',
+            ),
+            key: Key('story-work-ordered ${task.order.offer}'),
+          ),
           if (task.started case final started?) Text(_said('Started ${started.task} in ${started.container}')),
           if (task.problem case final problem?) Text(_said(problem, multiline: true)),
           if (task.started == null && task.problem == null)

@@ -44,10 +44,10 @@ void _expectClean(WidgetTester tester, String where) {
   expect(shown.where(_unsafe.hasMatch), isEmpty, reason: '$where shows no control or bidirectional character');
 }
 
-/// A proposal whose helper names, agents, models and briefs carry [_bad]; repositories and issues are refused
-/// otherwise, so they stay as the planner must send them.
+/// A proposal whose helper names, agents, models and briefs carry [_bad]; repositories, issues and the role are
+/// refused otherwise, so they stay as the planner must send them.
 Map<String, dynamic> _proposal() =>
-    _hostile(servedProposal(), keep: {'repository', 'issues', 'issue', 'id'}) as Map<String, dynamic>;
+    _hostile(servedProposal(), keep: {'repository', 'issues', 'issue', 'id', 'role'}) as Map<String, dynamic>;
 
 /// A provider whose story work cannot be read: refused for the first story, not offered for the others.
 class _WorkUnread extends FakePlanningSource {
@@ -157,7 +157,7 @@ void main() {
       planning.stories.single,
       'Building$_bad',
       startTask: (source, project, story, task) async =>
-          PlanningTaskStarted(task: 'task-${task.role}$_bad', container: 'box-${task.role}$_bad'),
+          PlanningTaskStarted(task: 'task-${task.issues.join('-')}$_bad', container: 'box-${task.offer}$_bad'),
     );
     addTearDown(() async {
       work.dispose();
@@ -177,13 +177,13 @@ void main() {
     work.chooseMode('AGENT');
     await tester.runAsync(work.start);
     await settle(tester);
-    expect(work.tasks.map((task) => task.started?.task), ['task-MAIN$_bad', 'task-BUILDER$_bad']);
+    expect(work.tasks.map((task) => task.started?.task), ['task-PR1-PR1.1$_bad', 'task-PR1.1$_bad']);
     for (final tile in find.byType(ExpansionTile).evaluate().toList()) {
       await tester.tap(find.byWidget(tile.widget));
       await settle(tester);
     }
     final shown = _shown(tester);
-    expect(shown.where((text) => text.contains('task-MAIN')), isNotEmpty, reason: 'the started task is named');
+    expect(shown.where((text) => text.contains('task-PR1-PR1.1')), isNotEmpty, reason: 'the started task is named');
     _expectClean(tester, 'the Start dialog');
   });
 
@@ -218,7 +218,8 @@ void main() {
             'mode': 'AGENT',
             'agent': 'codex',
             'model': 'model',
-            'role': 'BUILDER',
+            'role': mockRole('author'),
+            'readLanded': <String>[],
             'since': '2026-01-01T00:00:00Z',
             'atWork': false,
             'ended': {'at': '2026-01-01T00:00:00Z', 'finished': false, 'why': 'It broke', 'answer': 'An answer'},

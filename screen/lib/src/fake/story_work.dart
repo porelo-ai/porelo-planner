@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-import '../models.dart' show planReasonNeedsAttention;
+import '../models.dart' show planReasonNeedsAttention, planningHelper;
 import '../story_work_order.dart';
 import 'planning_moves.dart';
 import 'refusal.dart';
+import 'roles.dart';
 
 /// The same daemon decisions behind the socket mock and widget FakeBackend.
 class MockStoryWork {
@@ -42,10 +43,10 @@ class MockStoryWork {
   String nextRun() => '00000000-0000-4000-9000-${(++_run).toRadixString(16).padLeft(12, "0")}';
   final _orders = <(String, String), Map<String, dynamic>>{};
 
-  /// The offers handed out, by id: where each belongs, which issues it works, how it stands, and for a rework its run
-  /// role and the place it works at.
+  /// The offers handed out, by id: where each belongs, which issues it works, how it stands, whether it is a rework
+  /// sent back to its own work, and the place it works at.
   final _offers =
-      <String, ({String project, String story, List<String> issues, String status, String? runRole, Object? place})>{};
+      <String, ({String project, String story, List<String> issues, String status, bool rework, Object? place})>{};
 
   /// The place each issue's work waits at, by project and issue, as the planner keeps it.
   final _places = <(String, String), Object>{};
@@ -57,23 +58,100 @@ class MockStoryWork {
       _places[(project, issue)] = kept ?? place;
     }
     final offer = nextOffer();
-    _offers[offer] = (
-      project: project,
-      story: story,
-      issues: issues,
-      status: 'OFFERED',
-      runRole: 'AUTHOR',
-      place: place,
-    );
+    _offers[offer] = (project: project, story: story, issues: issues, status: 'OFFERED', rework: true, place: place);
     return offer;
+  }
+
+  /// Hands out a task of [role] at another task's work at [place], over [issues] in [repository], and answers its
+  /// order as the planner serves it: under a task name of the window's own, reading the work through its place alone.
+  Map<String, dynamic> offerReading(
+    String project,
+    String story,
+    List<String> issues,
+    String repository,
+    Map<String, dynamic> place, {
+    String role = 'reviewer',
+  }) {
+    final offer = nextOffer();
+    _offers[offer] = (project: project, story: story, issues: issues, status: 'OFFERED', rework: false, place: place);
+    final bound = mockRole(role);
+    return {
+      ..._order(offer, repository, issues, bound, 'Read the work of ${issues.join(', ')} at its place.'),
+      'ownTask': true,
+      'place': place,
+      if (place.containsKey('pullRequest')) 'writeAs': bound['writeAs'],
+    };
+  }
+
+  /// Hands out the building work of [issue] its run's start held back, and answers its order: the author at no place,
+  /// under a task name of the window's own, since the issue has no task yet.
+  Map<String, dynamic> offerHeldBack(String project, String story, String issue, String repository) {
+    final offer = nextOffer();
+    _offers[offer] = (project: project, story: story, issues: [issue], status: 'OFFERED', rework: false, place: null);
+    return {
+      ..._order(offer, repository, [issue], mockRole('author'), 'Build $issue.'),
+      'ownTask': true,
+    };
+  }
+
+  /// The members every order of [role] names, as the planner serves them.
+  static Map<String, dynamic> _order(
+    String offer,
+    String repository,
+    List<String> issues,
+    Map<String, dynamic> role,
+    String prompt,
+  ) => {
+    'offer': offer,
+    'repository': repository,
+    'issues': issues,
+    'kind': 'work',
+    'role': role,
+    'agent': 'codex',
+    'model': 'gpt-5.5',
+    'mode': 'AGENT',
+    'prompt': prompt,
+    'rights': role['rights'],
+    'readLanded': <String>[],
+    'projectServices': role['projectServices'],
+    ...planningWorkspaceMembers(role['workspace'] as String),
+  };
+
+  /// The order of a rework [offer] that [offerRework] handed out, in [repository], as the planner serves it: the
+  /// author at its place, naming the task it runs again: the one a gate push names, or [task] at the task's own pull
+  /// request, whose kept place names it.
+  Map<String, dynamic> reworkOrder(String offer, String repository, {String? task}) {
+    final rework = _offers[offer]!;
+    final place = rework.place! as Map<String, dynamic>;
+    final gatePush = place['gatePush'];
+    final again = gatePush is Map ? gatePush['name'] as String : task;
+    if (again == null || place['ownPullRequest'] != true && gatePush is! Map) {
+      throw ArgumentError.value(
+        offer,
+        'offer',
+        'A rework names the task it runs again at its gate push or own pull request',
+      );
+    }
+    return {
+      ..._order(
+        offer,
+        repository,
+        rework.issues,
+        mockRole('author'),
+        'Rework ${rework.issues.join(', ')} at its place.',
+      ),
+      'task': again,
+      'place': place,
+      if (place['ownPullRequest'] == true) 'writeAs': mockRole('author')['writeAs'],
+    };
   }
 
   /// Whether an offer is its author's rework at the place each of its issues keeps, as the planner's atKeptPlace reads.
   bool _atKeptPlace(
     String project,
-    ({String project, String story, List<String> issues, String status, String? runRole, Object? place}) offer,
+    ({String project, String story, List<String> issues, String status, bool rework, Object? place}) offer,
   ) =>
-      offer.runRole == 'AUTHOR' &&
+      offer.rework &&
       offer.place != null &&
       offer.issues.isNotEmpty &&
       offer.issues.every((issue) => jsonEncode(_places[(project, issue)]) == jsonEncode(offer.place));
@@ -128,7 +206,7 @@ class MockStoryWork {
       // As the planner does: the refusal stands on the offer's issues, which ask the person, the offer stays offered,
       // a resend is answered with what stands and an offer Porelo started is a conflict. An offer whose issues left its
       // story, or whose issues all ask the person already, keeps nothing of it; an issue that asks already keeps its
-      // reason; a rework at its kept place refused as NotTheTasksPush or RoleNotAllowed says its place changed.
+      // reason; a rework at its kept place refused as NotTheTasksPush says its place changed.
       final offer = _offers[parameters['offer']];
       if (offer == null || offer.project != project) refuse('TaskNotAnswered', {'task': parameters['task']});
       if (offer.status == 'STARTED') refuse('TaskEventConflict', {'task': parameters['task']});
@@ -157,8 +235,7 @@ class MockStoryWork {
         _refusals[parameters['offer'] as String] = refusal;
         // The refused offer is of the run its order made, which a later Start of it goes on.
         if (_orders[(project, offer.story)]?['run'] case final run?) work['run'] = run;
-        final place =
-            const {'NotTheTasksPush', 'RoleNotAllowed'}.contains(refusal['name']) && _atKeptPlace(project, offer);
+        final place = refusal['name'] == 'NotTheTasksPush' && _atKeptPlace(project, offer);
         final reasons = {for (final item in items) item['id']: _reasonOf(owner, item['id'] as String)};
         for (final item in items) {
           if (offer.issues.contains(item['id']) && item['needsYou'] != true) {
@@ -382,23 +459,22 @@ class MockStoryWork {
                 'model': 'proposed-model',
                 'effort': 'high',
                 'chosenBy': '${parameters['to']}, risk ordinary',
-                'role': 'MAIN',
+                'role': mockRole('author'),
                 'brief': 'Read the story and complete its work in $repo.',
               },
               'subAgents': [
                 for (final issue in issues.where((issue) => issue['repository'] == repo))
-                  for (final kind in ['BUILDER'])
-                    {
-                      'id': '$repo/${issue['id']}/$kind',
-                      'issue': issue['id'],
-                      'name': kind.toLowerCase(),
-                      'agent': kind == 'READER' ? 'claude-code' : 'codex',
-                      'model': kind == 'READER' ? 'reader-model' : 'proposed-model',
-                      'kind': kind,
-                      'workingState': kind == 'READER' ? 'Reading' : parameters['to'],
-                      'brief': kind == 'READER' ? 'Read the final changes.' : 'Build the issue.',
-                      'choice': 'KEEP',
-                    },
+                  {
+                    'id': '$repo/${issue['id']}/${planningHelper.toLowerCase()}',
+                    'issue': issue['id'],
+                    'name': planningHelper.toLowerCase(),
+                    'agent': 'codex',
+                    'model': 'proposed-model',
+                    'kind': planningHelper,
+                    'workingState': parameters['to'],
+                    'brief': 'Build the issue.',
+                    'choice': 'KEEP',
+                  },
               ],
             },
         ],
@@ -464,11 +540,15 @@ class MockStoryWork {
       final original = proposed.where((item) => item['repository'] == repo['repository']).firstOrNull;
       if (original == null) invalid('The repository was not proposed.');
       final main = repo['main'] as Map;
-      if (main['role'] != 'MAIN' || (main['agent'] as String).isEmpty || (main['model'] as String).isEmpty) {
+      // Of a role sent back only the name is read, and it must be the offered one.
+      final offered = ((original!['main'] as Map)['role'] as Map)['name'];
+      if ((main['role'] as Map?)?['name'] != offered ||
+          (main['agent'] as String).isEmpty ||
+          (main['model'] as String).isEmpty) {
         invalid('Choose a main agent and model.');
       }
       final assignments = (repo['subAgents'] as List).cast<Map<String, dynamic>>();
-      final originals = (original!['subAgents'] as List).cast<Map<String, dynamic>>();
+      final originals = (original['subAgents'] as List).cast<Map<String, dynamic>>();
       if (assignments.length != originals.length ||
           assignments.map((sub) => sub['id']).toSet().length != originals.length) {
         invalid('Choose every proposed helper exactly once.');
@@ -480,7 +560,7 @@ class MockStoryWork {
           invalid('A helper identity or brief was changed.');
         }
         if (!['KEEP', 'CHANGE', 'DROP'].contains(sub['choice']) ||
-            sub['kind'] != 'BUILDER' && sub['choice'] != 'DROP') {
+            sub['kind'] != planningHelper && sub['choice'] != 'DROP') {
           invalid('Unknown helpers cannot start.');
         }
         if (sub['choice'] != 'KEEP' && (parameters['comment'] as String? ?? '').trim().isEmpty) {
@@ -530,41 +610,48 @@ class MockStoryWork {
       'readingRounds': rounds,
       'issueReadingRounds': overrides,
     };
+    // Every task of the order works as the author: it pushes its work at its own gate push, with the project's
+    // services; the first one with the person opens its terminal, as the planner marks it.
+    Map<String, dynamic> authorTask(Map<String, dynamic> fields) => {
+      'offer': nextOffer(),
+      'kind': 'work',
+      ...fields,
+      'role': mockRole('author'),
+      'mode': parameters['mode'],
+      'rights': mockRole('author')['rights'],
+      'readLanded': <String>[],
+      'projectServices': true,
+    };
     final tasks = [
       for (final repo in repos) ...[
-        {
-          'offer': nextOffer(),
+        authorTask({
           'repository': repo['repository'],
           'issues': repo['issues'],
-          'role': 'MAIN',
           'agent': (repo['main'] as Map)['agent'],
           'model': (repo['main'] as Map)['model'],
           'effort': ?(repo['main'] as Map)['effort'],
-          'mode': parameters['mode'],
           'prompt': (repo['main'] as Map)['brief'],
-        },
+        }),
         for (final sub in (repo['subAgents'] as List).cast<Map<String, dynamic>>())
-          if (sub['kind'] == 'BUILDER' && sub['choice'] != 'DROP')
-            {
-              'offer': nextOffer(),
+          if (sub['kind'] == planningHelper && sub['choice'] != 'DROP')
+            authorTask({
               'repository': repo['repository'],
               'issues': [sub['issue']],
-              'role': 'BUILDER',
               'agent': sub['agent'],
               'model': sub['model'],
               'effort': ?sub['effort'],
-              'mode': parameters['mode'],
               'prompt': sub['brief'],
-            },
+            }),
       ],
     ];
+    if (parameters['mode'] == 'AGENT' && tasks.isNotEmpty) tasks.first['opensTerminal'] = true;
     for (final task in tasks) {
       _offers[task['offer'] as String] = (
         project: project,
         story: story['id'] as String,
         issues: (task['issues'] as List).cast<String>(),
         status: 'OFFERED',
-        runRole: null,
+        rework: false,
         place: null,
       );
     }
@@ -592,7 +679,7 @@ class MockStoryWork {
           story: earlier.story,
           issues: earlier.issues,
           status: 'STARTED',
-          runRole: earlier.runRole,
+          rework: earlier.rework,
           place: earlier.place,
         );
       }
@@ -610,8 +697,11 @@ class MockStoryWork {
     }
     final rounds = parameters['readingRounds'] as int;
     final overrides = (parameters['issueReadingRounds'] as List).cast<Map<String, dynamic>>();
+    // The offer's own number tells apart a main task and its helper of one role over the same single issue.
+    final number = int.parse((task.offer ?? '0').split('-').last, radix: 16);
     final name =
-        '${id.toLowerCase()}-${task.repository}-${task.role.toLowerCase()}-${task.issues.join('-').toLowerCase()}';
+        '${id.toLowerCase()}-${task.repository}-${task.role!.name.toLowerCase()}-'
+        '${task.issues.join('-').toLowerCase()}-$number';
     final container = 'mock-$name';
     final work = <String, dynamic>{
       'run': parameters['run'],
@@ -642,7 +732,8 @@ class MockStoryWork {
         'mode': task.mode,
         'agent': task.agent,
         'model': task.model,
-        'role': task.role,
+        'role': task.role!.toJson(),
+        'readLanded': task.readLanded,
         'since': 'mock-start',
         'atWork': true,
         'ended': null,

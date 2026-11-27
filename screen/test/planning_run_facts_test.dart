@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/served_story_work.dart';
@@ -7,13 +8,44 @@ PlanWorkTask _task([Map<String, dynamic> extra = const {}]) =>
     PlanWorkTask.from({...servedRunTask(task: 'run-1'), 'held': 0, ...extra});
 
 void main() {
-  // Harm: a reviewer's run is shown as an author's, or an absent role is shown as something else than Start's default.
-  test('the run role is the one served, and an author where none is served', () {
-    expect(planningRunFacts(_task({'runRole': 'REVIEWER'})), contains('run role reviewer'));
-    expect(planningRunFacts(_task({'runRole': 'AUTHOR'})), contains('run role author'));
-    expect(planningRunFacts(_task()), contains('run role author'));
-    expect(_task({'runRole': 'REVIEWER'}).runRole, 'REVIEWER');
-    expect(_task().runRole, isNull);
+  // Harm: a task's role is shown as another one than it was started with, or one the screen cannot read is taken as
+  // some role at all, a builder by default.
+  test('the role is the one served, with what it reads besides, and a task whose role cannot be read refuses', () {
+    final reviewer = _task({'role': mockRole('reviewer'), 'readLanded': <String>[]});
+    expect(reviewer.role.name, 'reviewer');
+    expect(planningRunFacts(reviewer), startsWith('role reviewer · gives points · in another task\'s work'));
+    expect(planningRunFacts(reviewer), isNot(contains('also reads')));
+    expect(planningRunFacts(_task()), contains('also reads the work of builder-task'));
+    for (final role in <Object?>[
+      'tester',
+      null,
+      {'name': 'x'},
+    ]) {
+      expect(() => _task({'role': role}), throwsFormatException, reason: '$role');
+    }
+    expect(
+      () => PlanWork.from(servedWork()..['tasks'] = [servedRunTask()..remove('role')]),
+      throwsFormatException,
+      reason: 'the whole work is refused, not read with a builder in its place',
+    );
+  });
+
+  // Harm: an offer's role is shown without what it may do, so the person starts a task whose rights they never saw.
+  test('an offered role says how it ends, its workspace, rights, account and services', () {
+    expect(
+      planningRoleText(PlanningTaskRole.fromJson(mockRole('author'))),
+      "role author · pushes work · in its own work · rights: push, reply · writes as the author · "
+      "with the project's services",
+    );
+    expect(
+      planningRoleText(PlanningTaskRole.fromJson({...mockRole('tester'), 'readLanded': true})),
+      contains('also reads the work of the tasks whose build it reads'),
+      reason: 'an offer names no tasks yet, only that its role reads them',
+    );
+    expect(
+      planningRoleText(PlanningTaskRole.fromJson({...mockRole('reviewer'), 'rights': <String>[]})),
+      contains('holds no right'),
+    );
   });
 
   // Harm: the place is shown as another one, or the task's default gate push is left unsaid.
@@ -47,6 +79,50 @@ void main() {
       }),
       contains("at the task's own pull request"),
     );
+  });
+
+  // Harm: a refusal's words from outside the screen turn the text around them, hide a part, or run on without end, so
+  // the person reads another refusal than Porelo's; or a part served empty reads as a word.
+  test("a start refusal's name, parameters and words are shown cleaned and bounded, an empty part as not named", () {
+    String words(String name, {Map<String, String> parameters = const {}, String detail = ''}) =>
+        planningStartRefusalWords(PlanningStartRefusal(name: name, parameters: parameters, detail: detail));
+    expect(
+      words('StartRuleBroken', parameters: {'rule': 'rejectWithPush', 'detail': 'rights'}, detail: 'Ask the owner.'),
+      'Porelo refused the start: it breaks the rule rejectWithPush: rights. Ask the owner.',
+    );
+    for (final name in ['Start\u202ERuleBroken', 'Bad name', 'é', 'x' * 65, '']) {
+      expect(words(name), 'Porelo refused the start: a refusal the screen cannot name', reason: name);
+    }
+    expect(
+      words('StartRuleBroken', parameters: {'rule': 'pu\u202Esh\u200B\u0000', 'detail': '\u2066\u200B'}),
+      'Porelo refused the start: it breaks the rule push: not named',
+      reason: 'a value empty once cleaned is not named',
+    );
+    expect(
+      words('StartRuleBroken', parameters: {'rule': '', 'detail': 'd' * 500}),
+      'Porelo refused the start: it breaks the rule not named: ${'d' * planningMostPlaceText}…',
+    );
+    expect(words('Other', detail: '\u202Ea\nb'), 'Porelo refused the start: Other. a\nb', reason: 'lines stay');
+    expect(words('Other', detail: 'w' * 1200), 'Porelo refused the start: Other. ${'w' * 1000}…');
+    expect(words('Other', detail: '\u200B\u2066 '), 'Porelo refused the start: Other', reason: 'no words, none said');
+  });
+
+  // Harm: a task named as one read besides is shown as text the planner never names a task with, so a hostile name
+  // reads as a real task.
+  test('a task read besides is named only by a task label', () {
+    final task = _task({
+      'readLanded': ['builder-task', 'a\u202Eb', '../x', 'builder-task'],
+    });
+    expect(planningRunFacts(task), contains('also reads the work of builder-task, a task the screen cannot name'));
+    expect(planningRunFacts(task), isNot(contains('\u202E')));
+  });
+
+  // Harm: a helper's kind from outside the screen turns or hides the line around it, or runs on without end.
+  test("a helper's kind is shown cleaned and bounded, and an empty one as not reported", () {
+    expect(planningKindText(planningHelper), planningHelper);
+    expect(planningKindText('HEL\u202EPER\u200B\uFEFF'), 'HELPER');
+    expect(planningKindText('K' * 80), '${'K' * planningMostKindText}…');
+    expect(planningKindText('\u2066\u200B'), 'not reported');
   });
 
   // Harm: a place the planner refuses is started, or one it takes is refused, so the review never runs there.

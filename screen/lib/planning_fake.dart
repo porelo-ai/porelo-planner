@@ -7,4 +7,5 @@ export 'src/fake/mock_planning.dart';
 export 'src/fake/planning_data.dart';
 export 'src/fake/planning_moves.dart';
 export 'src/fake/refusal.dart';
+export 'src/fake/roles.dart';
 export 'src/fake/story_work.dart';

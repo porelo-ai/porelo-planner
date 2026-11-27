@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:porelo_planning/planning_fake.dart';
 import 'package:porelo_planning/porelo_planning.dart';
 
 import 'support/fake_planning.dart';
@@ -268,7 +269,8 @@ void main() {
             ..['containerId'] = 'container-2'
             ..['issues'] = ['PR1.1']
             ..['state'] = 'Building'
-            ..['role'] = 'BUILDER'
+            ..['role'] = mockRole('author')
+            ..['readLanded'] = <String>[]
             ..['model'] = 'builder-model',
         ],
       'tasks': [
@@ -542,7 +544,12 @@ void main() {
     await started();
     for (final mutation in <Map<String, dynamic>>[
       {'mode': 'SHELL'},
-      {'role': 'MAIN'},
+      // A stage that hands back a result is no follow-up of a reading.
+      {
+        'role': mockRole('analyst'),
+        'rights': ['report'],
+        'readLanded': <String>[],
+      },
       {'issues': <String>[]},
       {
         'issues': ['PR1', 'PR1.1'],
@@ -692,7 +699,7 @@ void main() {
   // Harm: a follow-up is lost after the reading choice is accepted.
   test('reading decisions track only returned follow-ups before submission', () async {
     final decision = await reading();
-    source.reply['tasks'] = [servedFollowUp(10, role: 'BUILDER')];
+    source.reply['tasks'] = [servedFollowUp(10, role: 'author')];
     await decision.resolve('REWORK', comment: '  Keep the key inside.\n');
     expect(source.decisions.single, {
       'project': 'demo',
@@ -714,10 +721,10 @@ void main() {
     final decision = await reading();
     source.reply['work'] = servedContinuationWork(anotherAtWork: true);
     for (final (choice, task) in [
-      ('ONE_MORE_ROUND', servedFollowUp(10, role: 'BUILDER')),
+      ('ONE_MORE_ROUND', servedFollowUp(10, role: 'author')),
       ('ONE_MORE_ROUND', _follow(10)..['issues'] = ['PR1.1']),
       ('REWORK', _follow(10)),
-      ('REWORK', servedFollowUp(10, role: 'BUILDER')..['issues'] = ['PR1.1']),
+      ('REWORK', servedFollowUp(10, role: 'author')..['issues'] = ['PR1.1']),
       ('REVIEW_ANYWAY', _follow(10)),
     ]) {
       source.reply['tasks'] = [task];
@@ -796,6 +803,26 @@ void main() {
     );
     await pending;
     expect(starts, hasLength(2));
+  });
+
+  // Harm: a task's reply hands on two tasks that open the window's terminal, so one of them runs unseen.
+  test('follow-ups that would open more than one terminal refuse the whole answer', () {
+    Map<String, dynamic> answer(List<Map<String, dynamic>> tasks) => {
+      'revision': 'r1',
+      'work': servedContinuationWork(),
+      'tasks': tasks,
+    };
+    expect(
+      TaskEventResolution.from(answer([_follow(10)..['opensTerminal'] = true, _follow(11)])).tasks,
+      hasLength(2),
+      reason: 'one terminal is taken',
+    );
+    expect(
+      () => TaskEventResolution.from(
+        answer([_follow(10)..['opensTerminal'] = true, _follow(11)..['opensTerminal'] = true]),
+      ),
+      throwsFormatException,
+    );
   });
 
   // Harm: controls or directional characters hide findings while reported machine and answer fields are rewritten.

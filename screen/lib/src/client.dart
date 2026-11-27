@@ -383,7 +383,7 @@ abstract interface class PlanningSource {
   /// Prepares a checked order without starting tasks or recording running work.
   Future<StoryWorkOrder> startStoryWork(StoryWorkRequest request);
 
-  /// Offers one DISCUSSION task over [project]'s repositories for [idea], the person's first words.
+  /// Offers one task of the kind discussion, with no role, over [project]'s repositories for [idea], the person's first words.
   ///
   /// The offer belongs to no story: the planner records no run for it and takes no task events for it. The window
   /// starts it with the offer as Start's caller key; the planner reads the reports of the task Porelo recorded with

@@ -1711,7 +1711,8 @@ class _BoardViewState extends State<_BoardView> {
   String? _work(PlanStory story) {
     final work = board.workOf(story);
     final working = board.state(story.state)?.kind == 'WORKING';
-    final mainTasks = work?.tasks.where((task) => task.role == 'MAIN' && task.atWork == true).length ?? 0;
+    // The tasks that build the story's work; one that reads it is told by its reading.
+    final mainTasks = work?.tasks.where((task) => task.role.pushesWork && task.atWork == true).length ?? 0;
     if (work == null) return working ? 'Work not reported' : null;
     if (work.atWork == false && work.issues.any((issue) => issue.reason == 'STOPPED')) return 'stopped';
     if (work.atWork == false) return working ? 'nobody at work' : null;

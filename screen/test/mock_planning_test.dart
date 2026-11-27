@@ -148,7 +148,7 @@ void main() {
       ),
     );
     expect(order.tasks, isNotEmpty);
-    expect(order.tasks.map((task) => task.role), everyElement(isIn(['MAIN', 'BUILDER'])));
+    expect(order.tasks.map((task) => task.role?.pushesWork), everyElement(isTrue), reason: 'every task builds');
     expect(order.tasks.every((task) => task.prompt.isNotEmpty), isTrue);
     expect(order.revision, proposal.revision);
     expect(jsonEncode(source.board('demo')), before);
@@ -438,37 +438,79 @@ void main() {
 
   // Harm: the stand-in shows a rework refused at its kept place as a plain refusal, or any other refusal as a changed
   // place, otherwise than the planner, so the window rehearses a reason the planner never gives.
-  test(
-    'a rework at its kept place refused for its push or role says its place changed, any other a plain refusal',
-    () async {
-      const place = {
-        'gatePush': {'name': 'task'},
-      };
-      for (final (name, kept, reason) in [
-        ('NotTheTasksPush', null, 'PLACE_CHANGED'),
-        ('RoleNotAllowed', null, 'PLACE_CHANGED'),
-        ('UnknownForge', null, 'START_REFUSED'),
-        (
-          'NotTheTasksPush',
-          {
-            'gatePush': {'name': 'other'},
-          },
-          'START_REFUSED',
-        ),
-      ]) {
-        final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
-        final issue = offer.issues.first;
-        final rework = source.work.offerRework('demo', story['id'] as String, [issue], place, kept: kept);
-
-        expect(reasonIn(await refuse(rework, name), issue), (reason, true), reason: '$name, kept at ${kept ?? place}');
-      }
-      final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
-      expect(reasonIn(await refuse(offer.offer!, 'NotTheTasksPush'), offer.issues.first), (
+  test('a rework at its kept place refused for its push says its place changed, any other a plain refusal', () async {
+    const place = {
+      'gatePush': {'name': 'task'},
+    };
+    for (final (name, kept, reason) in [
+      ('NotTheTasksPush', null, 'PLACE_CHANGED'),
+      ('StartRuleBroken', null, 'START_REFUSED'),
+      ('UnknownForge', null, 'START_REFUSED'),
+      (
+        'NotTheTasksPush',
+        {
+          'gatePush': {'name': 'other'},
+        },
         'START_REFUSED',
-        true,
-      ), reason: 'the same name on an offer at no kept place');
-    },
-  );
+      ),
+    ]) {
+      final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+      final issue = offer.issues.first;
+      final rework = source.work.offerRework('demo', story['id'] as String, [issue], place, kept: kept);
+
+      expect(reasonIn(await refuse(rework, name), issue), (reason, true), reason: '$name, kept at ${kept ?? place}');
+    }
+    final (:source, :story, :offer, :refuse, orderAgain: _) = await ordered();
+    expect(reasonIn(await refuse(offer.offer!, 'NotTheTasksPush'), offer.issues.first), (
+      'START_REFUSED',
+      true,
+    ), reason: 'the same name on an offer at no kept place');
+  });
+
+  // Harm: the stand-in serves an author's rework as a new task, so the window's tests never hand Start the task it
+  // runs again.
+  test('a rework order names the task it runs again, at the gate push and at its own pull request', () async {
+    final (:source, :story, :offer, refuse: _, orderAgain: _) = await ordered();
+    final issue = offer.issues.first;
+    final atPush = source.work.offerRework(
+      'demo',
+      story['id'] as String,
+      [issue],
+      {
+        'gatePush': {'name': 'demo-author-task'},
+      },
+    );
+    final atPull = source.work.offerRework('demo', story['id'] as String, [issue], {'ownPullRequest': true});
+    final pushed = PlanningTaskOrder.from(source.work.reworkOrder(atPush, offer.repository!));
+    final pulled = PlanningTaskOrder.from(source.work.reworkOrder(atPull, offer.repository!, task: 'demo-author-task'));
+
+    expect([pushed.task, pushed.writeAs], ['demo-author-task', null]);
+    expect([pulled.task, pulled.writeAs], ['demo-author-task', 'author']);
+  });
+
+  // Harm: the stand-in serves a reading at another task's work or a held-back build under a task's own name, so the
+  // window's tests never ask Start for a name of the window's choosing.
+  test('a reading at another task\'s work and a held-back build are asked under a name of the window\'s own', () async {
+    final (:source, :story, :offer, refuse: _, orderAgain: _) = await ordered();
+    final issue = offer.issues.first;
+    final reading = PlanningTaskOrder.from(
+      source.work.offerReading(
+        'demo',
+        story['id'] as String,
+        [issue],
+        offer.repository!,
+        {'pullRequest': 'https://github.com/acme/shop/pull/12'},
+        role: 'screener',
+      ),
+    );
+    final held = PlanningTaskOrder.from(
+      source.work.offerHeldBack('demo', story['id'] as String, issue, offer.repository!),
+    );
+
+    expect([reading.ownTask, reading.task, reading.readLanded, reading.writeAs], [true, null, <String>[], 'review']);
+    expect(reading.rights, contains('reject'));
+    expect([held.ownTask, held.task, held.place], [true, null, null]);
+  });
 
   // Harm: the stand-in replaces a reason an issue asks for with the refusal, or wipes the reasons of the story's other
   // issues, so the window's tests never see a refusal beside another reason as the planner shows it.

@@ -664,7 +664,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
 
   @override
   Future<PlanStoryDetail> getStory(String project, String story) async {
-    final detail = PlanStoryDetail.from(await _read(project, ['stories', _checked('story', story, _storyId)]));
+    final answer = await _read(project, ['stories', _checked('story', story, _storyId)]);
+    final PlanStoryDetail detail;
+    try {
+      detail = PlanStoryDetail.from(answer);
+    } on FormatException catch (error) {
+      throw PlanningRefusal(
+        'BadAnswer',
+        const {},
+        'the planner answered a story that cannot be read: ${error.message}',
+      );
+    }
     _workersNamed(detail.story?.issues ?? const []);
     return detail;
   }
@@ -1079,7 +1089,7 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     final answer = await _write(project, ['ideas', 'discussion'], {'idea': idea}, revision: false);
     try {
       final task = PlanningTaskOrder.from(answer);
-      if (task.role != 'DISCUSSION') throw const FormatException('The planner answered a task that is no discussion.');
+      if (!task.discussion) throw const FormatException('The planner answered a task that is no discussion.');
       return task;
     } on FormatException catch (error) {
       throw PlanningRefusal('BadAnswer', const {}, error.message);
@@ -1237,7 +1247,17 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     }
     await _stillBound(project, given);
     _readSources[project] = given.source;
-    final snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories'], 'open': board['open']});
+    final PlanningSnapshot snapshot;
+    try {
+      snapshot = PlanningSnapshot.from({...workflow, 'stories': board['stories'], 'open': board['open']});
+    } on FormatException catch (error) {
+      // A task whose role cannot be read, which the contract requires, refuses the whole board.
+      throw PlanningRefusal(
+        'BadAnswer',
+        const {},
+        'the planner answered a board that cannot be read: ${error.message}',
+      );
+    }
     if (snapshot.tracker == null) {
       throw const PlanningRefusal('BadAnswer', {}, 'the planner answered a workflow without a tracker it can name');
     }

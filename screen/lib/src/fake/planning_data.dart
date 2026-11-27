@@ -1292,7 +1292,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1308,7 +1317,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1501,7 +1519,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1517,7 +1544,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1688,7 +1724,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1704,7 +1749,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1765,7 +1819,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1781,7 +1844,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1819,7 +1891,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null
@@ -1835,7 +1916,16 @@ Map<String, dynamic> mockPlanningBoard() => jsonDecode(r'''
             "mode": "UNATTENDED",
             "agent": "",
             "model": "",
-            "role": "MAIN",
+            "role": {
+              "name": "author",
+              "endKind": "PUSHES_WORK",
+              "workspace": "own",
+              "readLanded": false,
+              "projectServices": true,
+              "writeAs": "author",
+              "rights": ["push", "reply"]
+            },
+            "readLanded": [],
             "since": "09:10",
             "atWork": true,
             "ended": null

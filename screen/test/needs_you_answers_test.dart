@@ -16,7 +16,7 @@ Map<String, dynamic> _board(
   String run = _run,
   String revision = 'r1',
   String state = 'Building',
-  String role = 'BUILDER',
+  String role = 'author',
   Map<String, dynamic>? ended,
   bool stopped = false,
 }) => {
@@ -80,7 +80,8 @@ Map<String, dynamic> _board(
               'mode': 'UNATTENDED',
               'agent': 'codex',
               'model': 'model',
-              'role': role,
+              'role': mockRole(role),
+              'readLanded': <String>[],
               'since': '',
               'atWork': false,
               'ended': ended,
@@ -261,7 +262,7 @@ void main() {
         'FAILED',
         hooks: _hooks(),
         changes: const NoTasks(),
-        served: _board('FAILED', state: 'Reading', role: 'READER', stopped: true, ended: outOfTime()),
+        served: _board('FAILED', state: 'Reading', role: 'tester', stopped: true, ended: outOfTime()),
       ),
     );
     await show(tester);

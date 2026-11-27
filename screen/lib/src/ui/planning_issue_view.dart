@@ -274,7 +274,7 @@ class PlanningIssueView extends StatelessWidget {
         else if (reply.subAgents.isEmpty)
           const Text('No sub-agents.'),
         for (final agent in reply.subAgents) ...[
-          Text('${planningValue(agent.name)} · ${planningValue(agent.role)}'),
+          Text('${planningValue(agent.name)} · ${planningRoleText(agent.role)}'),
           Text('Agent: ${planningValue(agent.agent)} · Model: ${planningValue(agent.model)}'),
           SelectableText(planningValue(agent.brief)),
         ],
@@ -409,6 +409,12 @@ class PlanningIssueView extends StatelessWidget {
                 // Only a task at work is asked of the window, so an ended one carries no words of it.
                 unavailable: task.atWork == true && task.ended == null ? taskUnavailable(task.task) : null,
               ),
+            if (work.issues.where((item) => item.issue == issue.id).firstOrNull case final step?) ...[
+              // A step a person works by hand has no task, so no role and no rights to show.
+              if (step.reason == 'MANUAL') Text(planningByHandWords, key: Key('planning-by-hand ${issue.id}')),
+              if (step.startRefusal case final refusal?)
+                Text(planningStartRefusalWords(refusal), key: Key('planning-start-refused ${issue.id}')),
+            ],
           ],
         ],
       ),

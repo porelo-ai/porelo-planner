@@ -93,7 +93,11 @@ void main() {
       [source, 'demo', '', source.answered.single],
       reason: 'the order goes to Start unchanged, on its provider, with no story',
     );
-    expect(start.task.role, 'DISCUSSION', reason: 'the order is the discussion the planner offered');
+    expect(
+      [start.task.kind, start.task.role],
+      ['discussion', null],
+      reason: 'the order is the discussion the planner offered',
+    );
     expect(client.events, isEmpty, reason: 'no story run owns a discussion, so no task event is reported');
   });
 

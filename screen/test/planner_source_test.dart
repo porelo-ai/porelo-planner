@@ -423,7 +423,7 @@ void main() {
     final proposal = await source.proposeStoryWork('demo', 'ST1', 'Building');
     expect(planner.targets, ['PUT /projects/demo', 'POST /projects/demo/stories/ST1/proposal']);
     expect(jsonDecode(planner.calls.last.body), {'to': 'Building'});
-    expect(proposal.repositories.single.subAgents.single.role, 'BUILDER');
+    expect(proposal.repositories.single.subAgents.single.isHelper, isTrue);
     for (final bad in [
       servedProposal()..remove('readingRounds'),
       servedProposal()..['repositories'] = [false],
@@ -450,7 +450,7 @@ void main() {
     expect(jsonDecode(planner.calls.last.body), request.toMap());
     expect(planner.targets.last, 'POST /projects/demo/stories/ST1/work');
     expect(order.revision, 'r1');
-    expect(order.tasks.map((task) => task.role), ['MAIN', 'BUILDER']);
+    expect(order.tasks.map((task) => task.role?.name), ['author', 'author']);
     expect(order.tasks.first.prompt, (servedOrder()['tasks'] as List).first['prompt']);
     final bad = servedOrder();
     ((bad['tasks'] as List).last as Map)['model'] = 'another-model';
@@ -498,19 +498,25 @@ void main() {
     final (planner, source) = await _started();
     final served = {
       'offer': servedOffer(9),
+      'kind': 'discussion',
+      'opensTerminal': true,
       'issues': <String>[],
-      'role': 'DISCUSSION',
       'agent': 'codex',
       'model': 'idea-model',
       'mode': 'AGENT',
       'prompt': 'Discuss the idea.\n',
+      'readOnly': true,
+      'allRepositories': true,
+      'rights': ['report'],
+      'readLanded': <String>[],
+      'projectServices': true,
     };
     planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, served);
     final task = await source.discussIdea('demo', 'A board that\nremembers.');
     expect(planner.targets.last, 'POST /projects/demo/ideas/discussion', reason: 'the contract names this call');
     expect(jsonDecode(planner.calls.last.body), {'idea': 'A board that\nremembers.'}, reason: 'the idea goes as typed');
-    expect([task.role, task.repository, task.result], ['DISCUSSION', null, null], reason: 'as served');
-    planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, servedFollowUp(1, role: 'MAIN'));
+    expect([task.kind, task.role, task.repository, task.result], ['discussion', null, null, null], reason: 'as served');
+    planner.routes['POST /projects/demo/ideas/discussion'] = () => _Reply(200, servedFollowUp(1, role: 'author'));
     expect(
       (await _refusal(source.discussIdea('demo', 'An idea'))).name,
       'BadAnswer',
@@ -2589,9 +2595,7 @@ void main() {
   test('all reading choices send the served request and return checked follow-ups', () async {
     final (planner, source) = await _started();
     for (final choice in ['REVIEW_ANYWAY', 'ONE_MORE_ROUND', 'REWORK']) {
-      final tasks = [
-        if (choice != 'REVIEW_ANYWAY') servedFollowUp(10, role: choice == 'REWORK' ? 'BUILDER' : 'READER'),
-      ];
+      final tasks = [if (choice != 'REVIEW_ANYWAY') servedFollowUp(10, role: choice == 'REWORK' ? 'author' : 'reader')];
       planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {
         'revision': 'r2',
         'issue': servedReadingIssue(stopped: false),
@@ -2667,10 +2671,10 @@ void main() {
   test('HTTP reading decisions refuse mismatched roles and decided issues', () async {
     final (planner, source) = await _started();
     for (final (choice, task) in [
-      ('ONE_MORE_ROUND', servedFollowUp(10, role: 'BUILDER')),
+      ('ONE_MORE_ROUND', servedFollowUp(10, role: 'author')),
       ('ONE_MORE_ROUND', servedFollowUp(10)..['issues'] = ['PR1.1']),
       ('REWORK', servedFollowUp(10)),
-      ('REWORK', servedFollowUp(10, role: 'BUILDER')..['issues'] = ['PR1.1']),
+      ('REWORK', servedFollowUp(10, role: 'author')..['issues'] = ['PR1.1']),
       ('REVIEW_ANYWAY', servedFollowUp(10)),
     ]) {
       planner.routes['POST /projects/demo/issues/PR1/reading'] = () => _Reply(200, {

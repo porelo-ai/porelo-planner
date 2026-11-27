@@ -53,7 +53,7 @@ Map<String, dynamic> _board() => {
   'repositories': ['repo'],
 };
 
-const _sub = 'repo/AA1/BUILDER';
+const _sub = 'repo/AA1/helper';
 
 /// The board of [_board] with a second agent's issue in a second repository.
 Map<String, dynamic> _twoRepositories() {
@@ -745,7 +745,7 @@ void main() {
       expect(find.text(line), findsOneWidget, reason: 'the review lists $line');
     }
     expect(find.textContaining('Runs on '), findsNothing, reason: 'one machine is no choice and is not shown');
-    expect(find.textContaining('repo builder: keep codex'), findsOneWidget, reason: 'the review names the sub-agent');
+    expect(find.textContaining('repo helper: keep codex'), findsOneWidget, reason: 'the review names the sub-agent');
     expect(find.byKey(const Key('story-work-change 0')), findsNothing, reason: 'nothing to change where');
 
     await tester.tap(find.byKey(const Key('story-work-change 2')));
@@ -762,7 +762,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('story-work-comment')), 'Built by hand.');
     await settle(tester);
     await _next(tester);
-    expect(find.text('repo builder: drop'), findsOneWidget, reason: 'the review names the drop');
+    expect(find.text('repo helper: drop'), findsOneWidget, reason: 'the review names the drop');
     expect(find.text('Comment: Built by hand.'), findsOneWidget, reason: 'and the comment');
     expect(source.work.calls.where((call) => call.$1 == 'StartStoryWork'), isEmpty, reason: 'nothing started yet');
     await tester.pumpWidget(const SizedBox.shrink());

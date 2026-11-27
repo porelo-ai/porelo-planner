@@ -45,8 +45,8 @@ void main() {
     final starts = window.log.calls.where((HookCall call) => call.hook == 'startTask').toList();
     expect(starts, hasLength(1), reason: 'the screen called the Start hook once');
     expect(
-      [starts.single.arguments['project'], starts.single.arguments['story'], starts.single.arguments['role']],
-      ['demo', '', 'DISCUSSION'],
+      [starts.single.arguments['project'], starts.single.arguments['story'], starts.single.arguments['kind']],
+      ['demo', '', 'discussion'],
       reason: 'the log names the Start\'s project, story and order',
     );
     expect(
@@ -55,7 +55,7 @@ void main() {
       reason: 'the board shows the window\'s words',
     );
     await openLog(tester);
-    expect(find.textContaining('"role":"DISCUSSION"'), findsOneWidget, reason: 'the log shows the call');
+    expect(find.textContaining('"kind":"discussion"'), findsOneWidget, reason: 'the log shows the call');
   });
 
   // Harm: an end fired by hand that does not reach the board as the window's would leaves the screen's handling of
@@ -77,6 +77,15 @@ void main() {
       window.log.calls.map((HookCall call) => call.hook),
       containsAllInOrder(['agents.on', 'startTask', 'taskChanges.started']),
       reason: 'the start went through the window\'s hooks, each logged',
+    );
+    // Harm: the stand-in hands its Start a role, which Porelo's Start is never handed, so a screen that relies on it
+    // passes here and fails at the window's.
+    final starts = window.log.calls.where((HookCall call) => call.hook == 'startTask').toList();
+    expect(starts.map((call) => call.arguments['kind']), everyElement('work'), reason: 'work was started');
+    expect(
+      starts.where((call) => call.arguments.containsKey('role')),
+      isEmpty,
+      reason: 'Start is handed the members of a role, never the role',
     );
 
     await tester.tap(find.byKey(const Key('app-tab-events')));

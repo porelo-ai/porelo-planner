@@ -57,11 +57,17 @@ class _Stops extends NoTasks {
       stopped.addAll(tasks);
 }
 
+/// Every member of [task] the hook hands on, as the planner's order names them.
 Map<String, dynamic> _fields(PlanningTaskOrder task) => {
+  'kind': task.kind,
+  'role': task.role?.toJson(),
+  'rights': task.rights,
+  'readLanded': task.readLanded,
+  'projectServices': task.projectServices,
   'offer': task.offer,
+  if (task.opensTerminal) 'opensTerminal': true,
   'repository': task.repository,
   'issues': task.issues,
-  'role': task.role,
   'agent': task.agent,
   'model': task.model,
   'mode': task.mode,
@@ -91,7 +97,7 @@ void main() {
           'work': {
             'atWork': running,
             'tasks': [
-              {'task': 'actual-task', 'atWork': running},
+              {'task': 'actual-task', 'atWork': running, 'role': mockRole('author'), 'readLanded': <String>[]},
             ],
           },
         },
@@ -414,7 +420,10 @@ void main() {
   // Harm: a successful but unreported order allows duplicate starts before the board confirms its run.
   test('a successful order blocks another start until its reported work ends', () async {
     final first = await form(
-      (source, project, story, task) async => PlanningTaskStarted(task: task.role, container: 'container-${task.role}'),
+      (source, project, story, task) async => PlanningTaskStarted(
+        task: '${task.role!.name}-${task.issues.join('-')}',
+        container: 'container-${task.offer}',
+      ),
     );
     final second = await form((source, project, story, task) async {
       fail('An unconfirmed or running order must prevent another Start.');
@@ -435,7 +444,7 @@ void main() {
             'work': {
               'atWork': running,
               'tasks': [
-                {'task': 'MAIN', 'atWork': running},
+                {'task': 'main', 'atWork': running, 'role': mockRole('author'), 'readLanded': <String>[]},
               ],
             },
           },
@@ -449,7 +458,10 @@ void main() {
   // Harm: a story started once can never be started again while its machine records no run.
   test('a successful order releases the story on the next board that shows no run', () async {
     final first = await form(
-      (source, project, story, task) async => PlanningTaskStarted(task: task.role, container: 'container-${task.role}'),
+      (source, project, story, task) async => PlanningTaskStarted(
+        task: '${task.role!.name}-${task.issues.join('-')}',
+        container: 'container-${task.offer}',
+      ),
     );
     expect(await first.start(), isTrue);
     await first.ended;

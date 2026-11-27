@@ -124,7 +124,7 @@ void main() {
     story['work'] = {
       'atWork': true,
       'tasks': [
-        {'task': 'new-run', 'role': 'MAIN', 'atWork': true},
+        {'task': 'new-run', 'role': mockRole('author'), 'atWork': true},
       ],
     };
     backend.push('checkout', replacement);

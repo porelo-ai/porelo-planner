@@ -46,7 +46,7 @@ void main() {
   // Harm: dropping a builder silently discards its assigned work.
   test('drop requires a comment and sends no replacement agent', () async {
     final repo = work.proposal!.repositories.first;
-    final reader = repo.subAgents.firstWhere((sub) => sub.role == 'BUILDER');
+    final reader = repo.subAgents.firstWhere((sub) => sub.isHelper);
     work.choose(repo.repository, reader, 'DROP');
     expect(work.canStart, isFalse);
     expect(await work.start(), isFalse);
@@ -70,7 +70,7 @@ void main() {
   // Harm: a changed participant or limit is ignored by the actual start request.
   test('a changed builder and per issue rounds reach start exactly', () async {
     final repo = work.proposal!.repositories.first;
-    final sub = repo.subAgents.firstWhere((sub) => sub.role == 'BUILDER');
+    final sub = repo.subAgents.firstWhere((sub) => sub.isHelper);
     final issue = work.proposal!.issues.first.id;
     work.choose(repo.repository, sub, 'CHANGE', agent: 'claude-code', model: 'chosen-model');
     work.setComment('Use a different participant.');
