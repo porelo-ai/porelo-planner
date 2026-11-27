@@ -2816,7 +2816,8 @@ public final class GitHubStore implements PlanningStore {
     /** A failure as the store refuses it, GitHub's words scrubbed of the token. */
     private RuntimeException refused(final RuntimeException e) {
         if (e instanceof UnsupportedOperationException || e instanceof TextEdit.Refused) {
-            // Refused before any call, in fixed words: the caller's to correct, not GitHub's.
+            // Refused before any call, in fixed words and at most a line of the caller's own text:
+            // the caller's to correct, not GitHub's, and no token is in it.
             return e;
         }
         final StoreException refusal =

@@ -6567,8 +6567,7 @@ components:
           $ref: '#/components/schemas/IssueId'
         to:
           type: string
-          minLength: 1
-          maxLength: 100
+          pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         reason:
           description: Why the issue is closed, taken only on a move into a closed state, as Move's reason.
           type: string
@@ -6619,8 +6618,7 @@ components:
           enum: [XS, S, M, L, XL]
         state:
           type: string
-          minLength: 1
-          maxLength: 100
+          pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         priority:
           $ref: '#/components/schemas/Priority'
         worker:
@@ -6653,8 +6651,7 @@ components:
           pattern: '^(XS|S|M|L|XL)$'
         state:
           type: string
-          minLength: 1
-          maxLength: 100
+          pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         priority:
           $ref: '#/components/schemas/Priority'
         worker:

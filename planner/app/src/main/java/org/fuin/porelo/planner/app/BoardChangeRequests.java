@@ -35,8 +35,6 @@ final class BoardChangeRequests {
 
     private static final int LONGEST_TITLE = 256;
 
-    private static final int LONGEST_STATE = 100;
-
     private static final int LONGEST_REFERENCE = 200;
 
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9_-]{1,64}");
@@ -315,8 +313,8 @@ final class BoardChangeRequests {
     }
 
     private static @Nullable String state(final @Nullable String state) {
-        if (state != null && (state.isEmpty() || state.length() > LONGEST_STATE)) {
-            throw refused("state", "The state is 1 to 100 characters.");
+        if (state != null && !BoardController.STATE.matcher(state).matches()) {
+            throw refused("state", "The state must be a state's name.");
         }
         return state;
     }
