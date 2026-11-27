@@ -26,13 +26,16 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.HandlerMapping;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Answers each refusal as {@code application/problem+json}: its name in the type, its words in the
  * detail and what it names in {@code parameters}.
  */
 @RestControllerAdvice
-// A handler's ProblemDetail return type does not name the typed parameters Jackson writes.
+// A handler's ProblemDetail return type does not name the typed parameters Jackson writes, and
+// a batch's refused item is read into them too.
 @RegisterReflectionForBinding({
     org.fuin.porelo.planner.app.answers.ChangedItem.class,
     org.fuin.porelo.planner.app.answers.ProblemParameters.class
@@ -43,6 +46,12 @@ public class Problems {
 
     /** The prefix of every problem type; the window reads the name after it. */
     static final String TYPE = "urn:porelo-planner:";
+
+    /** Reads a refusal's parameters into the record the description names; none is left out. */
+    private static final JsonMapper PARAMETERS =
+            JsonMapper.builder()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .build();
 
     /** The most causes the line names, outermost first. */
     private static final int CAUSES = 4;
@@ -100,13 +109,50 @@ public class Problems {
      */
     @ExceptionHandler(Moves.Refused.class)
     public ResponseEntity<ProblemDetail> refused(final Moves.Refused refused) {
-        final HttpStatus status =
-                switch (refused.name()) {
-                    case "NoSuchStory", "NoSuchIssue", "NotUnlisted" -> HttpStatus.NOT_FOUND;
-                    default -> HttpStatus.UNPROCESSABLE_CONTENT;
-                };
         return problem(
-                refused.name(), status, String.valueOf(refused.getMessage()), refused.parameters());
+                refused.name(),
+                status(refused),
+                String.valueOf(refused.getMessage()),
+                refused.parameters());
+    }
+
+    private static HttpStatus status(final Moves.Refused refused) {
+        return switch (refused.name()) {
+            case "NoSuchStory", "NoSuchIssue", "NotUnlisted" -> HttpStatus.NOT_FOUND;
+            default -> HttpStatus.UNPROCESSABLE_CONTENT;
+        };
+    }
+
+    /**
+     * Answers a refusal of one item of a batch as the generated problem record, exactly as the call
+     * alone would answer it: the same name, status, words and parameters.
+     *
+     * @param refusal the item's refusal, a move's or a work refusal
+     * @return the problem
+     */
+    static org.fuin.porelo.planner.app.answers.Problem answer(final RuntimeException refusal) {
+        final String name;
+        final HttpStatus status;
+        final Map<String, ?> parameters;
+        if (refusal instanceof Moves.Refused refused) {
+            name = refused.name();
+            status = status(refused);
+            parameters = refused.parameters();
+        } else if (refusal instanceof WorkRefusal work) {
+            final Refusal alone = Refusal.work(work);
+            name = alone.name();
+            status = alone.status();
+            parameters = alone.parameters();
+        } else {
+            throw refusal;
+        }
+        return new org.fuin.porelo.planner.app.answers.Problem(
+                TYPE + name,
+                name,
+                status.value(),
+                String.valueOf(refusal.getMessage()),
+                PARAMETERS.convertValue(
+                        parameters, org.fuin.porelo.planner.app.answers.ProblemParameters.class));
     }
 
     /**

@@ -5051,6 +5051,34 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
+     * Serializes a batch of issue moves that no person confirms with the runs' saves: the save is
+     * given the running work and the runs the record holds under the lock, so a move over running
+     * work can be refused as the save judges it, and the attention of each issue moved is cleared
+     * as a hand move clears it.
+     *
+     * @param save the judging and the save, given the running work and the runs under the lock
+     * @param <T> what the save answers
+     * @return what the save answered
+     */
+    public <T> T movingIssues(final BiFunction<MovePreview.Running, Moves.Runs, T> save) {
+        return record.locked(
+                session -> {
+                    final Snapshot snapshot = read(session);
+                    final Board board = store.board();
+                    final T saved = save.apply(owners(snapshot), held(snapshot));
+                    final Board after = store.board();
+                    final Set<String> moved = new HashSet<>();
+                    for (final Issue issue : board.issues()) {
+                        if (!manual(board, issue.id()) && stateChanged(board, after, issue.id())) {
+                            moved.add(issue.id());
+                        }
+                    }
+                    settled(session, snapshot, moved);
+                    return saved;
+                });
+    }
+
+    /**
      * Answers what the correction of one warning would write, read under the writer lock, writing
      * nothing.
      *

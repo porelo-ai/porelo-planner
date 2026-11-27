@@ -1,5 +1,6 @@
 package org.fuin.porelo.planner.app;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -87,6 +88,31 @@ final class EditRequests {
      * @param seen the versions the caller saw
      */
     record BlockedByRequest(List<String> blockedBy, Basis seen) {}
+
+    /**
+     * One issue moved to a state, as the description names it.
+     *
+     * @param issue the issue's checked id
+     * @param to the state's name
+     * @param reason why the issue is closed, or null for none
+     */
+    record StateMoveRequest(
+            String issue,
+            String to,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String reason) {}
+
+    /**
+     * Many issues each moved to a state, as the description names them.
+     *
+     * @param moves the moves, in the order sent
+     */
+    record StateMovesRequest(List<StateMoveRequest> moves) {}
+
+    /** The most moves one body holds. */
+    static final int MOST_STATE_MOVES = 200;
+
+    /** The most characters a move's reason holds. */
+    static final int MOST_STATE_REASON = 2000;
 
     /**
      * An add of an issue made outside the project, as the description names it.
@@ -283,6 +309,72 @@ final class EditRequests {
         exactly(body, issue, Set.of("blockedBy", "seen"));
         return new BlockedByRequest(
                 ids(body, "blockedBy", issue, Edits.MOST_BLOCKERS), seen(body, issue));
+    }
+
+    /**
+     * Reads many issues' moves: at most 65536 bytes, one JSON object with exactly a list of 1 to
+     * 200 moves, each exactly an issue's id and a state's name and at most a reason; a refusal
+     * never repeats what was sent.
+     *
+     * @param request the request
+     * @param project the project's checked name, which a refused issue id names
+     * @return the moves, in the order sent
+     * @throws Refusal {@code MoveNotAllowed} for a body that is no such list, {@code InvalidName}
+     *     for an issue id that is none
+     */
+    static StateMovesRequest stateMoves(final HttpServletRequest request, final String project) {
+        final JsonNode body;
+        try {
+            body = WorkRequests.read(request);
+        } catch (final WorkRefusal invalid) {
+            throw BoardController.notAllowed(
+                    "", "", "The body is not one JSON object of its size.");
+        }
+        final JsonNode list = body.get("moves");
+        if (body.size() != 1
+                || list == null
+                || !list.isArray()
+                || list.isEmpty()
+                || list.size() > MOST_STATE_MOVES) {
+            throw BoardController.notAllowed(
+                    "", "", "The body must hold only moves, a list of 1 to 200.");
+        }
+        final List<StateMoveRequest> moves = new ArrayList<>();
+        for (final JsonNode move : list) {
+            moves.add(stateMove(move, project));
+        }
+        return new StateMovesRequest(moves);
+    }
+
+    private static StateMoveRequest stateMove(final JsonNode move, final String project) {
+        if (!move.isObject()
+                || !move.has("issue")
+                || !move.has("to")
+                || !Set.of("issue", "to", "reason").containsAll(move.propertyNames())) {
+            throw BoardController.notAllowed(
+                    "", "", "Each move must hold an issue and a state, and at most a reason.");
+        }
+        final JsonNode issue = move.get("issue");
+        final String id;
+        try {
+            id = Ids.issue(issue.isString() ? issue.asString() : "");
+        } catch (final IllegalArgumentException invalid) {
+            throw Refusal.invalidName("The issue id is invalid.", Map.of("project", project));
+        }
+        final JsonNode to = move.get("to");
+        if (!to.isString() || !BoardController.STATE.matcher(to.asString()).matches()) {
+            throw BoardController.notAllowed(id, "", "The destination must be a state's name.");
+        }
+        @Nullable String reason = null;
+        if (move.has("reason")) {
+            final JsonNode given = move.get("reason");
+            if (!given.isString() || given.asString().length() > MOST_STATE_REASON) {
+                throw BoardController.notAllowed(
+                        id, "", "The reason must be a text of at most 2000 characters.");
+            }
+            reason = given.asString();
+        }
+        return new StateMoveRequest(id, to.asString(), reason);
     }
 
     /**

@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.fuin.porelo.planner.app.answers.BatchSaved;
 import org.fuin.porelo.planner.app.answers.ChangedItem;
 import org.fuin.porelo.planner.app.answers.CorrectionPreview;
 import org.fuin.porelo.planner.app.answers.CorrectionSaved;
@@ -20,6 +21,7 @@ import org.fuin.porelo.planner.app.answers.IssueAdded;
 import org.fuin.porelo.planner.app.answers.IssueDetail;
 import org.fuin.porelo.planner.app.answers.IssueList;
 import org.fuin.porelo.planner.app.answers.IssueReply;
+import org.fuin.porelo.planner.app.answers.ItemResult;
 import org.fuin.porelo.planner.app.answers.LabelCall;
 import org.fuin.porelo.planner.app.answers.MoveWarning;
 import org.fuin.porelo.planner.app.answers.Moved;
@@ -49,6 +51,7 @@ import org.fuin.porelo.planner.core.Corrections;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.HandedResults;
 import org.fuin.porelo.planner.core.IdeaDiscussion;
+import org.fuin.porelo.planner.core.MoveIssues;
 import org.fuin.porelo.planner.core.MovePreview;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.NewIssues;
@@ -117,7 +120,7 @@ public class BoardController {
     private static final Pattern WARNING_KIND = Pattern.compile("[A-Z][A-Za-z]{0,63}");
 
     /** A state's name as a refusal may repeat it; anything else is never echoed. */
-    private static final Pattern STATE = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
+    static final Pattern STATE = Pattern.compile("[A-Za-z][A-Za-z0-9 _-]{0,63}");
 
     private static final Logger LOG = LoggerFactory.getLogger(BoardController.class);
 
@@ -753,6 +756,103 @@ public class BoardController {
     }
 
     /**
+     * Moves many issues to their states in one call: the batch is previewed, each move the rules
+     * refuse is dropped with its refusal, and the rest is saved in one save against the board that
+     * was previewed. A board changed between the preview and the save is previewed again once.
+     *
+     * @param project the project's name
+     * @param request the request, whose body is the moves
+     * @return the revision after the call and what became of each move
+     */
+    @PostMapping("/projects/{project}/states")
+    public BatchSaved moveIssues(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = name(project);
+        final List<MoveIssues.Ask> asks =
+                EditRequests.stateMoves(request, name).moves().stream()
+                        .map(move -> new MoveIssues.Ask(move.issue(), move.to(), move.reason()))
+                        .toList();
+        final Projects.Given given = projects.given(name);
+        try {
+            return given.work()
+                    .movingIssues(
+                            (running, runs) ->
+                                    movedIssues(name, given.store(), asks, running, runs));
+        } catch (final UnsupportedOperationException e) {
+            throw movesNotOffered(name);
+        } finally {
+            changes.saved(name);
+        }
+    }
+
+    /** Judges and saves a batch, judging it again once on the board a change left. */
+    private BatchSaved movedIssues(
+            final String name,
+            final PlanningStore store,
+            final List<MoveIssues.Ask> asks,
+            final MovePreview.Running running,
+            final Moves.Runs runs) {
+        Board board = store.board();
+        for (int attempt = 0; ; attempt++) {
+            final MoveIssues.Judged judged =
+                    MoveIssues.judge(board, asks, store.keepsReasons(), running, runs);
+            final MovePreview preview = judged.preview();
+            if (preview == null) {
+                // Nothing changes, so no repository is locked or asked.
+                return batch(board.revision().value(), judged);
+            }
+            final List<Moves.Move> moves = judged.moves();
+            final Set<String> from = new java.util.TreeSet<>(Moves.touched(board, moves));
+            from.addAll(Moves.stories(board, moves));
+            try {
+                final Board saved =
+                        submitted(
+                                name,
+                                store,
+                                judged.planned().writes(),
+                                preview.basis(),
+                                new Recheck(
+                                        Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
+                                        from,
+                                        dependencies -> Rules.moves(dependencies, moves, runs)));
+                LOG.info(
+                        "Moved {} issues of project {} as revision {}",
+                        moves.size(),
+                        LogText.of(name),
+                        LogText.of(saved.revision().value()));
+                return batch(saved.revision().value(), judged);
+            } catch (final StoreException.Changed changed) {
+                if (attempt > 0) {
+                    throw changed;
+                }
+            } catch (final Moves.Refused changed) {
+                // The store's own check of the rules, on the board it holds now, found what the
+                // judging did not: the board changed since it was read.
+                if (attempt > 0) {
+                    throw new StoreException.Changed(List.copyOf(from));
+                }
+            }
+            board = store.board();
+        }
+    }
+
+    private static BatchSaved batch(final String revision, final MoveIssues.Judged judged) {
+        return new BatchSaved(
+                revision, judged.items().stream().map(BoardController::itemResult).toList());
+    }
+
+    private static ItemResult itemResult(final MoveIssues.Item item) {
+        final @Nullable RuntimeException refusal = item.refusal();
+        return new ItemResult(
+                item.issue(),
+                null,
+                ItemResult.OutcomeEnum.valueOf(item.outcome().name()),
+                item.state(),
+                null,
+                refusal == null ? null : Problems.answer(refusal));
+    }
+
+    /**
      * Adds an issue with its requested placement, saved as a move is saved.
      *
      * @param project the project's name
@@ -1148,7 +1248,7 @@ public class BoardController {
         return moves;
     }
 
-    private static Refusal notAllowed(final String item, final String from, final String reason) {
+    static Refusal notAllowed(final String item, final String from, final String reason) {
         return notAllowed(item, from, reason, "");
     }
 
