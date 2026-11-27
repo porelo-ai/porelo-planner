@@ -270,19 +270,19 @@ public final class AgentReads {
             final Map<String, String> places = new LinkedHashMap<>();
             places.put(TITLE, story.title());
             places.put(TEXT, story.description());
-            matched(story.id(), Kind.STORY, story.title(), story.state(), places, patterns)
+            matched(story.id(), Kind.STORY, story.title(), story.state(), places, patterns, null)
                     .ifPresent(all::add);
         }
         for (final Issue issue : board.issues()) {
             final Map<String, String> places = new LinkedHashMap<>();
             places.put(TITLE, issue.title());
             final Split split = splitter.split(issue.text());
-            if (split.parts() == null) {
-                places.put(TEXT, issue.text());
-            } else {
+            if (split.parts() != null) {
                 places.putAll(split.parts());
             }
-            matched(issue.id(), Kind.ISSUE, issue.title(), issue.state(), places, patterns)
+            // A section of the person's own or a second paragraph is in no part, yet still text.
+            matched(issue.id(), Kind.ISSUE, issue.title(), issue.state(), places, patterns,
+                            issue.text())
                     .ifPresent(all::add);
         }
         final boolean more = all.size() > MOST_MATCHES;
@@ -295,7 +295,8 @@ public final class AgentReads {
             final String title,
             final String state,
             final Map<String, String> places,
-            final List<Pattern> patterns) {
+            final List<Pattern> patterns,
+            final @Nullable String rest) {
         final Set<String> found = new LinkedHashSet<>();
         for (final Pattern pattern : patterns) {
             boolean held = false;
@@ -305,12 +306,20 @@ public final class AgentReads {
                     held = true;
                 }
             }
+            if (!held && rest != null && pattern.matcher(rest).find()) {
+                found.add(TEXT);
+                held = true;
+            }
             if (!held) {
                 return Optional.empty();
             }
         }
-        // Each place once, in the order the item holds them.
-        final List<String> ordered = places.keySet().stream().filter(found::contains).toList();
+        // Each place once, in the order the item holds them, the rest of the text last.
+        final List<String> ordered =
+                new ArrayList<>(places.keySet().stream().filter(found::contains).toList());
+        if (found.contains(TEXT) && !ordered.contains(TEXT)) {
+            ordered.add(TEXT);
+        }
         return Optional.of(new Match(id, kind, title, state, ordered));
     }
 

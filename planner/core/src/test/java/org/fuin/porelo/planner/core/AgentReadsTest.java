@@ -204,6 +204,21 @@ class AgentReadsTest {
     }
 
     @Test
+    void aSearchFindsAWordOutsideEveryPartOfASplitTextAsText() {
+        // Harm: a word in a section of the person's own is never found, though the text holds it.
+        final Board board =
+                board(
+                        List.of(),
+                        issue("AB1", "One", "Backlog", "S", "High", "plan: Warm\nNotes on latency"),
+                        issue("AB2", "Two", "Backlog", "S", "High", "plan: latency"));
+        assertThat(AgentReads.search(board, List.of("latency"), LINES).matches())
+                .as("the word in no part as text, the word in a part as that part alone")
+                .extracting(AgentReads.Match::id, AgentReads.Match::found)
+                .containsExactly(
+                        tuple("AB1", List.of("text")), tuple("AB2", List.of("plan")));
+    }
+
+    @Test
     void aSearchAnswersAtMostTwoHundredAndSaysThatOthersMatched() {
         final List<Issue> issues = new ArrayList<>();
         for (int i = 1; i <= 201; i++) {

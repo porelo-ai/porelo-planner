@@ -6541,7 +6541,9 @@ components:
         state:
           type: string
         found:
-          description: Where the words were found, `title`, a part's name or `text`, each once.
+          description: >-
+            Where the words were found, `title`, a part's name or `text` (a text that cannot be split, or words
+            outside every part), each once.
           type: array
           items:
             type: string
