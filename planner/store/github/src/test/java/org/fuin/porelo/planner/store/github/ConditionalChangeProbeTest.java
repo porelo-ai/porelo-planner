@@ -648,7 +648,8 @@ class ConditionalChangeProbeTest {
                                                         .REPOSITORY,
                                                 List.of("AGENT"),
                                                 "Build {story}: {issues}; {tasks}",
-                                                Map.of("codex", "model-a"))),
+                                                Map.of("codex", "model-a"),
+                                                Roles.AUTHOR)),
                                 List.of()));
 
         assertThat(

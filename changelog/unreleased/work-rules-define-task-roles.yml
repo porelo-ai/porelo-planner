@@ -1,0 +1,2 @@
+title: "A project's stories/work.yml defines the roles of its tasks under roles, each rule names the role it offers by role, and a role Porelo would refuse at its Start fails the load, naming the role and the rule it breaks"
+type: changed

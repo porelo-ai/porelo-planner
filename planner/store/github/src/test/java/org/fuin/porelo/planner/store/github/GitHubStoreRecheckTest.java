@@ -247,7 +247,8 @@ class GitHubStoreRecheckTest {
                                     WorkRule.Per.STORY,
                                     List.of("UNATTENDED"),
                                     "Build {story}",
-                                    Map.of("codex", "gpt"))),
+                                    Map.of("codex", "gpt"),
+                                    Roles.AUTHOR)),
                     List.of());
 
     /**

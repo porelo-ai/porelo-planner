@@ -7,16 +7,24 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
 
-/** Reads the project's work rules from {@code stories/work.yml}; a fault never throws. */
+/**
+ * Reads the project's work rules from {@code stories/work.yml}: the roles of its tasks under {@code
+ * roles} and the rule per working state under {@code work}, each rule naming the role it offers. A
+ * fault never throws, and a role Porelo would refuse at its {@code Start} never loads.
+ */
 public final class WorkReader {
 
     /** The file the rules stand in, in the project's own repository. */
@@ -38,9 +46,15 @@ public final class WorkReader {
     private static final Set<String> KEYS =
             Set.of(
                     "from", "done", "then", "blocked", "per", "modes", "order", "models", "risks",
-                    "result", "role", "place");
+                    "result", "role");
 
     private static final Set<String> RISK_KEYS = Set.of("models", "effort");
+
+    private static final Set<String> ROLE_KEYS =
+            Set.of("end", "workspace", "writeAs", "rights", "readLanded", "projectServices");
+
+    /** The name the person at the machine goes by, so no task's role may take it. */
+    private static final String OPERATOR = "operator";
 
     /** Longest part of a parser's message a fault quotes. */
     private static final int MESSAGE = 200;
@@ -58,10 +72,10 @@ public final class WorkReader {
     }
 
     /**
-     * Reads the rules.
+     * Reads the roles and the rules.
      *
      * @param text the file's text, or null when the commit has none
-     * @return the rules that could be read, and in words why each other one could not
+     * @return the roles and rules that could be read, and in words why each other one could not
      */
     public static Work read(final @Nullable String text) {
         if (text == null) {
@@ -77,21 +91,203 @@ public final class WorkReader {
         if (work == null || !work.isObject()) {
             return new Work(Map.of(), List.of(FILE + ": no mapping 'work'"));
         }
-        final Map<String, WorkRule> rules = new LinkedHashMap<>();
         final List<String> faults = new ArrayList<>();
+        final Map<String, Role> roles = new LinkedHashMap<>();
+        final Set<String> refused = new HashSet<>();
+        roles(root.get("roles"), roles, refused, faults);
+        final Map<String, WorkRule> rules = new LinkedHashMap<>();
         work.fields()
                 .forEachRemaining(
                         entry -> {
                             try {
-                                rules.put(entry.getKey(), rule(entry.getValue()));
+                                rules.put(entry.getKey(), rule(entry.getValue(), roles, refused));
                             } catch (final Fault | IllegalArgumentException e) {
                                 faults.add(FILE + ": " + entry.getKey() + ": " + e.getMessage());
                             }
                         });
-        return new Work(rules, faults);
+        return new Work(rules, faults, Map.of(), roles);
     }
 
-    private static WorkRule rule(final JsonNode node) throws Fault {
+    /**
+     * Reads every role into {@code roles}, and the name of each one that cannot be read into {@code
+     * refused} with its fault, so a rule offering it says why it is dropped.
+     */
+    private static void roles(
+            final @Nullable JsonNode node,
+            final Map<String, Role> roles,
+            final Set<String> refused,
+            final List<String> faults) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (!node.isObject()) {
+            faults.add(FILE + ": roles is no mapping of name to role");
+            return;
+        }
+        node.fields()
+                .forEachRemaining(
+                        entry -> {
+                            try {
+                                roles.put(entry.getKey(), role(entry.getKey(), entry.getValue()));
+                            } catch (final Fault | IllegalArgumentException e) {
+                                refused.add(entry.getKey());
+                                faults.add(
+                                        FILE
+                                                + ": role "
+                                                + shown(entry.getKey())
+                                                + ": "
+                                                + e.getMessage());
+                            }
+                        });
+    }
+
+    /** A role's name as a fault shows it: the name itself only where it is a sound one. */
+    private static String shown(final String name) {
+        return WorkRule.sound(name) && name.length() <= Role.LONGEST ? name : "(an unsound name)";
+    }
+
+    private static Role role(final String name, final JsonNode node) throws Fault {
+        if (OPERATOR.equalsIgnoreCase(name)) {
+            throw new Fault("the name " + OPERATOR + " is taken by the person at the machine");
+        }
+        if (!node.isObject()) {
+            throw new Fault("is no mapping");
+        }
+        known(node, ROLE_KEYS);
+        final Role.End end = end(text(node, "end"));
+        final Role.Workspace workspace = workspace(text(node, "workspace"));
+        final Role role =
+                new Role(
+                        name,
+                        end,
+                        workspace,
+                        flag(node, "readLanded", false),
+                        // Another task's work is read without the services, which would lead out.
+                        flag(node, "projectServices", workspace != Role.Workspace.FOREIGN),
+                        writeAs(optional(node, "writeAs")),
+                        rights(node));
+        final List<Role.Broken> broken = role.broken();
+        if (!broken.isEmpty()) {
+            throw new Fault(
+                    "breaks "
+                            + broken.stream()
+                                    .map(rule -> rule.word() + " (" + words(rule) + ")")
+                                    .collect(Collectors.joining(", ")));
+        }
+        return role;
+    }
+
+    /** A rule broken in plain words, beside its word, for the person who wrote the role. */
+    private static String words(final Role.Broken broken) {
+        return switch (broken) {
+            case FOREIGN_WORK_LEADS_OUT ->
+                    "another task's work with the project's services or push";
+            case FOREIGN_WORK_NAMES_NO_RIGHTS -> "another task's work with no right at all";
+            case REJECT_WITH_PUSH -> "reject together with push";
+            case REJECT_OVER_OWN_WORK -> "reject without another task's work";
+            case PUSH_WITHOUT_OWN_WORK -> "push outside own work";
+            case END_NEEDS_PUSH -> "an end that pushes work without push";
+            case PUSH_NEEDS_END -> "push with an end that pushes no work";
+            case POINTS_NEED_ANOTHERS_WORK ->
+                    "an end that gives points without another task's work";
+            case REJECT_NEEDS_POINTS -> "reject with an end that gives no points";
+            case FINDINGS_NEED_THREADS -> "findings at another task's work without openThreads";
+            case FOREIGN_WORK_NEEDS_READING ->
+                    "another task's work with an end that neither reports findings nor gives"
+                            + " points";
+            case FINDINGS_NEED_LANDED_WORK -> "findings in its answer without readLanded";
+            case READ_LANDED_NEEDS_WORKSPACE -> "readLanded without a workspace";
+            case POINTS_NEED_THREADS -> "points without openThreads and without reject";
+            case END_NEEDS_REPORT ->
+                    "an end that reports findings or hands back a result without report";
+        };
+    }
+
+    private static Role.End end(final String end) throws Fault {
+        return switch (end) {
+            case "push" -> Role.End.PUSHES_WORK;
+            case "findings" -> Role.End.REPORTS_FINDINGS;
+            case "points" -> Role.End.GIVES_POINTS;
+            case "result" -> Role.End.HANDS_BACK_RESULT;
+            default ->
+                    throw new Fault(
+                            "end '" + end + "' is none of push, findings, points and result");
+        };
+    }
+
+    private static Role.Workspace workspace(final String word) throws Fault {
+        return Role.Workspace.of(word)
+                .orElseThrow(
+                        () ->
+                                new Fault(
+                                        "workspace '"
+                                                + word
+                                                + "' is none of "
+                                                + oneOf(
+                                                        Arrays.stream(Role.Workspace.values())
+                                                                .map(Role.Workspace::word)
+                                                                .toList())));
+    }
+
+    private static Role.WriteAs writeAs(final @Nullable String word) throws Fault {
+        if (word == null) {
+            return Role.WriteAs.AUTHOR;
+        }
+        return Role.WriteAs.of(word)
+                .orElseThrow(
+                        () ->
+                                new Fault(
+                                        "writeAs '"
+                                                + word
+                                                + "' is neither "
+                                                + Role.WriteAs.AUTHOR.word()
+                                                + " nor "
+                                                + Role.WriteAs.REVIEW.word()));
+    }
+
+    private static List<Role.Right> rights(final JsonNode node) throws Fault {
+        final List<Role.Right> rights = new ArrayList<>();
+        for (final String word : strings(node, "rights", "rights")) {
+            rights.add(
+                    Role.Right.of(word)
+                            .orElseThrow(
+                                    () ->
+                                            new Fault(
+                                                    "right '"
+                                                            + word
+                                                            + "' is none of "
+                                                            + oneOf(
+                                                                    Arrays.stream(
+                                                                                    Role.Right
+                                                                                            .values())
+                                                                            .map(Role.Right::word)
+                                                                            .toList()))));
+        }
+        return rights;
+    }
+
+    /** Porelo's words in its order, the last joined by "and", for a fault that lists them. */
+    private static String oneOf(final List<String> words) {
+        return String.join(", ", words.subList(0, words.size() - 1))
+                + " and "
+                + words.get(words.size() - 1);
+    }
+
+    private static boolean flag(final JsonNode node, final String key, final boolean absent)
+            throws Fault {
+        final JsonNode value = node.get(key);
+        if (value == null || value.isNull()) {
+            return absent;
+        }
+        if (!value.isBoolean()) {
+            throw new Fault(key + " is neither true nor false");
+        }
+        return value.booleanValue();
+    }
+
+    private static WorkRule rule(
+            final JsonNode node, final Map<String, Role> roles, final Set<String> refused)
+            throws Fault {
         if (!node.isObject()) {
             throw new Fault("is no mapping");
         }
@@ -107,28 +303,21 @@ public final class WorkReader {
                 models(node),
                 risks(node),
                 result(optional(node, "result")),
-                reviewer(optional(node, "role"), optional(node, "place")));
+                offered(text(node, "role"), roles, refused));
     }
 
-    /** A reviewer is named by its role and its place together, so half of one never runs. */
-    private static WorkRule.@Nullable Reviewer reviewer(
-            final @Nullable String role, final @Nullable String place) throws Fault {
-        if (role == null && place == null) {
-            return null;
+    /** The role a rule offers, which the roles must define and which must have loaded. */
+    private static Role offered(
+            final String name, final Map<String, Role> roles, final Set<String> refused)
+            throws Fault {
+        final Role role = roles.get(name);
+        if (role != null) {
+            return role;
         }
-        if (!"reviewer".equals(role)) {
-            throw new Fault(
-                    role == null
-                            ? "place is named without role: reviewer"
-                            : "role '" + role + "' is not reviewer");
-        }
-        if (!"work".equals(place)) {
-            throw new Fault(
-                    place == null
-                            ? "role: reviewer names no place: work"
-                            : "place '" + place + "' is not work");
-        }
-        return WorkRule.Reviewer.AT_WORK;
+        throw new Fault(
+                refused.contains(name)
+                        ? "role '" + name + "' did not load"
+                        : "role '" + name + "' is not defined under roles");
     }
 
     private static void known(final JsonNode node, final Set<String> keys) throws Fault {

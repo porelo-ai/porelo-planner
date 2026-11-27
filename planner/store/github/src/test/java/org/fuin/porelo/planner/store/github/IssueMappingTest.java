@@ -81,7 +81,8 @@ class IssueMappingTest {
                                     org.fuin.porelo.planner.store.WorkRule.Per.STORY,
                                     List.of("AGENT"),
                                     "Build it.",
-                                    Map.of("claude", "claude-opus-5-5"))),
+                                    Map.of("claude", "claude-opus-5-5"),
+                                    Roles.AUTHOR)),
                     List.of());
 
     /**
