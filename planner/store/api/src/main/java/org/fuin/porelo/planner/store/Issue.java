@@ -316,6 +316,34 @@ public record Issue(
     }
 
     /**
+     * This issue with another priority.
+     *
+     * @param priority its priority
+     * @return the issue
+     */
+    public Issue withPriority(final String priority) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                version,
+                labels);
+    }
+
+    /**
      * This issue with other warnings.
      *
      * @param warnings its warnings

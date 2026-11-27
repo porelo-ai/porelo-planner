@@ -337,6 +337,29 @@ public record Story(
     }
 
     /**
+     * This story with another priority.
+     *
+     * @param priority its priority
+     * @return the story
+     */
+    public Story withPriority(final String priority) {
+        return new Story(
+                id,
+                title,
+                state,
+                priority,
+                size,
+                issues,
+                description,
+                link,
+                issuesWhole,
+                closedAt,
+                warnings,
+                version,
+                labels);
+    }
+
+    /**
      * This story with other warnings.
      *
      * @param warnings its warnings

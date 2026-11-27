@@ -205,6 +205,9 @@ class ApiMatchesDescriptionTest {
                     Map.entry("BoardChange", BoardChangeRequests.Change.class),
                     Map.entry("NewItem", BoardChangeRequests.NewItem.class),
                     Map.entry("ItemUpdate", BoardChangeRequests.Update.class),
+                    Map.entry("ManyFields", ManyFieldsRequests.ManyFields.class),
+                    Map.entry("IssueFieldsSet", ManyFieldsRequests.IssueFieldsSet.class),
+                    Map.entry("StoryPrioritySet", ManyFieldsRequests.StoryPrioritySet.class),
                     Map.entry("CommentRequest", EditRequests.CommentRequest.class),
                     Map.entry("ListIssueRequest", EditRequests.ListRequest.class));
 
@@ -305,7 +308,8 @@ class ApiMatchesDescriptionTest {
                         "POST /projects/{project}/issues/{issue}/comments",
                         "POST /projects/{project}/items",
                         "POST /projects/{project}/states",
-                        "POST /projects/{project}/changes")
+                        "POST /projects/{project}/changes",
+                        "PUT /projects/{project}/fields")
                 .isEqualTo(served);
     }
 
