@@ -4,6 +4,7 @@ strict: true
 nav:
     - Overview: index.md
     - Stories and issues in GitHub Issues: github-issues.md
+    - Task roles in the work rules: task-roles.md
     - Decisions: decisions.md
 validation:
     links:

@@ -34,6 +34,10 @@ refuses it once it no longer reads it:
 A `planner.yml` with a key it does not know or a setting of the wrong shape, and a seed with a line it cannot read,
 refuse the project, naming the key or the line.
 
+The work rules, `stories/work.yml`, are the one file read elsewhere: always from the planning repository's default
+branch, whichever branch the project names. They define the roles of the project's tasks, as
+[Task roles in the work rules](task-roles.md) shows.
+
 ## How it is installed
 
 - **From the same package repositories as Porelo**, as `porelo-planner`, a `.deb` and an `.rpm` for x86-64. The

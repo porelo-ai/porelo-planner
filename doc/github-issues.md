@@ -2,7 +2,8 @@
 
 A project whose `planner.yml` names GitHub Issues as its tracker keeps its stories and issues in a GitHub project
 instead of Markdown files. This page says where each part of a story and an issue stands there. The workflow and
-the work rules stay files in the project's own repository.
+the [work rules](task-roles.md) stay files in the project's own repository; for a file it does not keep, the planner
+takes the workflow or the work rules it carries.
 
 ## What stands where
 
