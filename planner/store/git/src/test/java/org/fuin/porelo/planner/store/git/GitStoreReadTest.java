@@ -49,6 +49,9 @@ class GitStoreReadTest {
 
     private GitRemote remote;
 
+    /** The branch the store opens the own repository on, null for the remote's default. */
+    private String ownBranch;
+
     @BeforeEach
     void serve() throws Exception {
         repositories = new ServedRepositories(dir);
@@ -116,7 +119,9 @@ class GitStoreReadTest {
         return new GitStore(
                 List.of(
                         new Repository(
-                                "porelo-store", new CloneUrl(server.url("porelo-store.git")), null),
+                                "porelo-store",
+                                new CloneUrl(server.url("porelo-store.git")),
+                                ownBranch),
                         new Repository(
                                 "porelo-other",
                                 new CloneUrl(server.url("porelo-other.git")),
@@ -254,6 +259,8 @@ class GitStoreReadTest {
                 Map.of(
                         "stories/work.yml",
                         """
+                        roles:
+                          author: {end: push, workspace: own, rights: [push, reply]}
                         work:
                           Review:
                             from: [Idea]
@@ -262,12 +269,107 @@ class GitStoreReadTest {
                             modes: [UNATTENDED]
                             order: "Look at {story}."
                             models: {codex: gpt-6.1-sol}
+                            role: author
                         """));
         final Board board = store.refresh();
         assertThat(board.work().faults()).as("the rules read").isEmpty();
         assertThat(board.work().rules().keySet())
                 .as("the rule of the own repository")
                 .containsExactly("Review");
+    }
+
+    /** Work rules whose one rule offers a reviewer holding the rights given. */
+    private static String reviewing(final String rights) {
+        return """
+               roles:
+                 reviewer: {end: points, workspace: foreign, writeAs: review, rights: %s}
+               work:
+                 Review:
+                   from: [Idea]
+                   done: Idea
+                   per: story
+                   modes: [UNATTENDED]
+                   order: "Look at {story}."
+                   models: {codex: gpt-6.1-sol}
+                   role: reviewer
+               """
+                .formatted(rights);
+    }
+
+    @Test
+    void theRolesComeFromTheDefaultBranchWhenTheProjectIsOpenedOnAnother() throws Exception {
+        // Harm: a task changes a role on its branch, and the next task of that role gets the
+        // rights it wrote itself, no person having let the change in.
+        repositories.repository(
+                "porelo-store", Map.of("stories/work.yml", reviewing("[reply, openThreads]")));
+        repositories.branch(
+                "porelo-store",
+                "task",
+                Map.of(
+                        "stories/work.yml",
+                        reviewing("[reply, openThreads, resolveThreads]"),
+                        "stories/ST3-On-The-Branch.md",
+                        story(
+                                "ST3",
+                                "On the branch",
+                                "\"state\": \"Idea\",",
+                                "\"porelo-store#AB01\"")));
+        ownBranch = "task";
+        final GitStore store = store(null);
+        final Board board = store.board();
+        assertThat(board.work().faults()).as("the rules read").isEmpty();
+        assertThat(board.work().roles().get("reviewer").rights())
+                .as("the default branch's rights, not the branch's")
+                .containsExactly(
+                        org.fuin.porelo.planner.store.Role.Right.REPLY,
+                        org.fuin.porelo.planner.store.Role.Right.OPEN_THREADS);
+        assertThat(board.stories())
+                .as("the stories still come from the branch the project names")
+                .extracting(Story::id)
+                .contains("ST3");
+
+        repositories.repository(
+                "porelo-store", Map.of("stories/work.yml", reviewing("[openThreads]")));
+        assertThat(store.refresh().work().roles().get("reviewer").rights())
+                .as("a change a person let onto the default branch counts at the next check")
+                .containsExactly(org.fuin.porelo.planner.store.Role.Right.OPEN_THREADS);
+    }
+
+    @Test
+    void aTrackedProjectsRolesComeFromTheDefaultBranchWhenItIsOpenedOnAnother() throws Exception {
+        // Harm: as for a project whose files keep its stories, for one a tracker keeps them for.
+        store(null);
+        repositories.repository(
+                "porelo-store",
+                Map.of(
+                        "project.yml",
+                        "project:\n    name: \"porelo\"\n    central: \""
+                                + server.url("porelo-store.git")
+                                + "\"\nrepositories:\n    other:\n        central: \""
+                                + server.url("porelo-other.git")
+                                + "\"\n        issues: [\"CD\"]\n",
+                        "planner.yml",
+                        "tracker: {kind: local}\n",
+                        "stories/work.yml",
+                        reviewing("[reply, openThreads]")));
+        repositories.branch(
+                "porelo-store",
+                "task",
+                Map.of("stories/work.yml", reviewing("[reply, openThreads, resolveThreads]")));
+        final org.fuin.porelo.planner.store.TrackedProject tracked =
+                java.util.Objects.requireNonNull(
+                        ProjectFile.read(
+                                        remote,
+                                        new CloneUrl(server.url("porelo-store.git")),
+                                        "task",
+                                        16)
+                                .tracked());
+        assertThat(tracked.work().faults()).as("the rules read").isEmpty();
+        assertThat(tracked.work().roles().get("reviewer").rights())
+                .as("the default branch's rights, not the branch's")
+                .containsExactly(
+                        org.fuin.porelo.planner.store.Role.Right.REPLY,
+                        org.fuin.porelo.planner.store.Role.Right.OPEN_THREADS);
     }
 
     @Test

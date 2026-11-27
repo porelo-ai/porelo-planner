@@ -94,6 +94,39 @@ public final class ServedRepositories {
     }
 
     /**
+     * Writes files on a branch made from a repository's main, commits them, serves the branch
+     * beside main and goes back to main, so main and the remote's default stay where they were.
+     *
+     * @param name the repository's name, already served
+     * @param branch the branch's name
+     * @param files each file's path and text
+     * @throws Exception when git fails
+     */
+    public void branch(final String name, final String branch, final Map<String, String> files)
+            throws Exception {
+        final Path work = work(name);
+        git(work, "checkout", "--quiet", "-B", branch, "main");
+        for (final Map.Entry<String, String> file : files.entrySet()) {
+            final Path path = work.resolve(file.getKey());
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, file.getValue());
+        }
+        git(work, "add", "-A");
+        git(
+                work,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.org",
+                "commit",
+                "--quiet",
+                "-m",
+                name + " on " + branch);
+        git(work, "push", "--quiet", "--force", served.resolve(name + ".git").toString(), branch);
+        git(work, "checkout", "--quiet", "main");
+    }
+
+    /**
      * Answers the commit a repository serves.
      *
      * @param name the repository's name

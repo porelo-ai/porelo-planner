@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Warning;
+import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.git.stories.IssueHead;
 import org.fuin.porelo.planner.store.git.stories.IssueIndex;
@@ -200,12 +201,32 @@ public final class StoreReader implements PartReader {
                 workflow,
                 List.copyOf(stories),
                 issues,
-                WorkReader.read(remote.read(name, commit, WorkReader.FILE).orElse(null))
-                        .withSeed(seed(name, commit)),
+                work(repository, commit).withSeed(seed(name, commit)),
                 paths,
                 faults,
                 twice(copies),
                 versions);
+    }
+
+    /**
+     * The own repository's work rules, read at its default branch's commit last fetched: what a
+     * task may do counts only from there, so a role changed on the branch the store reads, a task's
+     * among them, changes nothing until a person lets it onto the default branch. Without a fetched
+     * default branch no work can be started.
+     */
+    private Work work(final Repository repository, final String commit) {
+        final String name = repository.name();
+        final Optional<String> rules =
+                repository.branch() == null ? Optional.of(commit) : remote.fetchedDefault(name);
+        if (rules.isEmpty()) {
+            return new Work(
+                    Map.of(),
+                    List.of(
+                            WorkReader.FILE
+                                    + " counts only from the default branch, which was not fetched"
+                                    + " yet, so no work can be started"));
+        }
+        return WorkReader.read(remote.read(name, rules.get(), WorkReader.FILE).orElse(null));
     }
 
     /**

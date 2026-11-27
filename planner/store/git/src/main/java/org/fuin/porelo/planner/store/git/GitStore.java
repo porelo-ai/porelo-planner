@@ -319,22 +319,52 @@ public final class GitStore implements PlanningStore {
     private Snapshot atTips() {
         requireActive();
         final Snapshot old = current.get();
-        // A repository with saves not pushed yet is read at its last save, never fetched over.
+        final java.util.concurrent.atomic.AtomicBoolean rulesMoved =
+                new java.util.concurrent.atomic.AtomicBoolean();
         final Map<String, String> commits =
                 each(
                         repository -> {
-                            final String name = repository.name();
-                            if (saves.pending(name)) {
-                                return saves.tip(name).orElseThrow();
+                            final boolean pending = saves.pending(repository.name());
+                            final String tip = tip(repository, old, pending);
+                            // In the same task as the own branch's fetch, never beside it; while
+                            // saves wait, no remote is asked and the default last fetched stands.
+                            if (own(repository) && repository.branch() != null && !pending) {
+                                rulesMoved.set(defaultMoved(repository));
                             }
-                            final String head =
-                                    remote.head(name, repository.url(), repository.branch());
-                            if (old != null && head.equals(old.commits().get(name))) {
-                                return head;
-                            }
-                            return remote.fetch(name, repository.url(), repository.branch());
+                            return tip;
                         });
-        return readAt(old, commits, clock.instant());
+        return readAt(old, commits, clock.instant(), rulesMoved.get());
+    }
+
+    /**
+     * A repository's tip now: with saves not pushed yet, its last save, never fetched over;
+     * otherwise its branch's.
+     */
+    private String tip(
+            final Repository repository, final @Nullable Snapshot old, final boolean pending) {
+        final String name = repository.name();
+        if (pending) {
+            return saves.tip(name).orElseThrow();
+        }
+        final String head = remote.head(name, repository.url(), repository.branch());
+        if (old != null && head.equals(old.commits().get(name))) {
+            return head;
+        }
+        return remote.fetch(name, repository.url(), repository.branch());
+    }
+
+    /**
+     * Fetches the own repository's default branch, whose work rules alone count, when it moved
+     * since it was last fetched, and answers whether it did.
+     */
+    private boolean defaultMoved(final Repository own) {
+        final String name = own.name();
+        final Optional<String> fetched = remote.fetchedDefault(name);
+        if (fetched.isPresent() && fetched.get().equals(remote.head(name, own.url(), null))) {
+            return false;
+        }
+        remote.fetchDefault(name, own.url());
+        return true;
     }
 
     /**
@@ -363,9 +393,21 @@ public final class GitStore implements PlanningStore {
             final @Nullable Snapshot old,
             final Map<String, String> commits,
             final Instant checked) {
+        return readAt(old, commits, checked, false);
+    }
+
+    /**
+     * Reads the board at the commits, each repository whose commit did not move kept as read, the
+     * own one read anew also when its default branch, which its work rules come from, moved.
+     */
+    private Snapshot readAt(
+            final @Nullable Snapshot old,
+            final Map<String, String> commits,
+            final Instant checked,
+            final boolean rulesMoved) {
         final String own = repositories.get(0).name();
         final Part ownPart =
-                old != null && unchanged(old, commits, own)
+                old != null && !rulesMoved && unchanged(old, commits, own)
                         ? of(old.parts(), own)
                         : ownPart(of(commits, own));
         final org.fuin.porelo.planner.store.git.stories.Workflow project = project(ownPart);

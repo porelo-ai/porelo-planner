@@ -1,0 +1,2 @@
+title: "The work rules, and so the roles of a project's tasks, are read only from the default branch of its planning repository, so a role changed on any other branch counts once a person lets it onto the default branch"
+type: changed

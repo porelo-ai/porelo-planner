@@ -176,6 +176,16 @@ public final class ProjectFile {
                 .orElse(Map.of());
     }
 
+    /**
+     * The commit the own repository's work rules are read at: its default branch's, fetched for
+     * them when the project names another branch, since what a task may do counts only from where a
+     * person lets a change in.
+     */
+    private static String rulesCommit(
+            final Remote remote, final Repository own, final String commit) {
+        return own.branch() == null ? commit : remote.fetchDefault(own.name(), own.url());
+    }
+
     private static TrackedProject tracked(
             final Remote remote,
             final String name,
@@ -220,7 +230,12 @@ public final class ProjectFile {
                     org.fuin.porelo.planner.store.git.stories.Workflow.read(
                             remote.read(name, commit, "stories/workflow.yml")
                                     .orElse(TRACKED_WORKFLOW));
-            work = remote.read(name, commit, WorkReader.FILE).orElse(TRACKED_WORK);
+            work =
+                    remote.read(
+                                    name,
+                                    rulesCommit(remote, repositories.get(0), commit),
+                                    WorkReader.FILE)
+                            .orElse(TRACKED_WORK);
         } catch (final GitFailure | IllegalArgumentException e) {
             throw GitStore.refusal(name, e);
         }
@@ -298,10 +313,15 @@ public final class ProjectFile {
 
     /**
      * The work rules of a tracked project whose own repository keeps no {@code stories/work.yml}:
-     * which states work starts from, where it leads, its modes, orders and models.
+     * the roles its tasks take, which states work starts from, where it leads, its modes, orders
+     * and models. Its roles are defined here like any project's, so a rule names none it lacks.
      */
     static final String TRACKED_WORK =
             """
+            roles:
+              analyst: {end: result, workspace: readOnly, rights: [report]}
+              author: {end: push, workspace: own, rights: [push, reply]}
+              reader: {end: findings, workspace: readOnly, readLanded: true, rights: [report]}
             work:
               In analysis:
                 from: [New, Accepted]
@@ -309,6 +329,7 @@ public final class ProjectFile {
                 per: repository
                 modes: [UNATTENDED, AGENT]
                 result: ANALYSIS
+                role: analyst
                 order: >-
                   Analyze the issue of {story} given below: read the code it names and give its plan, its size and what only the
                   operator can decide; then end with your outcome.
@@ -319,6 +340,7 @@ public final class ProjectFile {
                 per: repository
                 modes: [UNATTENDED, AGENT]
                 result: ESTIMATE
+                role: analyst
                 order: >-
                   Estimate the issue of {story} given below: read its plan and the code it names, give its size (XS to XL) against
                   the measured velocity, name what makes it uncertain; then end with your outcome.
@@ -329,6 +351,7 @@ public final class ProjectFile {
                 per: repository
                 modes: [UNATTENDED, AGENT]
                 result: READINESS
+                role: analyst
                 order: >-
                   Check whether each issue of {story} given below is ready for the backlog: whether it names a plan, a size
                   and its blockers, or that it has none; then end with your outcome.
@@ -338,6 +361,7 @@ public final class ProjectFile {
                 done: Review
                 then: Reading
                 per: repository
+                role: author
                 modes: [UNATTENDED, AGENT]
                 order: >-
                   Build {issues} of {story}, each issue in a sub-agent of its own named by its id, as the issue's plan says: each
@@ -348,6 +372,7 @@ public final class ProjectFile {
                 done: Review
                 blocked: Reworking
                 per: repository
+                role: reader
                 modes: [UNATTENDED]
                 order: >-
                   Read the changes {tasks} made for {issues} of {story}, change nothing, and end with one Findings: block, one
@@ -358,6 +383,7 @@ public final class ProjectFile {
                 done: Review
                 then: Reading
                 per: repository
+                role: author
                 modes: [UNATTENDED, AGENT]
                 order: >-
                   Fix the blocking findings the reading of {issues} of {story} gave, each issue's in a sub-agent of its own named by
@@ -446,6 +472,12 @@ public final class ProjectFile {
         private TrackedProject kept;
 
         /**
+         * The default branch's commit the kept project's work rules were read under, for a project
+         * opened on another branch; null before it is known, so the first look reads them anew.
+         */
+        private @Nullable String keptRules;
+
+        /**
          * Makes the source.
          *
          * @param remote reaches the repositories
@@ -475,12 +507,15 @@ public final class ProjectFile {
             final String name = checkedName(own);
             try (ProjectLock.Held held = lock.acquire()) {
                 final String head;
+                final @Nullable String rules;
                 try {
                     head = remote.head(name, own, branch);
+                    // The work rules count from the default branch, which may move alone.
+                    rules = branch == null ? null : remote.head(name, own, null);
                 } catch (final GitFailure | IllegalArgumentException e) {
                     throw GitStore.refusal(name, e);
                 }
-                if (head.equals(kept.filesCommit())) {
+                if (head.equals(kept.filesCommit()) && (rules == null || rules.equals(keptRules))) {
                     return kept;
                 }
                 final TrackedProject read = read(remote, own, branch, most).tracked();
@@ -491,6 +526,7 @@ public final class ProjectFile {
                                     + " names no tracker any more; open the project again");
                 }
                 kept = read;
+                keptRules = rules;
                 return read;
             } catch (final UncheckedIOException | IllegalStateException e) {
                 // The cache directory or its lock refused: told as the store's fault, free of

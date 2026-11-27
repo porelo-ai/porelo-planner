@@ -63,6 +63,12 @@ class ProjectFileTest {
             return Optional.empty();
         }
 
+        /** The one commit served is also the default branch's. */
+        @Override
+        public String fetchDefault(final String repository, final CloneUrl url) {
+            return commit;
+        }
+
         @Override
         public Optional<String> read(
                 final String repository, final String commit, final String path) {

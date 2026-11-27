@@ -53,6 +53,31 @@ public interface Remote {
     Optional<String> fetched(String repository);
 
     /**
+     * Fetches the remote's default branch into the planner's own clone, beside the branch the store
+     * reads and without moving it: the work rules, and so what a task may do, count only from the
+     * default branch, where only a person lets a change in.
+     *
+     * @param repository the repository's name
+     * @param url its clone URL
+     * @return the default branch's commit id
+     * @throws GitFailure when the remote names no default branch or the fetch fails
+     */
+    default String fetchDefault(final String repository, final CloneUrl url) {
+        throw new UnsupportedOperationException("This remote reads no default branch");
+    }
+
+    /**
+     * Answers the default branch's commit last fetched into the planner's own clone by {@link
+     * #fetchDefault}, without asking the remote.
+     *
+     * @param repository the repository's name
+     * @return the commit id, or empty when the default branch was not fetched yet
+     */
+    default Optional<String> fetchedDefault(final String repository) {
+        return Optional.empty();
+    }
+
+    /**
      * Reads a file of a fetched commit.
      *
      * @param repository the repository's name

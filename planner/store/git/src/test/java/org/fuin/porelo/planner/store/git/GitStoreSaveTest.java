@@ -57,6 +57,8 @@ class GitStoreSaveTest {
      */
     private static final String WORK =
             """
+            roles:
+              author: {end: push, workspace: own, rights: [push, reply]}
             work:
               Review:
                 from: [Backlog]
@@ -65,6 +67,7 @@ class GitStoreSaveTest {
                 modes: [UNATTENDED]
                 order: "Look at {story}."
                 models: {codex: gpt-6.1-sol}
+                role: author
             """;
 
     private static final String WORKFLOW =
@@ -106,6 +109,9 @@ class GitStoreSaveTest {
     private ServedRepositories repositories;
 
     private Map<String, String> person;
+
+    /** The branch the store opens the own repository on, null for the remote's default. */
+    private String ownBranch;
 
     @BeforeEach
     void serve() throws Exception {
@@ -2517,6 +2523,30 @@ class GitStoreSaveTest {
                 .contains("\"state\": \"New\"");
     }
 
+    @Test
+    void aCheckWhileTheRemotesCannotBeReachedAsksNoDefaultBranchForTheOwnsUnpushedSave()
+            throws Exception {
+        // Harm: a store opened on a named branch fails every check while offline once its own
+        // repository holds a save not pushed, which it reads at that save as any store does.
+        ownBranch = "main";
+        final java.util.concurrent.atomic.AtomicBoolean offline =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final GitStore store = store(real -> unreachableWhile(real, offline));
+        final Board board = store.board();
+        offline.set(true);
+        store.save(board.revision(), writes(Map.of("AB01", "Review", "CD01", "Review"), Map.of()));
+
+        final Board checked = store.refresh();
+
+        assertThat(List.of(checked.issue("AB01"), checked.issue("CD01")))
+                .as("both saves read at their tips, no remote asked")
+                .allSatisfy(
+                        issue ->
+                                assertThat(issue.orElseThrow().state())
+                                        .as("the saved state")
+                                        .isEqualTo("Review"));
+    }
+
     /** A remote whose head, fetch and push fail as unreachable while the flag is set. */
     private static Remote unreachableWhile(
             final Remote real, final java.util.concurrent.atomic.AtomicBoolean offline) {
@@ -2706,7 +2736,7 @@ class GitStoreSaveTest {
         remote = new GitRemote(cache, person, Duration.ofSeconds(5), runner, 1 << 16);
         final List<Repository> served =
                 List.of(
-                        new Repository(OWN, new CloneUrl(server.url(OWN + ".git")), null),
+                        new Repository(OWN, new CloneUrl(server.url(OWN + ".git")), ownBranch),
                         new Repository(OTHER, new CloneUrl(server.url(OTHER + ".git")), "main"));
         final Remote wrapped = wrap.apply(remote);
         return new GitStore(

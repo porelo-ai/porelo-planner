@@ -32,6 +32,9 @@ public final class GitRemote implements Remote {
     /** Where opening a project fetches its own repository, leaving the last check's commit be. */
     private static final String OPENED = "refs/planner/opened";
 
+    /** Where the remote's default branch is fetched, apart from the branch the store reads. */
+    private static final String DEFAULT = "refs/planner/default";
+
     /** How many commits' planning files are kept per repository: the board's and a save's. */
     private static final int KEPT_COMMITS = 2;
 
@@ -154,6 +157,21 @@ public final class GitRemote implements Remote {
 
     @Override
     public Optional<String> fetched(final String repository) {
+        return fetchedAt(repository, FETCHED);
+    }
+
+    @Override
+    public String fetchDefault(final String repository, final CloneUrl url) {
+        // By the name HEAD points at, so a remote naming no default branch fails loudly.
+        return fetch(repository, url, defaultBranch(repository, url), DEFAULT);
+    }
+
+    @Override
+    public Optional<String> fetchedDefault(final String repository) {
+        return fetchedAt(repository, DEFAULT);
+    }
+
+    private Optional<String> fetchedAt(final String repository, final String local) {
         final Path clone = clone(repository);
         if (!Files.isDirectory(clone)) {
             return Optional.empty();
@@ -167,7 +185,7 @@ public final class GitRemote implements Remote {
                                                     "rev-parse",
                                                     "--verify",
                                                     "--end-of-options",
-                                                    FETCHED + "^{commit}")))
+                                                    local + "^{commit}")))
                                     .strip()));
         } catch (final GitFailure e) {
             return Optional.empty();
