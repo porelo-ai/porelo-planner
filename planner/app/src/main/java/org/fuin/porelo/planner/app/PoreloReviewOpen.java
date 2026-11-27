@@ -39,6 +39,7 @@ public final class PoreloReviewOpen implements PlaceReviews {
             Set.of(
                     "head",
                     "decision",
+                    "rejectedBy",
                     "mergedCommit",
                     "mergedHead",
                     "decisionSince",
@@ -228,6 +229,8 @@ public final class PoreloReviewOpen implements PlaceReviews {
         if (!complete.isBoolean()) {
             throw refused("complete", "is no boolean");
         }
+        // Who rejected a push decides nothing here: the decision does; it is only held to be text.
+        textOrNull(root, "rejectedBy", "rejectedBy");
         final String since = textOrNull(root, "decisionSince", "decisionSince");
         final String reason = textOrNull(root, "reason", "reason");
         if (reason != null && !NAME.matcher(reason).matches()) {
