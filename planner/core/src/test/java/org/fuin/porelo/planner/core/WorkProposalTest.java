@@ -41,7 +41,7 @@ class WorkProposalTest {
                 .containsExactly("AA1.1");
         final WorkProposal.Assignment sub =
                 proposal.repositories().getFirst().subAgents().getFirst();
-        assertThat(sub.kind()).as("only implementation starts now").isEqualTo("BUILDER");
+        assertThat(sub.kind()).as("only implementation starts now").isEqualTo(WorkProposal.HELPER);
         assertThat(sub.choice()).as("known participants default to retention").isEqualTo("KEEP");
         assertThat(sub.brief())
                 .as("only identity, title and acceptance paragraph enter the brief")
@@ -128,7 +128,8 @@ class WorkProposalTest {
                         rule.per(),
                         rule.modes(),
                         "x".repeat(4001),
-                        rule.models());
+                        rule.models(),
+                        Roles.forRule(null, null));
         final Board oversized =
                 new Board(
                         board.revision(),
@@ -260,7 +261,8 @@ class WorkProposalTest {
                         WorkRule.Per.STORY,
                         List.of("AGENT"),
                         "Build",
-                        Map.of("agent", "model"));
+                        Map.of("agent", "model"),
+                        Roles.forRule(null, null));
         final Board unsound =
                 new Board(
                         board.revision(),
@@ -534,7 +536,9 @@ class WorkProposalTest {
                                 Risk.HARM,
                                 new WorkRule.ForRisk(harm, "max"),
                                 Risk.SMALL,
-                                new WorkRule.ForRisk(Map.of("alpha", "small"), "low")));
+                                new WorkRule.ForRisk(Map.of("alpha", "small"), "low")),
+                        null,
+                        Roles.forRule(plain.blocked(), null));
         return new Board(
                 board.revision(),
                 board.workflow(),
@@ -648,7 +652,8 @@ class WorkProposalTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Build {story}; issues {issues}.",
-                        Map.of("zeta", "large"));
+                        Map.of("zeta", "large"),
+                        Roles.forRule(null, null));
         final Board board =
                 new Board(
                         new Revision("board@1"),
@@ -728,6 +733,46 @@ class WorkProposalTest {
     }
 
     @Test
+    void aRuleWhoseRoleReadsAnothersWorkIsNeverProposedByHand() {
+        // Harm: a task at another task's work is ordered with no place to read, which Porelo
+        // refuses or, worse, the planner serves as an order it cannot make.
+        final Board read = reading(with(board(WorkRule.Per.REPOSITORY), Map.of("BB1", "Review")));
+        final Map<String, WorkRule> rules = new LinkedHashMap<>(read.work().rules());
+        final WorkRule reading = rules.get("Reading");
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        reading.from(),
+                        reading.done(),
+                        reading.then(),
+                        reading.blocked(),
+                        reading.per(),
+                        reading.modes(),
+                        reading.order(),
+                        reading.models(),
+                        Roles.REVIEWER));
+        final Board board =
+                new Board(
+                        read.revision(),
+                        read.workflow(),
+                        read.stories(),
+                        read.issues(),
+                        new Work(rules, read.work().faults()),
+                        read.repositories());
+        assertThatThrownBy(
+                        () ->
+                                WorkProposal.propose(
+                                        board,
+                                        "ST1",
+                                        "Reading",
+                                        story -> List.of(),
+                                        List.of("BB1")))
+                .as("the reviewer's rule offers its task only where the work waits")
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("reads where the work waits");
+    }
+
+    @Test
     void aReadingIsProposedByHandForAnIssueInReviewWithItsOwnReader() {
         // An issue in Review that cannot be read again by hand can only be passed unread.
         final Board board = reading(with(board(WorkRule.Per.REPOSITORY), Map.of("BB1", "Review")));
@@ -737,9 +782,9 @@ class WorkProposalTest {
                 .as("one reading, of the named issue alone")
                 .extracting(WorkProposal.Repository::issues)
                 .containsExactly(List.of("BB1"));
-        assertThat(proposal.repositories().getFirst().main().role())
+        assertThat(proposal.repositories().getFirst().main().role().reads())
                 .as("the task reads; it does not build")
-                .isEqualTo("READER");
+                .isTrue();
         assertThat(proposal.repositories().getFirst().subAgents())
                 .as("a reading has no helpers")
                 .isEmpty();
@@ -1274,7 +1319,8 @@ class WorkProposalTest {
                         "Analyze {story}; issues {issues}.",
                         Map.of("zeta", "large"),
                         Map.of(),
-                        WorkRule.Result.ANALYSIS));
+                        WorkRule.Result.ANALYSIS,
+                        Roles.forRule(null, WorkRule.Result.ANALYSIS)));
         final List<String> states = new ArrayList<>(board.workflow().states());
         states.add(states.indexOf("Backlog"), "Analysing");
         return new Board(
@@ -1454,7 +1500,8 @@ class WorkProposalTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Read {issues}",
-                        Map.of("zeta", "large")));
+                        Map.of("zeta", "large"),
+                        Roles.forRule("Building", null)));
         return new Board(
                 board.revision(),
                 new Workflow(states, board.workflow().phases(), board.workflow().closed()),
@@ -1477,7 +1524,8 @@ class WorkProposalTest {
                         per,
                         List.of("AGENT", "SHELL"),
                         "Build {story}; issues {issues}; helpers {tasks}.",
-                        models);
+                        models,
+                        Roles.forRule(null, null));
         return new Board(
                 new Revision("board@1"),
                 new Workflow(

@@ -925,7 +925,8 @@ class HandedResultsTest {
                             "Analyze {story}: {issues}; {tasks}",
                             Map.of("codex", "model"),
                             Map.of(),
-                            WorkRule.Result.ANALYSIS);
+                            WorkRule.Result.ANALYSIS,
+                            Roles.forRule(null, WorkRule.Result.ANALYSIS));
             current =
                     new Board(
                             new Revision("board@1"),

@@ -169,23 +169,25 @@ public final class WorkEnds {
     /**
      * Judges a task's end once.
      *
-     * @param role the task's role, READER for a reading
+     * @param reading whether the task's role reads work and builds none, so its answer is all it
+     *     delivers
      * @param outcome how it ended
      * @param answer the agent's last message
      * @return what the end comes to
      */
-    public static Judgment judge(final String role, final Outcome outcome, final String answer) {
+    public static Judgment judge(
+            final boolean reading, final Outcome outcome, final String answer) {
         Objects.requireNonNull(answer, "answer");
-        if (outcome == Outcome.UNPUSHED && "READER".equals(role)) {
+        if (outcome == Outcome.UNPUSHED && reading) {
             // A reader delivers only its answer; what it checked out to read is no lost work.
-            return judge(role, Outcome.DONE, answer);
+            return judge(true, Outcome.DONE, answer);
         }
         return switch (outcome) {
             case UNPUSHED -> new NeedsOperator(Reason.UNPUSHED);
             case FAILED -> new NeedsOperator(Reason.FAILED);
             case BLOCKED -> new NeedsOperator(Reason.BLOCKED);
             case DONE -> {
-                if (!"READER".equals(role)) {
+                if (!reading) {
                     yield new Done();
                 }
                 final List<Finding> findings = findings(answer);

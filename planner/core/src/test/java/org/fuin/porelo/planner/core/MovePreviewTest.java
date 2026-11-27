@@ -345,7 +345,8 @@ class MovePreviewTest {
                 WorkRule.Per.STORY,
                 List.of("UNATTENDED"),
                 "Build {story}",
-                Map.of("codex", "gpt"));
+                Map.of("codex", "gpt"),
+                Roles.forRule(null, null));
     }
 
     private static Story story(final String id, final String state, final String... issues) {

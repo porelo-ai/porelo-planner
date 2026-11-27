@@ -6,16 +6,15 @@ import org.jspecify.annotations.Nullable;
 public interface PlaceReviews {
 
     /**
-     * Answers what is open at a place for a role, and the place's decision.
+     * Answers what is open at a place for a task, and the place's decision.
      *
      * @param project the project's name
      * @param place the place
-     * @param role the role asking, or null for an author
      * @param task the task whose run asks, as Start took its name; needed for its own pull request
      * @return the answer, which may say it is incomplete
      * @throws TaskRecords.Unanswered when Porelo gives no answer that can be trusted, naming why
      */
-    ReviewOpen open(String project, RunPlace place, @Nullable RunRole role, @Nullable String task);
+    ReviewOpen open(String project, RunPlace place, @Nullable String task);
 
     /** Porelo refused the place by one of its typed refusals, such as PlaceUnreadable. */
     final class Refused extends TaskRecords.Unanswered {

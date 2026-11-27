@@ -367,7 +367,8 @@ class OpenWorkTest {
                 WorkRule.Per.REPOSITORY,
                 List.of("UNATTENDED"),
                 "Work on {story}",
-                Map.of("codex", "gpt"));
+                Map.of("codex", "gpt"),
+                Roles.forRule(blocked, null));
     }
 
     private static WorkRule rule() {
@@ -379,7 +380,8 @@ class OpenWorkTest {
                 WorkRule.Per.STORY,
                 List.of("UNATTENDED"),
                 "Build {story}",
-                Map.of("codex", "gpt"));
+                Map.of("codex", "gpt"),
+                Roles.forRule(null, null));
     }
 
     private Issue issue(

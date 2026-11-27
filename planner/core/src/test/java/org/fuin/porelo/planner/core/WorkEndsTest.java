@@ -19,19 +19,19 @@ class WorkEndsTest {
     // Harm: a clean reading held in Reading for files the reader only checked out to read.
     @Test
     void aFinishedReaderWithUnpushedFilesIsJudgedByItsFindings() {
-        assertThat(WorkEnds.judge("READER", Outcome.of(true, 4), "Read it.\nFindings:"))
+        assertThat(WorkEnds.judge(true, Outcome.of(true, 4), "Read it.\nFindings:"))
                 .as("a clean reading, whatever the reader left in its workspace")
                 .isEqualTo(new Read(List.of()));
         assertThat(
                         WorkEnds.judge(
-                                "READER",
+                                true,
                                 Outcome.of(true, 4),
                                 "Findings:\n1. blocking | a.txt | 3 | Broken."))
                 .as("blocking findings, whatever the reader left in its workspace")
                 .isEqualTo(
                         new Read(
                                 List.of(new Finding(1, Severity.BLOCKING, "a.txt", 3, "Broken."))));
-        assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 4), ""))
+        assertThat(WorkEnds.judge(false, Outcome.of(true, 4), ""))
                 .as("a builder's unpushed work still needs the person")
                 .isEqualTo(new NeedsOperator(Reason.UNPUSHED));
     }
@@ -40,13 +40,13 @@ class WorkEndsTest {
     void anUnfinishedTaskOrAnUnpushedBuilderNeedsTheOperatorAndItsWordsNeverBecomeFindings() {
         // Text of a failed reader taken as findings would pass or rework an issue nobody read.
         final String answer = "I stopped.\nFindings:\n1. note | - | - | Looks fine.";
-        assertThat(WorkEnds.judge("READER", Outcome.of(false, 0), answer))
+        assertThat(WorkEnds.judge(true, Outcome.of(false, 0), answer))
                 .as("not finished")
                 .isEqualTo(new NeedsOperator(Reason.FAILED));
-        assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 1), ""))
+        assertThat(WorkEnds.judge(false, Outcome.of(true, 1), ""))
                 .as("a builder whose work did not arrive")
                 .isEqualTo(new NeedsOperator(Reason.UNPUSHED));
-        assertThat(WorkEnds.judge("BUILDER", Outcome.of(true, 0), ""))
+        assertThat(WorkEnds.judge(false, Outcome.of(true, 0), ""))
                 .as("finished and pushed")
                 .isEqualTo(new Done());
     }
@@ -76,10 +76,10 @@ class WorkEndsTest {
         assertThat(Outcome.of(true, 0, null))
                 .as("finished and pushed, nothing declared")
                 .isEqualTo(Outcome.DONE);
-        assertThat(WorkEnds.judge("READER", Outcome.BLOCKED, "Findings: none"))
+        assertThat(WorkEnds.judge(true, Outcome.BLOCKED, "Findings: none"))
                 .as("a reader's clean block from a blocked end")
                 .isEqualTo(new NeedsOperator(Reason.BLOCKED));
-        assertThat(WorkEnds.judge("BUILDER", Outcome.BLOCKED, ""))
+        assertThat(WorkEnds.judge(false, Outcome.BLOCKED, ""))
                 .as("a blocked builder")
                 .isEqualTo(new NeedsOperator(Reason.BLOCKED));
     }
@@ -87,7 +87,7 @@ class WorkEndsTest {
     @Test
     void aBuildersSuccessIsDoneWhateverItsAnswerSays() {
         // A builder writing a findings block must not decide its own reading.
-        assertThat(WorkEnds.judge("BUILDER", Outcome.DONE, "Findings:\n"))
+        assertThat(WorkEnds.judge(false, Outcome.DONE, "Findings:\n"))
                 .as("a builder's end")
                 .isEqualTo(new Done());
     }
@@ -98,7 +98,7 @@ class WorkEndsTest {
         final Read read =
                 (Read)
                         WorkEnds.judge(
-                                "READER",
+                                true,
                                 Outcome.DONE,
                                 "I read it.\n\nFindings:\n"
                                         + "1. blocking | core/A.java | 12 | a | b stays\n"
@@ -117,7 +117,7 @@ class WorkEndsTest {
         final Read read =
                 (Read)
                         WorkEnds.judge(
-                                "READER",
+                                true,
                                 Outcome.DONE,
                                 "Findings:\n"
                                         + "1. blocking | core/A.java | 34-40 | a leak\n"
@@ -149,13 +149,13 @@ class WorkEndsTest {
                         "3 - 4")) {
             assertThat(
                             WorkEnds.judge(
-                                    "READER",
+                                    true,
                                     Outcome.DONE,
                                     "Findings:\n1. note | a.txt | " + range + " | x\n"))
                     .as("refused: %s", range)
                     .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
         }
-        assertThat(WorkEnds.judge("READER", Outcome.DONE, "Findings:\n1. note | - | 3-4 | x\n"))
+        assertThat(WorkEnds.judge(true, Outcome.DONE, "Findings:\n1. note | - | 3-4 | x\n"))
                 .as("a range without a file is refused like a line without one")
                 .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
     }
@@ -167,7 +167,7 @@ class WorkEndsTest {
         final Read read =
                 (Read)
                         WorkEnds.judge(
-                                "READER",
+                                true,
                                 Outcome.DONE,
                                 "Reported as blocking.\n\nFindings:\n\n \n"
                                         + "1. blocking | src/A.java | 26 | a fault\n"
@@ -177,8 +177,7 @@ class WorkEndsTest {
                 .containsExactly(
                         new Finding(1, Severity.BLOCKING, "src/A.java", 26, "a fault"),
                         new Finding(2, Severity.NOTE, null, null, "a verdict"));
-        final WorkEnds.Judgment none =
-                WorkEnds.judge("READER", Outcome.DONE, "Findings:\n\n(none)\n");
+        final WorkEnds.Judgment none = WorkEnds.judge(true, Outcome.DONE, "Findings:\n\n(none)\n");
         assertThat(none)
                 .as("a none under a blank line is a clean reading")
                 .isInstanceOf(Read.class);
@@ -192,7 +191,7 @@ class WorkEndsTest {
         final Read read =
                 (Read)
                         WorkEnds.judge(
-                                "READER",
+                                true,
                                 Outcome.DONE,
                                 "It is a blocking finding.\n\nFindings: 1. blocking | src/A.java | 26 | a"
                                         + " fault\n2. note | - | - | a verdict\n");
@@ -206,7 +205,7 @@ class WorkEndsTest {
                         "Findings: 1. blocking | - | - | a\n\n2. note | - | - | gap",
                         "Findings: 2. note | - | - | starts at two",
                         "Findings: see below\n1. note | - | - | a")) {
-            assertThat(WorkEnds.judge("READER", Outcome.DONE, answer))
+            assertThat(WorkEnds.judge(true, Outcome.DONE, answer))
                     .as("refused: %s", answer)
                     .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
         }
@@ -215,7 +214,7 @@ class WorkEndsTest {
     @Test
     void anEmptyBlockIsACleanReading() {
         // A clean reading taken as malformed would hold every issue under Needs you.
-        final Read read = (Read) WorkEnds.judge("READER", Outcome.DONE, "All good.\nFindings:\n");
+        final Read read = (Read) WorkEnds.judge(true, Outcome.DONE, "All good.\nFindings:\n");
         assertThat(read.findings()).as("no findings").isEmpty();
         assertThat(read.blocking()).as("nothing blocks").isFalse();
     }
@@ -230,7 +229,7 @@ class WorkEndsTest {
                         "Findings: none\n",
                         "Findings:\n(none)\n",
                         "Findings:\nNone")) {
-            final WorkEnds.Judgment judged = WorkEnds.judge("READER", Outcome.DONE, answer);
+            final WorkEnds.Judgment judged = WorkEnds.judge(true, Outcome.DONE, answer);
             assertThat(judged).as("a reading: %s", answer).isInstanceOf(Read.class);
             assertThat(((Read) judged).findings()).as("no findings: %s", answer).isEmpty();
         }
@@ -266,7 +265,7 @@ class WorkEndsTest {
                         "Findings:\n1. note | " + "f".repeat(513) + " | - | long file",
                         "Findings:\n1. note | - | - | " + "x".repeat(4001),
                         "x".repeat(64 * 1024) + "\nFindings:\n")) {
-            assertThat(WorkEnds.judge("READER", Outcome.DONE, answer))
+            assertThat(WorkEnds.judge(true, Outcome.DONE, answer))
                     .as("refused: %s", answer.length() > 80 ? answer.substring(0, 80) : answer)
                     .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
         }
@@ -279,11 +278,11 @@ class WorkEndsTest {
         for (int i = 1; i <= WorkEnds.MOST_FINDINGS; i++) {
             answer.append(i).append(". note | - | - | n\n");
         }
-        assertThat(WorkEnds.judge("READER", Outcome.DONE, answer.toString()))
+        assertThat(WorkEnds.judge(true, Outcome.DONE, answer.toString()))
                 .as("the most")
                 .isInstanceOf(Read.class);
         answer.append(WorkEnds.MOST_FINDINGS + 1).append(". note | - | - | n\n");
-        assertThat(WorkEnds.judge("READER", Outcome.DONE, answer.toString()))
+        assertThat(WorkEnds.judge(true, Outcome.DONE, answer.toString()))
                 .as("one more")
                 .isEqualTo(new NeedsOperator(Reason.INVALID_FINDINGS));
     }

@@ -42,7 +42,7 @@ class WorkOrderTest {
                 WorkOrder.accept(board, "ST1", "Building", decision(board, null, null, null, null));
         assertThat(order.tasks())
                 .as("two mains and one open builder")
-                .extracting(WorkOrder.Task::role)
+                .extracting(Roles::duty)
                 .containsExactly("MAIN", "BUILDER", "MAIN");
         assertThat(order.tasks().getFirst().issues())
                 .as("main owns only its repository")
@@ -52,12 +52,12 @@ class WorkOrderTest {
                 .containsExactly("AA1.1");
         assertThat(order.tasks().getFirst().prompt())
                 .as("the main's expanded order and successful destination")
-                .contains("ST1", "AA1", "alpha/AA1.1/BUILDER", "Review")
+                .contains("ST1", "AA1", "alpha/AA1.1/helper", "Review")
                 .doesNotContain("BB1", "SECRET DESCRIPTION", "Private notes");
         assertThat(order.tasks().get(1).prompt())
                 .as("sub-issue expansion has no siblings or helper tasks")
                 .contains("Keep the data.")
-                .doesNotContain("BB1", "alpha/AA1.1/BUILDER");
+                .doesNotContain("BB1", "alpha/AA1.1/helper");
         assertThat(order.tasks())
                 .as("selected default mode and model")
                 .allSatisfy(
@@ -160,7 +160,7 @@ class WorkOrderTest {
                             .tasks();
             assertThat(tasks)
                     .as("the main over three issues and the builder of the sub-issue, " + result)
-                    .extracting(task -> task.role() + " " + task.issues() + " " + task.work())
+                    .extracting(task -> Roles.duty(task) + " " + task.issues() + " " + task.work())
                     .containsExactly(
                             "MAIN [alpha#2, alpha#3, alpha#4] "
                                     + new WorkOrder.Tracked("Example-Org/alpha#2", "build"),
@@ -241,7 +241,8 @@ class WorkOrderTest {
                                         rule.order(),
                                         rule.models(),
                                         rule.risks(),
-                                        result)),
+                                        result,
+                                        Roles.forRule(rule.blocked(), result))),
                         List.of()),
                 org.fuin.porelo.planner.store.ProjectRepository.named(List.of("project", "alpha")),
                 List.of(),
@@ -306,7 +307,8 @@ class WorkOrderTest {
                                         rule.order(),
                                         rule.models(),
                                         rule.risks(),
-                                        WorkRule.Result.ANALYSIS)),
+                                        WorkRule.Result.ANALYSIS,
+                                        Roles.forRule(rule.blocked(), WorkRule.Result.ANALYSIS))),
                         List.of()),
                 board.repositories());
     }
@@ -440,7 +442,11 @@ class WorkOrderTest {
                         new WorkProposal.Main(
                                 "forged", main.role(), main.agent(), main.model(), main.brief()),
                         new WorkProposal.Main(
-                                main.name(), "BUILDER", main.agent(), main.model(), main.brief()),
+                                main.name(),
+                                Roles.READER,
+                                main.agent(),
+                                main.model(),
+                                main.brief()),
                         new WorkProposal.Main(
                                 main.name(),
                                 main.role(),
@@ -649,7 +655,7 @@ class WorkOrderTest {
                                 null));
         assertThat(order.tasks())
                 .as("the main and the changed helper start with the models the person chose")
-                .extracting(WorkOrder.Task::role, WorkOrder.Task::agent, WorkOrder.Task::model)
+                .extracting(Roles::duty, WorkOrder.Task::agent, WorkOrder.Task::model)
                 .startsWith(
                         org.assertj.core.groups.Tuple.tuple("MAIN", "zeta", "medium-2"),
                         org.assertj.core.groups.Tuple.tuple("BUILDER", "alpha", "large"));
@@ -846,7 +852,8 @@ class WorkOrderTest {
                         rule.per(),
                         rule.modes(),
                         "Complete each issue.",
-                        rule.models());
+                        rule.models(),
+                        Roles.forRule(null, null));
         final List<Issue> manyIssues = new ArrayList<>();
         for (int index = 1; index <= 12; index++) {
             manyIssues.add(
@@ -949,7 +956,7 @@ class WorkOrderTest {
         assertThat(order.tasks())
                 .as(
                         "a model harm offers is taken, and each task keeps the effort its decision kept")
-                .extracting(WorkOrder.Task::role, WorkOrder.Task::model, WorkOrder.Task::effort)
+                .extracting(Roles::duty, WorkOrder.Task::model, WorkOrder.Task::effort)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("MAIN", "large", "max"),
                         org.assertj.core.groups.Tuple.tuple("BUILDER", "huge", "max"),
@@ -1107,7 +1114,7 @@ class WorkOrderTest {
                         board, "ST1", "Building", decision(board, repos, comment, null, null))
                 .tasks()
                 .stream()
-                .filter(task -> task.role().equals("BUILDER"))
+                .filter(task -> Roles.duty(task).equals("BUILDER"))
                 .findFirst()
                 .orElseThrow();
     }

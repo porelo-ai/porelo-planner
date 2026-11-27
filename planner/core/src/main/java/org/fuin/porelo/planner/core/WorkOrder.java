@@ -16,6 +16,7 @@ import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.jspecify.annotations.Nullable;
@@ -36,19 +37,21 @@ public record WorkOrder(
     }
 
     /**
-     * The complete arguments for one call to Start; {@code reads} names the Porelo tasks whose work
-     * a reader reads, so Porelo's gate gives it their branches, and is empty for every other role.
+     * The complete arguments for one call to Start; {@code readLanded} names the Porelo tasks whose
+     * forwarded work a reading task reads, so Porelo's gate gives it their branches, and is empty
+     * for every other.
      *
      * @param repository the repository the task works in
      * @param issues the issues it owns
-     * @param role its role
+     * @param role the role its rule offers, whose parts Start is handed; null only for the task
+     *     that discusses an idea, which has none
      * @param agent its agent
      * @param model the agent's model
      * @param effort the effort Start is handed: the person's choice for a task started by hand, the
      *     rule's for the task's risk for one that starts by itself; null for none
      * @param mode its mode
      * @param prompt its order
-     * @param reads the Porelo tasks whose work it reads
+     * @param readLanded the Porelo tasks whose forwarded work it reads
      * @param basis where the rule's choice of agent, model and effort came from, empty when unknown
      * @param used the effort the window said the task starts with, null while nobody said
      * @param result the plain name of the file a stage's task hands back instead of pushing, or
@@ -57,25 +60,28 @@ public record WorkOrder(
      *     empty for work that pushes
      * @param work the tracker's issue and the stage's phase Start is handed, for a planned stage's
      *     task of a project a tracker keeps; null for any other
-     * @param runRole the run's role Start is handed, or null for an author, Start's default
+     * @param lead whether it leads its repository's work and may carry helpers
+     * @param again whether the planner offers it by itself after the run's start: an author sent
+     *     back to its work, or the building work of an issue the start held back
      * @param place where the run works, or null for the task's own gate push, Start's default
      */
     public record Task(
             String repository,
             List<String> issues,
-            String role,
+            @Nullable Role role,
             String agent,
             String model,
             @Nullable String effort,
             String mode,
             String prompt,
-            List<String> reads,
+            List<String> readLanded,
             String basis,
             @Nullable String used,
             @Nullable String result,
             List<Given> given,
             @Nullable Tracked work,
-            @Nullable RunRole runRole,
+            boolean lead,
+            boolean again,
             @Nullable RunPlace place) {
         /**
          * Copies issue identities to preserve the accepted scope, and refuses a tracker's issue the
@@ -83,7 +89,7 @@ public record WorkOrder(
          */
         public Task {
             issues = List.copyOf(issues);
-            reads = List.copyOf(reads);
+            readLanded = List.copyOf(readLanded);
             given = List.copyOf(given);
             // Start names the tracker's issue the planner ordered, never one beyond the task's own.
             if (work != null && !issues.contains(work.reference())) {
@@ -107,45 +113,140 @@ public record WorkOrder(
                     effort,
                     mode,
                     prompt,
-                    reads,
+                    readLanded,
                     basis,
                     used,
                     result,
                     given,
                     tracked,
-                    runRole,
+                    lead,
+                    again,
                     place);
         }
 
         /**
-         * Answers the task run in the role and at the place given.
+         * Answers the task leading its repository's work.
          *
-         * @param role the run's role, or null for Start's default, an author
-         * @param at where it works, or null for Start's default, the task's own gate push
          * @return the task
          */
-        public Task at(final @Nullable RunRole role, final @Nullable RunPlace at) {
+        public Task leading() {
             return new Task(
                     repository,
                     issues,
-                    this.role,
+                    role,
                     agent,
                     model,
                     effort,
                     mode,
                     prompt,
-                    reads,
+                    readLanded,
                     basis,
                     used,
                     result,
                     given,
                     work,
+                    true,
+                    again,
+                    place);
+        }
+
+        /**
+         * Answers the task as one the planner offers by itself after the run's start, at the place
+         * given.
+         *
+         * @param at where it works, or null for the task's own gate push
+         * @return the task
+         */
+        public Task again(final @Nullable RunPlace at) {
+            return standing(lead, true, at);
+        }
+
+        /**
+         * Answers the task with the standing given, as another task of the run has it.
+         *
+         * @param leads whether it leads its repository's work
+         * @param offeredAgain whether the planner offers it by itself after the run's start
+         * @param at where it works, or null for the task's own gate push
+         * @return the task
+         */
+        public Task standing(
+                final boolean leads, final boolean offeredAgain, final @Nullable RunPlace at) {
+            return new Task(
+                    repository,
+                    issues,
                     role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    readLanded,
+                    basis,
+                    used,
+                    result,
+                    given,
+                    work,
+                    leads,
+                    offeredAgain,
                     at);
         }
 
         /**
-         * A task Start is handed no role and no place, so it runs as an author at its own gate
+         * Whether the task discusses an idea with the person, which names no role.
+         *
+         * @return whether it is a discussion's task
+         */
+        public boolean discussion() {
+            return role == null;
+        }
+
+        /**
+         * Whether the task reads work and builds none, by its role.
+         *
+         * @return whether its role ends by findings or by points
+         */
+        public boolean reading() {
+            return role != null && role.reads();
+        }
+
+        /**
+         * Whether the task works at another task's work, by its role.
+         *
+         * @return whether its role's workspace is another task's work
+         */
+        public boolean atAnothersWork() {
+            return role != null && role.readsAnothersWork();
+        }
+
+        /**
+         * Answers the task at the place given.
+         *
+         * @param at where it works, or null for Start's default, the task's own gate push
+         * @return the task
+         */
+        public Task at(final @Nullable RunPlace at) {
+            return new Task(
+                    repository,
+                    issues,
+                    role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    readLanded,
+                    basis,
+                    used,
+                    result,
+                    given,
+                    work,
+                    lead,
+                    again,
+                    at);
+        }
+
+        /**
+         * A task that leads no repository's work and names no place, so it runs at its own gate
          * push.
          *
          * @param repository the repository the task works in
@@ -156,7 +257,7 @@ public record WorkOrder(
          * @param effort the effort Start is handed, null for none
          * @param mode its mode
          * @param prompt its order
-         * @param reads the Porelo tasks whose work it reads
+         * @param readLanded the Porelo tasks whose forwarded work it reads
          * @param basis where the rule's choice came from, empty when unknown
          * @param used the effort the window said the task starts with, null while nobody said
          * @param result the file a stage's task hands back, or null for work that pushes
@@ -166,13 +267,13 @@ public record WorkOrder(
         public Task(
                 final String repository,
                 final List<String> issues,
-                final String role,
+                final @Nullable Role role,
                 final String agent,
                 final String model,
                 final @Nullable String effort,
                 final String mode,
                 final String prompt,
-                final List<String> reads,
+                final List<String> readLanded,
                 final String basis,
                 final @Nullable String used,
                 final @Nullable String result,
@@ -187,13 +288,14 @@ public record WorkOrder(
                     effort,
                     mode,
                     prompt,
-                    reads,
+                    readLanded,
                     basis,
                     used,
                     result,
                     given,
                     work,
-                    null,
+                    false,
+                    false,
                     null);
         }
 
@@ -201,13 +303,13 @@ public record WorkOrder(
         public Task(
                 final String repository,
                 final List<String> issues,
-                final String role,
+                final @Nullable Role role,
                 final String agent,
                 final String model,
                 final @Nullable String effort,
                 final String mode,
                 final String prompt,
-                final List<String> reads,
+                final List<String> readLanded,
                 final String basis,
                 final @Nullable String used) {
             this(
@@ -219,7 +321,7 @@ public record WorkOrder(
                     effort,
                     mode,
                     prompt,
-                    reads,
+                    readLanded,
                     basis,
                     used,
                     null,
@@ -231,21 +333,32 @@ public record WorkOrder(
         public Task(
                 final String repository,
                 final List<String> issues,
-                final String role,
+                final @Nullable Role role,
                 final String agent,
                 final String model,
                 final @Nullable String effort,
                 final String mode,
                 final String prompt,
-                final List<String> reads) {
-            this(repository, issues, role, agent, model, effort, mode, prompt, reads, "", null);
+                final List<String> readLanded) {
+            this(
+                    repository,
+                    issues,
+                    role,
+                    agent,
+                    model,
+                    effort,
+                    mode,
+                    prompt,
+                    readLanded,
+                    "",
+                    null);
         }
 
         /** A task that reads no other task's work. */
         public Task(
                 final String repository,
                 final List<String> issues,
-                final String role,
+                final @Nullable Role role,
                 final String agent,
                 final String model,
                 final @Nullable String effort,
@@ -445,17 +558,18 @@ public record WorkOrder(
             }
             tasks.add(
                     task(
-                            story,
-                            to,
-                            source.repository(),
-                            source.issues(),
-                            "MAIN",
-                            choice.main().agent(),
-                            choice.main().model(),
-                            mainEffort,
-                            decision.mode(),
-                            mainPrompt,
-                            source.main().basis()));
+                                    story,
+                                    to,
+                                    source.repository(),
+                                    source.issues(),
+                                    rule.role(),
+                                    choice.main().agent(),
+                                    choice.main().model(),
+                                    mainEffort,
+                                    decision.mode(),
+                                    mainPrompt,
+                                    source.main().basis())
+                            .standing(!rule.role().reads(), false, null));
             for (final WorkProposal.Assignment helper : kept) {
                 final Issue issue = board.issue(helper.issue()).orElseThrow();
                 tasks.add(
@@ -464,7 +578,7 @@ public record WorkOrder(
                                 to,
                                 issue.repository(),
                                 List.of(helper.issue()),
-                                helper.kind(),
+                                rule.role(),
                                 helper.agent(),
                                 helper.model(),
                                 helper.effort(),
@@ -502,11 +616,11 @@ public record WorkOrder(
                                         board.issue(id).orElseThrow().repository()))
                 .filter(
                         id ->
-                                !task.role().equals("MAIN")
+                                !task.lead()
                                         || tasks.stream()
                                                 .noneMatch(
                                                         other ->
-                                                                other.role().equals("BUILDER")
+                                                                !other.lead()
                                                                         && other.issues()
                                                                                 .contains(id)))
                 .toList();
@@ -745,7 +859,7 @@ public record WorkOrder(
             final String to,
             final String repository,
             final List<String> issues,
-            final String role,
+            final Role role,
             final String agent,
             final String model,
             final @Nullable String effort,

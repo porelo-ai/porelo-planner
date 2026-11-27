@@ -9,6 +9,7 @@ import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.Revision;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Wait;
 import org.fuin.porelo.planner.store.WorkRule;
@@ -72,7 +73,8 @@ public record WorkProposal(
      * choose them.
      *
      * @param name the participant's name
-     * @param role MAIN for work that builds, READER for a reading started by hand
+     * @param role the role the rule offers the task: one that builds, or one that reads for a
+     *     reading started by hand
      * @param agent the proposed or chosen agent
      * @param model the agent's model
      * @param brief the rule's order for the task
@@ -83,7 +85,7 @@ public record WorkProposal(
      */
     public record Main(
             String name,
-            String role,
+            Role role,
             String agent,
             String model,
             String brief,
@@ -99,7 +101,7 @@ public record WorkProposal(
         /** A main with the proposal's effort and basis but no offered agents. */
         public Main(
                 final String name,
-                final String role,
+                final Role role,
                 final String agent,
                 final String model,
                 final String brief,
@@ -111,7 +113,7 @@ public record WorkProposal(
         /** A main as a decision names it, without the proposal's effort and basis. */
         public Main(
                 final String name,
-                final String role,
+                final Role role,
                 final String agent,
                 final String model,
                 final String brief) {
@@ -166,6 +168,9 @@ public record WorkProposal(
             this(id, issue, name, kind, agent, model, workingState, brief, choice, null, "");
         }
     }
+
+    /** The kind of a helper inside its main task; a helper is no task of its own role. */
+    public static final String HELPER = "HELPER";
 
     /** The issues, main and helpers of one proposed repository group. */
     public record Repository(
@@ -254,7 +259,12 @@ public record WorkProposal(
                                 .map(Issue::id)
                                 .toList()
                         : List.of();
-        final boolean reading = rule.blocked() != null;
+        final boolean reading = rule.role().reads();
+        if (rule.role().readsAnothersWork()) {
+            // Another task's work is read only where it waits, offered by the read of that place.
+            throw WorkRefusal.notAllowed(
+                    story.state(), to, "The rule " + to + " reads where the work waits.");
+        }
         if (issues.isEmpty() && !agents(open).isEmpty()) {
             throw WorkRefusal.notAllowed(story.state(), to, standing(agents(open), to, rule));
         }
@@ -300,10 +310,10 @@ public record WorkProposal(
                     final Choice own = Choice.of(to, rule, board, List.of(issue));
                     helpers.add(
                             new Assignment(
-                                    group.getKey() + "/" + issue.id() + "/BUILDER",
+                                    group.getKey() + "/" + issue.id() + "/helper",
                                     issue.id(),
                                     "builder",
-                                    "BUILDER",
+                                    HELPER,
                                     own.agent(),
                                     own.model(),
                                     to,
@@ -319,7 +329,7 @@ public record WorkProposal(
             final Main main =
                     new Main(
                             "main",
-                            reading ? "READER" : "MAIN",
+                            rule.role(),
                             chosen.agent(),
                             chosen.model(),
                             rule.order(),

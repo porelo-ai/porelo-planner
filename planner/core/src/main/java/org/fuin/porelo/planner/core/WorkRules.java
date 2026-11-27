@@ -95,10 +95,31 @@ public final class WorkRules {
         if (rule.result() != null && (rule.then() != null || rule.blocked() != null)) {
             faults.add(at + "a rule with a result names no then and no blocked");
         }
-        // A reviewer's open points send the work back to rework, so a reviewer needs somewhere to
-        // send it and hands back no result.
-        if (rule.reviewer() != null && (rule.result() != null || rule.blocked() == null)) {
-            faults.add(at + "a reviewer names blocked and no result");
+        // A reading that finds nothing moves its issue to done, so it leads nowhere else.
+        if (rule.role().reads() && rule.then() != null) {
+            faults.add(
+                    at
+                            + "the role '"
+                            + rule.role().name()
+                            + "' "
+                            + rule.role().end().words()
+                            + ", so the rule names no then");
+        }
+        // What a reading finds sends the work back to rework, so it needs somewhere to send it,
+        // and work that is built has no findings to send anywhere.
+        if (rule.role().reads() != (rule.blocked() != null)) {
+            faults.add(
+                    at
+                            + (rule.role().reads()
+                                    ? "the role '"
+                                            + rule.role().name()
+                                            + "' "
+                                            + rule.role().end().words()
+                                            + ", so the rule names blocked"
+                                    : "the rule names blocked, and the role '"
+                                            + rule.role().name()
+                                            + "' "
+                                            + rule.role().end().words()));
         }
         // An issue not ready goes back where it came from, so there is one place, open and idle.
         if (rule.result() == WorkRule.Result.READINESS) {
@@ -129,6 +150,31 @@ public final class WorkRules {
         }
         working(work, sound, at, "then", rule.then(), faults);
         working(work, sound, at, "blocked", rule.blocked(), faults);
+        final WorkRule next = rule.then() == null ? null : sound.get(rule.then());
+        if (next != null && rule.role().pushesWork() && !next.role().reads()) {
+            // Work built and worked on again by itself, with nothing read between, would start
+            // agent tasks without end.
+            faults.add(
+                    at
+                            + "then '"
+                            + rule.then()
+                            + "' reads no work: its role '"
+                            + next.role().name()
+                            + "' "
+                            + next.role().end().words());
+        }
+        final WorkRule rework = rule.blocked() == null ? null : sound.get(rule.blocked());
+        if (rework != null && rework.role().reads()) {
+            // What a reading finds is worked on, so the rule it leads to never reads again.
+            faults.add(
+                    at
+                            + "blocked '"
+                            + rule.blocked()
+                            + "' is no work on what was found: its role '"
+                            + rework.role().name()
+                            + "' "
+                            + rework.role().end().words());
+        }
         return faults;
     }
 

@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.core;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import org.fuin.porelo.planner.store.Role;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -18,7 +19,8 @@ import org.jspecify.annotations.Nullable;
  * @param endedAt when it ended, or null while it runs
  * @param end how it ended, or null while it runs
  * @param calls its calls, in Porelo's order
- * @param role its last run's role, or null when Porelo recorded none
+ * @param workspace the kind of its last run's workspace as Porelo recorded it, or null when Porelo
+ *     recorded none
  * @param place where its last run worked, or null when Porelo recorded none
  * @param held how many review items at that place are held back from its run, or null when Porelo
  *     recorded no count
@@ -34,7 +36,7 @@ public record TaskRecord(
         @Nullable Instant endedAt,
         @Nullable End end,
         List<Call> calls,
-        @Nullable RunRole role,
+        Role.@Nullable Workspace workspace,
         @Nullable RunPlace place,
         @Nullable Integer held,
         @Nullable String callerKey) {
@@ -145,7 +147,7 @@ public record TaskRecord(
      * @param endedAt when it ended, or null while it runs
      * @param end how it ended, or null while it runs
      * @param calls its calls
-     * @param role its last run's role, or null
+     * @param workspace the kind of its last run's workspace, or null
      * @param place where its last run worked, or null
      * @param held its held items, or null
      */
@@ -158,7 +160,7 @@ public record TaskRecord(
             final @Nullable Instant endedAt,
             final @Nullable End end,
             final List<Call> calls,
-            final @Nullable RunRole role,
+            final Role.@Nullable Workspace workspace,
             final @Nullable RunPlace place,
             final @Nullable Integer held) {
         this(
@@ -170,7 +172,7 @@ public record TaskRecord(
                 endedAt,
                 end,
                 calls,
-                role,
+                workspace,
                 place,
                 held,
                 null);

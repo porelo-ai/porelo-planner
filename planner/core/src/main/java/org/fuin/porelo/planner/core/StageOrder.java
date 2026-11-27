@@ -79,9 +79,9 @@ public final class StageOrder {
             final String to,
             final WorkOrder.Task task,
             final List<String> owned) {
-        final WorkOrder.Task working = task.working(tracked(board, to, task.role(), owned));
+        final WorkOrder.Task working = task.working(tracked(board, to, task, owned));
         final WorkRule.Result result = rule.result();
-        if (result == null || task.role().equals("READER")) {
+        if (result == null || task.reading()) {
             return working;
         }
         final List<WorkOrder.Given> given = new ArrayList<>();
@@ -129,13 +129,14 @@ public final class StageOrder {
                 task.effort(),
                 task.mode(),
                 prompt,
-                task.reads(),
+                task.readLanded(),
                 task.basis(),
                 task.used(),
                 result.file(),
                 given,
                 working.work(),
-                task.runRole(),
+                task.lead(),
+                task.again(),
                 task.place());
     }
 
@@ -145,10 +146,13 @@ public final class StageOrder {
      * project no tracker keeps, for a discussion and for a task that owns no issue.
      */
     private static WorkOrder.@Nullable Tracked tracked(
-            final Board board, final String to, final String role, final List<String> owned) {
+            final Board board,
+            final String to,
+            final WorkOrder.Task task,
+            final List<String> owned) {
         final String owner = board.owner();
         if (owner == null
-                || role.equals("DISCUSSION")
+                || task.discussion()
                 || owned.isEmpty()
                 || !Ids.isReference(owned.getFirst())) {
             return null;

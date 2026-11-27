@@ -34,6 +34,7 @@ import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.StageResult;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -1052,13 +1053,12 @@ public final class WorkRun implements RefusedEventResave {
                                                                                 .repository()))
                                         .filter(
                                                 id ->
-                                                        !task.role().equals("MAIN")
+                                                        !task.lead()
                                                                 || order.tasks().stream()
                                                                         .noneMatch(
                                                                                 other ->
-                                                                                        other.role()
-                                                                                                        .equals(
-                                                                                                                "BUILDER")
+                                                                                        !other
+                                                                                                        .lead()
                                                                                                 && other.issues()
                                                                                                         .contains(
                                                                                                                 id)))
@@ -1094,7 +1094,7 @@ public final class WorkRun implements RefusedEventResave {
                                         order.tasks().stream()
                                                 .filter(
                                                         t ->
-                                                                t.role().equals("BUILDER")
+                                                                !t.lead()
                                                                         && t.repository()
                                                                                 .equals(
                                                                                         task
@@ -1108,7 +1108,7 @@ public final class WorkRun implements RefusedEventResave {
                                                                                                         .repository()
                                                                                                 + "/"
                                                                                                 + id
-                                                                                                + "/BUILDER"))
+                                                                                                + "/helper"))
                                                 .toList());
                         final String prompt =
                                 WorkOrder.prompt(
@@ -1119,7 +1119,7 @@ public final class WorkRun implements RefusedEventResave {
                                                 board.story(storyId).orElseThrow(),
                                                 to,
                                                 owned),
-                                        task.role().equals("MAIN") ? helpers : "",
+                                        task.lead() ? helpers : "",
                                         NextStep.fence(
                                                 decision.comment() == null
                                                         ? ""
@@ -1144,10 +1144,10 @@ public final class WorkRun implements RefusedEventResave {
                                                         task.effort(),
                                                         task.mode(),
                                                         prompt,
-                                                        task.reads(),
+                                                        task.readLanded(),
                                                         task.basis(),
                                                         task.used())
-                                                .at(task.runRole(), task.place()));
+                                                .standing(task.lead(), task.again(), task.place()));
                         offers.add(
                                 offer(
                                         new NextStep.Planned(scoped, to, rule, task.basis()),
@@ -1381,8 +1381,8 @@ public final class WorkRun implements RefusedEventResave {
             throw conflict(
                     task,
                     report.event(),
-                    "A reviewer starts under a task of its own, never the author's whose work it"
-                            + " reviews.");
+                    "A task that reads another's work starts under a task of its own, never the"
+                            + " one whose work it reads.");
         }
         final Board board = store.board();
         final Judged judged = judge(snapshot, run, known, task, report, board);
@@ -1430,7 +1430,7 @@ public final class WorkRun implements RefusedEventResave {
 
     /** Whether a place is kept for the task's author whose last run there is the offer given. */
     private static boolean kept(final IssuePlace place, final Offer offer, final String task) {
-        return place.role() == RunRole.AUTHOR
+        return !place.foreign()
                 && place.task().equals(task)
                 && place.authorRuns().getLast().equals(offer.id());
     }
@@ -1797,7 +1797,7 @@ public final class WorkRun implements RefusedEventResave {
                 throw conflict(task, report.event(), "The task is already bound.");
             }
             writes = NextStep.started(board, known.binding());
-            if (known.arguments().runRole() == RunRole.REVIEWER) {
+            if (known.arguments().atAnothersWork()) {
                 reviewing(draft, known);
             }
             if (known.startRefusal() != null) {
@@ -1870,15 +1870,15 @@ public final class WorkRun implements RefusedEventResave {
                 if (ended == null) {
                     throw WorkRefusal.invalidSettings();
                 }
-                final boolean reviewer = known.arguments().runRole() == RunRole.REVIEWER;
+                // At another task's work the place is read for what the task found there; its
+                // answer holds no findings.
+                final boolean reviewer = known.arguments().atAnothersWork();
                 known.binding()
                         .issues()
                         .forEach(
                                 id -> {
                                     final NextStep.Progress p = draft.progress.get(id);
-                                    if (p != null
-                                            && known.binding().role().equals("READER")
-                                            && !reviewer) {
+                                    if (p != null && known.binding().role().answersWithFindings()) {
                                         draft.progress.put(
                                                 id,
                                                 new NextStep.Progress(
@@ -1899,7 +1899,7 @@ public final class WorkRun implements RefusedEventResave {
                 } else {
                     final WorkEnds.Judgment judgment =
                             WorkEnds.judge(
-                                    known.binding().role(),
+                                    known.binding().reading(),
                                     WorkEnds.Outcome.of(
                                             ended.finished(), ended.unpushed(), ended.outcome()),
                                     ended.answer());
@@ -1967,8 +1967,8 @@ public final class WorkRun implements RefusedEventResave {
     /**
      * Judges Porelo's refusal of a Start: it stands on the offer, which stays offered, and each of
      * its issues asks the person under {@link #START_REFUSED}; a rework at its kept place refused
-     * as the task's push not being the place's, or its role not allowed, says the place changed
-     * instead. Nothing is written to the store.
+     * as the task's push not being the place's says the place changed instead. Nothing is written
+     * to the store.
      */
     private Judged refused(
             final Snapshot snapshot,
@@ -1977,10 +1977,7 @@ public final class WorkRun implements RefusedEventResave {
             final String task,
             final StartRefusal refusal,
             final Run run) {
-        final boolean place =
-                (refusal.name().equals("NotTheTasksPush")
-                                || refusal.name().equals("RoleNotAllowed"))
-                        && atKeptPlace(run, known);
+        final boolean place = refusal.name().equals("NotTheTasksPush") && atKeptPlace(run, known);
         draft.set(
                 new Offer(
                         known.id(),
@@ -2020,12 +2017,16 @@ public final class WorkRun implements RefusedEventResave {
     }
 
     /**
-     * Whether a reviewer would start under the task of the author whose work it reviews: the name
-     * of the push it reviews or the task its issue's place keeps.
+     * Four eyes: whether a task whose role reports findings, gives points or judges would start
+     * under the task of the author whose work it reads: a task whose landed work it reads, the name
+     * of the push it reads or the task its issue's place keeps.
      */
     private static boolean authorsOwn(final Run run, final Offer offer, final String task) {
-        if (offer.arguments().runRole() != RunRole.REVIEWER) {
+        if (!offer.binding().role().needsOtherEyes()) {
             return false;
+        }
+        if (offer.arguments().readLanded().contains(task)) {
+            return true;
         }
         final RunPlace place = offer.arguments().place();
         if (place != null && place.gatePush() != null && place.gatePush().name().equals(task)) {
@@ -2058,7 +2059,7 @@ public final class WorkRun implements RefusedEventResave {
     private static boolean atKeptPlace(final Run run, final Offer offer) {
         final RunPlace place = offer.arguments().place();
         if (!author(offer)
-                || offer.arguments().runRole() != RunRole.AUTHOR
+                || !offer.arguments().again()
                 || place == null
                 || offer.binding().issues().isEmpty()) {
             return false;
@@ -2082,7 +2083,7 @@ public final class WorkRun implements RefusedEventResave {
             final Run run, final Offer known, final String task, final Offer earlier) {
         final RunPlace place = known.arguments().place();
         if (!author(known)
-                || known.arguments().runRole() != RunRole.AUTHOR
+                || !known.arguments().again()
                 || place == null
                 || !(earlier.status().equals("ENDED") || earlier.status().equals("VOID"))
                 || !run.offers().contains(earlier)
@@ -2101,10 +2102,14 @@ public final class WorkRun implements RefusedEventResave {
         return true;
     }
 
+    /** Whether an offer reads a build's landed work and reports findings about it. */
+    private static boolean landedReader(final Offer offer) {
+        return offer.binding().role().answersWithFindings();
+    }
+
     /** Whether an offer is a reading, whose answer holds findings; a reviewer's holds none. */
     private static boolean reads(final Offer offer) {
-        return offer.binding().role().equals("READER")
-                && offer.arguments().runRole() != RunRole.REVIEWER;
+        return offer.binding().role().answersWithFindings();
     }
 
     /**
@@ -2145,10 +2150,7 @@ public final class WorkRun implements RefusedEventResave {
 
     /** Whether an offer runs an author that pushes its work: a builder, never a stage or reader. */
     private static boolean author(final Offer offer) {
-        final String role = offer.binding().role();
-        return (role.equals("MAIN") || role.equals("BUILDER"))
-                && offer.binding().rule().result() == null
-                && offer.arguments().runRole() != RunRole.REVIEWER;
+        return offer.binding().role().pushesWork();
     }
 
     /**
@@ -2193,7 +2195,7 @@ public final class WorkRun implements RefusedEventResave {
                 binding.story(),
                 binding.repository(),
                 binding.issues().stream().filter(id -> !left.contains(id)).toList(),
-                binding.role(),
+                binding.lead(),
                 binding.state(),
                 binding.mode(),
                 binding.rule());
@@ -2289,8 +2291,8 @@ public final class WorkRun implements RefusedEventResave {
         REWORK,
         /** The issue now asks the person, for a reason the read gave, and nothing moved. */
         NEEDS_YOU,
-        /** A new head stands at the place: a reviewer is offered there, nothing moved. */
-        REVIEWER,
+        /** A new head stands at the place: a task that reads it is offered there, nothing moved. */
+        READING_OFFERED,
         /** The work is done at the place: its issue moved on to Review. */
         DONE
     }
@@ -2553,10 +2555,8 @@ public final class WorkRun implements RefusedEventResave {
                                 o.status().equals("OFFERED")
                                         && run.placeOffers().contains(o.id())
                                         && (o.arguments().place() != null
-                                                        && (o.arguments().runRole()
-                                                                        == RunRole.REVIEWER
-                                                                || o.arguments().runRole()
-                                                                                == RunRole.AUTHOR
+                                                        && (o.arguments().atAnothersWork()
+                                                                || o.arguments().again()
                                                                         && (o.arguments()
                                                                                                 .place()
                                                                                                 .gatePush()
@@ -2600,17 +2600,17 @@ public final class WorkRun implements RefusedEventResave {
      */
     public static boolean freedOffer(final Run run, final Offer offer) {
         final WorkOrder.Task task = offer.arguments();
-        return task.runRole() == RunRole.AUTHOR
+        return task.again()
                 && task.place() == null
-                && task.role().equals("BUILDER")
-                && offer.binding().role().equals("BUILDER")
+                && !task.lead()
+                && offer.binding().role().pushesWork()
                 && offer.binding().state().equals(run.to())
                 && task.issues().size() == 1
                 && offer.binding().rule().result() == null
                 && offer.binding().rule().blocked() == null
                 && task.result() == null
                 && task.given().isEmpty()
-                && task.reads().isEmpty();
+                && task.readLanded().isEmpty();
     }
 
     /** The run's freed offers not started yet. */
@@ -2747,7 +2747,6 @@ public final class WorkRun implements RefusedEventResave {
                         null,
                         run.comment(),
                         "",
-                        "BUILDER",
                         lastBuild(run, id));
         if (!planned.task().mode().equals(run.mode()) && rule.modes().contains(run.mode())) {
             // The issue is built in the run's mode where the rule allows it.
@@ -2762,12 +2761,11 @@ public final class WorkRun implements RefusedEventResave {
                                     run.mode(), planned.task().agent(), planned.task().model()),
                             run.comment(),
                             "",
-                            "BUILDER",
                             lastBuild(run, id));
         }
         return offer(
                 new NextStep.Planned(
-                        planned.task().at(RunRole.AUTHOR, null),
+                        planned.task().again(null),
                         planned.state(),
                         planned.rule(),
                         planned.basis()),
@@ -2836,7 +2834,7 @@ public final class WorkRun implements RefusedEventResave {
                         List.of(id),
                         new WorkProposal.Main(
                                 "main",
-                                "MAIN",
+                                rule.role(),
                                 task.agent(),
                                 task.model(),
                                 rule.order(),
@@ -3290,7 +3288,7 @@ public final class WorkRun implements RefusedEventResave {
                         o ->
                                 o.status().equals("OFFERED")
                                         && run.placeOffers().contains(o.id())
-                                        && o.arguments().runRole() == RunRole.REVIEWER
+                                        && o.arguments().atAnothersWork()
                                         && o.binding().issues().contains(issue))
                 .findFirst()
                 .orElse(null);
@@ -3308,8 +3306,8 @@ public final class WorkRun implements RefusedEventResave {
      * Where the points at an issue's place send its author back to, or null when nowhere: the
      * blocked work its state's rule names, when that rule takes work from the state; or, when the
      * state names no blocked work, the rule that built it, in its own working state, while it is
-     * still an author's rule, with no reviewer and no result. That rule reworks the work it made,
-     * so its {@code from} need not name the state the work waits in.
+     * still a rule whose role pushes work. That rule reworks the work it made, so its {@code from}
+     * need not name the state the work waits in.
      */
     private static @Nullable Rework reworkOf(
             final Board board, final Issue issue, final Offer bound) {
@@ -3325,9 +3323,7 @@ public final class WorkRun implements RefusedEventResave {
         final WorkRule rule = rules.get(built);
         // Only an author's building rule reworks: one that now reviews or saves a result has no
         // author to send back.
-        return rule == null || rule.reviewer() != null || rule.result() != null
-                ? null
-                : new Rework(built, rule);
+        return rule == null || !rule.role().pushesWork() ? null : new Rework(built, rule);
     }
 
     /** The blocked work the rule of the state an issue stands in names, or null for none. */
@@ -3365,7 +3361,7 @@ public final class WorkRun implements RefusedEventResave {
                         run.story(),
                         bound.binding().repository(),
                         List.of(issueId),
-                        bound.binding().role(),
+                        bound.binding().lead(),
                         bound.binding().state(),
                         bound.binding().mode(),
                         bound.binding().rule());
@@ -3405,7 +3401,6 @@ public final class WorkRun implements RefusedEventResave {
                                 null,
                                 run.comment(),
                                 words,
-                                "BUILDER",
                                 lastBuild(run, issueId));
                 final String mode = bound.binding().mode();
                 if (!planned.task().mode().equals(mode) && rule.modes().contains(mode)) {
@@ -3421,15 +3416,13 @@ public final class WorkRun implements RefusedEventResave {
                                             mode, planned.task().agent(), planned.task().model()),
                                     run.comment(),
                                     words,
-                                    "BUILDER",
                                     lastBuild(run, issueId));
                 }
                 final Offer next =
                         offer(
                                 new NextStep.Planned(
                                         planned.task()
-                                                .at(
-                                                        RunRole.AUTHOR,
+                                                .again(
                                                         place.place().ownPullRequest() != null
                                                                 ? RunPlace.own()
                                                                 : RunPlace.gate(
@@ -3494,7 +3487,7 @@ public final class WorkRun implements RefusedEventResave {
         }
         final WorkRule rule =
                 WorkRules.check(board.workflow(), board.work()).rules().get(issue.state());
-        return rule == null || rule.reviewer() == null ? null : rule;
+        return rule == null || !rule.role().readsAnothersWork() ? null : rule;
     }
 
     /**
@@ -3508,7 +3501,7 @@ public final class WorkRun implements RefusedEventResave {
                         run.story(),
                         bound.binding().repository(),
                         List.of(issue.id()),
-                        bound.binding().role(),
+                        bound.binding().lead(),
                         bound.binding().state(),
                         bound.binding().mode(),
                         bound.binding().rule());
@@ -3597,7 +3590,7 @@ public final class WorkRun implements RefusedEventResave {
         return new PlaceStep(
                 why != null || draft.progress(issueId).needsYou()
                         ? PlaceOutcome.NEEDS_YOU
-                        : PlaceOutcome.REVIEWER,
+                        : PlaceOutcome.READING_OFFERED,
                 planned instanceof Flight flight ? flight : null);
     }
 
@@ -3651,7 +3644,7 @@ public final class WorkRun implements RefusedEventResave {
 
     /**
      * Why a read is not of the kept place, or null when it is. A task's record must be of the bound
-     * task's container and role, at the place, a record naming no place, or a push in its own
+     * task's container and workspace, at the place, a record naming no place, or a push in its own
      * repository, being at that task's own push; an answer must be asked for the bound task at the
      * place.
      */
@@ -3663,7 +3656,14 @@ public final class WorkRun implements RefusedEventResave {
             case PlaceRead.Recorded recorded -> {
                 final TaskRecord task = recorded.record();
                 final RunPlace place = task.place();
-                final RunRole role = task.role();
+                final Role.Workspace kind = task.workspace();
+                // A place kept for a task's own work is matched by a run at its own work alone.
+                final boolean other =
+                        kind != null
+                                && kind
+                                        != (kept.foreign()
+                                                ? Role.Workspace.FOREIGN
+                                                : Role.Workspace.OWN);
                 final String in = task.repository();
                 // Porelo names the repository by its own name for it, which may differ from the
                 // board's; the container, started for this very offer, binds the record to it,
@@ -3676,19 +3676,18 @@ public final class WorkRun implements RefusedEventResave {
                                         ? RunPlace.gate(null, push.name())
                                         : place;
                 yield task.task().equals(bound.containerId())
-                                && (role == null || role == kept.role())
+                                && !other
                                 && (kept.same(at, repository) || kept.forwardedFrom(at, repository))
                         ? null
                         : "Porelo's record of container "
                                 + task.task()
-                                + (role == null ? "" : " as " + role)
+                                + (kind == null ? "" : " in the workspace " + kind.word())
                                 + (in == null ? "" : " in repository " + in)
                                 + " at "
                                 + said(at)
                                 + " is not of "
                                 + expected
-                                + " as "
-                                + kept.role()
+                                + (kept.foreign() ? " at another task's work" : " at its own work")
                                 + " in repository "
                                 + repository
                                 + " in container "
@@ -3735,7 +3734,7 @@ public final class WorkRun implements RefusedEventResave {
             final IssuePlace kept,
             final Offer bound,
             final PlaceRead.Forwarded forwarded) {
-        return kept.role() == RunRole.AUTHOR
+        return !kept.foreign()
                 && kept.place().gatePush() != null
                 && forwarded.task().equals(kept.task())
                 && kept.same(forwarded.gate(), bound.binding().repository())
@@ -3744,7 +3743,7 @@ public final class WorkRun implements RefusedEventResave {
 
     /** Whether an offer's task hands back its result instead of pushing its work. */
     private static boolean staged(final NextStep.Binding binding) {
-        return binding.rule().result() != null && !binding.role().equals("READER");
+        return binding.role().handsBackResult();
     }
 
     /**
@@ -3845,12 +3844,15 @@ public final class WorkRun implements RefusedEventResave {
                     if (!ended.landed().isEmpty() || readerFollows(run, known)) {
                         throw conflict(task, Event.LANDED, "The task's work has already landed.");
                     }
-                    if (!(WorkEnds.judge(
-                                    known.binding().role(),
-                                    WorkEnds.Outcome.of(
-                                            ended.finished(), ended.unpushed(), ended.outcome()),
-                                    ended.answer())
-                            instanceof WorkEnds.Done)) {
+                    if (!known.binding().role().pushesWork()
+                            || !(WorkEnds.judge(
+                                            false,
+                                            WorkEnds.Outcome.of(
+                                                    ended.finished(),
+                                                    ended.unpushed(),
+                                                    ended.outcome()),
+                                            ended.answer())
+                                    instanceof WorkEnds.Done)) {
                         throw conflict(task, Event.LANDED, "The task did not end done.");
                     }
                     if (run.stopped() || run.halted()) {
@@ -3935,8 +3937,7 @@ public final class WorkRun implements RefusedEventResave {
         return after.stream()
                 .anyMatch(
                         o ->
-                                o.binding().role().equals("READER")
-                                        && o.arguments().runRole() != RunRole.REVIEWER
+                                landedReader(o)
                                         && !o.status().equals("VOID")
                                         && o.binding().issues().stream()
                                                 .anyMatch(build.binding().issues()::contains));
@@ -4154,9 +4155,7 @@ public final class WorkRun implements RefusedEventResave {
                                     run.offers().stream()
                                             .filter(
                                                     o ->
-                                                            o.binding().role().equals("READER")
-                                                                    && o.arguments().runRole()
-                                                                            != RunRole.REVIEWER
+                                                            landedReader(o)
                                                                     && o.binding()
                                                                             .issues()
                                                                             .equals(
@@ -4272,11 +4271,6 @@ public final class WorkRun implements RefusedEventResave {
                                                                         + (comment.isEmpty()
                                                                                 ? ""
                                                                                 : "\n" + comment),
-                                                                counted.next()
-                                                                                == ReadingCycle.Next
-                                                                                        .READ
-                                                                        ? "READER"
-                                                                        : "BUILDER",
                                                                 lastBuild(run, issueId)),
                                                         story);
                                         draft.offers.add(next);
@@ -4549,7 +4543,7 @@ public final class WorkRun implements RefusedEventResave {
                                     Set.of(run.story()),
                                     null);
                             final WorkRule.Result kind = binding.rule().result();
-                            if (kind == null || binding.role().equals("READER")) {
+                            if (kind == null || !binding.role().handsBackResult()) {
                                 throw HandedResults.refused(
                                         "offer: The offer's task hands back no result.");
                             }
@@ -6017,7 +6011,7 @@ public final class WorkRun implements RefusedEventResave {
                 : run.offers().stream()
                         .filter(
                                 o ->
-                                        !o.binding().role().equals("READER")
+                                        !o.binding().reading()
                                                 && o.binding().issues().contains(issueId)
                                                 && o.task() != null)
                         .reduce((left, right) -> right)
@@ -6042,7 +6036,7 @@ public final class WorkRun implements RefusedEventResave {
         final NextStep.Build built =
                 run == null ? new NextStep.Build("", List.of()) : lastBuild(run, issueId);
         final Issue issue = board.issue(issueId).orElseThrow();
-        if (rule.reviewer() != null) {
+        if (rule.role().readsAnothersWork()) {
             // A reviewer runs only where the work waits, offered by the read of that place.
             throw WorkRefusal.notAllowed(
                     issue.state(), to, "The rule " + to + " reviews where the work waits.");
@@ -6060,7 +6054,6 @@ public final class WorkRun implements RefusedEventResave {
                 settings,
                 comment,
                 "",
-                "READER",
                 built,
                 new NextStep.Chosen(effort));
     }
@@ -6070,7 +6063,7 @@ public final class WorkRun implements RefusedEventResave {
         return run.offers().stream()
                 .filter(
                         o ->
-                                !o.binding().role().equals("READER")
+                                !o.binding().reading()
                                         && o.binding().issues().contains(issueId)
                                         && o.task() != null)
                 .reduce((left, right) -> right)
@@ -6110,7 +6103,7 @@ public final class WorkRun implements RefusedEventResave {
                             draft.story,
                             old.binding().repository(),
                             resumed,
-                            old.binding().role(),
+                            old.binding().lead(),
                             old.binding().state(),
                             old.binding().mode(),
                             old.binding().rule());
@@ -6270,9 +6263,9 @@ public final class WorkRun implements RefusedEventResave {
         for (int index = 0; index < run.offers().size(); index++) {
             final Offer reader = run.offers().get(index);
             final WorkOrder.Task arguments = reader.arguments();
-            if (!reader.binding().role().equals("READER")
+            if (!reader.binding().role().readLanded()
                     || !reader.status().equals("OFFERED")
-                    || !arguments.reads().isEmpty()) {
+                    || !arguments.readLanded().isEmpty()) {
                 continue;
             }
             final String issue = reader.binding().issues().getFirst();
@@ -6280,7 +6273,7 @@ public final class WorkRun implements RefusedEventResave {
                     run.offers().subList(0, index).stream()
                             .filter(
                                     o ->
-                                            !o.binding().role().equals("READER")
+                                            !o.binding().reading()
                                                     && o.binding().issues().contains(issue)
                                                     && o.task() != null)
                             .reduce((left, right) -> right)
@@ -6314,7 +6307,8 @@ public final class WorkRun implements RefusedEventResave {
                                     arguments.result(),
                                     arguments.given(),
                                     arguments.work(),
-                                    arguments.runRole(),
+                                    arguments.lead(),
+                                    arguments.again(),
                                     arguments.place())));
         }
         return changed ? draft.freeze() : run;
@@ -6469,8 +6463,7 @@ public final class WorkRun implements RefusedEventResave {
                         .flatMap(run -> run.offers().stream())
                         .anyMatch(
                                 offer ->
-                                        offer.status().equals("STARTED")
-                                                && offer.binding().role().equals("MAIN"));
+                                        offer.status().equals("STARTED") && offer.binding().lead());
             }
         };
     }
@@ -6626,7 +6619,7 @@ public final class WorkRun implements RefusedEventResave {
             if (last != null
                     && ended != null
                     && ended.unpushed() > 0
-                    && !"READER".equals(last.binding().role())) {
+                    && !last.binding().reading()) {
                 throw WorkRefusal.notAllowed(
                         WorkProposal.story(board, story).state(),
                         to,
@@ -6732,7 +6725,7 @@ public final class WorkRun implements RefusedEventResave {
                         story,
                         task.repository(),
                         task.issues(),
-                        task.role(),
+                        task.lead(),
                         planned.state(),
                         task.mode(),
                         planned.rule()),
@@ -7147,13 +7140,14 @@ public final class WorkRun implements RefusedEventResave {
                                         arguments.effort(),
                                         arguments.mode(),
                                         "",
-                                        arguments.reads(),
+                                        arguments.readLanded(),
                                         arguments.basis(),
                                         arguments.used(),
                                         arguments.result(),
                                         List.of(),
                                         arguments.work(),
-                                        arguments.runRole(),
+                                        arguments.lead(),
+                                        arguments.again(),
                                         arguments.place()),
                                 o.binding(),
                                 o.status(),

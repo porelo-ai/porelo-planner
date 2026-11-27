@@ -49,7 +49,8 @@ class RulesTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("work"),
                         "Work",
-                        Map.of("agent", "model"));
+                        Map.of("agent", "model"),
+                        Roles.forRule(null, null));
         return new Board(
                 new Revision("live"),
                 new Workflow(

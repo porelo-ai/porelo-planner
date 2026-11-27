@@ -317,7 +317,8 @@ class ReadinessCheckTest {
                             "Check {story}: {issues}; {tasks}",
                             Map.of("codex", "model"),
                             Map.of(),
-                            WorkRule.Result.READINESS);
+                            WorkRule.Result.READINESS,
+                            Roles.forRule(null, WorkRule.Result.READINESS));
             stage.store.current =
                     new Board(
                             new Revision("board@1"),

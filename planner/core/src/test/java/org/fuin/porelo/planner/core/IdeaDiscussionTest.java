@@ -228,6 +228,7 @@ class IdeaDiscussionTest {
                 like.per(),
                 like.modes(),
                 like.order(),
-                models);
+                models,
+                Roles.forRule(null, null));
     }
 }

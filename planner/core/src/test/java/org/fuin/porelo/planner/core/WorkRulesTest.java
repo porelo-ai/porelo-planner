@@ -39,7 +39,8 @@ class WorkRulesTest {
                 WorkRule.Per.REPOSITORY,
                 List.of("UNATTENDED"),
                 "Build {issues} of {story}.",
-                Map.of("claude-code", "claude-opus-5-5"));
+                Map.of("claude-code", "claude-opus-5-5"),
+                Roles.forRule(blocked, null));
     }
 
     private static Map<String, WorkRule> sound() {
@@ -97,7 +98,10 @@ class WorkRulesTest {
                         "stories/work.yml: Implementing: done 'Closed' is no state of the workflow",
                         "stories/work.yml: Implementing: then 'Proving' is no state of the workflow",
                         "stories/work.yml: Implementing: blocked 'Fixing' is no state of the"
-                                + " workflow");
+                                + " workflow",
+                        // The fixture's rule names both, which no reading does.
+                        "stories/work.yml: Implementing: the role 'reader' reports findings, so the"
+                                + " rule names no then");
         assertThat(checked.rules()).as("the rule dropped").isEmpty();
     }
 
@@ -166,7 +170,7 @@ class WorkRulesTest {
                 rule.models(),
                 rule.risks(),
                 result,
-                WorkRule.Reviewer.AT_WORK);
+                Roles.REVIEWER);
     }
 
     // Prevents a reviewer whose open points have no rework to go to, or one started as a stage
@@ -178,17 +182,69 @@ class WorkRulesTest {
         assertThat(WorkRules.check(WORKFLOW, new Work(rules, List.of())).faults())
                 .as("a reviewer sending its open points to rework is sound")
                 .isEmpty();
-        for (final WorkRule unsound :
-                List.of(
-                        reviewing(rules.get("Reading"), null, null),
-                        reviewing(rules.get("Reading"), "Reworking", WorkRule.Result.ANALYSIS))) {
-            rules.put("Reading", unsound);
-            final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
-            assertThat(checked.faults())
-                    .as("its fault named")
-                    .contains("stories/work.yml: Reading: a reviewer names blocked and no result");
-            assertThat(checked.rules()).as("the reviewer dropped").doesNotContainKey("Reading");
-        }
+        final WorkRule reading = rules.get("Reading");
+        rules.put("Reading", reviewing(reading, null, null));
+        final WorkRules.Checked checked = WorkRules.check(WORKFLOW, new Work(rules, List.of()));
+        assertThat(checked.faults())
+                .as("its fault named")
+                .contains(
+                        "stories/work.yml: Reading: the role 'reviewer' gives points, so the rule"
+                                + " names blocked");
+        assertThat(checked.rules()).as("the reviewer dropped").doesNotContainKey("Reading");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> reviewing(reading, "Reworking", WorkRule.Result.ANALYSIS))
+                .as("a reviewer handing back a result is no rule at all")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reviewer");
+    }
+
+    // Prevents work built and built again by itself, with nothing read between, which would start
+    // agent tasks that cost money without end; and a reading whose then would never be followed.
+    @Test
+    void aThenLeadsFromWorkThatIsBuiltOnlyToAReadingAndAReadingNamesNone() {
+        final Map<String, WorkRule> rules = sound();
+        final WorkRule building = rules.get("Implementing");
+        final WorkRule reading = rules.get("Reading");
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        reading.from(),
+                        reading.done(),
+                        null,
+                        null,
+                        reading.per(),
+                        reading.modes(),
+                        reading.order(),
+                        reading.models(),
+                        Roles.AUTHOR));
+        assertThat(building.then())
+                .as("the fixture's build leads on to Reading")
+                .isEqualTo("Reading");
+        assertThat(WorkRules.check(WORKFLOW, new Work(rules, List.of())).faults())
+                .as("a build leading on to work that is built again")
+                .contains(
+                        "stories/work.yml: Implementing: then 'Reading' reads no work: its role"
+                                + " 'author' pushes work");
+        rules.put(
+                "Reading",
+                new WorkRule(
+                        reading.from(),
+                        reading.done(),
+                        "Implementing",
+                        reading.blocked(),
+                        reading.per(),
+                        reading.modes(),
+                        reading.order(),
+                        reading.models(),
+                        reading.role()));
+        assertThat(WorkRules.check(WORKFLOW, new Work(rules, List.of())).faults())
+                .as("a reading that names a then it would never follow")
+                .contains(
+                        "stories/work.yml: Reading: the role '"
+                                + reading.role().name()
+                                + "' "
+                                + reading.role().end().words()
+                                + ", so the rule names no then");
     }
 
     static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> readinessFrom() {
@@ -244,7 +300,8 @@ class WorkRulesTest {
                 "Check {issues} of {story}.",
                 Map.of("claude-code", "claude-opus-5-5"),
                 Map.of(),
-                WorkRule.Result.READINESS);
+                WorkRule.Result.READINESS,
+                Roles.forRule(null, WorkRule.Result.READINESS));
     }
 
     /** The rule handing back an analysis instead of pushing. */
@@ -259,7 +316,8 @@ class WorkRulesTest {
                 rule.order(),
                 rule.models(),
                 rule.risks(),
-                WorkRule.Result.ANALYSIS);
+                WorkRule.Result.ANALYSIS,
+                Roles.forRule(rule.blocked(), WorkRule.Result.ANALYSIS));
     }
 
     @Test

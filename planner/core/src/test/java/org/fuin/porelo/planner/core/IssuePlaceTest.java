@@ -183,11 +183,7 @@ class IssuePlaceTest {
             assertThatThrownBy(
                             () ->
                                     new IssuePlace(
-                                            RunPlace.gate(null, "task"),
-                                            RunRole.AUTHOR,
-                                            "task",
-                                            runs,
-                                            null))
+                                            RunPlace.gate(null, "task"), false, "task", runs, null))
                     .as("author runs " + runs.size())
                     .isInstanceOf(IllegalArgumentException.class);
         }

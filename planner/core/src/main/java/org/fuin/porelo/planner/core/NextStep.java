@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Issue;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -32,7 +33,7 @@ public final class NextStep {
             String story,
             String repository,
             List<String> issues,
-            String role,
+            boolean lead,
             String state,
             String mode,
             WorkRule rule) {
@@ -42,6 +43,24 @@ public final class NextStep {
             Ids.name(repository);
             issues = List.copyOf(issues);
             issues.forEach(Ids::issue);
+        }
+
+        /**
+         * Answers the role of the offer's task, which is its rule's.
+         *
+         * @return the role
+         */
+        public Role role() {
+            return rule.role();
+        }
+
+        /**
+         * Whether the offer's task reads work and builds none.
+         *
+         * @return whether its role ends by findings or by points
+         */
+        public boolean reading() {
+            return rule.role().reads();
         }
     }
 
@@ -181,7 +200,7 @@ public final class NextStep {
                 return false;
             }
         }
-        return !"READER".equals(binding.role()) || binding.issues().size() == 1;
+        return !binding.reading() || binding.issues().size() == 1;
     }
 
     /** Plans entry to an offered state; only STARTED calls this. */
@@ -252,7 +271,7 @@ public final class NextStep {
             final @Nullable Settings rework,
             final Build ended) {
         final WorkEnds.Judgment judgment =
-                binding.role().equals("READER")
+                binding.reading()
                         ? new WorkEnds.Read(
                                 reviewAnyway
                                         ? List.of()
@@ -411,13 +430,14 @@ public final class NextStep {
                 progress.put(id, progress(progress, id).manual());
                 continue;
             }
-            final String role = judgment instanceof WorkEnds.Read ? "BUILDER" : "READER";
+            // What follows is the next rule's to say: a reading of this work, or work of its own.
+            final boolean reading = next != null && next.role().reads();
             // A reviewer is offered where the work waits, never by an end; work that landed at
             // once left no place to review it at.
             if (next != null
-                    && role.equals("READER")
-                    && next.reviewer() != null
-                    && !awaitsLanding(role, ended)) {
+                    && reading
+                    && next.role().readsAnothersWork()
+                    && !awaitsLanding(reading, ended)) {
                 unavailable(
                         progress,
                         unavailable,
@@ -428,8 +448,8 @@ public final class NextStep {
                 continue;
             }
             if (next != null
-                    && !awaitsLanding(role, ended)
-                    && !(role.equals("READER") && next.reviewer() != null)) {
+                    && !awaitsLanding(reading, ended)
+                    && !(reading && next.role().readsAnothersWork())) {
                 try {
                     tasks.add(
                             task(
@@ -441,7 +461,6 @@ public final class NextStep {
                                     settings,
                                     comment,
                                     words,
-                                    role,
                                     ended));
                 } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
                     unavailable(
@@ -449,7 +468,7 @@ public final class NextStep {
                             unavailable,
                             id,
                             "the "
-                                    + role
+                                    + next.role().name()
                                     + " task for "
                                     + target
                                     + " cannot be built: "
@@ -501,13 +520,13 @@ public final class NextStep {
                     && (issue.worker() == Worker.MANUAL
                             || !issue.state().equals(target)
                             || next == null && !reading
-                            || next != null && next.reviewer() != null)) {
+                            || next != null && next.role().readsAnothersWork())) {
                 // A person works it, moved it on, or its children hold it; none waits on a reader.
                 // A reviewer reviewed the work where it waited, before it landed.
                 continue;
             }
             try {
-                if (issue == null || !owned || next == null) {
+                if (issue == null || !owned || next == null || !next.role().reads()) {
                     throw new IllegalArgumentException("No reader can follow the landed build");
                 }
                 tasks.add(
@@ -520,7 +539,6 @@ public final class NextStep {
                                 null,
                                 comment,
                                 "",
-                                "READER",
                                 build));
             } catch (final WorkRefusal | IllegalArgumentException cannotBuild) {
                 if (progress.containsKey(id)) {
@@ -536,8 +554,8 @@ public final class NextStep {
     }
 
     /** A reader of a known build whose work still waits at the gate is offered on its landing. */
-    private static boolean awaitsLanding(final String role, final Build build) {
-        return role.equals("READER") && !build.task().isEmpty() && build.landed().isEmpty();
+    private static boolean awaitsLanding(final boolean reading, final Build build) {
+        return reading && !build.task().isEmpty() && build.landed().isEmpty();
     }
 
     private static Result finish(
@@ -580,15 +598,14 @@ public final class NextStep {
             final @Nullable Settings chosen,
             final String comment,
             final String words,
-            final String role,
             final Build built) {
-        return task(board, storyId, issue, state, rule, chosen, comment, words, role, built, null);
+        return task(board, storyId, issue, state, rule, chosen, comment, words, built, null);
     }
 
     /**
-     * Builds the reviewer run of a reviewer rule for one issue: Porelo's run in the role {@code
-     * REVIEWER} at the place its work waits at, under the duty of a reader, reading the task bound
-     * there; it writes its points at that place, so its order asks for no findings block.
+     * Builds the run of a rule whose role reads another task's work, for one issue: a run at the
+     * place the work waits at, reading the task bound there; what it finds it writes at that place,
+     * so its order asks for no findings block.
      *
      * @param board the board as it stands
      * @param storyId the story
@@ -612,8 +629,8 @@ public final class NextStep {
             final RunPlace place,
             final String task,
             final String said) {
-        if (rule.reviewer() == null) {
-            throw new IllegalArgumentException("The rule names no reviewer");
+        if (!rule.role().readsAnothersWork()) {
+            throw new IllegalArgumentException("The rule's role reads no other task's work");
         }
         final Choice choice = Choice.of(state, rule, board, List.of(issue));
         final Settings settings = Settings.of(rule, choice, null);
@@ -638,16 +655,17 @@ public final class NextStep {
                 new WorkOrder.Task(
                                 issue.repository(),
                                 List.of(issue.id()),
-                                "READER",
+                                rule.role(),
                                 settings.agent(),
                                 settings.model(),
                                 choice.effort(),
                                 settings.mode(),
                                 prompt,
-                                List.of(task),
+                                // The work at the place is read through the place alone.
+                                rule.role().readLanded() ? List.of(task) : List.of(),
                                 choice.basis(),
                                 null)
-                        .at(RunRole.REVIEWER, place),
+                        .at(place),
                 state,
                 rule,
                 choice.basis());
@@ -662,8 +680,8 @@ public final class NextStep {
 
     /**
      * Builds a single-issue task as {@link #task(Board, String, Issue, String, WorkRule, Settings,
-     * String, String, String, Build)} does, with the effort a person chose when {@code effort} is
-     * given, which is then the one the task is said to use.
+     * String, String, Build)} does, with the effort a person chose when {@code effort} is given,
+     * which is then the one the task is said to use.
      */
     public static Planned task(
             final Board board,
@@ -674,9 +692,9 @@ public final class NextStep {
             final @Nullable Settings chosen,
             final String comment,
             final String words,
-            final String role,
             final Build built,
             final @Nullable Chosen effort) {
+        final Role role = rule.role();
         final Choice choice = Choice.of(state, rule, board, List.of(issue));
         final Settings settings = Settings.of(rule, choice, chosen);
         final Story story =
@@ -691,12 +709,12 @@ public final class NextStep {
                         rule,
                         story,
                         WorkOrder.issueText(board, story, state, List.of(issue.id())),
-                        role.equals("READER") ? builtBy(built) : "",
+                        role.reads() ? builtBy(built) : "",
                         fence(comment));
         if (!words.isEmpty()) {
             prompt += "\n\nReading and operator words:\n" + fence(words);
         }
-        if (role.equals("READER")) {
+        if (role.answersWithFindings()) {
             prompt += FINDINGS;
         }
         if (prompt.getBytes(StandardCharsets.UTF_8).length > WorkEnds.MOST_ANSWER) {
@@ -716,7 +734,8 @@ public final class NextStep {
                                 effort == null ? choice.effort() : effort.effort(),
                                 settings.mode(),
                                 prompt,
-                                role.equals("READER") ? List.of(built.task()) : List.of(),
+                                // Landed work is read only by a role that says so.
+                                role.readLanded() ? List.of(built.task()) : List.of(),
                                 choice.basis(),
                                 effort == null ? null : effort.effort())),
                 state,
@@ -893,7 +912,7 @@ public final class NextStep {
      */
     private static boolean stopsReading(final Binding binding, final WorkEnds.Reason reason) {
         return reason == WorkEnds.Reason.INVALID_FINDINGS
-                || binding.role().equals("READER")
+                || binding.reading()
                         && (reason == WorkEnds.Reason.FAILED || reason == WorkEnds.Reason.BLOCKED);
     }
 

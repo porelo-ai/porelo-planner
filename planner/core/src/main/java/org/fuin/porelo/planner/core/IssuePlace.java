@@ -10,12 +10,12 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Where an issue's work waits, as a run keeps it: the place, the role its runs there have, the task
- * bound there, the author runs used there and the last complete answer read there, so the issue's
- * next step and the waits of the people at that place can be judged after its task is gone.
+ * Where an issue's work waits, as a run keeps it: the place, whose work its runs there read, the
+ * task bound there, the author runs used there and the last complete answer read there, so the
+ * issue's next step and the waits of the people at that place can be judged after its task is gone.
  *
  * @param place the place
- * @param role the role of the runs at the place
+ * @param foreign whether the runs at the place read another task's work
  * @param task the bound task's name within the project, as Start took it, never its container
  * @param authorRuns the offers of the author runs used at the place, each once, in their order
  * @param last the last complete answer read at the place, or null while none was read
@@ -25,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record IssuePlace(
         RunPlace place,
-        RunRole role,
+        boolean foreign,
         String task,
         List<String> authorRuns,
         @Nullable Review last,
@@ -52,7 +52,6 @@ public record IssuePlace(
      */
     public IssuePlace {
         Objects.requireNonNull(place, "place");
-        Objects.requireNonNull(role, "role");
         Objects.requireNonNull(task, "task");
         authorRuns = List.copyOf(authorRuns);
         if (!RunPlace.TASK.matcher(task).matches()) {
@@ -70,7 +69,7 @@ public record IssuePlace(
      * A place no run started by hand works at.
      *
      * @param place the place
-     * @param role the role of the runs at the place
+     * @param foreign whether the runs at the place read another task's work
      * @param task the bound task's name within the project
      * @param authorRuns the offers of the author runs used at the place
      * @param last the last complete answer read at the place, or null while none was read
@@ -78,30 +77,30 @@ public record IssuePlace(
      */
     public IssuePlace(
             final RunPlace place,
-            final RunRole role,
+            final boolean foreign,
             final String task,
             final List<String> authorRuns,
             final @Nullable Review last,
             final @Nullable String reviewed) {
-        this(place, role, task, authorRuns, last, reviewed, null);
+        this(place, foreign, task, authorRuns, last, reviewed, null);
     }
 
     /**
      * A place no reviewer run was offered at.
      *
      * @param place the place
-     * @param role the role of the runs at the place
+     * @param foreign whether the runs at the place read another task's work
      * @param task the bound task's name within the project
      * @param authorRuns the offers of the author runs used at the place
      * @param last the last complete answer read at the place, or null while none was read
      */
     public IssuePlace(
             final RunPlace place,
-            final RunRole role,
+            final boolean foreign,
             final String task,
             final List<String> authorRuns,
             final @Nullable Review last) {
-        this(place, role, task, authorRuns, last, null);
+        this(place, foreign, task, authorRuns, last, null);
     }
 
     /**
@@ -202,8 +201,7 @@ public record IssuePlace(
      * @return the place
      */
     public static IssuePlace atGate(final String task, final String offer) {
-        return new IssuePlace(
-                RunPlace.gate(null, task), RunRole.AUTHOR, task, List.of(offer), null);
+        return new IssuePlace(RunPlace.gate(null, task), false, task, List.of(offer), null);
     }
 
     /**
@@ -218,7 +216,7 @@ public record IssuePlace(
         }
         final List<String> runs = new ArrayList<>(authorRuns);
         runs.add(offer);
-        return new IssuePlace(place, role, task, runs, last, reviewed, again);
+        return new IssuePlace(place, foreign, task, runs, last, reviewed, again);
     }
 
     /**
@@ -229,7 +227,7 @@ public record IssuePlace(
      * @throws IllegalArgumentException for an incomplete answer
      */
     public IssuePlace read(final ReviewOpen answer) {
-        return new IssuePlace(place, role, task, authorRuns, Review.of(answer), reviewed, again);
+        return new IssuePlace(place, foreign, task, authorRuns, Review.of(answer), reviewed, again);
     }
 
     /**
@@ -239,7 +237,7 @@ public record IssuePlace(
      * @return the place
      */
     public IssuePlace reviewing(final @Nullable String head) {
-        return new IssuePlace(place, role, task, authorRuns, last, head, again);
+        return new IssuePlace(place, foreign, task, authorRuns, last, head, again);
     }
 
     /**
@@ -260,7 +258,7 @@ public record IssuePlace(
      * @return the place
      */
     public IssuePlace forwarded() {
-        return new IssuePlace(RunPlace.own(), role, task, authorRuns, null, null, again);
+        return new IssuePlace(RunPlace.own(), foreign, task, authorRuns, null, null, again);
     }
 
     /**
@@ -270,7 +268,7 @@ public record IssuePlace(
      * @return the place
      */
     public IssuePlace runAgain(final @Nullable String since) {
-        return new IssuePlace(place, role, task, authorRuns, last, reviewed, since);
+        return new IssuePlace(place, foreign, task, authorRuns, last, reviewed, since);
     }
 
     /**

@@ -26,6 +26,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.Role;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Version;
@@ -770,7 +771,7 @@ class WorkRunTest {
                             board.repositories());
             final var offer =
                     f.order().tasks().stream()
-                            .filter(o -> o.task().role().equals(role))
+                            .filter(o -> Roles.duty(o.task()).equals(role))
                             .findFirst()
                             .orElseThrow();
             f.start(offer);
@@ -1546,7 +1547,7 @@ class WorkRunTest {
                         Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("a reader is offered again").hasSize(1);
-        assertThat(again.tasks().getFirst().task().reads())
+        assertThat(again.tasks().getFirst().task().readLanded())
                 .as("it reads the same build")
                 .containsExactly("task");
         assertThat(again.work().issues().get("AA1").rounds().stopped())
@@ -1931,8 +1932,8 @@ class WorkRunTest {
         final var landed = f.run.report("task", landed(build, "feature/landed"));
         assertThat(landed.tasks()).as("the landing offers exactly one reader").hasSize(1);
         final WorkOrder.Task reader = landed.tasks().getFirst().task();
-        assertThat(reader.role()).as("the offer is the build's reading").isEqualTo("READER");
-        assertThat(reader.reads())
+        assertThat(Roles.duty(reader)).as("the offer is the build's reading").isEqualTo("READER");
+        assertThat(reader.readLanded())
                 .as("the reader is started naming the landed task")
                 .containsExactly("task");
         assertThat(reader.prompt())
@@ -2034,7 +2035,8 @@ class WorkRunTest {
                                 building.order(),
                                 building.models(),
                                 building.risks(),
-                                WorkRule.Result.ANALYSIS));
+                                WorkRule.Result.ANALYSIS,
+                                Roles.forRule(null, WorkRule.Result.ANALYSIS)));
         final WorkRun.Offered stage = staged.order().tasks().getFirst();
         staged.start(stage);
         staged.run.report(
@@ -2226,7 +2228,7 @@ class WorkRunTest {
         final var tasks = f.order().tasks();
         final var main =
                 tasks.stream()
-                        .filter(o -> o.task().role().equals("MAIN"))
+                        .filter(o -> Roles.duty(o.task()).equals("MAIN"))
                         .findFirst()
                         .orElseThrow();
         f.start(main);
@@ -2384,10 +2386,10 @@ class WorkRunTest {
         final int writes = f.record.writes;
         for (final TaskRecord same :
                 List.of(
-                        record("box", RunRole.AUTHOR, repository, null),
+                        record("box", Role.Workspace.OWN, repository, null),
                         record("box", null, null, RunPlace.gate(repository, "task")),
-                        record("box", RunRole.AUTHOR, "walk", null),
-                        record("box", RunRole.AUTHOR, "walk", RunPlace.gate("walk", "task")))) {
+                        record("box", Role.Workspace.OWN, "walk", null),
+                        record("box", Role.Workspace.OWN, "walk", RunPlace.gate("walk", "task")))) {
             assertThat(f.run.placeRead("ST1", "AA1", new PlaceRead.Recorded(same)))
                     .as("a matching record: " + same)
                     .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
@@ -2399,15 +2401,19 @@ class WorkRunTest {
 
         final Map<TaskRecord, List<String>> others =
                 Map.of(
-                        record("box-9", RunRole.AUTHOR, repository, null),
+                        record("box-9", Role.Workspace.OWN, repository, null),
                         List.of("container box-9", "in container box"),
-                        record("box", RunRole.AUTHOR, repository, RunPlace.gate(null, "task-2")),
+                        record(
+                                "box",
+                                Role.Workspace.OWN,
+                                repository,
+                                RunPlace.gate(null, "task-2")),
                         List.of("the gate push task-2", "the gate push task"),
-                        record("box", RunRole.REVIEWER, repository, null),
-                        List.of("as REVIEWER", "as AUTHOR"),
-                        record("box", RunRole.AUTHOR, "walk", RunPlace.gate("other", "task")),
+                        record("box", Role.Workspace.FOREIGN, repository, null),
+                        List.of("in the workspace foreign", "at its own work"),
+                        record("box", Role.Workspace.OWN, "walk", RunPlace.gate("other", "task")),
                         List.of("the gate push task of repository other", "the gate push task"),
-                        record("box", RunRole.AUTHOR, null, RunPlace.gate("other", "task")),
+                        record("box", Role.Workspace.OWN, null, RunPlace.gate("other", "task")),
                         List.of("the gate push task of repository other", "the gate push task"));
         others.forEach(
                 (other, named) -> {
@@ -2503,12 +2509,12 @@ class WorkRunTest {
         final var tasks = f.order().tasks();
         final var main =
                 tasks.stream()
-                        .filter(o -> o.task().role().equals("MAIN"))
+                        .filter(o -> Roles.duty(o.task()).equals("MAIN"))
                         .findFirst()
                         .orElseThrow();
         final var child =
                 tasks.stream()
-                        .filter(o -> o.task().role().equals("BUILDER"))
+                        .filter(o -> Roles.duty(o.task()).equals("BUILDER"))
                         .findFirst()
                         .orElseThrow();
         f.start(main);
@@ -2781,7 +2787,7 @@ class WorkRunTest {
         // place, because the copy that hands a stage's task its files dropped them.
         final Fixture f = new Fixture();
         final RunPlace place = RunPlace.gate(null, "cart");
-        final WorkOrder.Task task = f.order().tasks().getFirst().task().at(RunRole.REVIEWER, place);
+        final WorkOrder.Task task = f.order().tasks().getFirst().task().again(place);
         final Board board = f.store.board();
         final WorkRule plain = board.work().rules().get("Building");
         final WorkRule analysis =
@@ -2795,12 +2801,13 @@ class WorkRunTest {
                         "Analyze {story}: {issues}; {tasks}",
                         Map.of("codex", "model"),
                         Map.of(),
-                        WorkRule.Result.ANALYSIS);
+                        WorkRule.Result.ANALYSIS,
+                        Roles.forRule(null, WorkRule.Result.ANALYSIS));
         for (final WorkRule rule : List.of(plain, analysis)) {
             final WorkOrder.Task staged = StageOrder.staged(board, rule, "Building", task);
-            assertThat(List.of(staged.runRole(), staged.place()))
+            assertThat(List.of(staged.again(), staged.place()))
                     .as("the role and place handed on, result file " + staged.result())
-                    .containsExactly(RunRole.REVIEWER, place);
+                    .containsExactly(true, place);
         }
     }
 
@@ -2825,9 +2832,9 @@ class WorkRunTest {
         assertThat(
                         List.of(
                                 rework.status(),
-                                rework.binding().role(),
+                                Roles.duty(rework.arguments()),
                                 rework.binding().state(),
-                                String.valueOf(rework.arguments().runRole()),
+                                Roles.runRole(rework.arguments()),
                                 String.valueOf(rework.arguments().place())))
                 .as("its author offered again at the kept push, under its task's name")
                 .containsExactly(
@@ -2850,6 +2857,38 @@ class WorkRunTest {
                 offer,
                 "workstation",
                 new WorkRun.StartRefusal(name, Map.of("forge", "github.com"), detail));
+    }
+
+    @Test
+    void aStartRefusedForABrokenRuleReachesThePersonWithTheRuleAndItsDetail() {
+        // Harm: a task's start refused for a rule its role breaks, or for parts other than the
+        // task was first started with, is shown without saying which rule, so the person cannot
+        // correct the role.
+        final WorkRun.StartRefusal changed =
+                new WorkRun.StartRefusal("RightsChanged", Map.of(), "");
+        final WorkRun.StartRefusal broken =
+                new WorkRun.StartRefusal(
+                        "StartRuleBroken",
+                        Map.of("rule", "pushWithoutOwnWork", "detail", "rights names push"),
+                        "");
+        for (final WorkRun.StartRefusal refusal : List.of(changed, broken)) {
+            // A second refusal of one offer is a resend, so each refusal meets an offer of its own.
+            final Fixture f = new Fixture();
+            final WorkRun.Offered offer = f.order().tasks().getFirst();
+            f.run.report("task", WorkRun.Report.refused(offer.offer(), "workstation", refusal));
+            final WorkRun.Run run = java.util.Objects.requireNonNull(f.run.work("ST1"));
+            assertThat(
+                            run.offers().stream()
+                                    .filter(o -> o.id().equals(offer.offer()))
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .startRefusal())
+                    .as("the refusal %s stands with every parameter Porelo gave", refusal.name())
+                    .isEqualTo(refusal);
+            assertThat(run.issues().get("AA1").reason())
+                    .as("the issue asks the person with the refusal")
+                    .isEqualTo(WorkRun.START_REFUSED);
+        }
     }
 
     @Test
@@ -2886,7 +2925,8 @@ class WorkRunTest {
                         "NoPullRequest",
                         "PlaceUnreadable",
                         "NotTheTasksPush",
-                        "RoleNotAllowed",
+                        "StartRuleBroken",
+                        "RightsChanged",
                         "NameNoOneKnowsYet",
                         "A")) {
             final Fixture f = new Fixture();
@@ -3087,11 +3127,11 @@ class WorkRunTest {
     }
 
     @Test
-    void aReworkAtItsKeptPlaceRefusedAsNotTheTasksPushOrRoleNotAllowedSaysThePlaceChanged() {
+    void aReworkAtItsKeptPlaceRefusedAsNotTheTasksPushSaysThePlaceChanged() {
         // Harm: a refusal that says the kept place is no longer the task's own is shown as a
         // plain refusal, so the person retries a Start that can never go through; or any other
         // refusal, or one of an offer at no kept place, is taken as a changed place.
-        for (final String name : List.of("NotTheTasksPush", "RoleNotAllowed")) {
+        for (final String name : List.of("NotTheTasksPush")) {
             final Fixture f = new Fixture();
             waiting(f);
             f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
@@ -3471,7 +3511,7 @@ class WorkRunTest {
                             "AA1",
                             new IssuePlace(
                                     RunPlace.gate(null, "task"),
-                                    RunRole.AUTHOR,
+                                    false,
                                     "task",
                                     List.of(java.util.UUID.randomUUID().toString(), build.offer()),
                                     null));
@@ -3701,10 +3741,10 @@ class WorkRunTest {
         // another name, binds a task already bound.
         for (final java.util.function.UnaryOperator<WorkOrder.Task> changed :
                 List.<java.util.function.UnaryOperator<WorkOrder.Task>>of(
-                        t -> t.at(null, RunPlace.gate(null, "task")),
-                        t -> t.at(RunRole.AUTHOR, RunPlace.gate(null, "task-2")),
-                        t -> t.at(RunRole.AUTHOR, null),
-                        t -> t.at(RunRole.REVIEWER, RunPlace.gate(null, "task")))) {
+                        t -> t.standing(t.lead(), false, RunPlace.gate(null, "task")),
+                        t -> t.again(RunPlace.gate(null, "task-2")),
+                        t -> t.again(null),
+                        t -> Roles.reviewing(t, RunPlace.gate(null, "task")))) {
             final Fixture f = new Fixture();
             waiting(f);
             f.run.placeRead("ST1", "AA1", atTask(answer(ReviewOpen.Decision.OPEN, 1, 0, 0)));
@@ -3824,8 +3864,7 @@ class WorkRunTest {
                 withPlace(
                         f.record.value,
                         "AA1",
-                        new IssuePlace(
-                                RunPlace.gate(null, "task"), RunRole.AUTHOR, "task", runs, null));
+                        new IssuePlace(RunPlace.gate(null, "task"), false, "task", runs, null));
         final WorkRun.Run run = f.run.work("ST1");
         final Map<String, NextStep.Progress> issues = new java.util.LinkedHashMap<>(run.issues());
         issues.put(
@@ -4075,7 +4114,7 @@ class WorkRunTest {
                                 "AA1",
                                 new IssuePlace(
                                         kept.place(),
-                                        kept.role(),
+                                        kept.foreign(),
                                         kept.task(),
                                         List.of(java.util.UUID.randomUUID().toString()),
                                         kept.last()));
@@ -4179,6 +4218,11 @@ class WorkRunTest {
 
     /** The board whose Reading rule names a reviewer at the work's place. */
     private static Board reviewed(final Board board) {
+        return reviewed(board, Roles.REVIEWER);
+    }
+
+    /** The board whose Reading rule offers the role given, which reads another task's work. */
+    private static Board reviewed(final Board board, final Role role) {
         final Map<String, WorkRule> rules = new java.util.LinkedHashMap<>(board.work().rules());
         final WorkRule reading = rules.get("Reading");
         rules.put(
@@ -4194,7 +4238,7 @@ class WorkRunTest {
                         reading.models(),
                         reading.risks(),
                         null,
-                        WorkRule.Reviewer.AT_WORK));
+                        role));
         return new Board(
                 board.revision(),
                 board.workflow(),
@@ -4202,6 +4246,65 @@ class WorkRunTest {
                 board.issues(),
                 new Work(rules, board.work().faults()),
                 board.repositories());
+    }
+
+    static java.util.stream.Stream<Role> aProjectsOwnRoles() {
+        return java.util.stream.Stream.of(Roles.TESTER, Roles.SCREENER);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("aProjectsOwnRoles")
+    void aRoleAProjectAddsIsOfferedStartedAndEndedByItsPartsAlone(final Role role) {
+        // Harm: a role the planner's code does not name is refused, or runs as another role.
+        final Fixture f = new Fixture();
+        f.store.current = reviewed(f.store.current, role);
+        waiting(f);
+        assertThat(
+                        f.run.placeRead(
+                                "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 0))))
+                .as("a new head at the kept push offers a task of the %s", role.name())
+                .isEqualTo(WorkRun.PlaceOutcome.READING_OFFERED);
+        final WorkRun.Offer offer = f.run.work("ST1").offers().getLast();
+        assertThat(offer.arguments().role())
+                .as("the task carries the role as the work rules define it")
+                .isEqualTo(role);
+        assertThat(List.of(offer.arguments().place(), offer.arguments().readLanded()))
+                .as("it reads the waiting push through its place alone, and no landed work")
+                .containsExactly(RunPlace.gate(null, "task"), List.of());
+        assertThat(offer.arguments().prompt())
+                .as("what it finds stands at the place, so its order asks for no findings block")
+                .doesNotContain("Findings:");
+        endReviewer(f, offer);
+        assertThat(f.run.work("ST1").places().get("AA1").reviewed())
+                .as("the head read when it started counts as read")
+                .isEqualTo(COMMIT);
+        assertThat(f.store.board().issue("AA1").orElseThrow().state())
+                .as("its end moves nothing; the next read of the place decides")
+                .isEqualTo("Reading");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("aProjectsOwnRoles")
+    void aRoleThatReadsAnothersWorkNeverStartsUnderTheTaskThatBuiltIt(final Role role) {
+        // Harm: four eyes: a task reports findings about, or rejects, its own push.
+        final Fixture f = new Fixture();
+        f.store.current = reviewed(f.store.current, role);
+        waiting(f);
+        f.run.placeRead("ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 0)));
+        final WorkRun.Offer offer = f.run.work("ST1").offers().getLast();
+        assertThatThrownBy(
+                        () ->
+                                f.run.report(
+                                        "task",
+                                        new WorkRun.Report(
+                                                offer.id(),
+                                                WorkRun.Event.STARTED,
+                                                "box",
+                                                "workstation",
+                                                null)))
+                .as("the task that built the work is refused as its %s", role.name())
+                .isInstanceOf(WorkRefusal.class)
+                .hasMessageContaining("a task of its own");
     }
 
     /**
@@ -4236,7 +4339,7 @@ class WorkRunTest {
                         f.run.placeRead(
                                 "ST1", "AA1", atTask(at(COMMIT, ReviewOpen.Decision.OPEN, 0, 0))))
                 .as("a new head at the kept push offers its reviewer")
-                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
+                .isEqualTo(WorkRun.PlaceOutcome.READING_OFFERED);
         return f.run.work("ST1").offers().getLast();
     }
 
@@ -4265,17 +4368,17 @@ class WorkRunTest {
         assertThat(
                         List.of(
                                 reviewer.status(),
-                                reviewer.binding().role(),
-                                String.valueOf(reviewer.arguments().runRole()),
+                                Roles.duty(reviewer.arguments()),
+                                Roles.runRole(reviewer.arguments()),
                                 String.valueOf(reviewer.arguments().place()),
-                                String.valueOf(reviewer.arguments().reads())))
-                .as("a reviewer at the kept push, as a reader of the task bound there")
+                                String.valueOf(reviewer.arguments().readLanded())))
+                .as("a reviewer at the kept push, reading it through its place alone")
                 .containsExactly(
                         "OFFERED",
                         "READER",
                         "REVIEWER",
                         String.valueOf(RunPlace.gate(null, "task")),
-                        "[task]");
+                        "[]");
         assertThat(reviewer.arguments().prompt())
                 .as("its order names the work at the place and asks for no findings block")
                 .contains("the work of Porelo task task at the gate push task")
@@ -4373,7 +4476,7 @@ class WorkRunTest {
                 .as("its points at the same head send the author back")
                 .isEqualTo(WorkRun.PlaceOutcome.REWORK);
         final WorkRun.Offer rework = f.run.work("ST1").offers().getLast();
-        assertThat(String.valueOf(rework.arguments().runRole()))
+        assertThat(Roles.runRole(rework.arguments()))
                 .as("the author, not a second reviewer")
                 .isEqualTo("AUTHOR");
 
@@ -4390,8 +4493,8 @@ class WorkRunTest {
         final String next = "89abcdef0123456789abcdef0123456789abcdef";
         assertThat(f.run.placeRead("ST1", "AA1", atTask(at(next, ReviewOpen.Decision.OPEN, 2, 0))))
                 .as("the reworked head is reviewed before its open points send anyone back")
-                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
-        assertThat(String.valueOf(f.run.work("ST1").offers().getLast().arguments().runRole()))
+                .isEqualTo(WorkRun.PlaceOutcome.READING_OFFERED);
+        assertThat(Roles.runRole(f.run.work("ST1").offers().getLast().arguments()))
                 .isEqualTo("REVIEWER");
     }
 
@@ -4733,7 +4836,7 @@ class WorkRunTest {
                         merged.run.placeRead(
                                 "ST1", "AA1", atTask(at(newer, ReviewOpen.Decision.OPEN, 0, 0))))
                 .as("a new head offers its reviewer")
-                .isEqualTo(WorkRun.PlaceOutcome.REVIEWER);
+                .isEqualTo(WorkRun.PlaceOutcome.READING_OFFERED);
         final WorkRun.Offer waiting = merged.run.work("ST1").offers().getLast();
         assertThat(merged.run.waiting())
                 .as("the place is still read while its reviewer waits")
@@ -4856,9 +4959,9 @@ class WorkRunTest {
                 .as("the same author runs")
                 .containsExactly(build.offer());
         final WorkRun.Offer rework = run.offers().getLast();
-        assertThat(List.of(rework.arguments().runRole(), rework.arguments().place()))
+        assertThat(List.of(rework.arguments().again(), rework.arguments().place()))
                 .as("its author sent back to the own pull request")
-                .containsExactly(RunRole.AUTHOR, RunPlace.own());
+                .containsExactly(true, RunPlace.own());
         assertThat(WorkRun.placeStarts(run))
                 .as("the window starts it")
                 .extracting(WorkRun.Offered::offer)
@@ -4889,11 +4992,11 @@ class WorkRunTest {
         final WorkRun.Offer rework = run.offers().getLast();
         assertThat(
                         List.of(
-                                rework.arguments().runRole(),
+                                rework.arguments().again(),
                                 rework.arguments().place(),
                                 rework.binding().state()))
                 .as("its author sent back to the gate push, by the rule that built it")
-                .containsExactly(RunRole.AUTHOR, RunPlace.gate(null, "task"), "Building");
+                .containsExactly(true, RunPlace.gate(null, "task"), "Building");
         assertThat(rework.arguments().prompt()).as("the open point named").contains("t0");
         assertThat(f.store.board().issue("AA1").orElseThrow().state())
                 .as("the issue goes back to the state that built it")
@@ -4924,11 +5027,11 @@ class WorkRunTest {
         final WorkRun.Offer rework = run.offers().getLast();
         assertThat(
                         List.of(
-                                rework.arguments().runRole(),
+                                rework.arguments().again(),
                                 rework.arguments().place(),
                                 rework.binding().state()))
                 .as("its author sent back to the own pull request, by the rule that built it")
-                .containsExactly(RunRole.AUTHOR, RunPlace.own(), "Building");
+                .containsExactly(true, RunPlace.own(), "Building");
         assertThat(f.store.board().issue("AA1").orElseThrow().state()).isEqualTo("Building");
     }
 
@@ -4945,7 +5048,7 @@ class WorkRunTest {
                         "AA1",
                         new IssuePlace(
                                 RunPlace.gate(null, "task"),
-                                RunRole.AUTHOR,
+                                false,
                                 "task",
                                 List.of(java.util.UUID.randomUUID().toString(), build.offer()),
                                 null));
@@ -5012,7 +5115,7 @@ class WorkRunTest {
                                 Map.of("codex", "model"),
                                 Map.of(),
                                 null,
-                                WorkRule.Reviewer.AT_WORK),
+                                Roles.REVIEWER),
                         new WorkRule(
                                 List.of("Backlog"),
                                 "Review",
@@ -5023,7 +5126,8 @@ class WorkRunTest {
                                 "Work {story}: {issues}; {tasks}",
                                 Map.of("codex", "model"),
                                 Map.of(),
-                                WorkRule.Result.ANALYSIS))) {
+                                WorkRule.Result.ANALYSIS,
+                                Roles.forRule(null, WorkRule.Result.ANALYSIS)))) {
             final Fixture f = new Fixture();
             noReading(f);
             waiting(f);
@@ -5071,7 +5175,9 @@ class WorkRunTest {
                                     WorkRule.Per.REPOSITORY,
                                     List.of("AGENT"),
                                     "Work {story}: {issues}; {tasks}",
-                                    Map.of("codex", "model")));
+                                    Map.of("codex", "model"),
+                                    Roles.forRule(
+                                            state.equals("Review") ? "Reworking" : null, null)));
         }
         f.store.current = board;
         assertThat(WorkRules.check(f.store.board().workflow(), f.store.board().work()).rules())
@@ -5120,7 +5226,7 @@ class WorkRunTest {
                                 "ST1",
                                 "AA1",
                                 new PlaceRead.Recorded(
-                                        record("box", RunRole.AUTHOR, repository, null))))
+                                        record("box", Role.Workspace.OWN, repository, null))))
                 .as("the run's record at its gate push")
                 .isEqualTo(WorkRun.PlaceOutcome.UNCHANGED);
         assertThat(
@@ -5406,7 +5512,8 @@ class WorkRunTest {
                         building.per(),
                         building.modes(),
                         building.order(),
-                        building.models()));
+                        building.models(),
+                        Roles.forRule(building.blocked(), null)));
         final Board board = f.store.board();
         f.store.current =
                 new Board(
@@ -5740,7 +5847,7 @@ class WorkRunTest {
     /** Porelo's record of a run of AA1 in the container, role, repository and place given. */
     private static TaskRecord record(
             final String container,
-            final @Nullable RunRole role,
+            final Role.@Nullable Workspace role,
             final @Nullable String repository,
             final @Nullable RunPlace place) {
         return new TaskRecord(
@@ -5766,10 +5873,7 @@ class WorkRunTest {
         final WorkRun.Run run = f.run.work("ST1");
         final WorkRun.Offer like =
                 run.offers().stream()
-                        .filter(
-                                o ->
-                                        o.binding().issues().contains("AA1")
-                                                && !o.binding().role().equals("READER"))
+                        .filter(o -> o.binding().issues().contains("AA1") && !o.binding().reading())
                         .findFirst()
                         .orElseThrow();
         final WorkRun.Offer earlier =
@@ -5867,7 +5971,7 @@ class WorkRunTest {
                                 "workstation",
                                 ended("Built")));
         assertThat(ended.tasks()).as("the reader comes with the end").hasSize(1);
-        assertThat(ended.tasks().getFirst().task().reads())
+        assertThat(ended.tasks().getFirst().task().readLanded())
                 .as("it reads the ended task")
                 .containsExactly("task");
         assertThat(ended.tasks().getFirst().task().prompt())
@@ -5895,7 +5999,7 @@ class WorkRunTest {
                 .hasSize(2);
         final WorkRun.Offer main =
                 f.record.value.runs().get("ST1").offers().stream()
-                        .filter(o -> o.binding().role().equals("MAIN"))
+                        .filter(o -> o.binding().lead())
                         .findFirst()
                         .orElseThrow();
         final var snapshot = f.record.value;
@@ -5932,7 +6036,7 @@ class WorkRunTest {
         f.record.value = withoutLandings(f.record.value);
         final WorkRun.Offer main =
                 f.record.value.runs().get("ST1").offers().stream()
-                        .filter(o -> o.binding().role().equals("MAIN"))
+                        .filter(o -> o.binding().lead())
                         .findFirst()
                         .orElseThrow();
         final var snapshot = f.record.value;
@@ -5976,7 +6080,7 @@ class WorkRunTest {
                 .as("the replay answers the same unstarted reader")
                 .extracting(WorkRun.Offered::offer)
                 .containsExactly(reader.offer());
-        assertThat(replayed.tasks().getFirst().task().reads())
+        assertThat(replayed.tasks().getFirst().task().readLanded())
                 .as("the older reader names the build it follows")
                 .containsExactly("task");
     }
@@ -6174,7 +6278,7 @@ class WorkRunTest {
                         Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("one more reading is offered").hasSize(1);
-        assertThat(again.tasks().getFirst().task().reads())
+        assertThat(again.tasks().getFirst().task().readLanded())
                 .as("it reads the last build's task")
                 .containsExactly("task");
         assertThat(again.tasks().getFirst().task().prompt())
@@ -6770,7 +6874,9 @@ class WorkRunTest {
                                         Map.of(
                                                 Risk.HARM,
                                                 new WorkRule.ForRisk(
-                                                        Map.of("codex", "careful"), "max")))),
+                                                        Map.of("codex", "careful"), "max")),
+                                        null,
+                                        Roles.forRule(building.blocked(), null))),
                         Risk.HARM);
         final WorkOrder.Task task = f.order().tasks().getFirst().task();
         assertThat(List.of(task.issues().getFirst(), task.model()))
@@ -6872,7 +6978,7 @@ class WorkRunTest {
                     .as(
                             "a reader of the rework's landed build is offered (landed at end %s)",
                             landedAtEnd)
-                    .extracting(o -> o.task().role(), o -> o.task().reads())
+                    .extracting(o -> Roles.duty(o.task()), o -> o.task().readLanded())
                     .containsExactly(
                             org.assertj.core.groups.Tuple.tuple("READER", List.of("rework")));
             final NextStep.Progress progress =
@@ -6947,7 +7053,7 @@ class WorkRunTest {
                         .task());
         assertThat(orders)
                 .as("the build's, the reader's and the rework's order")
-                .extracting(WorkOrder.Task::role)
+                .extracting(Roles::duty)
                 .containsExactly("MAIN", "READER", "BUILDER");
         assertThat(orders)
                 .as("each order leaves the issues' moves and stats/ to the planner")
@@ -6999,65 +7105,6 @@ class WorkRunTest {
         assertThat(java.util.Objects.requireNonNull(ended.work().issues().get("AA1")).reason())
                 .as("the end is answered with the saved run")
                 .isEqualTo("NEXT_STEP_UNAVAILABLE");
-    }
-
-    @Test
-    void aThenThatLeadsBackIntoBuildingOffersOneReaderAndNoFurtherTask() {
-        // A then that led from building back into building, offering a builder at every end,
-        // would start agent tasks that cost money without end.
-        for (final Map<String, String> then :
-                List.of(
-                        Map.of("Building", "Building"),
-                        Map.of("Building", "Reworking", "Reworking", "Building"))) {
-            final Fixture f = new Fixture();
-            Board board = f.store.board();
-            for (final Map.Entry<String, String> rule : then.entrySet()) {
-                board =
-                        NextStepTest.withRule(
-                                board,
-                                rule.getKey(),
-                                rule(
-                                        List.of("Backlog", "Building", "Reworking"),
-                                        rule.getValue(),
-                                        null,
-                                        WorkRule.Per.REPOSITORY));
-            }
-            f.store.current = board;
-            final var build = f.order().tasks().getFirst();
-            f.start(build);
-            final var after =
-                    f.run.report(
-                                    "task",
-                                    new WorkRun.Report(
-                                            build.offer(),
-                                            WorkRun.Event.ENDED,
-                                            "box",
-                                            "workstation",
-                                            ended("Built")))
-                            .tasks();
-            assertThat(after)
-                    .as("the build's end offers only its reader (%s)", then)
-                    .extracting(o -> o.task().role())
-                    .containsExactly("READER");
-            final var reader = after.getFirst();
-            f.run.report(
-                    "reader",
-                    new WorkRun.Report(
-                            reader.offer(), WorkRun.Event.STARTED, "box", "workstation", null));
-            final var read =
-                    f.run.report(
-                            "reader",
-                            new WorkRun.Report(
-                                    reader.offer(),
-                                    WorkRun.Event.ENDED,
-                                    "box",
-                                    "workstation",
-                                    ended("Findings:")));
-            assertThat(read.tasks()).as("the reading's end offers no task (%s)", then).isEmpty();
-            assertThat(f.store.board().issue("AA1").orElseThrow().state())
-                    .as("the reading's end leaves the work in done (%s)", then)
-                    .isEqualTo("Review");
-        }
     }
 
     /** The board with one issue standing in another state, as a store read gives it. */
@@ -7162,7 +7209,8 @@ class WorkRunTest {
                 per,
                 List.of("AGENT"),
                 "Work {story}: {issues}; {tasks}",
-                Map.of("codex", "model"));
+                Map.of("codex", "model"),
+                Roles.forRule(blocked, null));
     }
 
     private static Writes writes(final String issue, final String state) {
@@ -8227,12 +8275,12 @@ class WorkRunTest {
         final var tasks = f.order().tasks();
         final var main =
                 tasks.stream()
-                        .filter(o -> o.task().role().equals("MAIN"))
+                        .filter(o -> Roles.duty(o.task()).equals("MAIN"))
                         .findFirst()
                         .orElseThrow();
         final var child =
                 tasks.stream()
-                        .filter(o -> o.task().role().equals("BUILDER"))
+                        .filter(o -> Roles.duty(o.task()).equals("BUILDER"))
                         .findFirst()
                         .orElseThrow();
         f.start(main);
@@ -8399,12 +8447,12 @@ class WorkRunTest {
             final WorkRun.Order order = f.order();
             final var main =
                     order.tasks().stream()
-                            .filter(t -> t.task().role().equals("MAIN"))
+                            .filter(t -> Roles.duty(t.task()).equals("MAIN"))
                             .findFirst()
                             .orElseThrow();
             final var child =
                     order.tasks().stream()
-                            .filter(t -> t.task().role().equals("BUILDER"))
+                            .filter(t -> Roles.duty(t.task()).equals("BUILDER"))
                             .findFirst()
                             .orElseThrow();
             f.start(main);
@@ -8526,7 +8574,8 @@ class WorkRunTest {
                         rule.per(),
                         rule.modes(),
                         rule.order(),
-                        rule.models()));
+                        rule.models(),
+                        Roles.forRule(rule.blocked(), null)));
         f.store.current =
                 new Board(
                         active.revision(),
@@ -8802,8 +8851,10 @@ class WorkRunTest {
         final var order = f.handReading();
         assertThat(order.tasks()).as("one reader for the issue").hasSize(1);
         final WorkOrder.Task reader = order.tasks().getFirst().task();
-        assertThat(reader.role()).as("the task reads").isEqualTo("READER");
-        assertThat(reader.reads()).as("it reads the issue's last build").containsExactly("task");
+        assertThat(Roles.duty(reader)).as("the task reads").isEqualTo("READER");
+        assertThat(reader.readLanded())
+                .as("it reads the issue's last build")
+                .containsExactly("task");
         assertThat(reader.prompt())
                 .as("its order names where that build landed")
                 .contains(readsWork("work/built"));
@@ -8960,7 +9011,7 @@ class WorkRunTest {
                         Basis.of(f.store.board()),
                         null);
         assertThat(again.tasks()).as("one more reader is offered").hasSize(1);
-        assertThat(again.tasks().getFirst().task().reads())
+        assertThat(again.tasks().getFirst().task().readLanded())
                 .as("it reads the build the hand reading read")
                 .containsExactly("task");
     }
@@ -9071,7 +9122,8 @@ class WorkRunTest {
                         reading.per(),
                         reading.modes(),
                         reading.order(),
-                        reading.models()));
+                        reading.models(),
+                        Roles.forRule(reading.blocked(), null)));
         return new Board(
                 board.revision(),
                 board.workflow(),
@@ -9604,7 +9656,7 @@ class WorkRunTest {
                     .singleElement()
                     .satisfies(
                             o ->
-                                    assertThat(o.task().reads())
+                                    assertThat(o.task().readLanded())
                                             .as("it reads the same build")
                                             .containsExactly("task"));
         }
@@ -10347,7 +10399,10 @@ class WorkRunTest {
     }
 
     private static WorkRun.Offered role(final List<WorkRun.Offered> tasks, final String role) {
-        return tasks.stream().filter(o -> o.task().role().equals(role)).findFirst().orElseThrow();
+        return tasks.stream()
+                .filter(o -> Roles.duty(o.task()).equals(role))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static void endMain(final Fixture f, final WorkRun.Offered main) {
@@ -10710,7 +10765,8 @@ class WorkRunTest {
                         "Rework {story}: {issues}; {tasks}",
                         Map.of("codex", "model"),
                         Map.of(),
-                        WorkRule.Result.ANALYSIS);
+                        WorkRule.Result.ANALYSIS,
+                        Roles.forRule(null, WorkRule.Result.ANALYSIS));
         return new Board(
                 new Revision("board@1"),
                 workflow,
@@ -11001,9 +11057,9 @@ class WorkRunTest {
         final List<WorkRun.Offered> starts = WorkRun.placeStarts(run, f.store.board());
         assertThat(starts).as("one start served").hasSize(1);
         final WorkOrder.Task task = starts.getFirst().task();
-        assertThat(List.of(task.issues(), task.role(), task.runRole()))
+        assertThat(List.of(task.issues(), Roles.duty(task), task.again()))
                 .as("an author building AA2")
-                .containsExactly(List.of("AA2"), "BUILDER", RunRole.AUTHOR);
+                .containsExactly(List.of("AA2"), "BUILDER", true);
         assertThat(task.place()).as("at no place").isNull();
         assertThat(run.heldBack()).as("no longer held").isEmpty();
         assertThat(run.repositories())
@@ -11180,7 +11236,9 @@ class WorkRunTest {
                                 building.models(),
                                 Map.of(
                                         Risk.HARM,
-                                        new WorkRule.ForRisk(Map.of("codex", "careful"), "max"))));
+                                        new WorkRule.ForRisk(Map.of("codex", "careful"), "max")),
+                                null,
+                                Roles.forRule(building.blocked(), null)));
         f.order();
         f.store.current =
                 changed(
@@ -11221,7 +11279,8 @@ class WorkRunTest {
                                 building.order(),
                                 building.models(),
                                 Map.of(),
-                                WorkRule.Result.ESTIMATE),
+                                WorkRule.Result.ESTIMATE,
+                                Roles.forRule(null, WorkRule.Result.ESTIMATE)),
                         "a reading",
                         new WorkRule(
                                 building.from(),
@@ -11231,7 +11290,8 @@ class WorkRunTest {
                                 building.per(),
                                 building.modes(),
                                 building.order(),
-                                building.models()));
+                                building.models(),
+                                Roles.forRule("Reworking", null)));
         final Board free = moved(f.store.current, "AA1", "Finished");
         others.forEach(
                 (what, rule) -> {
@@ -11266,7 +11326,8 @@ class WorkRunTest {
                                 building.order(),
                                 building.models(),
                                 Map.of(),
-                                WorkRule.Result.ESTIMATE));
+                                WorkRule.Result.ESTIMATE,
+                                Roles.forRule(null, WorkRule.Result.ESTIMATE)));
         f.order();
         assertThat(f.run.work("ST1").heldBack()).as("nothing held back by a stage").isEmpty();
     }
@@ -11443,7 +11504,8 @@ class WorkRunTest {
                                 building.per(),
                                 List.of("UNATTENDED", "AGENT"),
                                 building.order(),
-                                building.models()));
+                                building.models(),
+                                Roles.forRule(building.blocked(), null)));
         f.order();
         assertThat(f.run.work("ST1").repositories())
                 .extracting(WorkProposal.Repository::repository)
@@ -11846,10 +11908,7 @@ class WorkRunTest {
             if (refuseReaders
                     && snapshot.runs().values().stream()
                             .flatMap(r -> r.offers().stream())
-                            .anyMatch(
-                                    o ->
-                                            o.status().equals("OFFERED")
-                                                    && o.binding().role().equals("READER"))) {
+                            .anyMatch(o -> o.status().equals("OFFERED") && o.binding().reading())) {
                 throw WorkRefusal.recordUnavailable("project", "The work record is full.");
             }
         }
@@ -11989,12 +12048,12 @@ class WorkRunTest {
             final var tasks = order().tasks();
             final var main =
                     tasks.stream()
-                            .filter(o -> o.task().role().equals("MAIN"))
+                            .filter(o -> Roles.duty(o.task()).equals("MAIN"))
                             .findFirst()
                             .orElseThrow();
             final var child =
                     tasks.stream()
-                            .filter(o -> o.task().role().equals("BUILDER"))
+                            .filter(o -> Roles.duty(o.task()).equals("BUILDER"))
                             .findFirst()
                             .orElseThrow();
             start(main);

@@ -99,7 +99,7 @@ class NextStepTest {
                 .as("resuming never counts the reading again")
                 .isEqualTo(1);
         final WorkOrder.Task task = resumed.tasks().getFirst().task();
-        assertThat(task.role())
+        assertThat(Roles.duty(task))
                 .as("the parent gets rework instead of another reader")
                 .isEqualTo("BUILDER");
         assertThat(List.of(task.mode(), task.agent(), task.model()))
@@ -143,7 +143,8 @@ class NextStepTest {
     @Test
     void aTaskThePlannerStartsByItselfTakesTheRulesFirstModeAndModel() {
         // A reader refused for the build's mode would leave finished work with no reading at all.
-        final Board board = withRule(board("Building", "Finished"), "Reading", choices("Building"));
+        final Board board =
+                withRule(board("Building", "Finished"), "Reading", readingChoices("Building"));
         final NextStep.Result next =
                 NextStep.after(
                         board,
@@ -154,7 +155,7 @@ class NextStepTest {
                         BUILT);
         assertThat(next.progress().get("AA1").needsYou()).as("nothing is refused").isFalse();
         final WorkOrder.Task reader = next.tasks().getFirst().task();
-        assertThat(List.of(reader.role(), reader.mode(), reader.agent(), reader.model()))
+        assertThat(List.of(Roles.duty(reader), reader.mode(), reader.agent(), reader.model()))
                 .as("the reader takes the Reading rule's first mode and first model")
                 .containsExactly("READER", "UNATTENDED", "claude", "opus");
     }
@@ -176,7 +177,7 @@ class NextStepTest {
         assertThat(reader.prompt())
                 .as("the order's {tasks} names the ended build and the commit Porelo reported")
                 .contains("Work ST1: ", "; " + reads("one"));
-        assertThat(reader.reads())
+        assertThat(reader.readLanded())
                 .as("the reader is started naming the task whose work Porelo's gate gives it")
                 .containsExactly("foo-1-2");
     }
@@ -213,10 +214,10 @@ class NextStepTest {
                         BUILT);
         assertThat(next.tasks()).as("exactly one reader for the one issue").hasSize(1);
         final WorkOrder.Task reader = next.tasks().getFirst().task();
-        assertThat(reader.role())
+        assertThat(Roles.duty(reader))
                 .as("the landed build's follow-up is a reading")
                 .isEqualTo("READER");
-        assertThat(reader.reads()).as("it reads the landed task").containsExactly("foo-1-2");
+        assertThat(reader.readLanded()).as("it reads the landed task").containsExactly("foo-1-2");
         assertThat(reader.prompt()).as("its order names the landed commit").contains(reads("one"));
         assertThat(next.writes().none()).as("a landing moves no issue").isTrue();
         assertThat(
@@ -372,12 +373,13 @@ class NextStepTest {
                         WorkRule.Per.REPOSITORY,
                         List.of("AGENT"),
                         "Read {issues}",
-                        Map.of("codex", "model"));
+                        Map.of("codex", "model"),
+                        Roles.forRule("Reworking", null));
         final var result =
                 NextStep.after(
                         board,
                         new NextStep.Binding(
-                                "ST1", "alpha", List.of("AA1"), "READER", "Reading", "AGENT", rule),
+                                "ST1", "alpha", List.of("AA1"), false, "Reading", "AGENT", rule),
                         new WorkEnds.Read(List.of()),
                         Map.of("AA1", NextStep.Progress.start(2)),
                         "",
@@ -417,6 +419,55 @@ class NextStepTest {
         assertThat(next.progress().get("AA1").needsYou())
                 .as("lost ownership needs attention")
                 .isTrue();
+    }
+
+    static java.util.stream.Stream<org.fuin.porelo.planner.store.Role> rolesThatRead() {
+        return java.util.stream.Stream.of(
+                Roles.READER, Roles.REVIEWER, Roles.TESTER, Roles.SCREENER);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("rolesThatRead")
+    void anIssueAPersonWorksByHandIsOfferedNoRoleAndItsStepIsRecordedAsMadeByHand(
+            final org.fuin.porelo.planner.store.Role role) {
+        // Harm: a role's task is put on a person's work, or the person is held to a role's order.
+        final WorkRule reading = rule("Reading");
+        final Board board =
+                ManualIssues.of(
+                        withRule(
+                                board("Building", "Finished"),
+                                "Reading",
+                                new WorkRule(
+                                        reading.from(),
+                                        reading.done(),
+                                        reading.then(),
+                                        reading.blocked(),
+                                        reading.per(),
+                                        reading.modes(),
+                                        reading.order(),
+                                        reading.models(),
+                                        role)),
+                        "AA1");
+
+        final NextStep.Result next =
+                NextStep.after(
+                        board,
+                        binding(List.of("AA1"), "MAIN", "Building"),
+                        new WorkEnds.Done(),
+                        Map.of(),
+                        "",
+                        BUILT);
+
+        assertThat(next.tasks())
+                .as("no task of the %s for the person's issue", role.name())
+                .isEmpty();
+        assertThat(
+                        List.of(
+                                next.progress().get("AA1").reason(),
+                                next.progress().get("AA1").needsYou()))
+                .as("the step is the person's, made by hand, and asks nobody")
+                .containsExactly("MANUAL", false);
+        assertThat(next.unavailable()).as("nothing is refused for the person's issue").isEmpty();
     }
 
     @Test
@@ -561,7 +612,7 @@ class NextStepTest {
                         .tasks()
                         .getFirst();
         final WorkOrder.Task reader = planned.task();
-        assertThat(List.of(reader.role(), reader.agent(), reader.model()))
+        assertThat(List.of(Roles.duty(reader), reader.agent(), reader.model()))
                 .as("the reader takes the model the rule names for harm")
                 .containsExactly("READER", "codex", "careful");
         assertThat(reader.effort()).as("the effort the rule names for harm").isEqualTo("max");
@@ -612,19 +663,10 @@ class NextStepTest {
                         plain.order(),
                         plain.models(),
                         plain.risks(),
-                        WorkRule.Result.ESTIMATE);
+                        WorkRule.Result.ESTIMATE,
+                        Roles.forRule(plain.blocked(), WorkRule.Result.ESTIMATE));
         final WorkOrder.Task task =
-                NextStep.task(
-                                board,
-                                "ST1",
-                                issue,
-                                "Reworking",
-                                estimate,
-                                null,
-                                "",
-                                "",
-                                "BUILDER",
-                                BUILT)
+                NextStep.task(board, "ST1", issue, "Reworking", estimate, null, "", "", BUILT)
                         .task();
         assertThat(task.result()).as("the estimate's result file").isEqualTo("estimate.json");
         assertThat(task.given())
@@ -653,19 +695,10 @@ class NextStepTest {
                         plain.order(),
                         plain.models(),
                         plain.risks(),
-                        WorkRule.Result.ANALYSIS);
+                        WorkRule.Result.ANALYSIS,
+                        Roles.forRule(plain.blocked(), WorkRule.Result.ANALYSIS));
         final String prompt =
-                NextStep.task(
-                                board,
-                                "ST1",
-                                issue,
-                                "Reworking",
-                                analysis,
-                                null,
-                                "",
-                                "",
-                                "BUILDER",
-                                BUILT)
+                NextStep.task(board, "ST1", issue, "Reworking", analysis, null, "", "", BUILT)
                         .task()
                         .prompt();
         assertThat(prompt)
@@ -699,7 +732,6 @@ class NextStepTest {
                                         new NextStep.Settings("AGENT", "claude", "opus"),
                                         "",
                                         "",
-                                        "BUILDER",
                                         BUILT))
                 .as("a model offered only for ordinary work")
                 .isInstanceOf(WorkRefusal.class);
@@ -713,7 +745,6 @@ class NextStepTest {
                                         new NextStep.Settings("AGENT", "gemini", "deep"),
                                         "",
                                         "",
-                                        "BUILDER",
                                         BUILT)
                                 .task()
                                 .model())
@@ -723,7 +754,8 @@ class NextStepTest {
 
     /** {@link #choices} with an effort for ordinary and its own models and effort for harm. */
     static WorkRule risky(final String from) {
-        final WorkRule plain = choices(from);
+        // A rule taking work from the build reads it; any other reworks what a reading found.
+        final WorkRule plain = from.equals("Building") ? readingChoices(from) : choices(from);
         final Map<String, String> harm = new java.util.LinkedHashMap<>();
         harm.put("codex", "careful");
         harm.put("gemini", "deep");
@@ -740,7 +772,9 @@ class NextStepTest {
                         Risk.HARM,
                         new WorkRule.ForRisk(harm, "max"),
                         Risk.ORDINARY,
-                        new WorkRule.ForRisk(Map.of(), "medium")));
+                        new WorkRule.ForRisk(Map.of(), "medium")),
+                null,
+                Roles.forRule(plain.blocked(), null));
     }
 
     /** The board with the parent issue AA1 given a risk. */
@@ -771,7 +805,22 @@ class NextStepTest {
                 board.repositories());
     }
 
-    /** A rule offering two modes and two agents, the first of each not the fixture's AGENT. */
+    /** A reading rule taking its work from the state given, with two agents to choose from. */
+    static WorkRule readingChoices(final String from) {
+        final WorkRule rework = choices(from);
+        return new WorkRule(
+                rework.from(),
+                rework.done(),
+                null,
+                "Reworking",
+                rework.per(),
+                rework.modes(),
+                rework.order(),
+                rework.models(),
+                Roles.READER);
+    }
+
+    /** A rework rule taking its work from the state given, with two agents to choose from. */
     static WorkRule choices(final String from) {
         final Map<String, String> models = new java.util.LinkedHashMap<>();
         models.put("claude", "opus");
@@ -780,11 +829,12 @@ class NextStepTest {
                 List.of(from),
                 "Review",
                 null,
-                "Reworking",
+                null,
                 WorkRule.Per.REPOSITORY,
                 List.of("UNATTENDED", "AGENT"),
                 "Work {story}: {issues}; {tasks}",
-                models);
+                models,
+                Roles.AUTHOR);
     }
 
     /** The board with one state's rule replaced. */
@@ -802,7 +852,8 @@ class NextStepTest {
 
     static NextStep.Binding binding(
             final List<String> issues, final String role, final String state) {
-        return new NextStep.Binding("ST1", "alpha", issues, role, state, "AGENT", rule(state));
+        return new NextStep.Binding(
+                "ST1", "alpha", issues, "MAIN".equals(role), state, "AGENT", rule(state));
     }
 
     static WorkRule rule(final String state) {
@@ -818,7 +869,8 @@ class NextStepTest {
                 WorkRule.Per.REPOSITORY,
                 List.of("AGENT"),
                 "Work {story}: {issues}; {tasks}",
-                Map.of("codex", "model"));
+                Map.of("codex", "model"),
+                Roles.forRule(state.equals("Reading") ? "Reworking" : null, null));
     }
 
     /** The board with AA1 warned about its parent, as a hand edit since the start leaves it. */
