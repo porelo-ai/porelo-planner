@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,6 +21,8 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.ProjectRepository;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
+import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
@@ -40,7 +43,20 @@ class BoardChangeEndpointTest {
 
     private final List<NewIssue> made = new ArrayList<>();
 
+    private final List<Story> stories = new ArrayList<>();
+
+    /** What the store throws for a write of an issue, by the issue's id. */
+    private final Map<String, RuntimeException> fieldsFailures = new LinkedHashMap<>();
+
+    private final Map<String, RuntimeException> blockersFailures = new LinkedHashMap<>();
+
+    /** The lists a story was written with, by its id. */
+    private final Map<String, List<String>> storyWrites = new LinkedHashMap<>();
+
     private int revision = 1;
+
+    /** Whether every read of the board finds it moved, as another call's saves would leave it. */
+    private boolean moving;
 
     private MockMvc mvc;
 
@@ -51,10 +67,18 @@ class BoardChangeEndpointTest {
                 new Revision("r" + revision),
                 new Workflow(
                         List.of("Idea", "Backlog", "Finished"), List.of(), List.of("Finished")),
-                List.of(),
+                List.copyOf(stories),
                 List.copyOf(issues.values()),
                 new Work(Map.of(), List.of()),
                 ProjectRepository.named(List.of("porelo-store")));
+    }
+
+    /** The board as the change reads it, moved by each read while another call saves. */
+    private Board read() {
+        if (moving) {
+            revision++;
+        }
+        return board();
     }
 
     private static Issue stored(
@@ -83,7 +107,7 @@ class BoardChangeEndpointTest {
                 new PlanningStore() {
                     @Override
                     public Board board() {
-                        return BoardChangeEndpointTest.this.board();
+                        return read();
                     }
 
                     @Override
@@ -103,6 +127,9 @@ class BoardChangeEndpointTest {
                     @Override
                     public Board setFields(
                             final Revision seen, final String id, final Fields fields) {
+                        if (fieldsFailures.containsKey(id)) {
+                            throw fieldsFailures.get(id);
+                        }
                         final Issue now = issues.get(id);
                         issues.put(id, stored(id, now.title(), fields.size(), now.blockedBy()));
                         revision++;
@@ -110,8 +137,19 @@ class BoardChangeEndpointTest {
                     }
 
                     @Override
+                    public Board setStoryIssues(
+                            final Revision seen, final String id, final List<String> list) {
+                        storyWrites.put(id, list);
+                        revision++;
+                        return board();
+                    }
+
+                    @Override
                     public Board setBlockedBy(
                             final Revision seen, final String id, final List<String> blockedBy) {
+                        if (blockersFailures.containsKey(id)) {
+                            throw blockersFailures.get(id);
+                        }
                         final Issue now = issues.get(id);
                         issues.put(id, stored(id, now.title(), now.size(), blockedBy));
                         revision++;
@@ -282,5 +320,171 @@ class BoardChangeEndpointTest {
         }
 
         assertThat(made).as("nothing made").isEmpty();
+    }
+
+    @Test
+    void aBadTextPartOrAForwardKeyOfARefusedNewIssueRefusesTheItemBeforeAnyNewIssueIsMade()
+            throws Exception {
+        // Harm: a new issue made and left without the text part or blocker the agent planned.
+        change(
+                        "{\"creates\": [{\"key\": \"first\", \"repository\": \"porelo-store\","
+                                + " \"title\": \"T\", \"parts\": {\"whatMustBeTrue\": \"X.\","
+                                + " \"plan\": \" \"}},"
+                                + create("second", "\"third\"")
+                                + ", {\"key\": \"third\", \"repository\": \"porelo-store\","
+                                + " \"title\": \"T\", \"state\": \"Nowhere\","
+                                + " \"parts\": {\"whatMustBeTrue\": \"X.\"}}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].item").doesNotExist())
+                .andExpect(jsonPath("$.results[0].refusal.title").value("EditNotAllowed"))
+                .andExpect(jsonPath("$.results[0].refusal.parameters.part").value("Plan"))
+                .andExpect(jsonPath("$.results[1].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[1].refusal.title").value("KeyRefused"))
+                .andExpect(jsonPath("$.results[1].refusal.parameters.key").value("third"))
+                .andExpect(jsonPath("$.results[2].refusal.title").value("StateNotAllowed"));
+
+        assertThat(made).as("nothing made, the forward key included").isEmpty();
+    }
+
+    @Test
+    void anUpdateTheJudgmentRefusesWritesNoneOfItsSteps() throws Exception {
+        // Harm: a size written and then the blocker, story or state refused, so the agent's
+        // change stands half done.
+        issues.put("AB2", stored("AB2", "Second", null, List.of()));
+        issues.put("AB3", stored("AB3", "Third", null, List.of()));
+
+        change(
+                        "{\"updates\": ["
+                                + "{\"issue\": \"AB1\", \"size\": \"S\", \"blockedBy\": [\"AB1\"]},"
+                                + " {\"issue\": \"AB2\", \"size\": \"S\", \"story\": \"AB1\"},"
+                                + " {\"issue\": \"AB3\", \"size\": \"S\","
+                                + " \"state\": \"Nowhere\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].refusal.title").value("EditNotAllowed"))
+                .andExpect(jsonPath("$.results[1].refusal.title").value("NoSuchStory"))
+                .andExpect(jsonPath("$.results[2].refusal.title").value("StateNotAllowed"));
+
+        assertThat(issues.values())
+                .as("no size written for an item refused")
+                .extracting(Issue::size)
+                .containsOnlyNulls();
+    }
+
+    @Test
+    void aKeyThatIsAnIdOfTheBoardOrAnIssueChangedTwiceRefusesTheWholeBody() throws Exception {
+        // Harm: a key that shadows an id, so a blocker meant for the issue lands on the new one,
+        // and an answer that names one item twice.
+        stories.add(new Story("ST1", "A story", "Idea", "High", null, List.of(), "", null));
+        for (final String body :
+                List.of(
+                        "{\"creates\": [" + create("AB1", "") + "]}",
+                        "{\"creates\": [" + create("ST1", "") + "]}",
+                        "{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\"},"
+                                + " {\"issue\": \"AB1\", \"size\": \"M\"}]}")) {
+            change(body)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        }
+
+        assertThat(made).as("nothing made").isEmpty();
+        assertThat(issues.get("AB1").size()).as("nothing written").isNull();
+    }
+
+    @Test
+    void aStoreFailureAnswersItsItemAndEveryOtherItemWhileAnUnreachableStoreIsNotAskedAgain()
+            throws Exception {
+        // Harm: the ids of the issues already made lost in an error answer, and later items
+        // written against a store that cannot be reached.
+        blockersFailures.put("AB3", new StoreException.Unreachable("porelo-store", "timed out"));
+
+        change(
+                        "{\"creates\": ["
+                                + create("first", "")
+                                + ","
+                                + create("second", "\"first\"")
+                                + ","
+                                + create("third", "")
+                                + "], \"updates\": [{\"issue\": \"AB1\", \"size\": \"S\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results.length()").value(4))
+                .andExpect(jsonPath("$.results[0].item").value("AB2"))
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[1].item").value("AB3"))
+                .andExpect(jsonPath("$.results[1].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[1].refusal.title").value("Unreachable"))
+                .andExpect(jsonPath("$.results[2].item").value("AB4"))
+                .andExpect(jsonPath("$.results[2].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[3].item").value("AB1"))
+                .andExpect(jsonPath("$.results[3].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[3].refusal.title").value("Unreachable"));
+
+        assertThat(issues.get("AB1").size()).as("the item after it was not tried").isNull();
+    }
+
+    @Test
+    void aRefusalOfTheStoreForOneItemNeverStopsTheOthers() throws Exception {
+        // Harm: one item whose issue changed under it holding back the agent's whole change.
+        issues.put("AB2", stored("AB2", "Second", null, List.of()));
+        fieldsFailures.put("AB1", new StoreException.Changed(List.of("AB1")));
+
+        change(
+                        "{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\"},"
+                                + " {\"issue\": \"AB2\", \"size\": \"S\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("ItemChanged"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"));
+
+        assertThat(issues.get("AB2").size()).as("the other update saved").isEqualTo("S");
+    }
+
+    @Test
+    void aStoreThatOffersNoTextWriteRefusesTheItemAsNotOfferedAndAnswersTheIdAlreadyMade()
+            throws Exception {
+        // Harm: the ids of the issues made lost in an error, and the agent writing them twice.
+        change(
+                        "{\"creates\": [{\"key\": \"first\", \"repository\": \"porelo-store\","
+                                + " \"title\": \"T\", \"parts\": {\"whatMustBeTrue\": \"X.\","
+                                + " \"plan\": \"Do it.\"}},"
+                                + create("second", "")
+                                + "], \"updates\": [{\"issue\": \"AB1\", \"size\": \"S\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].item").value("AB2"))
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("NotOffered"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[2].outcome").value("SAVED"));
+    }
+
+    @Test
+    void anUpdateWhoseLaterStepFailsAfterAnEarlierOneWroteIsRefusedAsPartlySavedNamingIt()
+            throws Exception {
+        // Harm: a size written and the blockers lost, with the item answered as a plain refusal.
+        issues.put("AB2", stored("AB2", "Second", null, List.of()));
+        blockersFailures.put("AB1", new StoreException.Unreadable("porelo-store", "gone"));
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\", \"blockedBy\": [\"AB2\"]}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("PartlySaved"))
+                .andExpect(jsonPath("$.results[0].refusal.parameters.issues").value("AB1"))
+                .andExpect(jsonPath("$.results[0].refusal.detail").value(containsString("fields")))
+                .andExpect(
+                        jsonPath("$.results[0].refusal.detail")
+                                .value(containsString("Unreadable")));
+
+        assertThat(issues.get("AB1").size()).as("the step that wrote stands").isEqualTo("S");
+    }
+
+    @Test
+    void anUpdateThatWritesNothingIsUnchangedWhateverOtherCallsSaveMeanwhile() throws Exception {
+        // Harm: an agent told it changed what it did not, as another call moved the revision.
+        issues.put("AB1", stored("AB1", "Existing", "M", List.of()));
+        moving = true;
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"));
     }
 }

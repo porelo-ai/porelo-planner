@@ -953,7 +953,7 @@ public class BoardController {
         final String state = body.state();
         // Refused on every store before anything is made, so no answer ever repeats it.
         if (state != null && !board.workflow().states().contains(state)) {
-            throw notAnInitialState(board);
+            throw NewIssues.notAnInitialState(board);
         }
         final boolean createsInState = store.createsInState();
         if (createsInState) {
@@ -1035,22 +1035,6 @@ public class BoardController {
         return new NewIssue.Added(added.id(), moved);
     }
 
-    private static Moves.Refused notAnInitialState(final Board board) {
-        final String reason = "A new issue must start in an open state of the workflow.";
-        return new Moves.Refused(
-                "StateNotAllowed",
-                reason,
-                Map.of(
-                        "item",
-                        "",
-                        "from",
-                        board.workflow().states().get(0),
-                        "to",
-                        "",
-                        "reason",
-                        reason));
-    }
-
     private static void checkInitialState(
             final Board board,
             final NewIssue issue,
@@ -1064,7 +1048,7 @@ public class BoardController {
             return;
         }
         if (board.workflow().closed().contains(state)) {
-            throw notAnInitialState(board);
+            throw NewIssues.notAnInitialState(board);
         }
         if (first.equals(state)) {
             return;

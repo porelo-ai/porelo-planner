@@ -421,8 +421,7 @@ public final class Moves {
             checkWorkElsewhere(board, move, runs);
         }
         if (!board.workflow().states().contains(move.to())) {
-            final String reason = "The destination must be a configured waiting or closed state.";
-            throw new Refused("StateNotAllowed", reason, item(move.id(), from, move.to(), reason));
+            throw notConfigured(move.id(), from, move.to());
         }
         // Checked after the destination itself, so a story dropped on a working state still reads
         // as entered only by its work.
@@ -721,6 +720,19 @@ public final class Moves {
 
     private static String of(final Optional<String> value) {
         return value.orElse("");
+    }
+
+    /**
+     * The refusal of a move to a state the workflow does not name.
+     *
+     * @param id the item's id
+     * @param from the state it stands in
+     * @param to the state asked for
+     * @return the refusal
+     */
+    public static Refused notConfigured(final String id, final String from, final String to) {
+        final String reason = "The destination must be a configured waiting or closed state.";
+        return new Refused("StateNotAllowed", reason, item(id, from, to, reason));
     }
 
     static Map<String, String> item(

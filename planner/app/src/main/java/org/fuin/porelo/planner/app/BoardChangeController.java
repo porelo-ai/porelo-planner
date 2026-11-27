@@ -7,9 +7,13 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import org.fuin.porelo.planner.app.answers.BatchSaved;
+import org.fuin.porelo.planner.app.answers.ChangedItem;
 import org.fuin.porelo.planner.app.answers.ItemResult;
+import org.fuin.porelo.planner.app.answers.Problem;
 import org.fuin.porelo.planner.core.BoardChanges;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.MoveIssues;
@@ -24,15 +28,16 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Applies a board change of new and changed issues in one call, as {@code openapi/planner.yaml}
- * describes it. Every reference is resolved before anything is written; then each item is written
- * through the window's own calls, so each is judged by their rules, and a refused item never stops
- * the others.
+ * describes it. Every item is judged on what needs no write before anything is written; then each
+ * is written through the window's own calls, so each is judged by their rules, and a refused item
+ * never stops the others, a failure of the store included.
  */
 @RestController
 public class BoardChangeController {
@@ -76,7 +81,8 @@ public class BoardChangeController {
     public BatchSaved applyBoardChange(
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
-        final BoardChangeRequests.Change change = BoardChangeRequests.change(request);
+        final BoardChangeRequests.Change change =
+                BoardChangeRequests.change(request, () -> projects.store(name).board());
         try {
             return applied(name, change);
         } finally {
@@ -89,21 +95,61 @@ public class BoardChangeController {
         final Board read = store.board();
         final Set<String> keys = new java.util.HashSet<>();
         change.creates().forEach(item -> keys.add(item.key()));
+        final Call call = new Call(name, changed -> changedItems(name, changed));
 
-        // Every reference is resolved before anything is written.
         final List<Outcome> creates = new ArrayList<>();
+        final List<BoardChanges.Item> asked = new ArrayList<>();
         for (final BoardChangeRequests.NewItem item : change.creates()) {
-            final Outcome outcome = new Outcome(null, item.key());
+            creates.add(new Outcome(call, null, item.key(), item.repository()));
+            asked.add(
+                    new BoardChanges.Item(
+                            item.key(),
+                            "",
+                            restOf(item),
+                            item.story(),
+                            item.blockedBy(),
+                            item.state()));
+        }
+        final List<Outcome> updates = new ArrayList<>();
+        for (final BoardChangeRequests.Update item : change.updates()) {
+            final String repository =
+                    read.issue(item.issue())
+                            .map(org.fuin.porelo.planner.store.Issue::repository)
+                            .orElse("");
+            updates.add(new Outcome(call, item.issue(), null, repository));
+            final @Nullable TextEdit parts = item.parts();
+            asked.add(
+                    new BoardChanges.Item(
+                            null,
+                            item.issue(),
+                            item.title() == null && parts == null
+                                    ? null
+                                    : new TextEdit(
+                                            TextEdit.Kind.ISSUE,
+                                            item.title(),
+                                            parts == null ? Map.of() : parts.written(),
+                                            parts == null ? Set.of() : parts.removed()),
+                            item.story(),
+                            item.blockedBy(),
+                            item.state()));
+        }
+
+        // Every item is judged on what needs no write before any is written.
+        final List<Outcome> outcomes = new ArrayList<>(creates);
+        outcomes.addAll(updates);
+        BoardChanges.judge(read, asked).forEach((at, refusal) -> outcomes.get(at).fail(refusal));
+        for (int index = 0; index < creates.size(); index++) {
+            final BoardChangeRequests.NewItem item = change.creates().get(index);
+            final Outcome outcome = creates.get(index);
             outcome.attempt(
                     () -> {
                         outcome.story = target(read, keys, "", item.story());
                         outcome.blockers = targets(read, keys, "", item.blockedBy());
                     });
-            creates.add(outcome);
         }
-        final List<Outcome> updates = new ArrayList<>();
-        for (final BoardChangeRequests.Update item : change.updates()) {
-            final Outcome outcome = new Outcome(item.issue(), null);
+        for (int index = 0; index < updates.size(); index++) {
+            final BoardChangeRequests.Update item = change.updates().get(index);
+            final Outcome outcome = updates.get(index);
             outcome.attempt(
                     () -> {
                         outcome.story = target(read, keys, item.issue(), item.story());
@@ -113,7 +159,6 @@ public class BoardChangeController {
                                         ? null
                                         : targets(read, keys, item.issue(), blockers);
                     });
-            updates.add(outcome);
         }
 
         final Map<String, String> made = new HashMap<>();
@@ -127,32 +172,61 @@ public class BoardChangeController {
                         final String id = create(name, store, item, outcome);
                         made.put(item.key(), id);
                     });
-            if (outcome.refusal != null) {
+            if (outcome.refused()) {
                 refused.add(item.key());
             }
         }
         for (final Outcome outcome : creates) {
             final List<BoardChanges.Target> blockers = outcome.blockers;
             final String id = outcome.item;
-            if (outcome.refusal == null && id != null && blockers != null && !blockers.isEmpty()) {
+            if (!outcome.refused() && id != null && blockers != null && !blockers.isEmpty()) {
                 outcome.attempt(
-                        () -> edits.setBlockedBy(name, id, seen(store), ids(blockers, made, id)));
+                        () ->
+                                outcome.write(
+                                        store,
+                                        "blockers",
+                                        Set.of(id),
+                                        () ->
+                                                edits.setBlockedBy(
+                                                        name,
+                                                        id,
+                                                        seen(store),
+                                                        ids(blockers, made, id))));
             }
         }
         for (int index = 0; index < updates.size(); index++) {
             final BoardChangeRequests.Update item = change.updates().get(index);
             final Outcome outcome = updates.get(index);
-            final String before = store.board().revision().value();
             outcome.attempt(() -> update(name, store, item, outcome, made));
-            if (outcome.refusal == null) {
-                outcome.saved = !store.board().revision().value().equals(before);
-            }
         }
 
         final List<ItemResult> results = new ArrayList<>();
-        creates.forEach(outcome -> results.add(outcome.result()));
-        updates.forEach(outcome -> results.add(outcome.result()));
+        outcomes.forEach(outcome -> results.add(outcome.result()));
         return new BatchSaved(store.board().revision().value(), results);
+    }
+
+    /** The parts of a new issue a text edit writes after it is made: all but What must be true. */
+    private static @Nullable TextEdit restOf(final BoardChangeRequests.NewItem item) {
+        final Map<TextEdit.Part, String> rest = new LinkedHashMap<>(item.parts());
+        rest.remove(TextEdit.Part.WHAT_MUST_BE_TRUE);
+        if (rest.isEmpty()) {
+            return null;
+        }
+        return new TextEdit(TextEdit.Kind.ISSUE, null, rest, EnumSet.noneOf(TextEdit.Part.class));
+    }
+
+    /** The items an ItemChanged refusal names, as the board holds them now, or gone. */
+    private List<ChangedItem> changedItems(
+            final String name, final StoreException.Changed changed) {
+        try {
+            return BoardController.changed(
+                    TaskHelds.Counts.NONE, projects.work(name), changed.ids());
+        } catch (final RuntimeException unreadable) {
+            // The refusal stands; only the items it would show cannot be read now.
+            return changed.ids().stream()
+                    .map(id -> new ChangedItem(id, true, null, null, null))
+                    .toList();
+        }
     }
 
     /** Makes one new issue in its story and state, then writes its other parts. */
@@ -181,14 +255,22 @@ public class BoardChangeController {
                                 false,
                                 List.of()));
         outcome.item = added.id();
-        outcome.saved = true;
+        outcome.stands("the new issue");
         if (!rest.isEmpty()) {
-            edits.setText(
-                    name,
-                    added.id(),
-                    seen(store),
-                    new TextEdit(
-                            TextEdit.Kind.ISSUE, null, rest, EnumSet.noneOf(TextEdit.Part.class)));
+            outcome.write(
+                    store,
+                    "text",
+                    Set.of(added.id()),
+                    () ->
+                            edits.setText(
+                                    name,
+                                    added.id(),
+                                    seen(store),
+                                    new TextEdit(
+                                            TextEdit.Kind.ISSUE,
+                                            null,
+                                            rest,
+                                            EnumSet.noneOf(TextEdit.Part.class))));
         }
         return added.id();
     }
@@ -212,15 +294,20 @@ public class BoardChangeController {
                                                 Map.of("issue", issue)));
         final TextEdit parts = item.parts();
         if (item.title() != null || parts != null) {
-            edits.setText(
-                    name,
-                    issue,
-                    seen(store),
-                    new TextEdit(
-                            TextEdit.Kind.ISSUE,
-                            item.title(),
-                            parts == null ? Map.of() : parts.written(),
-                            parts == null ? Set.of() : parts.removed()));
+            outcome.write(
+                    store,
+                    "text",
+                    Set.of(issue),
+                    () ->
+                            edits.setText(
+                                    name,
+                                    issue,
+                                    seen(store),
+                                    new TextEdit(
+                                            TextEdit.Kind.ISSUE,
+                                            item.title(),
+                                            parts == null ? Map.of() : parts.written(),
+                                            parts == null ? Set.of() : parts.removed())));
         }
         // A field equal to the issue's is not named, so a change of nothing writes nothing.
         final BoardChangeRequests.@Nullable Size asked = item.size();
@@ -238,28 +325,56 @@ public class BoardChangeController {
             if (priority != null) {
                 named.add(Fields.Field.PRIORITY);
             }
-            edits.setFields(
-                    name,
-                    issue,
-                    seen(store),
-                    new Fields(named, size == null ? null : size.value(), null, priority, null));
+            outcome.write(
+                    store,
+                    "fields",
+                    Set.of(issue),
+                    () ->
+                            edits.setFields(
+                                    name,
+                                    issue,
+                                    seen(store),
+                                    new Fields(
+                                            named,
+                                            size == null ? null : size.value(),
+                                            null,
+                                            priority,
+                                            null)));
         }
         final org.fuin.porelo.planner.store.@Nullable Worker worker = item.worker();
         if (worker != null) {
-            board.workerOf(name, issue, new WorkRequests.WorkerRequest(worker, seen(store)));
+            outcome.write(
+                    store,
+                    "worker",
+                    Set.of(issue),
+                    () ->
+                            board.workerOf(
+                                    name,
+                                    issue,
+                                    new WorkRequests.WorkerRequest(worker, seen(store))));
         }
         final List<BoardChanges.Target> blockers = outcome.blockers;
         if (blockers != null) {
-            edits.setBlockedBy(name, issue, seen(store), ids(blockers, made, issue));
+            outcome.write(
+                    store,
+                    "blockers",
+                    Set.of(issue),
+                    () -> edits.setBlockedBy(name, issue, seen(store), ids(blockers, made, issue)));
         }
         final String story = storyOf(outcome.story, made, issue);
         if (story != null) {
+            // The story's list and the versions seen are read from one board, so an issue another
+            // call added meanwhile is not dropped from the list.
+            final Board current = store.board();
             final List<String> issues =
-                    new ArrayList<>(
-                            store.board().story(story).map(Story::issues).orElse(List.of()));
+                    new ArrayList<>(current.story(story).map(Story::issues).orElse(List.of()));
             if (!issues.contains(issue)) {
                 issues.add(issue);
-                edits.setStoryIssues(name, story, seen(store), issues);
+                outcome.write(
+                        store,
+                        "story",
+                        Set.of(issue, story),
+                        () -> edits.setStoryIssues(name, story, Basis.of(current), issues));
             }
         }
         final String state = item.state();
@@ -268,11 +383,15 @@ public class BoardChangeController {
                     board.moveMany(name, List.of(new MoveIssues.Ask(issue, state, null)))
                             .results()
                             .get(0);
-            if (moved.refusal() != null) {
-                outcome.moveRefusal = moved.refusal();
+            final @Nullable Problem refusal = moved.refusal();
+            if (refusal != null) {
+                outcome.refuse(refusal);
                 return;
             }
             outcome.state = moved.state();
+            if (moved.outcome() == ItemResult.OutcomeEnum.SAVED) {
+                outcome.stands("state");
+            }
         }
     }
 
@@ -327,58 +446,151 @@ public class BoardChangeController {
         return BoardChanges.id(target, made, item);
     }
 
+    /** What one call of the change shares across its items. */
+    private static final class Call {
+        private final String project;
+        private final Function<StoreException.Changed, List<ChangedItem>> items;
+
+        /** The refusal of a store that cannot be reached or is busy, which the later items get. */
+        private @Nullable Problem stopped;
+
+        Call(
+                final String project,
+                final Function<StoreException.Changed, List<ChangedItem>> items) {
+            this.project = project;
+            this.items = items;
+        }
+    }
+
     /** What became of one item of the change. */
     private static final class Outcome {
+        private final Call call;
         private @Nullable String item;
         private final @Nullable String key;
+        private final String repository;
         private BoardChanges.@Nullable Target story;
         private @Nullable List<BoardChanges.Target> blockers;
-        private boolean saved;
+        private final List<String> stands = new ArrayList<>();
         private @Nullable String state;
-        private @Nullable RuntimeException refusal;
-        private org.fuin.porelo.planner.app.answers.@Nullable Problem moveRefusal;
+        private @Nullable Problem problem;
 
-        Outcome(final @Nullable String item, final @Nullable String key) {
+        Outcome(
+                final Call call,
+                final @Nullable String item,
+                final @Nullable String key,
+                final String repository) {
+            this.call = call;
             this.item = item;
             this.key = key;
+            this.repository = repository;
+        }
+
+        boolean refused() {
+            return problem != null;
+        }
+
+        /** Notes that a step of the item wrote. */
+        void stands(final String step) {
+            stands.add(step);
+        }
+
+        /**
+         * Runs one write of the item and notes it as standing when it changed the item or its
+         * story; that is told by the versions of the targets before and after, so another call's
+         * save elsewhere on the board is no write of this item.
+         */
+        void write(
+                final PlanningStore store,
+                final String step,
+                final Set<String> targets,
+                final Runnable write) {
+            final Basis before = Basis.of(store.board());
+            write.run();
+            final Basis after = Basis.of(store.board());
+            if (targets.stream().anyMatch(id -> !Objects.equals(before.of(id), after.of(id)))) {
+                stands(step);
+            }
         }
 
         /** Runs one step of the item, unless an earlier step refused it, keeping its refusal. */
         void attempt(final Runnable step) {
-            if (refusal != null || moveRefusal != null) {
+            if (problem != null) {
+                return;
+            }
+            final @Nullable Problem stopped = call.stopped;
+            if (stopped != null) {
+                refuse(stopped);
                 return;
             }
             try {
                 step.run();
-            } catch (final Moves.Refused | WorkRefusal | Refusal refused) {
-                refusal = refused;
-            } catch (final StoreException.NotSavable notSavable) {
-                refusal =
-                        Edits.refused(
-                                item == null ? "" : item,
-                                notSavable.field(),
-                                String.valueOf(notSavable.getMessage()));
+            } catch (final RuntimeException failure) {
+                fail(failure);
             }
         }
 
-        ItemResult result() {
-            final @Nullable RuntimeException refused = refusal;
-            if (refused != null || moveRefusal != null) {
-                return new ItemResult(
-                        item,
-                        key,
-                        ItemResult.OutcomeEnum.REFUSED,
-                        null,
-                        null,
-                        refused != null ? Problems.answer(refused) : moveRefusal);
+        /**
+         * Answers the item with the refusal a failure stands for; a failure that is none of the
+         * planner's refusals is the call's own and goes on.
+         */
+        void fail(final RuntimeException failure) {
+            final Problem answer;
+            if (failure instanceof StoreException.NotSavable notSavable) {
+                answer =
+                        Problems.answer(
+                                Edits.refused(
+                                        item == null ? "" : item,
+                                        notSavable.field(),
+                                        String.valueOf(notSavable.getMessage())));
+            } else if (failure instanceof StoreException refusal) {
+                answer = Problems.answer(refusal, call.items);
+                if (refusal instanceof StoreException.Unreachable
+                        || refusal instanceof StoreException.Busy
+                        || refusal instanceof StoreException.StaleRevision) {
+                    // The items after it are not tried against a store that cannot answer.
+                    call.stopped = answer;
+                }
+            } else if (failure instanceof UnsupportedOperationException) {
+                answer =
+                        Problems.answer(
+                                new Refusal(
+                                        "NotOffered",
+                                        HttpStatus.NOT_IMPLEMENTED,
+                                        "This planner does not offer this change.",
+                                        Map.of("project", call.project)));
+            } else if (failure instanceof Moves.Refused
+                    || failure instanceof WorkRefusal
+                    || failure instanceof Refusal) {
+                answer = Problems.answer(failure);
+            } else {
+                throw failure;
             }
-            return new ItemResult(
-                    item,
-                    key,
-                    saved ? ItemResult.OutcomeEnum.SAVED : ItemResult.OutcomeEnum.UNCHANGED,
-                    state,
-                    null,
-                    null);
+            refuse(answer);
+        }
+
+        /**
+         * Refuses the item; a changed issue some step of which wrote already is refused as
+         * PartlySaved, never silently. A new issue that stands shows its id beside its refusal.
+         */
+        void refuse(final Problem refusal) {
+            problem =
+                    stands.isEmpty() || key != null || "PartlySaved".equals(refusal.title())
+                            ? refusal
+                            : Problems.partlySaved(
+                                    item == null ? "" : item, repository, stands, refusal);
+        }
+
+        ItemResult result() {
+            final @Nullable Problem refused = problem;
+            if (refused != null) {
+                return new ItemResult(
+                        item, key, ItemResult.OutcomeEnum.REFUSED, null, null, refused);
+            }
+            final ItemResult.OutcomeEnum outcome =
+                    stands.isEmpty()
+                            ? ItemResult.OutcomeEnum.UNCHANGED
+                            : ItemResult.OutcomeEnum.SAVED;
+            return new ItemResult(item, key, outcome, state, null, null);
         }
     }
 }

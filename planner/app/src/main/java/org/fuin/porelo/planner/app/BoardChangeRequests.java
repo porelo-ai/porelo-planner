@@ -9,9 +9,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
 import org.fuin.porelo.planner.store.Ids;
 import org.fuin.porelo.planner.store.Story;
@@ -22,8 +24,8 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * Reads a board change as {@code openapi/planner.yaml} describes it, strictly: a member it does not
- * take, a bound broken or a key named twice refuses the whole body as {@code EditNotAllowed} before
- * anything is judged or written.
+ * take, a bound broken, a key named twice or the same as an id of the board, or an issue changed
+ * twice refuses the whole body as {@code EditNotAllowed} before anything is judged or written.
  */
 final class BoardChangeRequests {
 
@@ -139,11 +141,13 @@ final class BoardChangeRequests {
      * Reads a board change of at most {@link AccessFilter#MOST_LARGE_BODY} bytes.
      *
      * @param request the request
+     * @param board the board as it stands, read only when the body holds a new issue
      * @return the change
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a body that is
-     *     no board change, or one naming a key twice
+     *     no board change, one naming a key twice or a key the board holds as an id, or one
+     *     changing an issue twice
      */
-    static Change change(final HttpServletRequest request) {
+    static Change change(final HttpServletRequest request, final Supplier<Board> board) {
         final JsonNode body;
         try {
             body = WorkRequests.read(request, AccessFilter.MOST_LARGE_BODY);
@@ -166,6 +170,22 @@ final class BoardChangeRequests {
         for (final NewItem item : creates) {
             if (!keys.add(item.key())) {
                 throw refused("key", "A key is named twice.");
+            }
+        }
+        final Set<String> changed = new HashSet<>();
+        for (final Update item : updates) {
+            if (!changed.add(item.issue())) {
+                // The answer names every item once, so one issue is not changed twice.
+                throw refused("issue", "An issue is changed twice.");
+            }
+        }
+        if (!keys.isEmpty()) {
+            final Board held = board.get();
+            for (final String key : keys) {
+                if (held.issue(key).isPresent() || held.story(key).isPresent()) {
+                    // A reference names a key before the board's item, so no key shadows an id.
+                    throw refused("key", "A key is never an id of the board.");
+                }
             }
         }
         return new Change(List.copyOf(creates), List.copyOf(updates));

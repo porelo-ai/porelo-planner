@@ -267,6 +267,21 @@ public final class Edits {
             known(board, id);
         }
         notHeld(board, id);
+        return text(id, edit);
+    }
+
+    /**
+     * Checks what of a change of an item's title and named parts needs no board: the change names
+     * anything, the title is one line of 1 to {@value #MOST_TITLE} characters without control
+     * characters, and each part written is not blank and at most {@value #MOST_PART} characters.
+     *
+     * @param id the story's or the issue's id, empty for an issue not made yet
+     * @param edit the change
+     * @return the change with its title without the spaces around it
+     * @throws Moves.Refused {@value #REFUSED} for a change that names nothing or a title or part
+     *     out of bounds
+     */
+    public static TextEdit text(final String id, final TextEdit edit) {
         if (edit.none()) {
             throw refused(id, "", "The body names no title and no part to write.");
         }
@@ -446,7 +461,7 @@ public final class Edits {
     }
 
     /** Whether one issue waits on another through the blockers, however deep. */
-    private static boolean reaches(
+    static boolean reaches(
             final Map<String, List<String>> waits, final String from, final String to) {
         final Set<String> seen = new HashSet<>();
         final Deque<String> open = new ArrayDeque<>(List.of(from));

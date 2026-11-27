@@ -3,6 +3,8 @@ package org.fuin.porelo.planner.app;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import org.fuin.porelo.planner.app.answers.ChangedItem;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.StoreException;
@@ -155,6 +157,40 @@ public class Problems {
                 String.valueOf(refusal.getMessage()),
                 PARAMETERS.convertValue(
                         parameters, org.fuin.porelo.planner.app.answers.ProblemParameters.class));
+    }
+
+    /**
+     * Answers an item of a batch that was written in part: a step of it stands, and a later one
+     * failed. The words name the steps that stand and the refusal of the one that failed.
+     *
+     * @param issue the item's id
+     * @param repository the repository the item is kept in
+     * @param steps the steps that stand, in the order written
+     * @param failure the refusal of the step that failed
+     * @return the problem, named PartlySaved
+     */
+    static org.fuin.porelo.planner.app.answers.Problem partlySaved(
+            final String issue,
+            final String repository,
+            final List<String> steps,
+            final org.fuin.porelo.planner.app.answers.Problem failure) {
+        final String detail =
+                "The item "
+                        + issue
+                        + " was saved in part ("
+                        + String.join(", ", steps)
+                        + "); the next step was refused as "
+                        + failure.title()
+                        + ": "
+                        + failure.detail();
+        return new org.fuin.porelo.planner.app.answers.Problem(
+                TYPE + "PartlySaved",
+                "PartlySaved",
+                HttpStatus.BAD_GATEWAY.value(),
+                detail,
+                PARAMETERS.convertValue(
+                        Map.of("pushed", repository, "failed", repository, "issues", issue),
+                        org.fuin.porelo.planner.app.answers.ProblemParameters.class));
     }
 
     /**
@@ -327,46 +363,83 @@ public class Problems {
     @ExceptionHandler(StoreException.class)
     public ResponseEntity<ProblemDetail> refused(
             final StoreException refusal, final WebRequest request) {
+        warnOfTheStore(refusal, refusal.subject(), String.valueOf(refusal.getMessage()));
+        final Described described = described(refusal, changed -> items(changed, request));
+        return problem(
+                described.name(), described.status(), described.detail(), described.parameters());
+    }
+
+    /**
+     * Answers a refusal of the store for one item of a batch, exactly as the call alone would
+     * answer it: the same name, status, words and parameters.
+     *
+     * @param refusal the store's refusal, whose words are already free of secrets and local paths
+     * @param items the items an ItemChanged refusal answers, as the board holds them now
+     * @return the problem
+     */
+    static org.fuin.porelo.planner.app.answers.Problem answer(
+            final StoreException refusal,
+            final Function<StoreException.Changed, List<ChangedItem>> items) {
+        warnOfTheStore(refusal, refusal.subject(), String.valueOf(refusal.getMessage()));
+        final Described described = described(refusal, items);
+        return new org.fuin.porelo.planner.app.answers.Problem(
+                TYPE + described.name(),
+                described.name(),
+                described.status().value(),
+                described.detail(),
+                PARAMETERS.convertValue(
+                        described.parameters(),
+                        org.fuin.porelo.planner.app.answers.ProblemParameters.class));
+    }
+
+    /** A store's refusal as the answer names it. */
+    private record Described(
+            String name, HttpStatus status, String detail, Map<String, ?> parameters) {}
+
+    private static Described described(
+            final StoreException refusal,
+            final Function<StoreException.Changed, List<ChangedItem>> items) {
         final String detail = String.valueOf(refusal.getMessage());
         final String subject = refusal.subject();
-        warnOfTheStore(refusal, subject, detail);
         return switch (refusal) {
             case StoreException.NoSuchStory any ->
-                    problem("NoSuchStory", HttpStatus.NOT_FOUND, detail, Map.of("story", subject));
+                    new Described(
+                            "NoSuchStory", HttpStatus.NOT_FOUND, detail, Map.of("story", subject));
             case StoreException.NoSuchIssue any ->
-                    problem("NoSuchIssue", HttpStatus.NOT_FOUND, detail, Map.of("issue", subject));
+                    new Described(
+                            "NoSuchIssue", HttpStatus.NOT_FOUND, detail, Map.of("issue", subject));
             case StoreException.WorkflowMissing any ->
-                    problem(
+                    new Described(
                             "WorkflowMissing",
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
             case StoreException.CredentialRefused any ->
-                    problem(
+                    new Described(
                             "CredentialRefused",
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
             case StoreException.NoForgeAccess refusedAccess ->
-                    problem(
+                    new Described(
                             "NoForgeAccess",
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             forgeAccess(subject, refusedAccess.right()));
             case StoreException.Unreachable any ->
-                    problem(
+                    new Described(
                             "Unreachable",
                             HttpStatus.GATEWAY_TIMEOUT,
                             detail,
                             Map.of("repository", subject));
             case StoreException.Unreadable any ->
-                    problem(
+                    new Described(
                             "Unreadable",
                             HttpStatus.BAD_GATEWAY,
                             detail,
                             Map.of("repository", subject));
             case StoreException.ItemsDirectoryRefused refused ->
-                    problem(
+                    new Described(
                             "ItemsDirectoryRefused",
                             HttpStatus.CONFLICT,
                             detail,
@@ -374,43 +447,43 @@ public class Problems {
             case StoreException.StaleRevision any ->
                     // No call is checked against a revision; one that still reaches a caller is a
                     // save that kept losing to another, which a retry answers.
-                    problem(
+                    new Described(
                             "Busy",
                             HttpStatus.SERVICE_UNAVAILABLE,
                             "The project is busy with another save; try again.",
                             Map.of("repository", ""));
             case StoreException.Changed changed ->
-                    problem(
+                    new Described(
                             "ItemChanged",
                             HttpStatus.CONFLICT,
                             "An item the write changes changed since it was read.",
-                            Map.of("changed", changed.ids(), "items", items(changed, request)));
+                            Map.of("changed", changed.ids(), "items", items.apply(changed)));
             case StoreException.BasisIncomplete incomplete ->
-                    problem(
+                    new Described(
                             "BasisIncomplete",
                             HttpStatus.CONFLICT,
                             "The write names no version for an item it changes.",
                             Map.of("missing", incomplete.missing()));
             case StoreException.NotSavable any ->
-                    problem(
+                    new Described(
                             "MoveNotAllowed",
                             HttpStatus.UNPROCESSABLE_CONTENT,
                             detail,
                             Map.of("item", subject, "from", "", "to", "", "reason", detail));
             case StoreException.InStory held ->
-                    problem(
+                    new Described(
                             "IssueInStory",
                             HttpStatus.CONFLICT,
                             "The issue belongs to another story; an issue has one story.",
                             Map.of("issue", subject, "story", held.story(), "field", held.field()));
             case StoreException.Busy any ->
-                    problem(
+                    new Described(
                             "Busy",
                             HttpStatus.SERVICE_UNAVAILABLE,
                             "The project is busy with another save; try again.",
                             Map.of("repository", subject));
             case StoreException.PartlySaved partly ->
-                    problem(
+                    new Described(
                             "PartlySaved",
                             HttpStatus.BAD_GATEWAY,
                             detail,
@@ -428,7 +501,7 @@ public class Problems {
                                             "issues",
                                             String.join(",", partly.issues())));
             case StoreException.LabelsNotKept dropped ->
-                    problem(
+                    new Described(
                             "LabelsNotKept",
                             HttpStatus.BAD_GATEWAY,
                             detail,

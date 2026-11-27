@@ -127,4 +127,18 @@ public final class NewIssues {
         parameters.put("reason", reason);
         return new Moves.Refused(REFUSED, reason, parameters);
     }
+
+    /**
+     * The refusal of a state a new issue cannot start in, because the workflow does not name it.
+     *
+     * @param board the board whose workflow it is
+     * @return the refusal
+     */
+    public static Moves.Refused notAnInitialState(final Board board) {
+        final String reason = "A new issue must start in an open state of the workflow.";
+        return new Moves.Refused(
+                "StateNotAllowed",
+                reason,
+                Moves.item("", board.workflow().states().get(0), "", reason));
+    }
 }

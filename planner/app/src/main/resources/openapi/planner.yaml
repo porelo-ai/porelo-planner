@@ -2141,11 +2141,20 @@ paths:
         setIssueFields, setWorker, setBlockedBy, setStoryIssues and moveIssues) against the board as it stands, before
         anything is written; then the new issues are made, then the blockers, story lists, fields and states are
         written, in one save where the store allows it. A blocker or story is named by an existing id or by a key of the
-        same body, resolved to the id made for it. An item refused never stops the others; an item whose blocker or
-        story is a key of a refused item is refused naming that key (KeyRefused, item and key), and a key naming no
-        item of the body is refused naming it (NoSuchKey, item and key). The answer names every item once, new issues
-        first in the order sent, each with its key, its id when it stands and SAVED, UNCHANGED or REFUSED with the
-        refusal. The JSON body is at most 1048576 bytes. The changes stream announces the new board as it does after
+        same body, resolved to the id made for it. A key is never an id of the board and an issue is changed once in
+        a body, else the whole body is refused (EditNotAllowed). Before anything is written every item is judged on
+        what needs no write, by the rules of the calls named: each text part, each blocker (not the issue itself, an
+        issue of the board or a new issue, none twice, none leading back through the board's blockers and the body's
+        own), a story that is a story of the board, and a state of the workflow; the refusal is the one the call alone
+        would give. An item refused never stops the others; an item whose blocker or story is a key of a refused item,
+        one listed after it included, is refused naming that key (KeyRefused, item and key), and a key naming no item
+        of the body is refused naming it (NoSuchKey, item and key). A refusal or failure of the store for one item
+        never ends the call: the item is REFUSED with it, and once the store cannot be reached or is busy the items
+        after it are refused with the same, untried. An item whose later step is refused after an earlier step of it
+        was written is REFUSED as PartlySaved, `issues` naming it and the detail the steps that stand and the refusal
+        of the next. The answer names every item once, new issues first in the order sent, each with its key, its id
+        when it stands and SAVED, UNCHANGED or REFUSED with the refusal; SAVED is told by whether a step of the item
+        wrote. The JSON body is at most 1048576 bytes. The changes stream announces the new board as it does after
         any save.
       tags: [board]
       requestBody:
