@@ -34,6 +34,7 @@ paths:
   /proof:
     post:
       operationId: proveToken
+      x-mcp: false the proof of the token, asked before any signed call
       summary: Proof of the token
       description: >-
         Proves that the planner listening on this port holds the token, without a signature and before anything of
@@ -62,6 +63,7 @@ paths:
   /health:
     get:
       operationId: getHealth
+      x-mcp: false the health of the process, for its starter
       summary: Health
       description: >-
         Answers UP while the planner serves calls, with the planner's version and the commit it was built from.
@@ -79,6 +81,7 @@ paths:
   /log/level:
     get:
       operationId: getLogLevel
+      x-mcp: false the planner's own log is the person's to read
       summary: The log's level
       description: >-
         Answers the level of the planner's own log in force. Where the log lies is the address file's `log` field.
@@ -94,6 +97,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
     put:
       operationId: putLogLevel
+      x-mcp: false the planner's own log is the person's to set
       summary: Set the log's level
       description: >-
         Sets the level of the planner's own log at once and keeps it, so it holds from the next start too. The
@@ -120,6 +124,7 @@ paths:
   /mock/reset:
     post:
       operationId: resetMock
+      x-mcp: false the mock mode, for the window's tests
       summary: Restore the mock board
       description: >-
         Only in the mock mode (`porelo-planner --mock`), for the window's tests: forgets every project given with the
@@ -140,6 +145,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: offerMockReviewer
+      x-mcp: false the mock mode, for the window's tests
       summary: Offer a reviewer on the mock board
       description: >-
         Only in the mock mode (`porelo-planner --mock`), for the window's tests: gives the project a run whose
@@ -161,6 +167,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: holdMockSave
+      x-mcp: false the mock mode, for the window's tests
       summary: Hold a save on the mock board
       description: >-
         Only in the mock mode (`porelo-planner --mock`), for the window's tests: gives the project one held save of
@@ -182,6 +189,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     put:
       operationId: putProject
+      x-mcp: false the window names the repository of a project it opens
       summary: Name a project's repository
       description: >-
         Makes the project known with its own repository and branch; the same body again changes nothing. Another body
@@ -213,6 +221,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     get:
       operationId: getWorkflow
+      x-mcp: true
       summary: Read the workflow
       description: >-
         Answers the project's states, phases, sound work rules, the faults found reading its workflow and board, and
@@ -243,6 +252,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     get:
       operationId: getEvents
+      x-mcp: false the changes stream, which the window follows
       summary: Follow the board's changes
       description: >-
         Streams the project's board as Server-Sent Events: event `board`, its `id` the board's revision and its
@@ -300,6 +310,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: refreshProject
+      x-mcp: true
       summary: Read the repositories now
       description: >-
         Reads the project at once instead of waiting for the next poll. For a project kept in Git, the repositories
@@ -337,6 +348,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     get:
       operationId: listStories
+      x-mcp: true
       summary: List the stories
       description: Answers the project's stories with their issues, all of them or only those in the named states.
       tags: [board]
@@ -374,6 +386,7 @@ paths:
           $ref: '#/components/responses/Unreachable'
     post:
       operationId: createStory
+      x-mcp: true
       summary: Make a story with new issues, or from issues that stand
       description: >-
         Makes a story in the project's own repository in one of two ways, told apart by the body's members. A
@@ -384,11 +397,11 @@ paths:
         anything is saved, and a malformed idea makes nothing (IdeaRefused). A save that stops after a part of it
         stands answers PartlySaved, naming the repositories that hold their part; a run whose story is gone is dropped
         first, so the new story never takes it over. A StoryFromIssuesRequest makes a story over issues that stand on
-        the board: each must be an open issue of the workflow, no story and no sub-issue, and is refused otherwise,
-        each refused id named in the IdeaRefused answer; an issue another story holds is a conflict (IssueInStory,
-        naming the first such issue, the story holding it and the field that named it), told once the body has no
-        other fault. The issues become the story's issues in the order named and keep their own fields, and the
-        story's state follows theirs. Every issue named is a target: it is checked against the version `seen` holds
+        the board: each must be an open issue of the workflow and no sub-issue of another issue, and is refused
+        otherwise, each refused id named in the IdeaRefused answer. An issue another story holds leaves that story in
+        the same save, as setStoryIssues moves it, and the story it leaves stays, if need be without issues; an issue
+        a started task works, or one of its sub-issues, refuses the call (WorkRunning) and nothing is made. The issues
+        become the story's issues in the order named and keep their own fields, and the story's state follows theirs. Every issue named is a target: it is checked against the version `seen` holds
         for it, read again from the tracker where the store keeps one, before anything is written; an issue changed
         since is ItemChanged, one without a version BasisIncomplete, and one hung under another parent there is
         IssueInStory, with nothing made. The story's body
@@ -446,6 +459,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     get:
       operationId: getStory
+      x-mcp: true
       summary: Read one story
       description: >-
         Answers one story with its issues and its description. An id two stories share answers NoSuchStory, since
@@ -479,6 +493,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     get:
       operationId: listStoryIssues
+      x-mcp: true
       summary: List a story's issues
       description: Answers exactly the issues of one story.
       tags: [board]
@@ -505,13 +520,17 @@ paths:
           $ref: '#/components/responses/Unreachable'
     put:
       operationId: setStoryIssues
+      x-mcp: true
       summary: Set a story's issues
       description: >-
         Writes the story's whole issue list, in its order, checked against the versions `seen` holds for the story and
         for every issue hung in or taken out, whose parent changes: an issue taken out
         is no longer the story's, an issue hung in becomes the story's, and the order is the one sent. Each issue is
-        named once and is one of the board's; an issue that is a sub-issue of another issue, or that another story
-        holds, is refused (EditNotAllowed), since an issue belongs to one story; so is a list for a story the board
+        named once and is one of the board's; an issue that is a sub-issue of another issue is refused
+        (EditNotAllowed). An issue hung in that another story holds moves: it leaves that story's list and joins this
+        one in the same save, all or none, both stories checked against the versions `seen` holds for them; on GitHub
+        the sub-issue moves from one parent to the other, and the story it leaves stays, if need be without issues. A
+        list is refused (EditNotAllowed) for a story the board
         shows only in part, since a list written whole would drop the issue not shown, and a list that hangs in or
         takes out an issue a warning holds back; one kept in the list may be reordered. An issue a started task works,
         or one of its sub-issues, is not taken out (WorkRunning). On GitHub an issue becomes the story's sub-issue,
@@ -557,6 +576,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     put:
       operationId: setStoryText
+      x-mcp: true
       summary: Set a story's title and text
       description: >-
         Writes the story's title and its parts What a user gains and The test, every other byte of its text as it
@@ -620,6 +640,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: discussIdea
+      x-mcp: false offers a task that only the window starts, with the person
       summary: Offer a task that discusses an idea
       description: >-
         Answers one task for Porelo's Start that discusses an idea with the person: kind discussion, no role, no repository,
@@ -675,6 +696,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     post:
       operationId: proposeStoryWork
+      x-mcp: true
       summary: Propose the tasks for a story
       description: >-
         Computes a proposal from one board and its sound work rule. The first mode and ordered model entry are the
@@ -716,6 +738,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     get:
       operationId: getStoryWork
+      x-mcp: true
       summary: Read the current run
       description: Returns null when no run is recorded; working states never recreate a lost record.
       tags: [work]
@@ -742,6 +765,7 @@ paths:
           $ref: '#/components/responses/Unreachable'
     post:
       operationId: orderStoryWork
+      x-mcp: false prepares the tasks only the window starts
       summary: Prepare the tasks the window starts
       description: >-
         Recomputes the proposal and validates the window's choices against it. Checks the story against the version
@@ -804,6 +828,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     get:
       operationId: getIssue
+      x-mcp: true
       summary: Read one issue
       description: >-
         Answers one issue with its text, its sub-issues and its What must be true paragraph when it has one. An id two
@@ -837,6 +862,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     put:
       operationId: setWorker
+      x-mcp: true
       summary: Set who works an issue
       description: >-
         Writes the issue's worker into its head, checked against the version `seen` holds for the issue, saved as a
@@ -885,6 +911,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     put:
       operationId: setIssueFields
+      x-mcp: true
       summary: Set an issue's size, estimate, priority and rank
       description: >-
         Writes the members the body names, checked against the version `seen` holds for the issue: a member left out
@@ -931,6 +958,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     put:
       operationId: setBlockedBy
+      x-mcp: true
       summary: Set the issues an issue waits on
       description: >-
         Writes the issue's whole list of blockers, checked against the version `seen` holds for the issue; whether
@@ -979,6 +1007,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     put:
       operationId: setIssueText
+      x-mcp: true
       summary: Set an issue's title and text
       description: >-
         Writes the issue's title and the named parts of its text the body names, every other byte of the text as it
@@ -1045,6 +1074,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     post:
       operationId: comment
+      x-mcp: true
       summary: Write a comment on an issue
       description: >-
         Writes one comment of the person's text on the issue, with the person's own access. The board shows no
@@ -1087,6 +1117,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     put:
       operationId: setPriority
+      x-mcp: true
       summary: Set a story's priority
       description: >-
         Writes the story's priority into its head, checked against the version `seen` holds for the story, saved as a
@@ -1132,6 +1163,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: saveMoves
+      x-mcp: false the save by the digest of a preview the person saw; agents move issues by moveIssues
       summary: Save moves, all or none
       description: >-
         Checks a batch of moves against the versions `seen` holds for its targets, the preview's `targets`, and the
@@ -1193,6 +1225,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: previewMoves
+      x-mcp: false the move preview the person confirms in the window
       summary: Answer what a batch of moves would do, writing nothing
       description: >-
         Checks a batch of moves as saving it would, against the board as the planner reads it, and answers what it
@@ -1243,6 +1276,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: previewCorrection
+      x-mcp: false the preview of a warning's correction, which the person confirms in the window
       summary: Answer what the correction of one warning would write, writing nothing
       description: >-
         Checks the correction a warning's `correction` offers, other than a Move, against the board as the planner
@@ -1298,6 +1332,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: saveCorrection
+      x-mcp: false the save of a correction the person confirmed in the window
       summary: Save the correction of one warning whose preview the person confirmed
       description: >-
         Saves the correction its preview showed, as a move is saved: one commit in the planner's own clone, pushed
@@ -1356,6 +1391,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     get:
       operationId: listIssues
+      x-mcp: true
       summary: List the issues in no story
       description: >-
         Answers the board's issues that no story names and that are not sub-issues, at any depth, of an issue a
@@ -1395,6 +1431,7 @@ paths:
           $ref: '#/components/responses/Unreachable'
     post:
       operationId: createIssue
+      x-mcp: true
       summary: Add an idea as a new issue
       description: >-
         Writes a new issue into the named repository of the project, saved as a move is saved; the story it is hung
@@ -1453,6 +1490,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: addUnlistedIssue
+      x-mcp: true
       summary: Add an issue made outside the project
       description: >-
         Adds one open issue the board offers among its unlisted issues to the project, checked against the unlisted
@@ -1509,6 +1547,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     put:
       operationId: setItemsDirectory
+      x-mcp: false where a local project's items lie is the person's choice on this computer
       summary: Choose where a local project's stories and issues are kept
       description: >-
         Keeps the directory the planner reads and writes a local project's stories and issues in, for this project, in
@@ -1562,6 +1601,7 @@ paths:
       - $ref: '#/components/parameters/Save'
     post:
       operationId: resendSave
+      x-mcp: false a held save is the person's to send again
       summary: Send a held save again
       description: >-
         Sends a group of the board's `heldSaves` that is `resendable` again. A window's save turns back to queued
@@ -1607,6 +1647,7 @@ paths:
       - $ref: '#/components/parameters/Save'
     delete:
       operationId: dropSave
+      x-mcp: false a held save is the person's to drop
       summary: Drop a held save
       description: >-
         Removes a group of the board's `heldSaves` from the outbox, a halted run's and one kept from another source
@@ -1642,6 +1683,7 @@ paths:
           $ref: '#/components/schemas/TaskLabel'
     post:
       operationId: taskEvent
+      x-mcp: false the window reports the tasks it started
       summary: Report the lifecycle of an offered task
       description: >-
         Accepts STARTED, ENDED, STOPPED, LANDED or REFUSED against an offer. Only ENDED carries Porelo's unmapped ended
@@ -1705,6 +1747,7 @@ paths:
           $ref: '#/components/schemas/TaskLabel'
     post:
       operationId: handStageResult
+      x-mcp: false the window hands in a task's result
       summary: Hand in the result a stage's task wrote
       description: >-
         Takes the result file an analysis, estimation or readiness task wrote, which the window hands in unchanged
@@ -1765,6 +1808,7 @@ paths:
       - $ref: '#/components/parameters/Story'
     post:
       operationId: stopStoryWork
+      x-mcp: false the person cancels a run in the window, which stops its tasks
       summary: Cancel the run
       description: >-
         Takes an empty body, or one naming the run the person saw in `run`; a run named that is not the one standing,
@@ -1807,6 +1851,7 @@ paths:
       - $ref: '#/components/parameters/Issue'
     post:
       operationId: chooseReading
+      x-mcp: false the person chooses how a stopped reading goes on
       summary: Choose how a stopped reading continues
       description: >-
         Checks story membership, stopped status, exact completed round and the versions `seen` holds for its targets:
@@ -1852,6 +1897,332 @@ paths:
           $ref: '#/components/responses/SaveRefused'
         '503':
           $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /openapi:
+    get:
+      operationId: getDescription
+      x-mcp: false the description itself, which a caller reads to make its tools
+      summary: The planner's own description
+      description: >-
+        Answers this description as JSON, converted from the YAML the planner was built with when it was built, member
+        for member: every operation with its `x-mcp` marker, `true` for an operation an agent may call as a tool, or a
+        string opening with `false` and the reason it is not offered to agents. A build whose description holds an
+        operation without one marker fails.
+      tags: [planner]
+      responses:
+        '200':
+          description: The description the planner was built with.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /projects/{project}/outline:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: getOutline
+      x-mcp: true
+      summary: The board in short
+      description: >-
+        Answers the board the planner holds in short, without reading the store anew: each story with its id, title,
+        state and priority and each of its issues with its id, state, size and priority, in the board's order, then the
+        issues no story names that are not sub-issues of an issue a story names. What it says of an item equals what
+        the board says of it at the same revision.
+      tags: [board]
+      responses:
+        '200':
+          description: The board in short at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outline'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/issues/{issue}/parts:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+      - $ref: '#/components/parameters/Issue'
+    get:
+      operationId: getIssueParts
+      x-mcp: true
+      summary: Read one issue by its text's parts
+      description: >-
+        Answers one issue of the board the planner holds with its fields and its text split into the parts setIssueText
+        writes, each by the same name; a part the text does not hold is absent. A text whose sections cannot be told
+        apart for certain answers its parts as null and the whole text in `text`, with the first thing to repair in
+        `fault`. An id two issues share answers NoSuchIssue.
+      tags: [board]
+      responses:
+        '200':
+          description: The issue at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueParts'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchIssue'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/breaches:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: listBreaches
+      x-mcp: true
+      summary: The breaches of the stories' rules
+      description: >-
+        Answers the breaches of the stories' rules as the board the planner holds computes them, the board's `rules`
+        grouped: each with its rule, the story it concerns (null for an issue in no story) and the issues it names, in
+        the board's order. An empty list means the board breaks none.
+      tags: [board]
+      responses:
+        '200':
+          description: The breaches at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Breaches'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/search:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    get:
+      operationId: searchItems
+      x-mcp: true
+      summary: Find stories and issues by words
+      description: >-
+        Answers the stories and issues of the board the planner holds whose title or text holds every word given,
+        matched without regard to case as a whole word, each with its id, kind, title, state and where the words were
+        found: `title`, or the name of the text part as setIssueText names it, or `text` for a story's text and a text
+        whose parts cannot be told apart. Stories come first, then issues, each in the board's order; at most 200 are
+        answered and `more` says whether others matched. Nothing is read from the store anew.
+      tags: [board]
+      parameters:
+        - name: words
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 10
+            items:
+              type: string
+              minLength: 1
+              maxLength: 100
+      responses:
+        '200':
+          description: The matching items at the given revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchAnswer'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/ItemsDirectoryRefused'
+        '502':
+          $ref: '#/components/responses/StoreRefused'
+        '503':
+          $ref: '#/components/responses/RecordUnavailable'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/states:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: moveIssues
+      x-mcp: true
+      summary: Move many issues to their states, saving what the rules allow
+      description: >-
+        Moves many issues to their states in one call, by the rules saveMoves keeps: the planner previews the batch on
+        the board as it stands, drops each move the rules refuse with its refusal, and saves the rest in one save
+        against the board it previewed, all or none; a move into a state only a person sets is refused as the rules
+        say, and a move that would stop running work is refused (WorkRunning), since no person confirms it here. A
+        board changed between the preview and the save is previewed again once; changed again, nothing is saved and the
+        call answers ItemChanged. The answer names every issue sent once, in the order sent: SAVED with its new state,
+        UNCHANGED when it stood there already, or REFUSED with the refusal as the call alone would have answered it.
+        A batch the rules refuse whole saves nothing and answers 200 with every issue REFUSED. The JSON body is at most
+        65536 bytes. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StateMoves'
+      responses:
+        '200':
+          description: What was saved and what refused, per issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/MoveConflict'
+        '422':
+          $ref: '#/components/responses/MoveRefused'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/changes:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    post:
+      operationId: applyBoardChange
+      x-mcp: true
+      summary: Apply new and changed issues in one call
+      description: >-
+        Applies a board change in one call: new issues, each named by a key of the caller's, and changes of existing
+        issues. Every item is judged by the rules the window's own calls keep (createIssue, setIssueText,
+        setIssueFields, setWorker, setBlockedBy, setStoryIssues and moveIssues) against the board as it stands, before
+        anything is written; then the new issues are made, then the blockers, story lists, fields and states are
+        written, in one save where the store allows it. A blocker or story is named by an existing id or by a key of the
+        same body, resolved to the id made for it. An item refused never stops the others; an item whose blocker or
+        story is a key of a refused item is refused naming that key (KeyRefused, item and key), and a key naming no
+        item of the body is refused naming it (NoSuchKey, item and key). The answer names every item once, new issues
+        first in the order sent, each with its key, its id when it stands and SAVED, UNCHANGED or REFUSED with the
+        refusal. The JSON body is at most 1048576 bytes. The changes stream announces the new board as it does after
+        any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardChange'
+      responses:
+        '200':
+          description: What was saved and what refused, per item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/EditConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
+        '504':
+          $ref: '#/components/responses/Unreachable'
+
+  /projects/{project}/fields:
+    parameters:
+      - $ref: '#/components/parameters/Project'
+    put:
+      operationId: setFieldsOfMany
+      x-mcp: true
+      summary: Set priority, size and story of many issues, and stories' priorities, in one save
+      description: >-
+        Sets the priority, size or story of many issues and the priority of stories in one save, against the board as
+        it stands, by the rules setIssueFields, setStoryIssues and setPriority keep; a member left out stays as it is.
+        A story's priority set also raises, in the same save, each of its issues whose priority would then break the
+        stories' priority rule, and names them in its result's `raised`; an issue sent in the same body keeps the
+        priority sent for it, and a breach that leaves is refused for that issue. An issue given a story leaves its old
+        story and joins the new one, as setStoryIssues moves it. The answer names every item once, issues first, in the
+        order sent: SAVED, UNCHANGED or REFUSED with the refusal; an item refused never stops the others. The JSON body
+        is at most 65536 bytes. The changes stream announces the new board as it does after any save.
+      tags: [board]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManyFields'
+      responses:
+        '200':
+          description: What was saved and what refused, per item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchSaved'
+        '400':
+          $ref: '#/components/responses/InvalidName'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NoSuchProject'
+        '409':
+          $ref: '#/components/responses/EditConflict'
+        '422':
+          $ref: '#/components/responses/EditRefused'
+        '501':
+          $ref: '#/components/responses/NotOffered'
+        '502':
+          $ref: '#/components/responses/SaveRefused'
+        '503':
+          $ref: '#/components/responses/Busy'
         '504':
           $ref: '#/components/responses/Unreachable'
 
@@ -2515,12 +2886,14 @@ components:
         A change of an issue's fields, a story's issues, an issue's blockers or an item's title and text, or a
         comment, is refused, with fixed words; what was sent is never repeated. EditNotAllowed (item, field, reason)
         when the body is not that change - not one JSON object of its size, a member unknown, missing or of another
-        kind, a value out of its bounds - or the change breaks the board: an issue or blocker named twice, an issue of
-        another story or a sub-issue of an issue hung into a story, a story the board shows only in part given a whole
+        kind, a value out of its bounds - or the change breaks the board: an issue or blocker named twice, a sub-issue
+        of an issue hung into a story, a story the board shows only in part given a whole
         list, an issue blocking itself, blockers that lead back to the issue, a comment opening with the planner's own
         marker `<!-- porelo:`, a title of more than one line, a part that would open a part of its own or leave a
         block open, a body grown past what the tracker takes, a body whose sections cannot be told apart, or an issue
-        made outside the project the board could not show once added, with what to repair. LabelNotAllowed (item,
+        made outside the project the board could not show once added, with what to repair. A refused text names the
+        part (part, its heading, or title), what is wrong in it (fault) and the line that holds it (found), the one
+        line of what was sent such a refusal repeats, so the caller repairs that part. LabelNotAllowed (item,
         label) when labels names a name outside the topic labels; label is the name got when it is a well-formed
         LabelName, the one thing sent that a refusal repeats, and empty otherwise. MoveNotAllowed (item, from, to, reason) when the store cannot write it, with the store's words, such as an
         issue a story holds only under Also needs in its body taken out, an issue that has a parent on the tracker
@@ -5966,3 +6339,391 @@ components:
               items:
                 type: string
                 maxLength: 1000
+            part:
+              type: string
+              description: >-
+                The text part a refused text write is about, by its heading as the text writes it (What must be true,
+                Plan), or `title`; empty when the write names no one part.
+            fault:
+              type: string
+              description: What is wrong in the part a refused text write names.
+              enum: [HEADING, LEAD, BLANK_LINE, CODE_BLOCK, HTML_COMMENT, OPEN_BLOCK, LENGTH, SECTIONS]
+            found:
+              type: string
+              description: >-
+                The line of the part that holds the fault, at most its first 200 characters; empty for LENGTH and
+                SECTIONS.
+            key:
+              type: string
+              description: The key of a new issue of a board change a KeyRefused or NoSuchKey refusal names.
+    Outline:
+      description: The board in short, as getOutline answers it.
+      type: object
+      required: [revision, stories, issues]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        stories:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutlineStory'
+        issues:
+          description: The issues no story names that are not sub-issues of an issue a story names.
+          type: array
+          items:
+            $ref: '#/components/schemas/OutlineIssue'
+    OutlineStory:
+      description: One story in short.
+      type: object
+      required: [id, title, state, priority, issues]
+      properties:
+        id:
+          $ref: '#/components/schemas/StoryId'
+        title:
+          type: string
+        state:
+          type: string
+        priority:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutlineIssue'
+    OutlineIssue:
+      description: One issue in short; size and priority are null where the board shows none.
+      type: object
+      required: [id, title, state, size, priority]
+      properties:
+        id:
+          $ref: '#/components/schemas/IssueId'
+        title:
+          type: string
+        state:
+          type: string
+        size:
+          type: [string, 'null']
+        priority:
+          type: [string, 'null']
+    TextParts:
+      description: >-
+        An issue's text by its parts, each by the name setIssueText writes it under; a part the text does not hold is
+        absent.
+      type: object
+      additionalProperties: false
+      properties:
+        covers:
+          type: string
+        whyThisSize:
+          type: string
+        whatMustBeTrue:
+          type: string
+        plan:
+          type: string
+        acceptance:
+          type: string
+        openQuestions:
+          type: string
+        toBeChecked:
+          type: string
+        findings:
+          type: string
+    IssueParts:
+      description: One issue with its fields and its text by parts.
+      type: object
+      required: [revision, version, id, repository, title, state, size, priority, worker, story, blockedBy, parts]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        version:
+          $ref: '#/components/schemas/Version'
+        id:
+          $ref: '#/components/schemas/IssueId'
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+        state:
+          type: string
+        size:
+          type: [string, 'null']
+        priority:
+          type: [string, 'null']
+        worker:
+          type: string
+        story:
+          description: The story that names the issue, or null when none does.
+          type: [string, 'null']
+        blockedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        parts:
+          description: The text's parts, or null when its sections cannot be told apart for certain.
+          oneOf:
+            - $ref: '#/components/schemas/TextParts'
+            - type: 'null'
+        text:
+          description: The whole text, given only when its parts are null.
+          type: string
+        fault:
+          description: The first thing to repair, given only when the parts are null.
+          type: string
+    Breaches:
+      description: The breaches of the stories' rules at a revision.
+      type: object
+      required: [revision, breaches]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        breaches:
+          type: array
+          items:
+            $ref: '#/components/schemas/Breach'
+    Breach:
+      description: One breach of a stories' rule, with the story it concerns and the issues it names.
+      type: object
+      required: [rule, story, issues, words]
+      properties:
+        rule:
+          type: string
+          enum: [IssueInNoStory, StoryPriorityBelowIssue]
+        story:
+          description: The story the breach concerns, or null for an issue in no story.
+          type: [string, 'null']
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        words:
+          type: string
+    SearchAnswer:
+      description: The items whose title or text holds every word searched for.
+      type: object
+      required: [revision, matches, more]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        matches:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/SearchMatch'
+        more:
+          type: boolean
+    SearchMatch:
+      description: One matching story or issue and where its words were found.
+      type: object
+      required: [id, kind, title, state, found]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [STORY, ISSUE]
+        title:
+          type: string
+        state:
+          type: string
+        found:
+          description: Where the words were found, `title`, a part's name or `text`, each once.
+          type: array
+          items:
+            type: string
+    StateMoves:
+      description: Issues each moved to a state.
+      type: object
+      additionalProperties: false
+      required: [moves]
+      properties:
+        moves:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/StateMove'
+    StateMove:
+      description: One issue moved to a state, each issue once in a batch.
+      type: object
+      additionalProperties: false
+      required: [issue, to]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        to:
+          type: string
+          minLength: 1
+          maxLength: 100
+        reason:
+          description: Why the issue is closed, taken only on a move into a closed state, as Move's reason.
+          type: string
+          maxLength: 2000
+    BoardChange:
+      description: New issues and changes of existing issues, applied in one call.
+      type: object
+      additionalProperties: false
+      properties:
+        creates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/NewItem'
+        updates:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ItemUpdate'
+    ItemKey:
+      description: A key of the caller's naming a new issue inside one body.
+      type: string
+      pattern: '^[A-Za-z0-9_-]{1,64}$'
+    ItemRef:
+      description: An existing issue's or story's id, or the key of a new issue of the same body.
+      type: string
+      minLength: 1
+      maxLength: 200
+    NewItem:
+      description: One new issue, written into the workflow's first state unless `state` names another.
+      type: object
+      additionalProperties: false
+      required: [key, repository, title, parts]
+      properties:
+        key:
+          $ref: '#/components/schemas/ItemKey'
+        repository:
+          $ref: '#/components/schemas/Name'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        parts:
+          description: The text by parts; whatMustBeTrue is required.
+          $ref: '#/components/schemas/TextParts'
+        size:
+          type: string
+          enum: [XS, S, M, L, XL]
+        state:
+          type: string
+          minLength: 1
+          maxLength: 100
+        priority:
+          $ref: '#/components/schemas/Priority'
+        worker:
+          $ref: '#/components/schemas/Worker'
+        story:
+          $ref: '#/components/schemas/ItemRef'
+        blockedBy:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ItemRef'
+    ItemUpdate:
+      description: >-
+        Changes of one existing issue; a member left out stays as it is, a part null is removed as setIssueText removes
+        it, and blockedBy is the whole new list.
+      type: object
+      additionalProperties: false
+      required: [issue]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        parts:
+          $ref: '#/components/schemas/TextParts'
+        size:
+          type: [string, 'null']
+          pattern: '^(XS|S|M|L|XL)$'
+        state:
+          type: string
+          minLength: 1
+          maxLength: 100
+        priority:
+          $ref: '#/components/schemas/Priority'
+        worker:
+          $ref: '#/components/schemas/Worker'
+        story:
+          $ref: '#/components/schemas/ItemRef'
+        blockedBy:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ItemRef'
+    ManyFields:
+      description: Fields of many issues and priorities of stories, set in one save.
+      type: object
+      additionalProperties: false
+      properties:
+        issues:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/IssueFieldsSet'
+        stories:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/StoryPrioritySet'
+    IssueFieldsSet:
+      description: One issue's fields to set; a member left out stays as it is, and at least one is named.
+      type: object
+      additionalProperties: false
+      required: [issue]
+      properties:
+        issue:
+          $ref: '#/components/schemas/IssueId'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        size:
+          type: [string, 'null']
+          pattern: '^(XS|S|M|L|XL)$'
+        story:
+          $ref: '#/components/schemas/StoryId'
+    StoryPrioritySet:
+      description: One story's priority to set.
+      type: object
+      additionalProperties: false
+      required: [story, priority]
+      properties:
+        story:
+          $ref: '#/components/schemas/StoryId'
+        priority:
+          $ref: '#/components/schemas/Priority'
+    BatchSaved:
+      description: What a batch saved and refused, per item, and the revision after it.
+      type: object
+      required: [revision, results]
+      properties:
+        revision:
+          $ref: '#/components/schemas/Revision'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemResult'
+    ItemResult:
+      description: >-
+        One item of a batch: SAVED when its change stands, UNCHANGED when it asked for what stood already, REFUSED with
+        the refusal as the call alone would have answered it.
+      type: object
+      required: [item, outcome]
+      properties:
+        item:
+          description: The item's id; for a new issue, its id when it stands, otherwise null.
+          type: [string, 'null']
+        key:
+          description: A new issue's key, as sent.
+          $ref: '#/components/schemas/ItemKey'
+        outcome:
+          type: string
+          enum: [SAVED, UNCHANGED, REFUSED]
+        state:
+          description: A moved issue's state after the batch.
+          type: string
+        raised:
+          description: For a story's priority, the issues raised with it.
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueId'
+        refusal:
+          $ref: '#/components/schemas/Problem'

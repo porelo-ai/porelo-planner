@@ -1,0 +1,2 @@
+title: The planner serves its own description at GET /openapi, each operation marked whether agents may call it as a tool.
+type: added

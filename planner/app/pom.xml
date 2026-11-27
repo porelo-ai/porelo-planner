@@ -66,6 +66,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Reads the description when the planner is built, to serve it as JSON. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
@@ -219,6 +224,23 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>${exec-maven-plugin.version}</version>
                 <executions>
+                    <!-- The description as JSON beside the classes, refused when an operation lacks its agent
+                         marker, so GET /openapi serves it without reading YAML. -->
+                    <execution>
+                        <id>description</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>org.fuin.porelo.planner.app.Description</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>${project.basedir}/src/main/resources/openapi/planner.yaml</argument>
+                                <argument>${project.build.outputDirectory}/openapi/planner.json</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>planner</id>
                         <goals>
