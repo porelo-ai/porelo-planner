@@ -149,7 +149,9 @@ final class BoundTypes {
                     org.fuin.porelo.planner.app.answers.WorkerSaved.class,
                     org.fuin.porelo.planner.app.answers.PrioritySaved.class,
                     org.fuin.porelo.planner.app.answers.IssueAdded.class,
-                    org.fuin.porelo.planner.app.answers.CorrectionSaved.class);
+                    org.fuin.porelo.planner.app.answers.CorrectionSaved.class,
+                    org.fuin.porelo.planner.app.answers.Board.class,
+                    org.fuin.porelo.planner.app.answers.BoardDelta.class);
 
     /** The forge client's JSON, whose mapper the executable's check reads with. */
     static final String FORGE_JSON = "org.fuin.porelo.forge.github.GitHubJson";

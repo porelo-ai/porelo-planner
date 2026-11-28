@@ -469,11 +469,11 @@ class NativeStartIT {
         }
     }
 
+    /** The image binds both the complete baseline and a sparse change through Spring MVC. */
     @Test
     @Tag("linux")
     void theNativeExecutableStreamsAPushMadeElsewhere(@TempDir final Path dir) throws Exception {
-        // The board goes out through the event stream, which no return type names; a native image
-        // told nothing of it would end the stream at its first event.
+        // Harm: the image can bind a filled Board but cannot send a sparse delta through MVC.
         final Path executable = Path.of(System.getProperty("planner.executable", "missing"));
         final Path runtime = RuntimeDirectories.create();
         final Path output = Files.createTempFile("porelo-planner-events", ".log");
@@ -497,13 +497,43 @@ class NativeStartIT {
                         Signing.stream(address, "/projects/alpha/events");
                 assertThat(stream.statusCode()).as("the stream's status" + log).isEqualTo(200);
                 final java.util.Iterator<String> lines = stream.body().iterator();
-                final String first = nextBoard(lines);
+                final tools.jackson.databind.json.JsonMapper json =
+                        tools.jackson.databind.json.JsonMapper.builder().build();
+                final tools.jackson.databind.JsonNode first =
+                        json.readTree(nextBoardEvent(lines, "board"));
+                assertThat(first.has("noStory")).as("the complete board includes noStory").isTrue();
                 project.pushElsewhere();
                 assertThat(call(address, "POST", "/projects/alpha/refresh", null))
                         .as("the refresh" + log)
                         .startsWith("200 ");
-                final String second = nextBoard(lines);
-                assertThat(second).as("a second board after the push").isNotEqualTo(first);
+                final tools.jackson.databind.JsonNode second =
+                        json.readTree(nextBoardEvent(lines, "change"));
+                assertThat(second.path("frame").asLong()).as("the first change frame").isEqualTo(1);
+                assertThat(second.path("after").asLong()).as("the initial board's frame").isZero();
+                assertThat(second.path("before").asString())
+                        .as("the preceding board revision")
+                        .isEqualTo(first.path("revision").asString());
+                assertThat(second.path("revision").asString())
+                        .as("the pushed revision")
+                        .isNotEqualTo(first.path("revision").asString());
+                assertThat(second.path("stories").size()).as("only the changed story").isEqualTo(1);
+                assertThat(second.at("/stories/0/id").asString())
+                        .as("the changed story")
+                        .isEqualTo("ST7");
+                final java.util.Set<String> members = new java.util.TreeSet<>();
+                second.properties().forEach(field -> members.add(field.getKey()));
+                assertThat(members)
+                        .as("only the changed story and counts beside the patch envelope")
+                        .containsExactlyInAnyOrder(
+                                "frame",
+                                "after",
+                                "before",
+                                "revision",
+                                "stories",
+                                "removedStories",
+                                "noStory",
+                                "removedIssues",
+                                "open");
                 stream.body().close();
             } finally {
                 stop(planner);
@@ -514,18 +544,23 @@ class NativeStartIT {
         }
     }
 
-    /** The data line of the next board event, read on with a bound, so a silent stream fails. */
-    private static String nextBoard(final java.util.Iterator<String> lines) throws Exception {
+    /** The next board or change data, read with a bound and held to its expected event kind. */
+    private static String nextBoardEvent(
+            final java.util.Iterator<String> lines, final String expected) throws Exception {
         final java.util.concurrent.FutureTask<String> read =
                 new java.util.concurrent.FutureTask<>(
                         () -> {
-                            boolean board = false;
+                            String event = "";
                             while (lines.hasNext()) {
                                 final String line = lines.next();
-                                if (line.equals("event:board")) {
-                                    board = true;
-                                } else if (board && line.startsWith("data:")) {
-                                    return line;
+                                if (line.startsWith("event:")) {
+                                    event = line.substring("event:".length());
+                                } else if ((event.equals("board") || event.equals("change"))
+                                        && line.startsWith("data:")) {
+                                    assertThat(event)
+                                            .as("the next board event's kind")
+                                            .isEqualTo(expected);
+                                    return line.substring("data:".length());
                                 }
                             }
                             throw new AssertionError("the stream ended without a board");

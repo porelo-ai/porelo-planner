@@ -40,7 +40,9 @@ class SerializationCheckTest {
                     Map.entry(org.fuin.porelo.planner.app.answers.IssueAdded.class, 3),
                     Map.entry(org.fuin.porelo.planner.app.answers.CorrectionSaved.class, 2),
                     Map.entry(org.fuin.porelo.planner.app.answers.Problem.class, 5),
-                    Map.entry(org.fuin.porelo.planner.app.answers.ProblemParameters.class, 31));
+                    Map.entry(org.fuin.porelo.planner.app.answers.ProblemParameters.class, 31),
+                    Map.entry(org.fuin.porelo.planner.app.answers.Board.class, 15),
+                    Map.entry(org.fuin.porelo.planner.app.answers.BoardDelta.class, 22));
 
     @Test
     void everyWriteAnswersVersionsSurviveTheSerializationCheck() {
@@ -146,6 +148,31 @@ class SerializationCheckTest {
                         .as("%s.%s holds a value", type.getSimpleName(), field.getName())
                         .isFalse();
             }
+        }
+    }
+
+    /** Both stream answers must retain their unassigned issues in a native image. */
+    @Test
+    void boardAndDeltaReadBackTheirUnassignedIssuesAndAllReplacementMembers() {
+        // Harm: a native stream loses noStory or a delta member while a shallow sample passes.
+        final tools.jackson.databind.json.JsonMapper json =
+                tools.jackson.databind.json.JsonMapper.builder().build();
+        for (final Class<?> type :
+                List.of(
+                        org.fuin.porelo.planner.app.answers.Board.class,
+                        org.fuin.porelo.planner.app.answers.BoardDelta.class)) {
+            final Object sample = SerializationCheck.sample(type);
+            final String written = json.writerFor(type).writeValueAsString(sample);
+            final Object read = json.readerFor(type).readValue(written);
+            assertThat(read).as("%s reads back whole", type.getSimpleName()).isEqualTo(sample);
+            final tools.jackson.databind.JsonNode tree = json.valueToTree(read);
+            assertThat(tree.path("noStory").size())
+                    .as("%s keeps an unassigned issue", type.getSimpleName())
+                    .isEqualTo(1);
+            assertThat(tree.at("/noStory/0/version").asString())
+                    .as("the issue's edit basis")
+                    .isNotEmpty();
+            assertThat(tree.at("/noStory/0/id").asString()).as("the issue's id").isNotEmpty();
         }
     }
 

@@ -4820,5 +4820,27 @@
     "rule" : "StoryPriorityBelowIssue",
     "words" : "ST193 has a lower priority than its open issue PJ106."
   } ],
-  "heldSaves" : [ ]
+  "heldSaves" : [ ],
+  "noStory" : [ {
+    "version" : "018f8e233e36b8f6e66288c5bc29148bfaaeea6a9e80eeb091878d02d45d60de",
+    "id" : "B900",
+    "repository" : "porelo",
+    "title" : "Planning work in no story",
+    "state" : "Backlog",
+    "size" : "S",
+    "priority" : "Medium",
+    "labels" : [ ],
+    "minutesLeft" : null,
+    "blockedBy" : [ ],
+    "waitsOn" : [ ],
+    "parent" : null,
+    "link" : "https://example.org/issues/B900",
+    "worker" : "AGENT",
+    "atWork" : false,
+    "needsYou" : false,
+    "readingStopped" : false,
+    "noRunHere" : false,
+    "attention" : "NONE",
+    "warnings" : [ ]
+  } ]
 }

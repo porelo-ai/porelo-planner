@@ -112,7 +112,13 @@ class AnswerRecordsTest {
         }
         assertThat(checked)
                 .as("the required, not nullable fields tried")
-                .contains("Health.status", "Issue.attention", "PlanWork.run", "Landing.commit");
+                .contains(
+                        "Health.status",
+                        "Issue.attention",
+                        "PlanWork.run",
+                        "Landing.commit",
+                        "BoardDelta.frame",
+                        "BoardDelta.after");
     }
 
     @Test
@@ -266,6 +272,9 @@ class AnswerRecordsTest {
         }
         if (raw == Integer.class) {
             return 1;
+        }
+        if (raw == Long.class) {
+            return 1L;
         }
         if (raw == Boolean.class) {
             return Boolean.TRUE;

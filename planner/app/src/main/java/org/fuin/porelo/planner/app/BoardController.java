@@ -1564,7 +1564,8 @@ public class BoardController {
                                                         breach.rule().spelled()),
                                                 breach.words()))
                         .toList(),
-                heldSaves);
+                heldSaves,
+                noStory(board, snapshot, counter.minutes(), issue -> true));
     }
 
     /**
@@ -1782,40 +1783,39 @@ public class BoardController {
         final AgentReads.Filters filters = PageReads.filters(request, false, name);
         return projects.work(name)
                 .view(
-                        (board, snapshot) -> {
-                            final Set<String> assigned = StoryRules.inStories(board);
-                            final Map<String, Double> minutes = OpenWork.minutesLeft(board);
-                            final List<org.fuin.porelo.planner.app.answers.Issue> issues =
-                                    board.issues().stream()
-                                            .filter(
-                                                    issue ->
-                                                            !assigned.contains(issue.id())
-                                                                    && filters.matches(issue))
-                                            // Priority and rank live in the store's order within
-                                            // each state.
-                                            .sorted(
-                                                    Comparator.comparingInt(
-                                                            issue -> place(board, issue.state())))
-                                            .map(
-                                                    issue ->
-                                                            WorkAnswers.issue(
-                                                                    board, issue, snapshot,
-                                                                    minutes))
-                                            .toList();
-                            return pages.read(
-                                    board,
-                                    name,
-                                    "issues",
-                                    filters,
-                                    List.of(),
-                                    request,
-                                    issues,
-                                    page ->
-                                            new IssueList(
-                                                    board.revision().value(),
-                                                    page.items(),
-                                                    page.next()));
-                        });
+                        (board, snapshot) ->
+                                pages.read(
+                                        board,
+                                        name,
+                                        "issues",
+                                        filters,
+                                        List.of(),
+                                        request,
+                                        noStory(
+                                                board,
+                                                snapshot,
+                                                OpenWork.minutesLeft(board),
+                                                filters::matches),
+                                        page ->
+                                                new IssueList(
+                                                        board.revision().value(),
+                                                        page.items(),
+                                                        page.next())));
+    }
+
+    /** Shares the unassigned rows and their order between the list and the stream. */
+    private static List<org.fuin.porelo.planner.app.answers.Issue> noStory(
+            final Board board,
+            final WorkRun.Snapshot snapshot,
+            final Map<String, Double> minutes,
+            final java.util.function.Predicate<Issue> selected) {
+        final Set<String> assigned = StoryRules.inStories(board);
+        return board.issues().stream()
+                .filter(issue -> !assigned.contains(issue.id()) && selected.test(issue))
+                // A stable state sort keeps the store's priority and rank within each state.
+                .sorted(Comparator.comparingInt(issue -> place(board, issue.state())))
+                .map(issue -> WorkAnswers.issue(board, issue, snapshot, minutes))
+                .toList();
     }
 
     /** A state's place in the workflow's order; one the workflow lacks comes after them all. */

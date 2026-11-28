@@ -83,6 +83,7 @@ class ApiMatchesDescriptionTest {
                     Map.entry("CorrectionConfirm", BoardController.CorrectionConfirm.class),
                     Map.entry("HeldIssue", org.fuin.porelo.planner.app.answers.HeldIssue.class),
                     Map.entry("Board", org.fuin.porelo.planner.app.answers.Board.class),
+                    Map.entry("BoardDelta", org.fuin.porelo.planner.app.answers.BoardDelta.class),
                     Map.entry("HeldSave", org.fuin.porelo.planner.app.answers.HeldSave.class),
                     Map.entry("HeldChange", org.fuin.porelo.planner.app.answers.HeldChange.class),
                     Map.entry("HeldTry", org.fuin.porelo.planner.app.answers.HeldTry.class),
@@ -484,7 +485,14 @@ class ApiMatchesDescriptionTest {
         final Set<String> answered = answered(description);
         assertThat(answered)
                 .as("the schemas the operations answer, nested ones too")
-                .contains("Health", "Board", "Issue", "PlanWork", "TaskEnded", "Landing");
+                .contains(
+                        "Health",
+                        "Board",
+                        "BoardDelta",
+                        "Issue",
+                        "PlanWork",
+                        "TaskEnded",
+                        "Landing");
         for (final String schema : answered) {
             if (!schemas.path(schema).has("properties") && !schemas.path(schema).has("allOf")) {
                 continue;
@@ -494,6 +502,45 @@ class ApiMatchesDescriptionTest {
                     .as("the package of the record answering %s", schema)
                     .isEqualTo(GENERATED);
         }
+    }
+
+    /** The stream's patches retain omitted members and can clear present ones. */
+    @Test
+    void boardChangesDescribeEveryReplacementAndItsPredecessor() {
+        // Harm: a generated patch silently loses a board member or its connection baseline.
+        final JsonNode board = description.at("/components/schemas/Board");
+        final JsonNode delta = description.at("/components/schemas/BoardDelta");
+        final Set<String> boardMembers = new TreeSet<>();
+        board.path("properties").fieldNames().forEachRemaining(boardMembers::add);
+        final Set<String> deltaMembers = new TreeSet<>();
+        delta.path("properties").fieldNames().forEachRemaining(deltaMembers::add);
+        assertThat(deltaMembers).as("every board member can change").containsAll(boardMembers);
+        assertThat(deltaMembers)
+                .as("the patch baseline, removals and orders")
+                .contains(
+                        "frame",
+                        "after",
+                        "before",
+                        "removedStories",
+                        "removedIssues",
+                        "storyOrder",
+                        "noStoryOrder");
+        assertThat(board.at("/properties/noStory/items/$ref").asText())
+                .as("the unassigned issue form")
+                .isEqualTo("#/components/schemas/Issue");
+        final Set<String> required = new TreeSet<>();
+        delta.path("required").forEach(field -> required.add(field.asText()));
+        assertThat(required)
+                .as("only the patch envelope and upsert lists are always sent")
+                .containsExactlyInAnyOrder(
+                        "frame",
+                        "after",
+                        "before",
+                        "revision",
+                        "stories",
+                        "removedStories",
+                        "noStory",
+                        "removedIssues");
     }
 
     /**
@@ -528,6 +575,12 @@ class ApiMatchesDescriptionTest {
         reached(
                 schemas,
                 new ObjectMapper().createObjectNode().put("$ref", "#/components/schemas/Board"),
+                answered);
+        reached(
+                schemas,
+                new ObjectMapper()
+                        .createObjectNode()
+                        .put("$ref", "#/components/schemas/BoardDelta"),
                 answered);
         return answered;
     }

@@ -256,11 +256,14 @@ paths:
       summary: Follow the board's changes
       description: >-
         Streams the project's board as Server-Sent Events: event `board`, its `id` the board's revision and its
-        `data` one `Board` object, first at once and then whenever the store revision or local work generation changes. Work-only
-        changes retain the revision, including a cancellation or Needs you. Saves, polls and `refresh` publish the
-        current board and work snapshot. A comment line `: keep-alive` comes every 15 s while nothing changes; a
-        reader that falls behind gets only the newest board. A reconnect, with `Last-Event-ID` or without, gets the
-        current board first. An unknown project is refused before the stream starts. While the store reads the board,
+        `data` one `Board` object, first on each connection as implicit frame 0. Each later changed answer is event
+        `change`, its `id` the new revision and its `data` one `BoardDelta`, taken against the last answer sent on
+        this connection. Work-only changes retain the revision, including a cancellation or Needs you. Saves,
+        polls and `refresh` publish the current board and work snapshot. An identical answer sends no event.
+        A comment line `: keep-alive` comes every 15 s while nothing changes; a reader that falls behind gets one
+        delta covering every skipped frame. Only sent board changes count as frames; load events and comments do
+        not count. A reconnect, with `Last-Event-ID` or without, gets the current whole board first. An unknown
+        project is refused before the stream starts. While the store reads the board,
         whole or by a look, event `load` tells the read's progress at least every 5 s, its `data` `{"state":
         "reading", "since", "read", "total", "lastRead", "from", "kind", "waitsFor"}`. `kind` is `whole` (also when it
         is absent) for a read of the whole board, item by item, a `refresh` told so from the moment it is asked, even
@@ -268,7 +271,7 @@ paths:
         held, whose `read` counts the items its list showed so far and whose `total` is the larger of the items the
         board holds and those listed so far. `waitsFor` is `save` while the read told waits for the project a save or
         comment of the planner holds, and absent otherwise. A reader ignores a `kind` or `waitsFor` it does not know:
-        an unknown `kind` counts as `whole`, an unknown `waitsFor` as absent. A read ends with its `board`, with
+        an unknown `kind` counts as `whole`, an unknown `waitsFor` as absent. A read ends with its `board` or `change`, with
         `load` `{"state": "done"}` when it
         changed nothing, or with `load` `{"state": "failed", "problem", "failure", "parameters"}`: before the first
         board this ends the stream, after it the stream stays and the board held stands. A local project's kept
@@ -285,7 +288,9 @@ paths:
             type: string
       responses:
         '200':
-          description: The stream of the project's boards; each event's data is a `Board`.
+          description: >-
+            The stream's first board data is a `Board`; subsequent change data is a `BoardDelta`; load data tells
+            read progress.
           content:
             text/event-stream:
               schema:
@@ -3599,10 +3604,10 @@ components:
     Board:
       description: >-
         The whole board at one revision, as an event of the stream carries it - the workflow, the project's
-        repositories and the stories.
+        repositories, the stories and the issues in no story.
       type: object
       required:
-        [revision, states, phases, work, faults, reasons, repositories, repositoryWarnings, stories, open, tracker, heldSaves]
+        [revision, states, phases, work, faults, reasons, repositories, repositoryWarnings, stories, open, tracker, heldSaves, noStory]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -3678,8 +3683,8 @@ components:
           description: >-
             Every breach of the stories' rules on this board, the stories' in the board's order and then the issues',
             the same rules whichever store keeps the project. Unlike `faults`, a breach leaves nothing out, and it is
-            only shown: no move, preview or save reads it, and none is refused or warned for it. Only the whole board
-            carries it; a window that reads none shows none.
+            only shown: no move, preview or save reads it, and none is refused or warned for it. The whole board
+            carries it, and a delta replaces the list when it changes; a window that reads none shows none.
           items:
             $ref: '#/components/schemas/RuleBreach'
         heldSaves:
@@ -3692,6 +3697,125 @@ components:
             until it is resent and written whole, or dropped.
           items:
             $ref: '#/components/schemas/HeldSave'
+        noStory:
+          type: array
+          description: >-
+            The issues in no story, directly or through a parent, exactly as listIssues with story=none answers
+            them at this revision: by workflow state, then the store's priority and rank, including warned rows
+            with duplicate ids.
+          items:
+            $ref: '#/components/schemas/Issue'
+
+    BoardDelta:
+      description: >-
+        The difference from the last Board answer sent on this connection. Apply only when both `after` and
+        `before` match the frame and revision held; otherwise read the whole Board again by reconnecting. The
+        initial Board is frame 0. Each sent change increments frame by one. The new revision can equal before
+        for a work-only change. Stories and noStory replace all rows of each id supplied, in occurrence order;
+        removed ids remove every row of that id. A changed group includes every current row of its id, preserving
+        duplicate ids. Order lists give the whole new order, repeating duplicate ids; consume each id's rows in
+        their supplied occurrence order. Without an order list retain the old order. Other absent members retain
+        their old values; present members replace them whole, including empty lists and false.
+      type: object
+      required: [frame, after, before, revision, stories, removedStories, noStory, removedIssues]
+      properties:
+        frame:
+          type: integer
+          format: int64
+          minimum: 1
+        after:
+          type: integer
+          format: int64
+          minimum: 0
+        before:
+          $ref: '#/components/schemas/Revision'
+        revision:
+          $ref: '#/components/schemas/Revision'
+        stories:
+          type: array
+          description: New or changed stories, each whole with its issues; empty when none changed.
+          items:
+            $ref: '#/components/schemas/Story'
+        removedStories:
+          type: array
+          items:
+            type: string
+        noStory:
+          type: array
+          description: New or changed issues in no story; empty when none changed.
+          items:
+            $ref: '#/components/schemas/Issue'
+        removedIssues:
+          type: array
+          description: Ids no longer in noStory, including issues that joined a story.
+          items:
+            type: string
+        storyOrder:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            type: string
+        noStoryOrder:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            type: string
+        states:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/State'
+        phases:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/Phase'
+        work:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkRule'
+        faults:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            type: string
+        reasons:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: boolean
+        repositories:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/Name'
+        repositoryWarnings:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/RepositoryWarning'
+        unlisted:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/UnlistedIssue'
+        open:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/OpenWork'
+        rules:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleBreach'
+        heldSaves:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          type: array
+          items:
+            $ref: '#/components/schemas/HeldSave'
+        tracker:
+          x-field-extra-annotation: '@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)'
+          allOf:
+            - $ref: '#/components/schemas/Tracker'
 
     RuleBreach:
       description: >-

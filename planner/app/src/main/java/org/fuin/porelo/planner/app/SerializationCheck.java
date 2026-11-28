@@ -171,11 +171,45 @@ final class SerializationCheck {
      * @return its sample
      */
     static Object sample(final Class<?> type) {
+        if (type == org.fuin.porelo.planner.app.answers.BoardDelta.class) {
+            return boardDelta();
+        }
         return type == CommandOutbox.Document.class
                 ? outbox()
                 : type == WorkRecord.Document.class
                         ? workRecord()
                         : Objects.requireNonNull(fill(type, 0), type.getName());
+    }
+
+    /** A stream delta with every replacement filled and consecutive connection frames. */
+    private static org.fuin.porelo.planner.app.answers.BoardDelta boardDelta() {
+        final org.fuin.porelo.planner.app.answers.BoardDelta filled =
+                (org.fuin.porelo.planner.app.answers.BoardDelta)
+                        Objects.requireNonNull(
+                                fill(org.fuin.porelo.planner.app.answers.BoardDelta.class, 0));
+        return new org.fuin.porelo.planner.app.answers.BoardDelta(
+                1L,
+                0L,
+                "before",
+                "after",
+                filled.stories(),
+                filled.removedStories(),
+                filled.noStory(),
+                filled.removedIssues(),
+                filled.storyOrder(),
+                filled.noStoryOrder(),
+                filled.states(),
+                filled.phases(),
+                filled.work(),
+                filled.faults(),
+                filled.reasons(),
+                filled.repositories(),
+                filled.repositoryWarnings(),
+                filled.unlisted(),
+                filled.open(),
+                filled.rules(),
+                filled.heldSaves(),
+                filled.tracker());
     }
 
     /**

@@ -1,0 +1,2 @@
+title: The changes stream sends a whole board on connection and only changed stories, unassigned issues and board members afterward.
+type: changed

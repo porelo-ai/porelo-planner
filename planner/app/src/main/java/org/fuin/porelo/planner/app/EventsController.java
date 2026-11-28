@@ -249,9 +249,11 @@ public class EventsController {
             final PlanningStore store,
             final String name) {
         try {
+            final BoardChanges sent = new BoardChanges();
             // A project given anew in the meantime has closed it; its old board is not sent.
             if (subscription.open()) {
-                board(emitter, subscription.firstFrame(), store.tracker(), helds.in(name));
+                sent.send(
+                        emitter, board(subscription.firstFrame(), store.tracker(), helds.in(name)));
             }
             final Duration step = keepAlive.compareTo(LOAD_EVERY) < 0 ? keepAlive : LOAD_EVERY;
             Instant lastSent = Instant.now();
@@ -274,12 +276,22 @@ public class EventsController {
                 }
                 final Optional<ChangesRegistry.ReadFailure> failed = changes.lastFailure(name);
                 final Instant since = readSince;
-                if (next.isEmpty()
-                        && !readsNow
-                        && reading
-                        && failed.isPresent()
-                        && failed.get().at().isAfter(since)) {
-                    // A read that failed after the first board: its problem, and the stream stays.
+                final boolean changed =
+                        next.isPresent()
+                                && sent.send(
+                                        emitter,
+                                        board(next.get(), store.tracker(), helds.in(name)));
+                final boolean readFailed =
+                        !readsNow
+                                && reading
+                                && failed.isPresent()
+                                && failed.get().at().isAfter(since);
+                if (changed) {
+                    lastSent = Instant.now();
+                }
+                if (readFailed) {
+                    // A read that failed after the first board: its problem, and the stream stays;
+                    // told after a change that arrived in the same step, never instead of it.
                     emitter.send(
                             SseEmitter.event()
                                     .name("load")
@@ -287,9 +299,8 @@ public class EventsController {
                                             failure(failed.get().cause()),
                                             MediaType.APPLICATION_JSON));
                     lastSent = Instant.now();
-                } else if (next.isPresent()) {
-                    board(emitter, next.get(), store.tracker(), helds.in(name));
-                    lastSent = Instant.now();
+                } else if (changed) {
+                    // The change was this step's word; no progress, end or keep-alive follows it.
                 } else if (readsNow) {
                     load(emitter, store, Instant.now());
                     lastSent = Instant.now();
@@ -317,29 +328,18 @@ public class EventsController {
         }
     }
 
-    private static void board(
-            final SseEmitter emitter,
+    private static Board board(
             final Changes.Frame frame,
             final org.fuin.porelo.planner.store.Tracker tracker,
-            final TaskHelds.Counts held)
-            throws IOException {
-        emitter.send(
-                SseEmitter.event()
-                        .name("board")
-                        .id(frame.board().revision().value())
-                        .data(
-                                BoardController.boardOf(
-                                        held,
-                                        frame.board(),
-                                        frame.work(),
-                                        frame.reasons(),
-                                        tracker,
-                                        frame.held().stream()
-                                                .map(
-                                                        org.fuin.porelo.planner.app.answers.HeldSave
-                                                                        .class
-                                                                ::cast)
-                                                .toList()),
-                                MediaType.APPLICATION_JSON));
+            final TaskHelds.Counts held) {
+        return BoardController.boardOf(
+                held,
+                frame.board(),
+                frame.work(),
+                frame.reasons(),
+                tracker,
+                frame.held().stream()
+                        .map(org.fuin.porelo.planner.app.answers.HeldSave.class::cast)
+                        .toList());
     }
 }
