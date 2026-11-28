@@ -35,6 +35,10 @@ abstract final class PlanningStyle {
   /// The width of a filter above the board.
   static const double filter = 200;
 
+  /// The least width at which the board's toolbar keeps its filters in the same row as its controls: room for the
+  /// info, two choices and the open search at the filter's width, three buttons and some of the filters.
+  static const double toolbarRow = 1040;
+
   /// A mark beside a line of text.
   static const double mark = 16;
 

@@ -270,7 +270,7 @@ void main() {
     final board = boards.sources.single;
     expect(board.fetching, isTrue);
     expect(board.saving, isFalse, reason: 'a change made during the read is saved at once');
-    expect(tester.widget<TextButton>(find.byKey(const Key('planning-reload'))).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.byKey(const Key('planning-reload'))).onPressed, isNull);
 
     // The planner answers at once and reads behind its answer, telling the read on the watch a moment later.
     backend.read.complete();
@@ -285,14 +285,14 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('planning-waiting'))).data,
       'Loading the planning from GitHub: 300 of 1,384 entries',
     );
-    expect(tester.widget<TextButton>(find.byKey(const Key('planning-reload'))).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.byKey(const Key('planning-reload'))).onPressed, isNull);
 
     // The read changed nothing: the planner says it is done, without a board.
     backend.load.value = null;
     await settle(tester);
 
     expect(find.byKey(const Key('planning-load-bar')), findsNothing);
-    expect(tester.widget<TextButton>(find.byKey(const Key('planning-reload'))).onPressed, isNotNull);
+    expect(tester.widget<IconButton>(find.byKey(const Key('planning-reload'))).onPressed, isNotNull);
   });
 
   // Harm: a planner that tells nothing behind its answer leaves the bar running for good.
@@ -321,7 +321,7 @@ void main() {
     await settle(tester);
 
     expect(find.byKey(const Key('planning-load-bar')), findsNothing);
-    expect(tester.widget<TextButton>(find.byKey(const Key('planning-reload'))).onPressed, isNotNull);
+    expect(tester.widget<IconButton>(find.byKey(const Key('planning-reload'))).onPressed, isNotNull);
   });
 
   // Harm: a background read that failed is not said, so the person trusts a board the planner could not refresh.

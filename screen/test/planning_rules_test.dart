@@ -92,7 +92,7 @@ void main() {
   testWidgets('the board lists each breach above the columns and marks the cards that hold one', (tester) async {
     await _shown(tester, _board());
 
-    expect(find.text('2 breaches of the stories’ rules — show'), findsOneWidget, reason: 'two breaches, one line');
+    expect(find.text('2 notes'), findsOneWidget, reason: 'two breaches behind one marker');
     await tester.tap(find.byKey(const Key('planning-rules')));
     await settle(tester);
     expect(

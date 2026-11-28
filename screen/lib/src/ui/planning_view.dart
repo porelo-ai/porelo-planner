@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../client.dart';
 import '../forge_access_offer.dart';
@@ -330,6 +331,9 @@ class _BoardView extends StatefulWidget {
 
 class _BoardViewState extends State<_BoardView> {
   late final _search = TextEditingController(text: board.preferences.search);
+
+  /// Whether the search field is open; it opens on its button, and stands open while a search is kept.
+  late bool _searchOpen = board.preferences.search.isNotEmpty;
   Key _project = UniqueKey();
   bool _faultsOpen = false;
   bool _rulesOpen = false;
@@ -604,11 +608,10 @@ class _BoardViewState extends State<_BoardView> {
     if (host.place.filter != filter) host.go(host.place.copyWith(filter: () => filter));
   }
 
-  /// The row of filters, each with the stories it keeps; while the figures are stale no count is told.
-  Widget _filterRow(BuildContext context) {
+  /// The filter chips, each with the stories it keeps; while the figures are stale no count is told.
+  List<Widget> _chips(BuildContext context) {
     final listed = _listed();
     final counts = _filters.counts(listed);
-    final unknown = listed.where((story) => story.open == null).length;
     String count(PlanningFilterCount? count) => !_known || count == null
         ? '?'
         : count.partial
@@ -669,46 +672,238 @@ class _BoardViewState extends State<_BoardView> {
       );
     }
 
-    return Wrap(
-      key: const Key('planning-filters'),
-      spacing: Space.small,
-      runSpacing: Space.small,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        const Text('Show stories with'),
-        chip(null, 'All', '${listed.length}', 'Every story: ${listed.length}'),
-        for (final filter in _filters.filters)
-          chip(
-            filter,
-            switch (filter) {
-              PlanningFilter.openWork => 'Open work',
-              PlanningFilter.review => 'Needs your review',
-              PlanningFilter.blocked => 'Blocked',
-              PlanningFilter.implementing => 'Implementing',
-              PlanningFilter.analysis => 'In analysis',
-              PlanningFilter.backlog => 'Backlog',
-              PlanningFilter.estimated => 'Estimated',
-              PlanningFilter.idea => 'Idea',
-            },
-            count(counts[filter]),
-            hint(filter, counts[filter]),
-          ),
-        if (_known && unknown > 0)
-          Text(
-            'The open work of $unknown ${unknown == 1 ? 'story is' : 'stories are'} not known.',
-            key: const Key('planning-filter-partial'),
-          ),
-        if (!_known && widget.filter != null)
-          const Text(
-            'The open work is not known now, so every story is shown until the planner says it again.',
-            key: Key('planning-filter-stale'),
-          ),
-      ],
-    );
+    return [
+      chip(null, 'All', '${listed.length}', 'Every story: ${listed.length}'),
+      for (final filter in _filters.filters)
+        chip(
+          filter,
+          switch (filter) {
+            PlanningFilter.openWork => 'Open work',
+            PlanningFilter.review => 'Needs your review',
+            PlanningFilter.blocked => 'Blocked',
+            PlanningFilter.implementing => 'Implementing',
+            PlanningFilter.analysis => 'In analysis',
+            PlanningFilter.backlog => 'Backlog',
+            PlanningFilter.estimated => 'Estimated',
+            PlanningFilter.idea => 'Idea',
+          },
+          count(counts[filter]),
+          hint(filter, counts[filter]),
+        ),
+    ];
   }
 
-  /// The board's open work as the planner counted it, over every story and issue; unknown while stale.
-  Widget _summary(BuildContext context) {
+  /// What the filters cannot tell now, each a line below the figures.
+  List<Widget> _filterNotes() {
+    final unknown = _listed().where((story) => story.open == null).length;
+    return [
+      if (_known && unknown > 0)
+        Text(
+          'The open work of $unknown ${unknown == 1 ? 'story is' : 'stories are'} not known.',
+          key: const Key('planning-filter-partial'),
+        ),
+      if (!_known && widget.filter != null)
+        const Text(
+          'The open work is not known now, so every story is shown until the planner says it again.',
+          key: Key('planning-filter-stale'),
+        ),
+    ];
+  }
+
+  /// The board's one toolbar row: its own info, the window's page button, the state filters scrolling sideways, then
+  /// the project and priority choices, search, reload and the board's menu. Below [PlanningStyle.toolbarRow] the
+  /// buttons stay in the first row, the choices and an open search share a row of their own and the filters scroll in
+  /// a third, so every control stays reachable down to phone width.
+  Widget _toolbar(BuildContext context) => LayoutBuilder(
+    builder: (context, room) {
+      final narrow = room.maxWidth < PlanningStyle.toolbarRow;
+      final lead = <Widget>[
+        Tooltip(
+          key: const Key('planning-board-info'),
+          message:
+              'The stories of project ${board.project} by state, the most important first.\n'
+              'From ${board.backend.label}',
+          triggerMode: TooltipTriggerMode.tap,
+          child: const Padding(
+            padding: EdgeInsets.all(Space.small),
+            child: Icon(Icons.info_outline, size: PlanningStyle.rowIcon + 2),
+          ),
+        ),
+        ?widget.pageButton,
+      ];
+      final chips = _offered
+          ? Semantics(
+              label: 'Show stories with',
+              container: true,
+              child: SingleChildScrollView(
+                key: const Key('planning-filters'),
+                scrollDirection: Axis.horizontal,
+                child: Row(spacing: Space.small, children: _chips(context)),
+              ),
+            )
+          : null;
+      final (choices, buttons) = _controls(narrow: narrow);
+      if (!narrow) {
+        return Row(
+          key: const Key('planning-toolbar'),
+          spacing: Space.small,
+          children: [
+            ...lead,
+            Expanded(child: chips ?? const SizedBox.shrink()),
+            ...choices,
+            ...buttons,
+          ],
+        );
+      }
+      return Column(
+        key: const Key('planning-toolbar'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: Space.small,
+        children: [
+          Row(spacing: Space.tight, children: [...lead, const Spacer(), ...buttons]),
+          if (choices.isNotEmpty) Row(spacing: Space.small, children: choices),
+          ?chips,
+        ],
+      );
+    },
+  );
+
+  /// The toolbar's choices (project, priority and the open search) and its buttons (search, reload and the board's
+  /// menu); a choice takes a fixed width, or at phone width an equal share of its own row.
+  (List<Widget>, List<Widget>) _controls({required bool narrow}) {
+    Widget sized(Widget child, {Key? key}) =>
+        narrow ? Expanded(key: key, child: child) : SizedBox(key: key, width: PlanningStyle.filter, child: child);
+    const dense = InputDecoration(
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: Space.normal, vertical: Space.small),
+      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(Space.wide))),
+    );
+    final choices = <Widget>[
+      if (widget.projects.length > 1)
+        sized(
+          key: const Key('planning-project'),
+          DropdownButtonFormField<String>(
+            key: _project,
+            initialValue: board.project,
+            decoration: dense.copyWith(labelText: 'Project'),
+            isExpanded: true,
+            items: [for (final name in widget.projects) DropdownMenuItem(value: name, child: Text(name))],
+            onChanged: board.saving
+                ? null
+                : (name) async {
+                    if (name != null &&
+                        name != board.project &&
+                        await confirmPlanningLeave(context, [board]) &&
+                        mounted) {
+                      widget.select(name);
+                    } else if (mounted) {
+                      setState(() => _project = UniqueKey());
+                    }
+                  },
+          ),
+        ),
+      sized(
+        Semantics(
+          label: 'Priority',
+          child: DropdownButtonFormField<PlanningPriority>(
+            key: const Key('planning-priority'),
+            initialValue: board.preferences.priority,
+            decoration: dense,
+            isExpanded: true,
+            selectedItemBuilder: (context) => [
+              for (final priority in PlanningPriority.values)
+                Text('Priority: ${priority.label}', maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+            items: [
+              for (final priority in PlanningPriority.values)
+                DropdownMenuItem(value: priority, child: Text(priority.label)),
+            ],
+            onChanged: (priority) {
+              if (priority != null) board.filter(priority);
+            },
+          ),
+        ),
+      ),
+      if (_searchOpen)
+        sized(
+          CallbackShortcuts(
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _clearSearch},
+            child: TextField(
+              key: const Key('planning-search'),
+              controller: _search,
+              autofocus: true,
+              onChanged: _searchFor,
+              decoration: dense.copyWith(
+                labelText: 'Search',
+                floatingLabelBehavior: FloatingLabelBehavior.never,
+                hintText: 'Story ID or a word',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  key: const Key('planning-search-close'),
+                  tooltip: 'Close the search',
+                  icon: const Icon(Icons.close),
+                  onPressed: _closeSearch,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
+    final buttons = <Widget>[
+      if (!_searchOpen)
+        IconButton(
+          key: const Key('planning-search-open'),
+          tooltip: 'Search stories',
+          icon: const Icon(Icons.search),
+          onPressed: () => setState(() => _searchOpen = true),
+        ),
+      if (board.snapshot != null || board.problem != null)
+        IconButton(
+          key: const Key('planning-reload'),
+          tooltip: 'Reload planning',
+          onPressed: board.reloadHeld ? null : () => unawaited(board.reloadPlanning()),
+          icon: const Icon(Icons.refresh),
+        ),
+      PlanningActionMenu(
+        key: const Key('planning-board-menu'),
+        tooltip: 'Planning of ${board.project}',
+        actions: [
+          PlanningAction(
+            id: 'planning-discuss-idea',
+            label: 'Discuss an idea…',
+            unavailable:
+                board.unavailableActions['DiscussIdea'] ?? (board.discussing ? 'waiting for the planner' : null),
+            run: () => unawaited(_discuss()),
+          ),
+          PlanningAction(
+            id: 'planning-new-issue',
+            label: 'New issue…',
+            unavailable: board.newIssueUnavailable,
+            run: () => unawaited(_newIssue()),
+          ),
+        ],
+      ),
+    ];
+    return (choices, buttons);
+  }
+
+  /// Ends the search: the field closes and the board shows every story again.
+  void _closeSearch() {
+    _search.clear();
+    _searchFor('');
+    setState(() => _searchOpen = false);
+  }
+
+  /// Clears the search and keeps its field open, as Escape does in Open work's filter.
+  void _clearSearch() {
+    _search.clear();
+    _searchFor('');
+    setState(() {});
+  }
+
+  /// The board's open work as the planner counted it, over every story and issue, in one plain line with the notes'
+  /// marker and a Reload's read at its end; unknown while stale.
+  Widget _summary(BuildContext context, ThemeData theme) {
     final shown = [
       for (final story in _listed())
         if (_filters.keeps(story, _applied)) story,
@@ -717,7 +912,6 @@ class _BoardViewState extends State<_BoardView> {
     final review = _filters.storyReview;
     final reviewed = review == null ? null : board.stories.where((story) => story.state == review).length;
     final open = _known ? board.snapshot?.open : null;
-    final theme = Theme.of(context);
     final colors = theme.colorScheme;
     String figure(int? count) => count == null ? '?' : '$count';
     final time = open != null && open.left == 0
@@ -741,37 +935,64 @@ class _BoardViewState extends State<_BoardView> {
       ),
       style: TextStyle(color: color),
     );
-    return Container(
+    return Wrap(
       key: const Key('planning-summary'),
-      padding: const EdgeInsets.symmetric(horizontal: Space.wide, vertical: Space.normal),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border.all(color: colors.outlineVariant),
-        borderRadius: BorderRadius.circular(PlanningStyle.radiusMedium),
-      ),
-      child: Wrap(
-        spacing: Space.wide * 1.5,
-        runSpacing: Space.small,
-        children: [
-          part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown'),
-          part('left', figure(open?.left), 'issues still to build'),
-          Text(time, key: const Key('planning-summary time')),
-          part(
-            'review',
-            _known && reviewed != null ? '$reviewed' : '?',
-            reviewed == 1 ? 'story waits for your review' : 'stories wait for your review',
-            color: planningStateColor(PlanningStateKind.review, colors),
-          ),
-          part(
-            'blocked',
-            figure(open?.blocked),
-            'blocked',
-            color: planningStateColor(PlanningStateKind.blocked, colors),
-          ),
-        ],
-      ),
+      spacing: Space.wide,
+      runSpacing: Space.tight,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown'),
+        part('left', figure(open?.left), 'issues still to build'),
+        Text(time, key: const Key('planning-summary time')),
+        part(
+          'review',
+          _known && reviewed != null ? '$reviewed' : '?',
+          reviewed == 1 ? 'story waits for your review' : 'stories wait for your review',
+          color: planningStateColor(PlanningStateKind.review, colors),
+        ),
+        part('blocked', figure(open?.blocked), 'blocked', color: planningStateColor(PlanningStateKind.blocked, colors)),
+        if (board.rules.isNotEmpty) _notesMarker(theme),
+        _reloadProgress(),
+      ],
     );
   }
+
+  /// A Reload's read of the whole board at the end of the figures' line, one line high so the line keeps its height,
+  /// and only once it takes longer than a moment; a look for changes on a live board is words alone, no bar, so it
+  /// never reads as a load.
+  Widget _reloadProgress() => board.lookingLive && !board.fetching
+      ? ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
+          child: Text(
+            board.loading!.words,
+            key: const Key('planning-look'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        )
+      : _SlowProgress(
+          active: board.fetching || board.loading != null,
+          child: SizedBox(
+            width: PlanningStyle.filter,
+            child: Row(
+              spacing: Space.small,
+              children: [
+                SizedBox(
+                  width: PlanningStyle.progress,
+                  child: LinearProgressIndicator(key: const Key('planning-load-bar'), value: board.loading?.done),
+                ),
+                Expanded(
+                  child: Text(
+                    board.loading?.words ?? 'Loading the planning…',
+                    key: const Key('planning-waiting'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
 
   /// A card's open work from the story's own figures: its state bar, a badge per open state and what is left.
   Widget _openWork(BuildContext context, PlanStory story) {
@@ -950,108 +1171,14 @@ class _BoardViewState extends State<_BoardView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        spacing: Space.small,
-                        children: [
-                          Text('Board', style: theme.textTheme.headlineSmall),
-                          ?widget.pageButton,
-                        ],
-                      ),
                       ?widget.pageNote,
-                      Text('The stories of project ${board.project} by state, the most important first.'),
-                      Text('From ${board.backend.label}', style: theme.textTheme.bodySmall),
                       ItemsDirectoryHeader(board: board, choose: widget.chooseDirectory),
                       PlanningRepositoryWarnings(board: board),
-                      const SizedBox(height: Space.normal),
-                      Wrap(
-                        spacing: Space.normal,
-                        runSpacing: Space.small,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (widget.projects.length > 1)
-                            SizedBox(
-                              key: const Key('planning-project'),
-                              width: PlanningStyle.filter,
-                              child: DropdownButtonFormField<String>(
-                                key: _project,
-                                initialValue: board.project,
-                                decoration: const InputDecoration(labelText: 'Project'),
-                                isExpanded: true,
-                                items: [
-                                  for (final name in widget.projects) DropdownMenuItem(value: name, child: Text(name)),
-                                ],
-                                onChanged: board.saving
-                                    ? null
-                                    : (name) async {
-                                        if (name != null &&
-                                            name != board.project &&
-                                            await confirmPlanningLeave(context, [board]) &&
-                                            mounted) {
-                                          widget.select(name);
-                                        } else if (mounted) {
-                                          setState(() => _project = UniqueKey());
-                                        }
-                                      },
-                              ),
-                            ),
-                          SizedBox(
-                            width: PlanningStyle.filter,
-                            child: DropdownButtonFormField<PlanningPriority>(
-                              key: const Key('planning-priority'),
-                              initialValue: board.preferences.priority,
-                              decoration: const InputDecoration(labelText: 'Priority'),
-                              isExpanded: true,
-                              items: [
-                                for (final priority in PlanningPriority.values)
-                                  DropdownMenuItem(value: priority, child: Text(priority.label)),
-                              ],
-                              onChanged: (priority) {
-                                if (priority != null) board.filter(priority);
-                              },
-                            ),
-                          ),
-                          SizedBox(
-                            width: PlanningStyle.filter,
-                            child: TextField(
-                              key: const Key('planning-search'),
-                              controller: _search,
-                              onChanged: _searchFor,
-                              decoration: const InputDecoration(
-                                labelText: 'Search',
-                                hintText: 'Story ID or a word',
-                                prefixIcon: Icon(Icons.search),
-                              ),
-                            ),
-                          ),
-                          PlanningActionMenu(
-                            key: const Key('planning-board-menu'),
-                            tooltip: 'Planning of ${board.project}',
-                            actions: [
-                              PlanningAction(
-                                id: 'planning-discuss-idea',
-                                label: 'Discuss an idea…',
-                                unavailable:
-                                    board.unavailableActions['DiscussIdea'] ??
-                                    (board.discussing ? 'waiting for the planner' : null),
-                                run: () => unawaited(_discuss()),
-                              ),
-                              PlanningAction(
-                                id: 'planning-new-issue',
-                                label: 'New issue…',
-                                unavailable: board.newIssueUnavailable,
-                                run: () => unawaited(_newIssue()),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                      _toolbar(context),
                       if (_added case final added?) Text(added, key: const Key('planning-new-issue-added')),
-                      if (_offered) ...[
-                        const SizedBox(height: Space.normal),
-                        _filterRow(context),
-                        const SizedBox(height: Space.normal),
-                        _summary(context),
-                      ],
+                      if (_offered) ...[_summary(context, theme), ..._filterNotes()],
+                      if (!_offered && board.rules.isNotEmpty) _notesMarker(theme),
+                      if (_rulesOpen && board.rules.isNotEmpty) _notes(theme),
                       for (final problem in widget.providerProblems) _failure(problem, theme),
                       if (board.catchingUp)
                         const Text('Catching up with the planner’s changes…', key: Key('planning-catching-up')),
@@ -1071,7 +1198,6 @@ class _BoardViewState extends State<_BoardView> {
                           padding: const EdgeInsets.symmetric(vertical: Space.small),
                           child: _problem(problem, theme),
                         ),
-                      if (board.rules.isNotEmpty) _rules(theme),
                       if (board.noStoryProblem case final problem?)
                         _failure('Issues in no story: $problem', theme, key: const Key('planning-no-story-error')),
                       if (board.readProblem case final problem?)
@@ -1082,34 +1208,8 @@ class _BoardViewState extends State<_BoardView> {
                         _failure(problem, theme, key: const Key('planning-move-error')),
                       if (board.moveNotice case final notice?) Text(notice, key: const Key('planning-move-notice')),
                       ForgeAccessOffer(board: board, host: widget.host, provider: widget.machines[board] ?? ''),
-                      if (board.snapshot != null || board.problem != null)
-                        Row(
-                          spacing: Space.wide,
-                          children: [
-                            TextButton.icon(
-                              key: const Key('planning-reload'),
-                              onPressed: board.reloadHeld ? null : () => unawaited(board.reloadPlanning()),
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Reload planning'),
-                            ),
-                            // A Reload's read of the whole board, beside its button so the board below never moves,
-                            // and only once it takes longer than a moment.
-                            Expanded(
-                              child: board.lookingLive && !board.fetching
-                                  // A look for changes on a live board: a line, no bar, so it never reads as a load.
-                                  ? Text(
-                                      board.loading!.words,
-                                      key: const Key('planning-look'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    )
-                                  : _SlowProgress(
-                                      active: board.fetching || board.loading != null,
-                                      child: _loadProgress(board.loading, line: true),
-                                    ),
-                            ),
-                          ],
-                        ),
+                      // Without the figures' line, a Reload's read stands on a line of its own.
+                      if (!_offered && (board.snapshot != null || board.problem != null)) _reloadProgress(),
                       PlanningMoveWarningPanel(key: _panel, board: board, buttons: false),
                       if (board.snapshot == null && board.problem == null)
                         switch (board.loading) {
@@ -1234,38 +1334,64 @@ class _BoardViewState extends State<_BoardView> {
 
   /// The breaches of the stories' rules above the board: one is said whole, several take one line until the person
   /// opens them. They are no failure, so they are not in the error colour.
-  Widget _rules(ThemeData theme) {
-    final rules = board.rules;
-    final words = [for (final breach in rules) planningShown(breach.words, multiline: false)];
+  /// The board's planning notes, its breaches of the stories' rules, behind a small marker that counts them.
+  Widget _notesMarker(ThemeData theme) {
+    final count = board.rules.length;
     final colour = theme.colorScheme.tertiary;
-    Widget line(String text, {Key? key}) => Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.rule, size: PlanningStyle.mark, color: colour),
-        const SizedBox(width: Space.small),
-        Flexible(child: Text(text, key: key)),
-      ],
-    );
-    if (words.length == 1) return line(words.single, key: const Key('planning-rules'));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          key: const Key('planning-rules'),
-          onTap: () => setState(() => _rulesOpen = !_rulesOpen),
-          child: line('${words.length} breaches of the stories’ rules — ${_rulesOpen ? 'hide' : 'show'}'),
-        ),
-        if (_rulesOpen)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [for (final (at, text) in words.indexed) Text(text, key: Key('planning-rule-line $at'))],
-              ),
-            ),
+    return Tooltip(
+      message: _rulesOpen ? 'Hide the planning notes' : 'Show the planning notes',
+      child: InkWell(
+        key: const Key('planning-rules'),
+        borderRadius: BorderRadius.circular(Space.normal),
+        onTap: () => setState(() => _rulesOpen = !_rulesOpen),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: Space.small, vertical: 2),
+          decoration: BoxDecoration(
+            color: colour.withValues(alpha: 0.08),
+            border: Border.all(color: colour.withValues(alpha: 0.5)),
+            borderRadius: BorderRadius.circular(Space.normal),
           ),
-      ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: Space.tight,
+            children: [
+              Icon(Icons.rule, size: PlanningStyle.mark, color: colour),
+              Text(
+                '$count ${count == 1 ? 'note' : 'notes'}',
+                style: theme.textTheme.labelMedium?.copyWith(color: colour),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The planning notes the marker opened, each in the planner's words.
+  Widget _notes(ThemeData theme) {
+    final words = [for (final breach in board.rules) planningShown(breach.words, multiline: false)];
+    final colour = theme.colorScheme.tertiary;
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.tight),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: PlanningStyle.column),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (at, text) in words.indexed)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: Space.small,
+                  children: [
+                    Icon(Icons.rule, size: PlanningStyle.mark, color: colour),
+                    Flexible(child: Text(text, key: Key('planning-rule-line $at'))),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

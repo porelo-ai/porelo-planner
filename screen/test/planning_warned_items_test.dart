@@ -79,6 +79,15 @@ Future<PlanningBoards> _show(
 String _tooltip(WidgetTester tester, String key) =>
     tester.widget<Tooltip>(find.ancestor(of: find.byKey(Key(key)), matching: find.byType(Tooltip)).first).message!;
 
+/// Types into the board's search, opening its field from the search button first.
+Future<void> _search(WidgetTester tester, String text) async {
+  if (find.byKey(const Key('planning-search')).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('planning-search-open')));
+    await tester.pump();
+  }
+  await tester.enterText(find.byKey(const Key('planning-search')), text);
+}
+
 void main() {
   // Harm: a planner that serves a story whose state cannot be told, or an issue in a state the workflow lacks,
   // takes the whole board away from a screen built before those were served.
@@ -351,7 +360,7 @@ void main() {
         'warnings': [_warning('IdTwice', _twice, holds: true)],
       },
     ]);
-    await tester.enterText(find.byKey(const Key('planning-search')), 'needle');
+    await _search(tester, 'needle');
     await settle(tester);
 
     final second = find.text('needle second');

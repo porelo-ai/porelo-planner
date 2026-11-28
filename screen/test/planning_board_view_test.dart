@@ -216,6 +216,15 @@ Future<void> _confirmAndCancelInView(WidgetTester tester, {required double above
   expect(find.byKey(const Key('planning-move-warning')), findsNothing);
 }
 
+/// Types into the board's search, opening its field from the search button first.
+Future<void> _search(WidgetTester tester, String text) async {
+  if (find.byKey(const Key('planning-search')).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('planning-search-open')));
+    await tester.pump();
+  }
+  await tester.enterText(find.byKey(const Key('planning-search')), text);
+}
+
 void main() {
   // Harm: an unanswered issue save can be submitted again from an enabled row menu.
   testWidgets('an unanswered standalone issue move disables its row menu', (tester) async {
@@ -888,10 +897,10 @@ void main() {
       return shown.top >= view.top && (shown.bottom <= view.bottom || shown.top <= view.top + 16);
     }
 
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab40');
+    await _search(tester, 'ab40');
     await settle(tester);
     expect(inView('Story40'), isTrue, reason: 'the first card of Review, far below, is in view');
-    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await _search(tester, '');
     await settle(tester);
     // Scrolled below the card it finds, the search must step up to it.
     tester
@@ -903,14 +912,14 @@ void main() {
         .position
         .jumpTo(4000);
     await settle(tester);
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab12');
+    await _search(tester, 'ab12');
     await settle(tester);
     expect(inView('Story12'), isTrue, reason: 'a card above the view is brought into it');
-    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await _search(tester, '');
     await settle(tester);
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab3');
+    await _search(tester, 'ab3');
     await tester.pump();
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab39');
+    await _search(tester, 'ab39');
     await settle(tester);
     expect(inView('Story39'), isTrue, reason: 'the narrowed search shows its own card');
   });
@@ -935,7 +944,7 @@ void main() {
     await settle(tester);
     final card = find.byKey(const Key('planning-card Story30'));
     expect(card, findsNothing, reason: 'the card starts far below the visible column');
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42');
+    await _search(tester, 'ab42');
     await settle(tester);
     expect(find.byKey(const Key('planning-issue-found AB42')), findsOneWidget, reason: 'the found issue is shown');
     final view = tester.getRect(find.byKey(const Key('planning-board-scroll')));
@@ -962,13 +971,13 @@ void main() {
     backend.push('checkout', data);
     await settle(tester);
     expect(find.text('planner#7'), findsOneWidget, reason: 'the card shows the reference alone');
-    await tester.enterText(find.byKey(const Key('planning-search')), 'pl9');
+    await _search(tester, 'pl9');
     await settle(tester);
     expect(find.byKey(const Key('planning-card planner#7')), findsNothing, reason: 'an old id finds nothing');
-    await tester.enterText(find.byKey(const Key('planning-search')), 'planner#9');
+    await _search(tester, 'planner#9');
     await settle(tester);
     expect(find.text('planner#9 · planner'), findsOneWidget, reason: 'the issue row shows the reference alone');
-    await tester.enterText(find.byKey(const Key('planning-search')), '');
+    await _search(tester, '');
     await settle(tester);
     tester.widget<IconButton>(find.byKey(const Key('planning-fold-phase Work'))).onPressed!();
     await settle(tester);
@@ -999,7 +1008,7 @@ void main() {
     final card = find.byKey(const Key('planning-card Story30'));
     // A phase builds only the cards near its view, so the far card is not built yet.
     expect(card, findsNothing, reason: 'the card starts far below the visible phase');
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42');
+    await _search(tester, 'ab42');
     await settle(tester);
     expect(find.byKey(const Key('planning-issue-found AB42')), findsOneWidget, reason: 'the found issue is marked');
     final shown = tester.getRect(card);
@@ -1017,7 +1026,7 @@ void main() {
         .jumpTo(0);
     await settle(tester);
     expect(card, findsNothing, reason: 'the person scrolled the card out of view again');
-    await tester.enterText(find.byKey(const Key('planning-search')), 'ab42 ');
+    await _search(tester, 'ab42 ');
     await settle(tester);
     expect(card, findsNothing, reason: 'a search that finds the same first card does not scroll again');
   });
