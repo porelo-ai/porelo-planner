@@ -401,7 +401,15 @@ public class BoardChangeController {
                             Set.of(issue),
                             () ->
                                     board.moveMany(
-                                            name, List.of(new MoveIssues.Ask(issue, state, null))));
+                                            name,
+                                            List.of(
+                                                    new MoveIssues.Ask(
+                                                            issue,
+                                                            state,
+                                                            null,
+                                                            item.through() == null
+                                                                    ? List.of()
+                                                                    : item.through()))));
             final ItemResult moved = batch.answer().results().get(0);
             final @Nullable Problem refusal = moved.refusal();
             if (refusal != null) {

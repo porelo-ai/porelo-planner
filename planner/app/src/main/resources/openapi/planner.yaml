@@ -6882,9 +6882,24 @@ components:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         reason:
-          description: Why the issue is closed, taken only on a move into a closed state, as Move's reason.
+          description: >-
+            Why the issue is closed, taken only on a move into a closed state, as Move's reason; with through, it
+            goes with the last step.
           type: string
           maxLength: 2000
+        through:
+          description: >-
+            The states the issue passes before its target, in order, each judged and saved as a move of its own on
+            the board the steps before it leave, so the issue's history shows each stage. A step the rules refuse
+            refuses the whole move with that step named (its from and to), and nothing of it is saved; a store
+            failure after a step stood answers the issue PartlySaved, naming the steps that stand. No closed state is
+            passed, none twice, and neither the issue's own state nor its target.
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
     BoardChange:
       description: New issues and changes of existing issues, applied in one call.
       type: object
@@ -6969,6 +6984,20 @@ components:
             store that keeps no estimate refuses the update as setIssueFields does.
           minimum: 1
           maximum: 100000
+        through:
+          description: >-
+            Taken only beside state: the states the issue passes before its target, in order, each judged and saved
+            as a move of its own on the board the steps before it leave, so the issue's history shows each stage. A
+            step the rules refuse refuses the whole move with that step named (its from and to), and no step of it is
+            saved, while the update's other members written before it stand and answer PartlySaved; a store
+            failure after a step stood answers the issue PartlySaved, naming the steps that stand. No closed state is
+            passed, none twice, and neither the issue's own state nor its target.
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
         state:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'

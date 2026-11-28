@@ -95,11 +95,37 @@ final class EditRequests {
      * @param issue the issue's checked id
      * @param to the state's name
      * @param reason why the issue is closed, or null for none
+     * @param through the states the issue passes before {@code to}, in order, or null for one step
      */
     record StateMoveRequest(
             String issue,
             String to,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String reason) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String reason,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> through) {}
+
+    /** The most states a move passes on its way to its target. */
+    static final int MOST_THROUGH = 20;
+
+    /**
+     * Reads the states a move passes before its target: a list of at most {@link #MOST_THROUGH}
+     * states' names.
+     *
+     * @param value the member's value
+     * @return the states in order, or null when the value is no such list
+     */
+    static @Nullable List<String> through(final JsonNode value) {
+        if (!value.isArray() || value.size() > MOST_THROUGH) {
+            return null;
+        }
+        final List<String> states = new ArrayList<>();
+        for (final JsonNode state : value) {
+            if (!state.isString() || !BoardController.STATE.matcher(state.asString()).matches()) {
+                return null;
+            }
+            states.add(state.asString());
+        }
+        return List.copyOf(states);
+    }
 
     /**
      * Many issues each moved to a state, as the description names them.
@@ -350,9 +376,12 @@ final class EditRequests {
         if (!move.isObject()
                 || !move.has("issue")
                 || !move.has("to")
-                || !Set.of("issue", "to", "reason").containsAll(move.propertyNames())) {
+                || !Set.of("issue", "to", "reason", "through").containsAll(move.propertyNames())) {
             throw BoardController.notAllowed(
-                    "", "", "Each move must hold an issue and a state, and at most a reason.");
+                    "",
+                    "",
+                    "Each move must hold an issue and a state, and at most a reason and the states"
+                            + " it passes.");
         }
         final JsonNode issue = move.get("issue");
         final String id;
@@ -374,7 +403,20 @@ final class EditRequests {
             }
             reason = given.asString();
         }
-        return new StateMoveRequest(id, to.asString(), reason);
+        @Nullable List<String> through = null;
+        if (move.has("through")) {
+            final @Nullable List<String> passed = through(move.get("through"));
+            if (passed == null) {
+                throw BoardController.notAllowed(
+                        id,
+                        "",
+                        "The states passed must be a list of at most "
+                                + MOST_THROUGH
+                                + " states' names.");
+            }
+            through = passed;
+        }
+        return new StateMoveRequest(id, to.asString(), reason, through);
     }
 
     /**

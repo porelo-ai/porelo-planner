@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,6 +40,9 @@ class MoveIssuesEndpointTest {
     private int saveCalls;
 
     private int changedSaves;
+
+    /** The save call, counted from 1, that the store fails as unreadable; 0 for none. */
+    private int failingSave;
 
     private int edits;
 
@@ -124,6 +128,9 @@ class MoveIssuesEndpointTest {
                     @Override
                     public Board save(final Revision revision, final Writes writes) {
                         saveCalls++;
+                        if (saveCalls == failingSave) {
+                            throw new StoreException.Unreadable("porelo-store", "gone");
+                        }
                         if (changedSaves > 0) {
                             // Another change reached the issue between the judging and the save.
                             changedSaves--;
@@ -341,6 +348,95 @@ class MoveIssuesEndpointTest {
         moveIssues("{\"moves\": [{\"issue\": \"../x\", \"to\": \"Review\"}]}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:InvalidName"));
+
+        assertThat(saveCalls).as("the store is not asked").isZero();
+    }
+
+    /** The states the saves wrote for one issue, in the order the store received them. */
+    private List<String> savedStatesOf(final String issue) {
+        return saved.stream()
+                .map(writes -> writes.issues().get(issue))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    @Test
+    void anIssueMovedThroughTwoStagesIsSavedAsOneMoveEachAndTheTargetLast() throws Exception {
+        // Harm: stages collapsed into one save, so the store's history lacks the states passed, or
+        // saved out of order.
+        moveIssues(
+                        "{\"moves\": [{\"issue\": \"AB5\", \"to\": \"Finished\","
+                                + " \"through\": [\"Backlog\", \"Review\"]}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].item").value("AB5"))
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[0].state").value("Finished"))
+                .andExpect(jsonPath("$.versions.AB5").exists());
+
+        assertThat(savedStatesOf("AB5"))
+                .as("one save per stage, then the target")
+                .containsExactly("Backlog", "Review", "Finished");
+        assertThat(saveCalls).as("three saves, no more").isEqualTo(3);
+    }
+
+    @Test
+    void aStageTheWorkflowLacksRefusesItsIssueSavingNothingOfItWhileAnotherIsSaved()
+            throws Exception {
+        // Harm: the stages before a refused one saved, leaving the issue stranded half way.
+        moveIssues(
+                        "{\"moves\": [{\"issue\": \"AB5\", \"to\": \"Finished\","
+                                + " \"through\": [\"Backlog\", \"Nowhere\", \"Review\"]},"
+                                + " {\"issue\": \"AB1\", \"to\": \"Review\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].item").value("AB5"))
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("StateNotAllowed"))
+                .andExpect(jsonPath("$.results[0].refusal.parameters.from").value("Backlog"))
+                .andExpect(jsonPath("$.results[0].refusal.parameters.to").value("Nowhere"))
+                .andExpect(jsonPath("$.results[1].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.versions.AB5").doesNotExist());
+
+        assertThat(savedStatesOf("AB5")).as("nothing saved of the refused issue").isEmpty();
+        assertThat(savedStatesOf("AB1")).as("the other issue saved").containsExactly("Review");
+    }
+
+    @Test
+    void aStoreThatFailsOnTheSecondStageAnswersPartlySavedNamingTheFirstAndNoVersion()
+            throws Exception {
+        // Harm: an issue left in a stage the answer does not name, or a version claimed for it.
+        failingSave = 2;
+
+        moveIssues(
+                        "{\"moves\": [{\"issue\": \"AB5\", \"to\": \"Finished\","
+                                + " \"through\": [\"Backlog\", \"Review\"]}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("PartlySaved"))
+                .andExpect(jsonPath("$.results[0].refusal.detail").value(containsString("Backlog")))
+                .andExpect(jsonPath("$.results[0].version").doesNotExist())
+                .andExpect(jsonPath("$.versions.AB5").doesNotExist());
+
+        assertThat(savedStatesOf("AB5")).as("the first stage stands").containsExactly("Backlog");
+    }
+
+    @Test
+    void statesPassedThatAreNoListOfAtMostTwentyStateNamesAreRefusedBeforeAnySave()
+            throws Exception {
+        // Harm: a malformed list of stages read as a shorter one, or partly saved.
+        final String head = "{\"moves\": [{\"issue\": \"AB5\", \"to\": \"Finished\", ";
+        for (final String through :
+                List.of(
+                        "\"through\": \"Backlog\"",
+                        "\"through\": {\"0\": \"Backlog\"}",
+                        "\"through\": [\"Backlog\", 1]",
+                        "\"through\": [\"/home/x:pw\"]",
+                        "\"through\": ["
+                                + String.join(",", java.util.Collections.nCopies(21, "\"Backlog\""))
+                                + "]")) {
+            moveIssues(head + through + "}]}")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.type").value("urn:porelo-planner:MoveNotAllowed"));
+        }
 
         assertThat(saveCalls).as("the store is not asked").isZero();
     }

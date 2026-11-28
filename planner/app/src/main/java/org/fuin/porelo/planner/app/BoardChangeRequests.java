@@ -63,6 +63,7 @@ final class BoardChangeRequests {
                     "parts",
                     "size",
                     "estimateMinutes",
+                    "through",
                     "state",
                     "priority",
                     "worker",
@@ -122,6 +123,7 @@ final class BoardChangeRequests {
      * @param parts the parts written and removed, or null to keep its text
      * @param size its new size, or null to keep it
      * @param estimateMinutes its new estimate in minutes, or null to keep it
+     * @param through the states it passes before {@code state}, in order, or null for one step
      * @param state the state it moves to, or null to keep it
      * @param priority its new priority, or null to keep it
      * @param worker who works it from now, or null to keep it
@@ -134,6 +136,7 @@ final class BoardChangeRequests {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TextEdit parts,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Size size,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Estimate estimateMinutes,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> through,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String state,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String priority,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Worker worker,
@@ -266,12 +269,25 @@ final class BoardChangeRequests {
                 throw refused("size", "The size must be XS, S, M, L, XL or null.");
             }
         }
+        @Nullable List<String> through = null;
+        if (item.has("through")) {
+            final @Nullable List<String> passed = EditRequests.through(item.get("through"));
+            if (passed == null || !item.has("state")) {
+                throw refused(
+                        "through",
+                        "The states passed must be a list of at most "
+                                + EditRequests.MOST_THROUGH
+                                + " states' names, beside the state the issue moves to.");
+            }
+            through = passed;
+        }
         return new Update(
                 issue,
                 title == null ? null : title(title),
                 parts,
                 size,
                 estimate(item),
+                through,
                 state(optional(item, "state")),
                 priority(optional(item, "priority")),
                 worker(optional(item, "worker")),

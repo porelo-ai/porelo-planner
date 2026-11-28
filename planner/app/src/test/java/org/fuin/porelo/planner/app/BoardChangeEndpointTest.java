@@ -26,6 +26,7 @@ import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Worker;
 import org.fuin.porelo.planner.store.Workflow;
+import org.fuin.porelo.planner.store.Writes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,9 @@ class BoardChangeEndpointTest {
     /** The lists a story was written with, by its id. */
     private final Map<String, List<String>> storyWrites = new LinkedHashMap<>();
 
+    /** The states each save of a move wrote for an issue, in the order the store received them. */
+    private final List<String> stateSaves = new ArrayList<>();
+
     private int revision = 1;
 
     /** Whether every read of the board finds it moved, as another call's saves would leave it. */
@@ -77,7 +81,9 @@ class BoardChangeEndpointTest {
         return new Board(
                 new Revision("r" + revision),
                 new Workflow(
-                        List.of("Idea", "Backlog", "Finished"), List.of(), List.of("Finished")),
+                        List.of("Idea", "Backlog", "Review", "Finished"),
+                        List.of(),
+                        List.of("Finished")),
                 List.copyOf(stories),
                 List.copyOf(issues.values()),
                 new Work(Map.of(), List.of()),
@@ -195,6 +201,20 @@ class BoardChangeEndpointTest {
                                     after.work(),
                                     after.repositories());
                         }
+                        return board();
+                    }
+
+                    @Override
+                    public Board save(final Revision seen, final Writes writes) {
+                        writes.issues()
+                                .forEach(
+                                        (id, state) -> {
+                                            issues.put(id, issues.get(id).withState(state));
+                                            if (id.equals("AB1")) {
+                                                stateSaves.add(state);
+                                            }
+                                        });
+                        revision++;
                         return board();
                     }
 
@@ -695,7 +715,8 @@ class BoardChangeEndpointTest {
     }
 
     @Test
-    void anEstimateAtEitherBoundIsWrittenAndTheEstimateTheIssueHoldsWritesNothing() throws Exception {
+    void anEstimateAtEitherBoundIsWrittenAndTheEstimateTheIssueHoldsWritesNothing()
+            throws Exception {
         // Harm: a bound shifted by one refusing a sound estimate, or a save made for nothing.
         for (final int minutes : List.of(1, 100000)) {
             change("{\"updates\": [{\"issue\": \"AB1\", \"estimateMinutes\": " + minutes + "}]}")
@@ -711,5 +732,37 @@ class BoardChangeEndpointTest {
                 .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"));
 
         assertThat(revision).as("no save").isEqualTo(before);
+    }
+
+    @Test
+    void anUpdateWithStatesPassedSavesEachStageThenTheTargetInOrder() throws Exception {
+        // Harm: stages dropped from an agent's change, or the target saved before them.
+        change(
+                        "{\"updates\": [{\"issue\": \"AB1\", \"through\": [\"Backlog\"],"
+                                + " \"state\": \"Review\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"))
+                .andExpect(jsonPath("$.results[0].state").value("Review"));
+
+        assertThat(stateSaves)
+                .as("the stage, then the target")
+                .containsExactly("Backlog", "Review");
+        assertThat(issues.get("AB1").state()).as("the target stands").isEqualTo("Review");
+    }
+
+    @Test
+    void anUpdateWithStatesPassedButNoStateIsRefusedWholeBeforeAnythingIsSaved() throws Exception {
+        // Harm: stages saved for an update that names no target to reach.
+        change("{\"updates\": [{\"issue\": \"AB1\", \"through\": [\"Backlog\"]}]}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+        change(
+                        "{\"updates\": [{\"issue\": \"AB1\", \"through\": \"Backlog\","
+                                + " \"state\": \"Review\"}]}")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.title").value("EditNotAllowed"));
+
+        assertThat(stateSaves).as("nothing saved").isEmpty();
+        assertThat(issues.get("AB1").state()).as("the issue stays").isEqualTo("Idea");
     }
 }

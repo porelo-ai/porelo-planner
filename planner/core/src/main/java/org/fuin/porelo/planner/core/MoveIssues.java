@@ -27,17 +27,32 @@ public final class MoveIssues {
     }
 
     /**
-     * One issue asked to move.
+     * One issue asked to move, through the states it passes on its way, in order.
      *
      * @param issue the issue's id
      * @param to the state it moves to
-     * @param reason the person's one sentence why the issue is closed, or null for none
+     * @param reason the person's one sentence why the issue is closed, or null for none; it goes
+     *     with the last step alone
+     * @param through the states the issue passes before {@code to}, in order, each saved as a move
+     *     of its own; empty for a move of one step
      */
-    public record Ask(String issue, String to, @Nullable String reason) {
+    public record Ask(String issue, String to, @Nullable String reason, List<String> through) {
 
-        /** Counts a blank reason as none, as a move does. */
+        /** Counts a blank reason as none, as a move does, and copies the states passed. */
         public Ask {
             reason = reason == null || reason.isBlank() ? null : reason.strip();
+            through = List.copyOf(through);
+        }
+
+        /**
+         * One issue asked to move in one step.
+         *
+         * @param issue the issue's id
+         * @param to the state it moves to
+         * @param reason the person's one sentence why the issue is closed, or null for none
+         */
+        public Ask(final String issue, final String to, final @Nullable String reason) {
+            this(issue, to, reason, List.of());
         }
     }
 
@@ -123,8 +138,20 @@ public final class MoveIssues {
                 refusals[i] = notAllowed(board, ask, "Each move must name exactly one item, once.");
             } else if (ask.reason() != null && !keepsReasons) {
                 refusals[i] = notAllowed(board, ask, "this store keeps no reason");
+            } else if (!ask.through().isEmpty()) {
+                refusals[i] = steps(board, ask, runs);
             }
         }
+        // A move through stages is judged in the batch by its last step, from the last state it
+        // passes, so a target the rules allow only from that stage is not refused as a jump.
+        Board staged = board;
+        for (int i = 0; i < asks.size(); i++) {
+            final Ask ask = asks.get(i);
+            if (refusals[i] == null && !ask.through().isEmpty()) {
+                staged = moved(staged, ask.issue(), ask.through().getLast());
+            }
+        }
+        final Board judgedOn = staged;
         Moves.Planned planned = NOTHING;
         List<Moves.Move> moves = List.of();
         while (true) {
@@ -135,7 +162,7 @@ public final class MoveIssues {
                 break;
             }
             try {
-                planned = Moves.check(board, moves, runs);
+                planned = Moves.check(judgedOn, moves, runs);
             } catch (final Moves.Refused refused) {
                 final int at = named(live, asks, refused);
                 if (at < 0) {
@@ -147,7 +174,7 @@ public final class MoveIssues {
                 refusals[at] = refused;
                 continue;
             }
-            if (!runningOver(board, live, moves, refusals, running)) {
+            if (!runningOver(judgedOn, live, moves, refusals, running)) {
                 break;
             }
         }
@@ -199,6 +226,66 @@ public final class MoveIssues {
             }
         }
         return refused;
+    }
+
+    /**
+     * Judges each step of a move through stages as a move of its own, on the board the steps before
+     * it leave, so a stage the rules refuse refuses the whole move with that step named; no closed
+     * state is passed on the way and none is named twice.
+     *
+     * @return the first step's refusal, or null when every step stands
+     */
+    private static @Nullable RuntimeException steps(
+            final Board board, final Ask ask, final Moves.Runs runs) {
+        final @Nullable Issue issue = board.issue(ask.issue()).orElse(null);
+        if (issue == null) {
+            // The batch's own check refuses an issue the board lacks.
+            return null;
+        }
+        final Set<String> passed = new HashSet<>(List.of(issue.state(), ask.to()));
+        for (final String state : ask.through()) {
+            if (board.workflow().closed().contains(state)) {
+                return notAllowed(board, ask, "An issue passes no closed state on its way.");
+            }
+            if (!passed.add(state)) {
+                return notAllowed(
+                        board,
+                        ask,
+                        "Each state passed must be named once, and neither the issue's own state"
+                                + " nor its target.");
+            }
+        }
+        final List<String> steps = new ArrayList<>(ask.through());
+        steps.add(ask.to());
+        Board at = board;
+        for (int step = 0; step < steps.size(); step++) {
+            final String to = steps.get(step);
+            final @Nullable String reason = step == steps.size() - 1 ? ask.reason() : null;
+            try {
+                Moves.check(at, List.of(new Moves.Move(false, ask.issue(), to, reason)), runs);
+            } catch (final Moves.Refused refused) {
+                return refused;
+            }
+            at = moved(at, ask.issue(), to);
+        }
+        return null;
+    }
+
+    /** The board with one issue in another state, as a step of a move leaves it. */
+    private static Board moved(final Board board, final String id, final String state) {
+        return new Board(
+                board.revision(),
+                board.workflow(),
+                board.stories(),
+                board.issues().stream()
+                        .map(issue -> issue.id().equals(id) ? issue.withState(state) : issue)
+                        .toList(),
+                board.work(),
+                board.repositories(),
+                board.faults(),
+                board.owner(),
+                board.unlisted(),
+                board.repositoryWarnings());
     }
 
     private static List<Integer> live(final @Nullable RuntimeException[] refusals) {

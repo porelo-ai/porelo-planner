@@ -31,6 +31,7 @@ import org.fuin.porelo.planner.app.answers.OpenCount;
 import org.fuin.porelo.planner.app.answers.Phase;
 import org.fuin.porelo.planner.app.answers.PlanningStartTask;
 import org.fuin.porelo.planner.app.answers.PrioritySaved;
+import org.fuin.porelo.planner.app.answers.Problem;
 import org.fuin.porelo.planner.app.answers.ReadingReply;
 import org.fuin.porelo.planner.app.answers.RuleBreach;
 import org.fuin.porelo.planner.app.answers.StageResultReply;
@@ -822,7 +823,15 @@ public class BoardController {
         final String name = name(project);
         final List<MoveIssues.Ask> asks =
                 EditRequests.stateMoves(request, name).moves().stream()
-                        .map(move -> new MoveIssues.Ask(move.issue(), move.to(), move.reason()))
+                        .map(
+                                move ->
+                                        new MoveIssues.Ask(
+                                                move.issue(),
+                                                move.to(),
+                                                move.reason(),
+                                                move.through() == null
+                                                        ? List.of()
+                                                        : move.through()))
                         .toList();
         try {
             return moveMany(name, asks).answer();
@@ -844,9 +853,151 @@ public class BoardController {
             return given.work()
                     .movingIssues(
                             (running, runs) ->
-                                    movedIssues(name, given.store(), asks, running, runs));
+                                    asks.stream().allMatch(ask -> ask.through().isEmpty())
+                                            ? movedIssues(name, given.store(), asks, running, runs)
+                                            : staged(name, given.store(), asks, running, runs));
         } catch (final UnsupportedOperationException e) {
             throw movesNotOffered(name);
+        }
+    }
+
+    /**
+     * Moves issues through their stages: the whole batch is judged first, every step of each move
+     * on the board the steps before it leave, so a step the rules refuse saves nothing of its
+     * issue; then each issue's stages are saved one after another as moves of their own, so the
+     * store's history shows each, and the targets last in one batch. A step the store fails after
+     * an earlier one of the issue stood answers the issue as PartlySaved, and the issues after it
+     * are not tried against that store.
+     */
+    private SavedMoves staged(
+            final String name,
+            final PlanningStore store,
+            final List<MoveIssues.Ask> asks,
+            final MovePreview.Running running,
+            final Moves.Runs runs) {
+        final Board board = store.board();
+        final MoveIssues.Judged judged =
+                MoveIssues.judge(board, asks, store.keepsReasons(), running, runs);
+        final Map<Integer, ItemResult> answered = new java.util.HashMap<>();
+        final Map<Integer, List<String>> stood = new java.util.HashMap<>();
+        final Map<String, String> versions = new java.util.TreeMap<>();
+        final List<MoveIssues.Ask> targets = new ArrayList<>();
+        final List<Integer> targetAt = new ArrayList<>();
+        @Nullable Problem stopped = null;
+        for (int at = 0; at < asks.size(); at++) {
+            final MoveIssues.Ask ask = asks.get(at);
+            final MoveIssues.Item item = judged.items().get(at);
+            if (item.refusal() != null) {
+                answered.put(at, itemResult(item, Map.of()));
+                continue;
+            }
+            if (stopped != null) {
+                answered.put(at, refused(ask.issue(), stopped));
+                continue;
+            }
+            final List<String> steps = new ArrayList<>();
+            stood.put(at, steps);
+            final String repository = board.issue(ask.issue()).map(Issue::repository).orElse("");
+            @Nullable Problem failed = null;
+            for (final String state : ask.through()) {
+                try {
+                    final SavedMoves step =
+                            movedIssues(
+                                    name,
+                                    store,
+                                    List.of(new MoveIssues.Ask(ask.issue(), state, null)),
+                                    running,
+                                    runs);
+                    final ItemResult result = step.answer().results().getFirst();
+                    if (result.refusal() != null) {
+                        failed = result.refusal();
+                        break;
+                    }
+                    versions.putAll(step.answer().versions());
+                    steps.add(state);
+                } catch (final StoreException failure) {
+                    failed = Problems.answer(failure, changed -> List.of());
+                    stopped = failed;
+                    break;
+                }
+            }
+            if (failed == null) {
+                targets.add(new MoveIssues.Ask(ask.issue(), ask.to(), ask.reason()));
+                targetAt.add(at);
+            } else {
+                answered.put(
+                        at, refused(ask.issue(), partly(ask.issue(), repository, steps, failed)));
+                unknown(versions, store, ask.issue());
+            }
+        }
+        SavedMoves last = null;
+        if (!targets.isEmpty() && stopped == null) {
+            try {
+                last = movedIssues(name, store, targets, running, runs);
+                versions.putAll(last.answer().versions());
+            } catch (final StoreException failure) {
+                stopped = Problems.answer(failure, changed -> List.of());
+            }
+        }
+        final List<ItemResult> results = new ArrayList<>();
+        for (int at = 0; at < asks.size(); at++) {
+            final @Nullable ItemResult early = answered.get(at);
+            if (early != null) {
+                results.add(early);
+                continue;
+            }
+            final MoveIssues.Ask ask = asks.get(at);
+            final List<String> steps = stood.getOrDefault(at, List.of());
+            final String repository = board.issue(ask.issue()).map(Issue::repository).orElse("");
+            final @Nullable ItemResult result =
+                    last == null ? null : last.answer().results().get(targetAt.indexOf(at));
+            final @Nullable Problem refusal = result == null ? stopped : result.refusal();
+            if (refusal == null && result != null) {
+                results.add(result);
+            } else {
+                results.add(
+                        refused(
+                                ask.issue(),
+                                partly(
+                                        ask.issue(),
+                                        repository,
+                                        steps,
+                                        java.util.Objects.requireNonNull(refusal))));
+                unknown(versions, store, ask.issue());
+            }
+        }
+        final Board after = last == null ? store.board() : last.board();
+        return new SavedMoves(
+                after, new BatchSaved(after.revision().value(), results, Map.copyOf(versions)));
+    }
+
+    /** A refusal of an issue some steps of which stood is PartlySaved, naming those steps. */
+    private static Problem partly(
+            final String issue,
+            final String repository,
+            final List<String> steps,
+            final Problem failure) {
+        return steps.isEmpty() || "PartlySaved".equals(failure.title())
+                ? failure
+                : Problems.partlySaved(issue, repository, steps, failure);
+    }
+
+    private static ItemResult refused(final String issue, final Problem refusal) {
+        return new ItemResult(
+                issue, null, ItemResult.OutcomeEnum.REFUSED, null, null, null, refusal);
+    }
+
+    /**
+     * Leaves an issue whose move stopped part way out of the versions answered, with every story
+     * that holds it, since what stands of them is not known from a completed save.
+     */
+    private static void unknown(
+            final Map<String, String> versions, final PlanningStore store, final String issue) {
+        versions.remove(issue);
+        for (final Story story : store.board().stories()) {
+            if (story.issues().contains(issue)) {
+                versions.remove(story.id());
+            }
         }
     }
 

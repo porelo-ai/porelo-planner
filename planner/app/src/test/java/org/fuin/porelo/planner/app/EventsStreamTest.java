@@ -333,7 +333,8 @@ class EventsStreamTest {
                         Duration.ofHours(1),
                         Executors.newSingleThreadScheduledExecutor())) {
             projects.put("alpha", "source", null);
-            final var listed = new BoardController(projects, registry)
+            final var listed =
+                    new BoardController(projects, registry)
                             .issues(
                                     "alpha",
                                     "none",

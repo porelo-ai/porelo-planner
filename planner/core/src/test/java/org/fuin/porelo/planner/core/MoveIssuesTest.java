@@ -284,4 +284,85 @@ class MoveIssuesTest {
                         tuple("MoveNotAllowed", MoveIssues.Outcome.REFUSED));
         assertThat(judged.saves()).as("nothing to save").isFalse();
     }
+
+    private static MoveIssues.Ask through(
+            final String issue, final List<String> through, final String to) {
+        return new MoveIssues.Ask(issue, to, null, through);
+    }
+
+    @Test
+    void anIssueMovedThroughStagesIsJudgedStepByStepAndSavedToItsTarget() {
+        // Harm: an agent taking an issue through its stages with a call per state, or a stage
+        // passed without the rules a move of its own meets.
+        final MoveIssues.Judged judged =
+                judge(false, through("PL5", List.of("Backlog"), "Review"), ask("PL2", "Finished"));
+
+        assertThat(judged.items())
+                .extracting(
+                        MoveIssues.Item::issue, MoveIssues.Item::outcome, MoveIssues.Item::state)
+                .containsExactly(
+                        tuple("PL5", MoveIssues.Outcome.SAVED, "Review"),
+                        tuple("PL2", MoveIssues.Outcome.SAVED, "Finished"));
+        assertThat(judged.planned().issues())
+                .as("the save carries the target; the app writes the stages before it")
+                .containsOnly(Map.entry("PL5", "Review"), Map.entry("PL2", "Finished"));
+    }
+
+    @Test
+    void aRefusedStepRefusesTheIssuesWholeMoveNamingTheStepWhileTheOthersAreSaved() {
+        // Harm: half of an issue's stages written before a stage the rules refuse, or the refused
+        // stage left unnamed.
+        final MoveIssues.Judged judged =
+                judge(
+                        false,
+                        through("PL5", List.of("Backlog", "Nowhere"), "Review"),
+                        ask("PL2", "Finished"));
+
+        assertThat(judged.items().get(0).outcome()).isEqualTo(MoveIssues.Outcome.REFUSED);
+        assertThat(judged.items().get(0).refusal())
+                .as("the step named by the state it leaves, judged after the step before it")
+                .isInstanceOfSatisfying(
+                        Moves.Refused.class,
+                        refused -> {
+                            assertThat(refused.name()).isEqualTo("StateNotAllowed");
+                            assertThat(refused.parameters())
+                                    .containsEntry("item", "PL5")
+                                    .containsEntry("from", "Backlog")
+                                    .containsEntry("to", "Nowhere");
+                        });
+        assertThat(judged.planned().issues())
+                .as("nothing of the refused issue's move is saved")
+                .containsOnly(Map.entry("PL2", "Finished"));
+    }
+
+    @Test
+    void aClosedStateTheIssuesOwnStateTheTargetOrAStateTwiceOnTheWayIsRefused() {
+        // Harm: an issue closed and reopened on its way, or a stage written twice for nothing.
+        for (final List<String> way :
+                List.of(
+                        List.of("Finished"),
+                        List.of("Idea"),
+                        List.of("Review"),
+                        List.of("Backlog", "Backlog"))) {
+            final MoveIssues.Judged judged = judge(false, through("PL5", way, "Review"));
+
+            assertThat(refusalName(judged.items().get(0)))
+                    .as("the way through %s", way)
+                    .isEqualTo("MoveNotAllowed");
+            assertThat(judged.saves()).as("nothing saved through %s", way).isFalse();
+        }
+    }
+
+    @Test
+    void aReasonIsJudgedWithTheLastStepAlone() {
+        // Harm: a reason refused because a stage on the way is open, or kept on a stage.
+        final MoveIssues.Judged judged =
+                judge(
+                        true,
+                        new MoveIssues.Ask(
+                                "PL5", "Rejected", "Not needed any more.", List.of("Backlog")));
+
+        assertThat(judged.items().get(0).outcome()).isEqualTo(MoveIssues.Outcome.SAVED);
+        assertThat(judged.planned().issueReasons()).containsKey("PL5");
+    }
 }

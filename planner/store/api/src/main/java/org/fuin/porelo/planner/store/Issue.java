@@ -316,6 +316,34 @@ public record Issue(
     }
 
     /**
+     * This issue in another state, as a move to it leaves it.
+     *
+     * @param state its state
+     * @return the issue
+     */
+    public Issue withState(final String state) {
+        return new Issue(
+                id,
+                repository,
+                title,
+                state,
+                size,
+                blockedBy,
+                parent,
+                link,
+                text,
+                worker,
+                risk,
+                estimate,
+                minutes,
+                priority,
+                warnings,
+                waitsOn,
+                version,
+                labels);
+    }
+
+    /**
      * This issue with another priority.
      *
      * @param priority its priority
