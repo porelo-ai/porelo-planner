@@ -19,10 +19,10 @@ import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.MoveIssues;
 import org.fuin.porelo.planner.core.Moves;
 import org.fuin.porelo.planner.core.WorkRefusal;
+import org.fuin.porelo.planner.core.WrittenVersions;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Fields;
-import org.fuin.porelo.planner.store.NewIssue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
@@ -95,7 +95,7 @@ public class BoardChangeController {
         final Board read = store.board();
         final Set<String> keys = new java.util.HashSet<>();
         change.creates().forEach(item -> keys.add(item.key()));
-        final Call call = new Call(name, changed -> changedItems(name, changed));
+        final Call call = new Call(name, changed -> changedItems(name, changed), read);
 
         final List<Outcome> creates = new ArrayList<>();
         final List<BoardChanges.Item> asked = new ArrayList<>();
@@ -201,8 +201,12 @@ public class BoardChangeController {
         }
 
         final List<ItemResult> results = new ArrayList<>();
-        outcomes.forEach(outcome -> results.add(outcome.result()));
-        return new BatchSaved(store.board().revision().value(), results);
+        // An item no step of which wrote or answered has no version: the board read before any
+        // write is not the board a lock judged, so none is taken from it.
+        for (final Outcome outcome : outcomes) {
+            results.add(outcome.result(call.versions));
+        }
+        return new BatchSaved(call.after.revision().value(), results, Map.copyOf(call.versions));
     }
 
     /** The parts of a new issue a text edit writes after it is made: all but What must be true. */
@@ -238,23 +242,31 @@ public class BoardChangeController {
         final Map<TextEdit.Part, String> rest = new LinkedHashMap<>(item.parts());
         final String mustBeTrue = rest.remove(TextEdit.Part.WHAT_MUST_BE_TRUE);
         final org.fuin.porelo.planner.store.@Nullable Worker worker = item.worker();
-        final NewIssue.Added added =
-                board.addIssue(
-                        name,
-                        new WorkRequests.IssueRequest(
-                                item.repository(),
-                                item.title(),
-                                mustBeTrue,
-                                item.size(),
-                                worker == null ? null : worker.name(),
-                                seen(store),
-                                null,
-                                item.priority(),
-                                storyOf(outcome.story, Map.of(), ""),
-                                item.state(),
-                                false,
-                                List.of()));
+        final @Nullable String story = storyOf(outcome.story, Map.of(), "");
+        final Set<String> joined = story == null ? Set.of() : Set.of(story);
+        final BoardController.AddedIssue added =
+                outcome.guarded(
+                        joined,
+                        () ->
+                                board.addIssue(
+                                        name,
+                                        new WorkRequests.IssueRequest(
+                                                item.repository(),
+                                                item.title(),
+                                                mustBeTrue,
+                                                item.size(),
+                                                worker == null ? null : worker.name(),
+                                                seen(store),
+                                                null,
+                                                item.priority(),
+                                                story,
+                                                item.state(),
+                                                false,
+                                                List.of())));
         outcome.item = added.id();
+        final Set<String> targets = new java.util.HashSet<>(joined);
+        targets.add(added.id());
+        outcome.call.saved(added.board(), added.versions(), targets);
         outcome.stands("the new issue");
         if (!rest.isEmpty()) {
             outcome.write(
@@ -379,15 +391,22 @@ public class BoardChangeController {
         }
         final String state = item.state();
         if (state != null) {
-            final ItemResult moved =
-                    board.moveMany(name, List.of(new MoveIssues.Ask(issue, state, null)))
-                            .results()
-                            .get(0);
+            final BoardController.SavedMoves batch =
+                    outcome.guarded(
+                            Set.of(issue),
+                            () ->
+                                    board.moveMany(
+                                            name, List.of(new MoveIssues.Ask(issue, state, null))));
+            final ItemResult moved = batch.answer().results().get(0);
             final @Nullable Problem refusal = moved.refusal();
             if (refusal != null) {
+                // A refused move wrote nothing, so the version an earlier step gave stands.
                 outcome.refuse(refusal);
                 return;
             }
+            final Set<String> moves = new java.util.HashSet<>(batch.answer().versions().keySet());
+            moves.add(issue);
+            outcome.call.saved(batch.board(), batch.answer().versions(), moves);
             outcome.state = moved.state();
             if (moved.outcome() == ItemResult.OutcomeEnum.SAVED) {
                 outcome.stands("state");
@@ -450,15 +469,49 @@ public class BoardChangeController {
     private static final class Call {
         private final String project;
         private final Function<StoreException.Changed, List<ChangedItem>> items;
+        private Board after;
+        private final Map<String, String> versions = new java.util.TreeMap<>();
 
         /** The refusal of a store that cannot be reached or is busy, which the later items get. */
         private @Nullable Problem stopped;
 
         Call(
                 final String project,
-                final Function<StoreException.Changed, List<ChangedItem>> items) {
+                final Function<StoreException.Changed, List<ChangedItem>> items,
+                final Board before) {
             this.project = project;
             this.items = items;
+            this.after = before;
+        }
+
+        /**
+         * Merges a completed step: the versions of its targets replace what earlier steps gave, and
+         * no version of a story that holds or held a target stays, since the step changed it too.
+         * The change names no versions seen, so a story is answered only when it is a target.
+         */
+        void saved(
+                final Board board, final Map<String, String> written, final Set<String> targets) {
+            forget(targets, board);
+            written.forEach(
+                    (id, version) -> {
+                        if (targets.contains(id)) {
+                            versions.put(id, version);
+                        }
+                    });
+            after = board;
+        }
+
+        /**
+         * Leaves out the versions of a step that threw, whatever it wrote before: of its targets
+         * and of every story that holds one, and of any earlier step.
+         */
+        void lost(final Set<String> targets) {
+            forget(targets, after);
+        }
+
+        private void forget(final Set<String> targets, final Board board) {
+            versions.keySet().removeAll(targets);
+            versions.keySet().removeAll(WrittenVersions.holding(after, board, targets));
         }
     }
 
@@ -503,12 +556,29 @@ public class BoardChangeController {
                 final PlanningStore store,
                 final String step,
                 final Set<String> targets,
-                final Runnable write) {
-            final Basis before = Basis.of(store.board());
-            write.run();
-            final Basis after = Basis.of(store.board());
-            if (targets.stream().anyMatch(id -> !Objects.equals(before.of(id), after.of(id)))) {
+                final java.util.function.Supplier<BoardEdits.Saved> write) {
+            final Board before = store.board();
+            final BoardEdits.Saved saved = guarded(targets, write);
+            call.saved(saved.board(), saved.versions(), targets);
+            final Basis basis = Basis.of(before);
+            final Basis after = Basis.of(saved.board());
+            if (saved.versions().isEmpty()
+                    || targets.stream()
+                            .anyMatch(id -> !Objects.equals(basis.of(id), after.of(id)))) {
                 stands(step);
+            }
+        }
+
+        /**
+         * Runs one call of a step and, when it throws, leaves its targets out of the versions: it
+         * may have written some of them before it threw.
+         */
+        <T> T guarded(final Set<String> targets, final java.util.function.Supplier<T> step) {
+            try {
+                return step.get();
+            } catch (final RuntimeException failure) {
+                this.call.lost(targets);
+                throw failure;
             }
         }
 
@@ -580,17 +650,20 @@ public class BoardChangeController {
                                     item == null ? "" : item, repository, stands, refusal);
         }
 
-        ItemResult result() {
+        /** Answers the final version only for an item whose change was not refused. */
+        ItemResult result(final Map<String, String> versions) {
             final @Nullable Problem refused = problem;
             if (refused != null) {
                 return new ItemResult(
-                        item, key, ItemResult.OutcomeEnum.REFUSED, null, null, refused);
+                        item, key, ItemResult.OutcomeEnum.REFUSED, null, null, null, refused);
             }
             final ItemResult.OutcomeEnum outcome =
                     stands.isEmpty()
                             ? ItemResult.OutcomeEnum.UNCHANGED
                             : ItemResult.OutcomeEnum.SAVED;
-            return new ItemResult(item, key, outcome, state, null, null);
+            final String id = item;
+            final String version = id == null ? null : versions.get(id);
+            return new ItemResult(item, key, outcome, state, version, null, null);
         }
     }
 }

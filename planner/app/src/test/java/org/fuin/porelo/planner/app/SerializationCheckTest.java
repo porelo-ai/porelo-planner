@@ -31,10 +31,54 @@ class SerializationCheckTest {
                     Map.entry(org.fuin.porelo.planner.app.answers.Breach.class, 4),
                     Map.entry(org.fuin.porelo.planner.app.answers.SearchAnswer.class, 4),
                     Map.entry(org.fuin.porelo.planner.app.answers.SearchMatch.class, 5),
-                    Map.entry(org.fuin.porelo.planner.app.answers.BatchSaved.class, 2),
-                    Map.entry(org.fuin.porelo.planner.app.answers.ItemResult.class, 6),
+                    Map.entry(org.fuin.porelo.planner.app.answers.BatchSaved.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.ItemResult.class, 7),
+                    Map.entry(org.fuin.porelo.planner.app.answers.EditSaved.class, 2),
+                    Map.entry(org.fuin.porelo.planner.app.answers.StoryAdded.class, 4),
+                    Map.entry(org.fuin.porelo.planner.app.answers.WorkerSaved.class, 2),
+                    Map.entry(org.fuin.porelo.planner.app.answers.PrioritySaved.class, 2),
+                    Map.entry(org.fuin.porelo.planner.app.answers.IssueAdded.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.CorrectionSaved.class, 2),
                     Map.entry(org.fuin.porelo.planner.app.answers.Problem.class, 5),
                     Map.entry(org.fuin.porelo.planner.app.answers.ProblemParameters.class, 31));
+
+    @Test
+    void everyWriteAnswersVersionsSurviveTheSerializationCheck() {
+        // Harm: an image drops the map a caller needs as its next write's seen.
+        final tools.jackson.databind.json.JsonMapper json =
+                tools.jackson.databind.json.JsonMapper.builder().build();
+        for (final Class<?> type :
+                List.of(
+                        org.fuin.porelo.planner.app.answers.EditSaved.class,
+                        org.fuin.porelo.planner.app.answers.StoryAdded.class,
+                        org.fuin.porelo.planner.app.answers.BatchSaved.class,
+                        org.fuin.porelo.planner.app.answers.WorkerSaved.class,
+                        org.fuin.porelo.planner.app.answers.PrioritySaved.class,
+                        org.fuin.porelo.planner.app.answers.IssueAdded.class,
+                        org.fuin.porelo.planner.app.answers.CorrectionSaved.class)) {
+            final Object sample = SerializationCheck.sample(type);
+            final Object read =
+                    json.readerFor(type).readValue(json.writerFor(type).writeValueAsString(sample));
+            final tools.jackson.databind.JsonNode versions =
+                    json.valueToTree(read).path("versions");
+            assertThat(versions.size())
+                    .as("%s keeps every version entry", type.getSimpleName())
+                    .isEqualTo(1);
+            assertThat(versions.path("sample").asText())
+                    .as("%s keeps the version value", type.getSimpleName())
+                    .isEqualTo("sample");
+        }
+    }
+
+    @Test
+    void sparseProblemParametersRoundTripWithoutUnnamedNullsInTheNativeCheck() {
+        // Harm: the image only proves filled parameters, hiding null members in real refusals.
+        final var sparse = SerializationCheck.sparseParameters();
+        assertThat(sparse.size()).as("one named parameter is checked").isEqualTo(1);
+        assertThat(sparse.path("item").asText())
+                .as("the named item survives the round trip")
+                .isEqualTo("AB1");
+    }
 
     @Test
     void everyBoundTypeIsWrittenAndReadBackAsItWas() {

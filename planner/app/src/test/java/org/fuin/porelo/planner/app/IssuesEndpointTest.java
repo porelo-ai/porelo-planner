@@ -20,6 +20,7 @@ import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Revision;
 import org.fuin.porelo.planner.store.Risk;
 import org.fuin.porelo.planner.store.StoreException;
+import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.WorkRule;
 import org.fuin.porelo.planner.store.Worker;
@@ -127,6 +128,7 @@ class IssuesEndpointTest {
                             throw failure;
                         }
                         added.add(issue);
+                        final List<Story> parents = current.stories();
                         current =
                                 withIssue(
                                         "r2",
@@ -134,6 +136,30 @@ class IssuesEndpointTest {
                                                 ? issue.state()
                                                 : "Idea",
                                         issue.worker());
+                        if (issue.story() != null) {
+                            final List<Story> stories =
+                                    parents.stream()
+                                            .map(
+                                                    story ->
+                                                            new Story(
+                                                                    story.id(),
+                                                                    story.title(),
+                                                                    story.state(),
+                                                                    story.priority(),
+                                                                    null,
+                                                                    List.of("CD03"),
+                                                                    "",
+                                                                    null))
+                                            .toList();
+                            current =
+                                    new Board(
+                                            current.revision(),
+                                            current.workflow(),
+                                            stories,
+                                            current.issues(),
+                                            current.work(),
+                                            current.repositories());
+                        }
                         return new NewIssue.Added("CD03", current);
                     }
                 };
@@ -177,6 +203,37 @@ class IssuesEndpointTest {
                                 Risk.ORDINARY)),
                 empty.work(),
                 empty.repositories());
+    }
+
+    @Test
+    void aNewIssueAnswersItsOwnAndItsNamedStorysVersions() throws Exception {
+        // Harm: the next edit needs another read to learn the new issue's or its parent's version.
+        current =
+                new Board(
+                        current.revision(),
+                        current.workflow(),
+                        List.of(
+                                new Story(
+                                        "ST1", "Parent", "Idea", "High", null, List.of(), "",
+                                        null)),
+                        current.issues(),
+                        current.work(),
+                        current.repositories());
+        mvc.perform(
+                        post("/projects/alpha/issues")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"repository\":\"porelo-other\",\"title\":\"T\",\"mustBeTrue\":\"W\","
+                                                + "\"story\":\"ST1\",\"seen\":"
+                                                + Seens.of(current)
+                                                + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath("$.versions.CD03")
+                                .value(current.issue("CD03").orElseThrow().version().value()))
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
     }
 
     @Test
@@ -364,8 +421,8 @@ class IssuesEndpointTest {
         createsInState = true;
 
         issue(
-                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"seen\": "
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"seen\": "
                                 + Seens.of(current)
                                 + ", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
                 .andExpect(status().isCreated())
@@ -418,8 +475,8 @@ class IssuesEndpointTest {
                                                 "https://github.com/a/porelo-other/issues/1"))));
 
         issue(
-                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"seen\": "
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"seen\": "
                                 + Seens.of(current)
                                 + ", \"state\": \"Working\", \"worker\": \"MANUAL\"}")
                 .andExpect(status().isCreated());
@@ -451,8 +508,8 @@ class IssuesEndpointTest {
                         new Work(Map.of(), List.of("An unrelated work rule is unreadable")),
                         empty.repositories());
         issue(
-                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\": \"W\","
-                                + " \"seen\": "
+                        "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
+                                + " \"W\", \"seen\": "
                                 + Seens.of(current)
                                 + "}")
                 .andExpect(status().isCreated());
@@ -559,7 +616,7 @@ class IssuesEndpointTest {
         current =
                 withStories(
                         List.of(
-                                new org.fuin.porelo.planner.store.Story(
+                                new Story(
                                         "ST1", "S", "Idea", "Medium", null, List.of(), "", null)));
         issue(
                         "{\"repository\": \"porelo-other\", \"title\": \"T\", \"mustBeTrue\":"
@@ -702,9 +759,7 @@ class IssuesEndpointTest {
     @Test
     void anIssueUnderAStoryHeldBackOrNamedTwiceIsRefusedWithItsWords() throws Exception {
         // An issue added under a story the store could not fully read would be worked from it.
-        final org.fuin.porelo.planner.store.Story story =
-                new org.fuin.porelo.planner.store.Story(
-                        "ST1", "S", "Idea", "Medium", null, List.of(), "", null);
+        final Story story = new Story("ST1", "S", "Idea", "Medium", null, List.of(), "", null);
         final String head =
                 "{\"repository\": \"porelo-store\", \"title\": \"T\", \"mustBeTrue\":"
                         + " \"W\", \"story\": \"ST1\", \"seen\": ";
@@ -727,7 +782,7 @@ class IssuesEndpointTest {
                                                 + org.fuin.porelo.planner.store.Warning
                                                         .wrongParent()
                                                         .text()));
-        final org.fuin.porelo.planner.store.Story copy =
+        final Story copy =
                 story.withWarnings(List.of(org.fuin.porelo.planner.store.Warning.idTwice()));
         current = withStories(List.of(copy, copy));
         // The story seen is no longer one item: the window is told it changed, to read it again.
@@ -738,7 +793,7 @@ class IssuesEndpointTest {
         assertThat(added).as("nothing created").isEmpty();
     }
 
-    private Board withStories(final List<org.fuin.porelo.planner.store.Story> stories) {
+    private Board withStories(final List<Story> stories) {
         return new Board(
                 current.revision(),
                 current.workflow(),

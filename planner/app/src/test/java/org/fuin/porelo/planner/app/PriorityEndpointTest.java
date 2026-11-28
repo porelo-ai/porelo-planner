@@ -129,7 +129,9 @@ class PriorityEndpointTest {
 
         priority("ST1", "{\"priority\": \"Lowest\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r2"));
+                .andExpect(jsonPath("$.revision").value("r2"))
+                // Without the new version an agent reads the story again before its next write.
+                .andExpect(jsonPath("$.versions.ST1").isString());
 
         assertThat(saved).as("one save").hasSize(1);
         assertThat(saved.get(0).priorities())

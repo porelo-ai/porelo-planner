@@ -3325,6 +3325,19 @@ components:
       type: string
       pattern: '^([0-9a-f]{40}|[0-9a-f]{64})$'
 
+    WrittenVersions:
+      description: >-
+        The new version of each item a write changed, by item id, read from the board the save left, in the form
+        `seen` takes: the items the write targets, any item it made, and every story that held or now holds an
+        issue it wrote, so a next write that changes such a story's list finds its version here. A caller sends its
+        next write's `seen` from it and needs no read between two writes. An item the board no longer holds as one
+        item is left out. If the read-back fails, items whose new versions are unknown are left out. A write that
+        changes nothing answers its targets' current versions. The keys are the
+        planner's own item ids, so no pattern is repeated for them here and an agent's tool takes the answer whole.
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Version'
+
     Seen:
       description: >-
         The versions the person saw, by item id: the edit basis a write is checked against. The planner determines
@@ -4258,12 +4271,14 @@ components:
         seen:
           $ref: '#/components/schemas/Seen'
     WorkerSaved:
-      description: The board's revision after the save.
+      description: The board's revision after the save and the new versions of what it changed.
       type: object
-      required: [revision]
+      required: [revision, versions]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     Priority:
       description: A story's priority, the highest first.
       type: string
@@ -4279,12 +4294,16 @@ components:
         seen:
           $ref: '#/components/schemas/Seen'
     PrioritySaved:
-      description: The board's revision after the save.
+      description: >-
+        The board's revision after the save and the new versions of what it changed: the story and its issues,
+        since a priority raised on a story raises its issues with it.
       type: object
-      required: [revision]
+      required: [revision, versions]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     NewIssueRequest:
       description: An idea a person wrote, with the versions seen; its target is the story named, if one is. No other member is taken.
       type: object
@@ -4347,14 +4366,16 @@ components:
           allOf:
             - $ref: '#/components/schemas/TopicLabels'
     IssueAdded:
-      description: The new issue's id and the board's revision after the save.
+      description: The new issue's id, the board's revision after the save and the new versions of the issue and its named story.
       type: object
-      required: [id, revision]
+      required: [id, revision, versions]
       properties:
         id:
           $ref: '#/components/schemas/IssueId'
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     Idea:
       description: >-
         The idea format, as a discussion's task reports it and a new story carries it: one story and an
@@ -4458,9 +4479,9 @@ components:
     StoryAdded:
       description: >-
         The new story's id, its issues' ids - the new ones in the idea's order, or the existing ones in the order
-        named - and the board's revision after the save.
+        named - the board's revision after the save and the new versions of what it changed.
       type: object
-      required: [id, issues, revision]
+      required: [id, issues, revision, versions]
       properties:
         id:
           $ref: '#/components/schemas/StoryId'
@@ -4470,6 +4491,8 @@ components:
             $ref: '#/components/schemas/IssueId'
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     IssueFieldsRequest:
       description: >-
         An issue's fields to set, with the versions seen; its target is the issue. A member left out stays as it is,
@@ -4639,12 +4662,14 @@ components:
         seen:
           $ref: '#/components/schemas/Seen'
     EditSaved:
-      description: The board's revision after the save.
+      description: The board's revision after the save and the new versions of what it changed.
       type: object
-      required: [revision]
+      required: [revision, versions]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     Refreshed:
       description: The revision after a fetch.
       type: object
@@ -5234,12 +5259,14 @@ components:
             $ref: '#/components/schemas/LabelCall'
     CorrectionSaved:
       description: >-
-        The board's revision after a correction was saved; a correction never writes a state, so it stops no run.
+        The board's revision and the versions of the corrected targets after the save; a correction never writes a state, so it stops no run.
       type: object
-      required: [revision]
+      required: [revision, versions]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     HeldIssue:
       description: >-
         An open issue of the story no task of the proposal names, since the board holds it back. A warning holds it
@@ -6404,7 +6431,10 @@ components:
           description: The planner's words for the refusal, never a credential or a local path.
         parameters:
           type: object
-          description: Typed subjects and checked words describing the refusal.
+          x-class-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          description: >-
+            Typed subjects and checked words describing the refusal; only the members the refusal names are present,
+            never one written as null.
           properties:
             project:
               type: string
@@ -6859,9 +6889,10 @@ components:
         priority:
           $ref: '#/components/schemas/Priority'
     BatchSaved:
-      description: What a batch saved and refused, per item, and the revision after it.
+      description: >-
+        What a batch saved and refused, per item, the revision after it and the new versions of what it changed.
       type: object
-      required: [revision, results]
+      required: [revision, results, versions]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -6869,6 +6900,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ItemResult'
+        versions:
+          $ref: '#/components/schemas/WrittenVersions'
     ItemResult:
       description: >-
         One item of a batch: SAVED when its change stands, UNCHANGED when it asked for what stood already, REFUSED with
@@ -6891,6 +6924,13 @@ components:
           x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: A moved issue's state after the batch.
           type: string
+        version:
+          x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
+          description: >-
+            The item's known version after the batch, for a SAVED or UNCHANGED item the read-back holds as one
+            item; absent for a REFUSED item or when its new version could not be read.
+          allOf:
+            - $ref: '#/components/schemas/Version'
         raised:
           x-field-extra-annotation: "@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)"
           description: For a story's priority, the issues raised with it.

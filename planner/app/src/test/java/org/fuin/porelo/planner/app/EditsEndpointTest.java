@@ -23,6 +23,7 @@ import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Story;
 import org.fuin.porelo.planner.store.StoryFromIssues;
 import org.fuin.porelo.planner.store.TextEdit;
+import org.fuin.porelo.planner.store.Version;
 import org.fuin.porelo.planner.store.Work;
 import org.fuin.porelo.planner.store.Workflow;
 import org.fuin.porelo.planner.store.github.BodySections;
@@ -45,6 +46,12 @@ class EditsEndpointTest {
     private boolean offered = true;
 
     private @Nullable RuntimeException failure;
+
+    /** Gives consecutive writes the changed issue and parent versions a tracker returns. */
+    private boolean changingVersions;
+
+    /** A remote write stands while the store's read-back fails and its held board stays old. */
+    private boolean readBackFails;
 
     private Board current =
             new Board(
@@ -103,8 +110,53 @@ class EditsEndpointTest {
                     }
 
                     @Override
+                    public org.fuin.porelo.planner.store.Written writeAlone(
+                            final org.fuin.porelo.planner.store.Command command) {
+                        if (readBackFails) {
+                            written.add(command);
+                            return new org.fuin.porelo.planner.store.Written.Done(null, null);
+                        }
+                        return PlanningStore.super.writeAlone(command);
+                    }
+
+                    @Override
+                    public Board readAfter(final Set<String> targets) {
+                        if (readBackFails) {
+                            throw new StoreException.Unreachable(
+                                    "porelo-store", "read back failed");
+                        }
+                        return current;
+                    }
+
+                    @Override
                     public Board setFields(
                             final Revision revision, final String issue, final Fields fields) {
+                        if (changingVersions) {
+                            final String value = fields.toString();
+                            current =
+                                    new Board(
+                                            current.revision(),
+                                            current.workflow(),
+                                            current.stories().stream()
+                                                    .map(
+                                                            story ->
+                                                                    story.withVersion(
+                                                                            Version.of(
+                                                                                    "parent" + " "
+                                                                                            + value)))
+                                                    .toList(),
+                                            current.issues().stream()
+                                                    .map(
+                                                            item ->
+                                                                    item.id().equals(issue)
+                                                                            ? item.withVersion(
+                                                                                    Version.of(
+                                                                                            value))
+                                                                            : item)
+                                                    .toList(),
+                                            current.work(),
+                                            current.repositories());
+                        }
                         return write(fields);
                     }
 
@@ -127,6 +179,17 @@ class EditsEndpointTest {
                     @Override
                     public Board setText(
                             final Revision revision, final String id, final TextEdit edit) {
+                        final String title =
+                                current.issue(id)
+                                        .map(Issue::title)
+                                        .or(() -> current.story(id).map(Story::title))
+                                        .orElse("");
+                        if (title.equals(edit.title())
+                                && edit.written().isEmpty()
+                                && edit.removed().isEmpty()
+                                && edit.labels() == null) {
+                            return current;
+                        }
                         return write(edit);
                     }
 
@@ -150,6 +213,44 @@ class EditsEndpointTest {
                     @Override
                     public NewIdea.Added createStoryFromIssues(
                             final Revision revision, final StoryFromIssues story) {
+                        if (changingVersions) {
+                            final List<Story> stories = new ArrayList<>();
+                            for (final Story held : current.stories()) {
+                                stories.add(
+                                        new Story(
+                                                held.id(),
+                                                held.title(),
+                                                held.state(),
+                                                held.priority(),
+                                                null,
+                                                held.issues().stream()
+                                                        .filter(
+                                                                id ->
+                                                                        !story.existing()
+                                                                                .contains(id))
+                                                        .toList(),
+                                                "",
+                                                null));
+                            }
+                            stories.add(
+                                    new Story(
+                                            "ST2",
+                                            story.title(),
+                                            "Idea",
+                                            "High",
+                                            null,
+                                            story.existing(),
+                                            "",
+                                            null));
+                            current =
+                                    new Board(
+                                            current.revision(),
+                                            current.workflow(),
+                                            stories,
+                                            current.issues(),
+                                            current.work(),
+                                            current.repositories());
+                        }
                         return new NewIdea.Added(
                                 "ST2",
                                 story.existing(),
@@ -231,6 +332,157 @@ class EditsEndpointTest {
                                 : put("/projects/alpha" + path))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body));
+    }
+
+    @Test
+    void aWrittenEditWhoseReadBackFailsNeverAnswersTheHeldBoardsOldVersions() throws Exception {
+        // Harm: a caller trusts a pre-write version as fresh and its next edit is refused.
+        throughTheOutbox();
+        readBackFails = true;
+        send("PUT", "/issues/AB1/fields", "{\"size\":\"M\",\"seen\":" + Seens.of(current) + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versions").isEmpty());
+        assertThat(written).as("the write stands despite the read-back failure").hasSize(1);
+    }
+
+    @Test
+    void aStoryHoldingTheWrittenIssueIsAnsweredOnlyWhenTheCallerSawItAsItStands() throws Exception {
+        // Harm: a caller sends its next write's versions seen with a story's version of a change
+        // it never saw, and the write passes the check over content it never read.
+        final String issue = current.issue("AB1").orElseThrow().version().value();
+        final String story = current.story("ST1").orElseThrow().version().value();
+
+        send("PUT", "/issues/AB1/fields", "{\"size\":\"M\",\"seen\":{\"AB1\":\"" + issue + "\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versions.AB1").exists())
+                .andExpect(jsonPath("$.versions.ST1").doesNotExist());
+        send(
+                        "PUT",
+                        "/issues/AB1/fields",
+                        "{\"size\":\"L\",\"seen\":{\"AB1\":\""
+                                + issue
+                                + "\",\"ST1\":\""
+                                + "f".repeat(64)
+                                + "\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versions.ST1").doesNotExist());
+        send(
+                        "PUT",
+                        "/issues/AB1/fields",
+                        "{\"size\":\"S\",\"seen\":{\"AB1\":\""
+                                + issue
+                                + "\",\"ST1\":\""
+                                + story
+                                + "\"}}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versions.ST1").value(story));
+    }
+
+    @Test
+    void aSecondWriteUsesTheFirstAnswersVersionsWithoutReadingTheIssue() throws Exception {
+        // Harm: a caller must read the whole issue between writes or retry a false ItemChanged.
+        changingVersions = true;
+        final String before = current.issue("AB1").orElseThrow().version().value();
+        final JsonNode first =
+                JsonMapper.builder()
+                        .build()
+                        .readTree(
+                                send(
+                                                "PUT",
+                                                "/issues/AB1/fields",
+                                                "{\"size\":\"M\",\"seen\":"
+                                                        + Seens.of(current)
+                                                        + "}")
+                                        .andExpect(status().isOk())
+                                        .andReturn()
+                                        .getResponse()
+                                        .getContentAsString());
+        assertThat(first.at("/versions/AB1").asText())
+                .as("the saved issue's fresh version")
+                .isEqualTo(current.issue("AB1").orElseThrow().version().value())
+                .isNotEqualTo(before);
+        assertThat(first.at("/versions/ST1").asText())
+                .as("the holding story's fresh version")
+                .isEqualTo(current.story("ST1").orElseThrow().version().value());
+        send(
+                        "PUT",
+                        "/issues/AB1/fields",
+                        "{\"size\":\"L\",\"seen\":" + first.path("versions") + "}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.AB1")
+                                .value(
+                                        org.hamcrest.Matchers.not(
+                                                first.at("/versions/AB1").asText())));
+        assertThat(written).as("both field writes reached the store").hasSize(2);
+    }
+
+    @Test
+    void aStoryFromIssuesUsesTheParentVersionAnsweredByThePreviousWrite() throws Exception {
+        // Harm: moving an issue into a new story fails because its former parent's version is
+        // stale.
+        changingVersions = true;
+        final JsonNode first =
+                JsonMapper.builder()
+                        .build()
+                        .readTree(
+                                send(
+                                                "PUT",
+                                                "/issues/AB1/fields",
+                                                "{\"size\":\"M\",\"seen\":"
+                                                        + Seens.of(current)
+                                                        + "}")
+                                        .andExpect(status().isOk())
+                                        .andReturn()
+                                        .getResponse()
+                                        .getContentAsString());
+        send(
+                        "POST",
+                        "/stories",
+                        "{"
+                                + HEAD
+                                + ",\"existing\":[\"AB1\"],\"seen\":"
+                                + first.path("versions")
+                                + "}")
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()))
+                .andExpect(jsonPath("$.versions.ST2").exists())
+                .andExpect(jsonPath("$.versions.AB1").exists());
+        assertThat(current.story("ST1").orElseThrow().issues())
+                .as("the former parent releases the issue")
+                .isEmpty();
+        assertThat(current.story("ST2").orElseThrow().issues())
+                .as("the new story holds the issue")
+                .containsExactly("AB1");
+    }
+
+    @Test
+    void equalListsAndTextAnswerTheirCurrentTargetVersionsWithoutWriting() throws Exception {
+        // Harm: a no-op answer cannot serve as the basis for the caller's next edit.
+        send(
+                        "PUT",
+                        "/stories/ST1/issues",
+                        "{\"issues\":[\"AB1\"],\"seen\":" + Seens.of(current) + "}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
+        send(
+                        "PUT",
+                        "/issues/AB1/blockedBy",
+                        "{\"blockedBy\":[],\"seen\":" + Seens.of(current) + "}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.AB1")
+                                .value(current.issue("AB1").orElseThrow().version().value()));
+        send("PUT", "/issues/AB1/text", "{\"title\":\"One\",\"seen\":" + Seens.of(current) + "}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.AB1")
+                                .value(current.issue("AB1").orElseThrow().version().value()));
+        assertThat(written).as("equal lists and text write nothing").isEmpty();
     }
 
     @Test
@@ -397,12 +649,21 @@ class EditsEndpointTest {
                                 + Seens.of(current)
                                 + "}")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r2"));
+                .andExpect(jsonPath("$.revision").value("r2"))
+                .andExpect(
+                        jsonPath("$.versions.AB1")
+                                .value(current.issue("AB1").orElseThrow().version().value()))
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
         send(
                         "PUT",
                         "/stories/ST1/text",
                         "{\"gain\": \"More.\", \"seen\": " + Seens.of(current) + "}")
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
 
         assertThat(written)
                 .as("the texts written")

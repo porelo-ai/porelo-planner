@@ -215,6 +215,40 @@ class CorrectionsTest {
     }
 
     @Test
+    void aCorrectionsAnswerKeepsAMissingReadBackDistinctFromTheHeldBoard() {
+        // Harm: an HTTP answer mistakes an older held version for the completed correction's
+        // version.
+        final CountingStore store = new CountingStore(withPriorityWarning(Warning.noPriority()));
+        final Corrections.Asked asked = asked("ST1", Warning.noPriority().kind(), "High");
+        final Corrections.Preview preview = preview(store, asked);
+        final WorkRun run =
+                new WorkRun(
+                        store,
+                        new WorkRunTest.Memory(),
+                        CLOCK,
+                        why -> {},
+                        group ->
+                                new org.fuin.porelo.planner.store.CommandOutcome.Done(
+                                        null, Map.of()));
+        final boolean missing =
+                run.correction(
+                        asked,
+                        preview.basis(),
+                        preview.digest("https://example.org/own.git", null),
+                        "https://example.org/own.git",
+                        null,
+                        (before, after) -> {
+                            assertThat(before)
+                                    .as("the board the correction was judged on")
+                                    .isSameAs(store.board);
+                            return after == null;
+                        });
+        assertThat(missing)
+                .as("no read-back is reported as unknown, never as the held board")
+                .isTrue();
+    }
+
+    @Test
     void aStorysMissingOrUnknownPriorityIsSetAsItsPriorityAloneAndSavedOnce() {
         // Harm: a correction that writes more than the story's priority, or writes it against a
         // story changed since the person saw it.

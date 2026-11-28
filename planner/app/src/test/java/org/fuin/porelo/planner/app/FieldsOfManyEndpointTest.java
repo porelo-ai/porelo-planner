@@ -203,6 +203,18 @@ class FieldsOfManyEndpointTest {
     }
 
     @Test
+    void aRefusedFieldsItemValidatesAgainstThePublishedSchema() throws Exception {
+        // Harm: an invalid refusal hides why one item of a batch could not be saved.
+        final String answer =
+                setFields("{\"issues\":[{\"issue\":\"CD9\",\"size\":\"M\"}]}")
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        ItemResultSchema.matches(answer, 0);
+    }
+
+    @Test
     void tenSizesAreSetInOneCallAndEachIsAnsweredSaved() throws Exception {
         // Harm: a call that saves only some of the sizes, or answers them out of order.
         final StringBuilder body = new StringBuilder("{\"issues\": [");
@@ -226,6 +238,31 @@ class FieldsOfManyEndpointTest {
     }
 
     @Test
+    void membershipChangesAnswerTheIssueAndBothParentsAndEachItemsFinalVersion() throws Exception {
+        // Harm: a follow-up membership edit uses a stale version of the story the issue left.
+        setFields("{\"issues\":[{\"issue\":\"AB1\",\"story\":\"ST2\",\"size\":\"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.AB1")
+                                .value(current.issue("AB1").orElseThrow().version().value()))
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()))
+                .andExpect(
+                        jsonPath("$.versions.ST2")
+                                .value(current.story("ST2").orElseThrow().version().value()))
+                .andExpect(
+                        jsonPath("$.results[0].version")
+                                .value(current.issue("AB1").orElseThrow().version().value()));
+        setFields("{\"issues\":[{\"issue\":\"AB1\",\"size\":\"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"))
+                .andExpect(
+                        jsonPath("$.results[0].version")
+                                .value(current.issue("AB1").orElseThrow().version().value()));
+    }
+
+    @Test
     void aStoryGivenALowerPriorityRaisesTheIssuesTheRuleNeedsAndNamesThem() throws Exception {
         // Harm: a story saved over issues that break the stories' priority rule, unnamed.
         setFields("{\"stories\": [{\"story\": \"ST1\", \"priority\": \"Medium\"}]}")
@@ -235,7 +272,10 @@ class FieldsOfManyEndpointTest {
                 .andExpect(jsonPath("$.results[0].outcome").value("SAVED"))
                 .andExpect(jsonPath("$.results[0].raised.length()").value(2))
                 .andExpect(jsonPath("$.results[0].raised[0]").value("AB1"))
-                .andExpect(jsonPath("$.results[0].raised[1]").value("AB2"));
+                .andExpect(jsonPath("$.results[0].raised[1]").value("AB2"))
+                .andExpect(jsonPath("$.versions.ST1").exists())
+                .andExpect(jsonPath("$.versions.AB1").exists())
+                .andExpect(jsonPath("$.versions.AB2").exists());
 
         assertThat(written)
                 .as("the story's priority and each raised issue's, and no other issue's")

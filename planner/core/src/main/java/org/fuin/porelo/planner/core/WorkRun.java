@@ -4177,7 +4177,8 @@ public final class WorkRun implements RefusedEventResave {
                                         issue.state(),
                                         "A person works "
                                                 + issueId
-                                                + ", so no agent's reading or rework starts on it.");
+                                                + ", so no agent's reading or rework starts on"
+                                                + " it.");
                             }
                             final Run run = snapshot.runs().get(story);
                             final NextStep.Progress previous =
@@ -5182,6 +5183,35 @@ public final class WorkRun implements RefusedEventResave {
             final String digest,
             final String repository,
             final @Nullable String branch) {
+        return correction(
+                asked,
+                basis,
+                digest,
+                repository,
+                branch,
+                (before, after) -> after == null ? store.board() : after);
+    }
+
+    /**
+     * Saves a confirmed correction and answers with the judged board and its nullable read-back. A
+     * missing read-back stays unknown so an answer never publishes the held board's older versions.
+     *
+     * @param asked the correction
+     * @param basis the versions seen
+     * @param digest the confirmed preview's digest
+     * @param repository the project's own repository
+     * @param branch its branch, or null
+     * @param answer maps the judged board and the saved board, null when read-back failed
+     * @param <T> the answer type
+     * @return the mapped answer after the correction stands
+     */
+    public <T> T correction(
+            final Corrections.Asked asked,
+            final Basis basis,
+            final String digest,
+            final String repository,
+            final @Nullable String branch,
+            final BiFunction<Board, @Nullable Board, T> answer) {
         return record.locked(
                 session -> {
                     final Board board = store.board();
@@ -5197,14 +5227,16 @@ public final class WorkRun implements RefusedEventResave {
                     }
                     final Set<String> targets = preview.targets().keySet();
                     refuseInFlight(read(session), targets, targets, null);
-                    return written(
-                            RunCommands.group(
-                                    UUID.randomUUID().toString(),
-                                    // A correction is the owner account's, no run's.
-                                    "",
-                                    preview.writes(),
-                                    basis,
-                                    Recheck.none()));
+                    return answer.apply(
+                            board,
+                            writtenBoard(
+                                    RunCommands.group(
+                                            UUID.randomUUID().toString(),
+                                            // A correction is the owner account's, no run's.
+                                            "",
+                                            preview.writes(),
+                                            basis,
+                                            Recheck.none())));
                 });
     }
 
@@ -5213,12 +5245,14 @@ public final class WorkRun implements RefusedEventResave {
      * board after it; a refused command's refusal reaches the caller as the store gave it.
      */
     private Board written(final CommandGroup group) {
+        final @Nullable Board board = writtenBoard(group);
+        return board == null ? store.board() : board;
+    }
+
+    /** A completed write whose failed read-back stays unknown to callers that publish versions. */
+    private @Nullable Board writtenBoard(final CommandGroup group) {
         return switch (queue.submit(group)) {
-            case CommandOutcome.Done done -> {
-                // Every command is written; a board the queue could not read is read here.
-                final Board board = done.board();
-                yield board != null ? board : store.board();
-            }
+            case CommandOutcome.Done done -> done.board();
             case CommandOutcome.Refused refused -> throw passedOn(refused.cause());
             // Held with a part written, the group stands in part for the owner account; held with
             // nothing written, it is refused before writing.

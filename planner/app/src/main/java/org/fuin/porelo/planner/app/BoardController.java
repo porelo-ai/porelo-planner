@@ -67,6 +67,7 @@ import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.core.WorkRules;
 import org.fuin.porelo.planner.core.WorkRun;
 import org.fuin.porelo.planner.core.Workers;
+import org.fuin.porelo.planner.core.WrittenVersions;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
@@ -200,6 +201,30 @@ public class BoardController {
             final Recheck recheck) {
         return CommandGroups.saved(
                 queues.queue(name, store).submit(CommandGroups.of(writes, seen, recheck)), store);
+    }
+
+    /**
+     * Keeps a failed read-back distinct from the store's older held board. The versions answered
+     * are those of the targets and, of a story that holds a written issue, only one the caller's
+     * own versions seen name.
+     */
+    private BoardEdits.Saved submitted(
+            final String name,
+            final PlanningStore store,
+            final Writes writes,
+            final Basis seen,
+            final Recheck recheck,
+            final Board before,
+            final Set<String> targets,
+            final Basis named) {
+        final var done =
+                CommandGroups.done(
+                        queues.queue(name, store).submit(CommandGroups.of(writes, seen, recheck)),
+                        store);
+        final @Nullable Board after = done.board();
+        return new BoardEdits.Saved(
+                after == null ? store.board() : after,
+                after == null ? Map.of() : WrittenVersions.of(before, after, targets, named));
     }
 
     /**
@@ -526,15 +551,33 @@ public class BoardController {
         }
         final Projects.Given given = projects.given(name);
         try {
-            final Board saved =
+            final BoardEdits.Saved saved =
                     given.work()
-                            .correction(asked, basis, digest, given.repository(), given.branch());
+                            .correction(
+                                    asked,
+                                    basis,
+                                    digest,
+                                    given.repository(),
+                                    given.branch(),
+                                    (before, after) ->
+                                            new BoardEdits.Saved(
+                                                    after == null ? given.store().board() : after,
+                                                    after == null
+                                                            ? Map.of()
+                                                            : WrittenVersions.of(
+                                                                    before,
+                                                                    after,
+                                                                    Targets.of(
+                                                                            before,
+                                                                            new Operation.Correct(
+                                                                                    asked)),
+                                                                    basis)));
             LOG.info(
                     "Saved a correction of {} in project {} as revision {}",
                     LogText.of(asked.id()),
                     LogText.of(name),
-                    LogText.of(saved.revision().value()));
-            return new CorrectionSaved(saved.revision().value());
+                    LogText.of(saved.revision()));
+            return new CorrectionSaved(saved.revision(), saved.versions());
         } catch (final StoreException.NotSavable e) {
             throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()), asked.choice());
         } catch (final UnsupportedOperationException e) {
@@ -617,7 +660,7 @@ public class BoardController {
                     "Set the labels of repository {} right in project {}",
                     LogText.of(asked.repository()),
                     LogText.of(name));
-            return new CorrectionSaved(saved.revision().value());
+            return new CorrectionSaved(saved.revision().value(), Map.of());
         } catch (final StoreException.NotSavable e) {
             throw notAllowed(e.subject(), "", String.valueOf(e.getMessage()));
         } catch (final UnsupportedOperationException e) {
@@ -782,7 +825,7 @@ public class BoardController {
                         .map(move -> new MoveIssues.Ask(move.issue(), move.to(), move.reason()))
                         .toList();
         try {
-            return moveMany(name, asks);
+            return moveMany(name, asks).answer();
         } finally {
             changes.saved(name);
         }
@@ -795,7 +838,7 @@ public class BoardController {
      * @param asks the moves
      * @return the revision after the call and what became of each move
      */
-    BatchSaved moveMany(final String name, final List<MoveIssues.Ask> asks) {
+    SavedMoves moveMany(final String name, final List<MoveIssues.Ask> asks) {
         final Projects.Given given = projects.given(name);
         try {
             return given.work()
@@ -808,7 +851,7 @@ public class BoardController {
     }
 
     /** Judges and saves a batch, judging it again once on the board a change left. */
-    private BatchSaved movedIssues(
+    private SavedMoves movedIssues(
             final String name,
             final PlanningStore store,
             final List<MoveIssues.Ask> asks,
@@ -821,13 +864,13 @@ public class BoardController {
             final MovePreview preview = judged.preview();
             if (preview == null) {
                 // Nothing changes, so no repository is locked or asked.
-                return batch(board.revision().value(), judged);
+                return new SavedMoves(board, batch(board, board, judged));
             }
             final List<Moves.Move> moves = judged.moves();
             final Set<String> from = new java.util.TreeSet<>(Moves.touched(board, moves));
             from.addAll(Moves.stories(board, moves));
             try {
-                final Board saved =
+                final BoardEdits.Saved saved =
                         submitted(
                                 name,
                                 store,
@@ -836,13 +879,17 @@ public class BoardController {
                                 new Recheck(
                                         Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
                                         from,
-                                        dependencies -> Rules.moves(dependencies, moves, runs)));
+                                        dependencies -> Rules.moves(dependencies, moves, runs)),
+                                board,
+                                moveTargets(judged),
+                                Basis.none());
                 LOG.info(
                         "Moved {} issues of project {} as revision {}",
                         moves.size(),
                         LogText.of(name),
-                        LogText.of(saved.revision().value()));
-                return batch(saved.revision().value(), judged);
+                        LogText.of(saved.revision()));
+                return new SavedMoves(
+                        saved.board(), batch(saved.board(), judged, saved.versions()));
             } catch (final StoreException.Changed changed) {
                 if (attempt > 0) {
                     throw changed;
@@ -858,18 +905,51 @@ public class BoardController {
         }
     }
 
-    private static BatchSaved batch(final String revision, final MoveIssues.Judged judged) {
-        return new BatchSaved(
-                revision, judged.items().stream().map(BoardController::itemResult).toList());
+    /**
+     * A batch's saved snapshot kept beside its HTTP answer for composed board changes.
+     *
+     * @param board the saved board, current when nothing changed
+     * @param answer the batch's answer
+     */
+    record SavedMoves(Board board, BatchSaved answer) {}
+
+    /** Every moved target and each accepted no-op that needs a version for its next write. */
+    private static Set<String> moveTargets(final MoveIssues.Judged judged) {
+        final Set<String> targets =
+                new java.util.LinkedHashSet<>(judged.planned().writes().targets());
+        judged.items().stream()
+                .filter(item -> item.refusal() == null)
+                .forEach(item -> targets.add(item.issue()));
+        return targets;
     }
 
-    private static ItemResult itemResult(final MoveIssues.Item item) {
+    /** Answers a batch that changed nothing from the board it was judged on. */
+    private static BatchSaved batch(
+            final Board before, final Board after, final MoveIssues.Judged judged) {
+        return batch(
+                after,
+                judged,
+                WrittenVersions.of(before, after, moveTargets(judged), Basis.none()));
+    }
+
+    /** Answers only the versions known from the completed save. */
+    private static BatchSaved batch(
+            final Board after, final MoveIssues.Judged judged, final Map<String, String> versions) {
+        return new BatchSaved(
+                after.revision().value(),
+                judged.items().stream().map(item -> itemResult(item, versions)).toList(),
+                versions);
+    }
+
+    private static ItemResult itemResult(
+            final MoveIssues.Item item, final Map<String, String> versions) {
         final @Nullable RuntimeException refusal = item.refusal();
         return new ItemResult(
                 item.issue(),
                 null,
                 ItemResult.OutcomeEnum.valueOf(item.outcome().name()),
                 item.state(),
+                refusal == null ? versions.get(item.issue()) : null,
                 null,
                 refusal == null ? null : Problems.answer(refusal));
     }
@@ -886,15 +966,26 @@ public class BoardController {
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = name(project);
         final WorkRequests.IssueRequest body = WorkRequests.issue(request);
-        final NewIssue.Added added;
+        final AddedIssue added;
         try {
             added = addIssue(name, body);
         } finally {
             changes.saved(name);
         }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new IssueAdded(added.id(), added.board().revision().value()));
+                .body(
+                        new IssueAdded(
+                                added.id(), added.board().revision().value(), added.versions()));
     }
+
+    /**
+     * A new issue and the versions known after its placement was saved.
+     *
+     * @param id the issue's id
+     * @param board the saved board
+     * @param versions the versions known from the save
+     */
+    record AddedIssue(String id, Board board, Map<String, String> versions) {}
 
     /**
      * Adds an issue as {@code createIssue} does, without announcing the save, for a caller that
@@ -904,7 +995,7 @@ public class BoardController {
      * @param body the new issue
      * @return the new issue's id and the board after the save
      */
-    NewIssue.Added addIssue(final String name, final WorkRequests.IssueRequest body) {
+    AddedIssue addIssue(final String name, final WorkRequests.IssueRequest body) {
         final Basis seen = body.seen();
         if (seen == null) {
             throw NewIssues.refused("seen", "The body names no versions seen.");
@@ -922,7 +1013,7 @@ public class BoardController {
         }
     }
 
-    private NewIssue.Added createIssue(
+    private AddedIssue createIssue(
             final String name,
             final Basis seen,
             final WorkRequests.IssueRequest body,
@@ -985,8 +1076,15 @@ public class BoardController {
                         queues.queue(name, store),
                         store,
                         id -> new Command.CreateIssue(id, asked, seen, Recheck.none()));
-        final NewIssue.Added added =
-                new NewIssue.Added(written.made().item(), written.afterCreate());
+        final Board created = written.afterCreate();
+        final Set<String> targets =
+                new java.util.LinkedHashSet<>(Targets.of(board, new Operation.CreateIssue(story)));
+        targets.add(written.made().item());
+        final AddedIssue added =
+                new AddedIssue(
+                        written.made().item(),
+                        created,
+                        WrittenVersions.of(board, created, targets, seen));
         LOG.info(
                 "Added issue {} to project {} as revision {}",
                 LogText.of(added.id()),
@@ -1000,7 +1098,7 @@ public class BoardController {
         }
         // A new issue has no task at work, so its move is saved as the window's move without
         // a preview.
-        final Board moved;
+        final BoardEdits.Saved moved;
         try {
             final List<Moves.Move> move = List.of(new Moves.Move(false, added.id(), state));
             final Moves.Planned planned = Moves.check(made, move, runs);
@@ -1020,7 +1118,10 @@ public class BoardController {
                             new Recheck(
                                     Set.of(Recheck.Need.STORY_ISSUES, Recheck.Need.PARENT),
                                     from,
-                                    dependencies -> Rules.moves(dependencies, move, runs)));
+                                    dependencies -> Rules.moves(dependencies, move, runs)),
+                            made,
+                            targets,
+                            seen);
         } catch (final RuntimeException e) {
             final String stands = made.issue(added.id()).map(Issue::state).orElse("");
             throw new StoreException.PartlySaved(
@@ -1040,8 +1141,8 @@ public class BoardController {
                 LogText.of(added.id()),
                 LogText.of(name),
                 LogText.of(state),
-                LogText.of(moved.revision().value()));
-        return new NewIssue.Added(added.id(), moved);
+                LogText.of(moved.revision()));
+        return new AddedIssue(added.id(), moved.board(), moved.versions());
     }
 
     private static void checkInitialState(
@@ -1146,7 +1247,8 @@ public class BoardController {
         final String name = name(project);
         final WorkRequests.WorkerRequest body = WorkRequests.worker(request, checked);
         try {
-            return workerOf(name, checked, body);
+            final BoardEdits.Saved saved = workerOf(name, checked, body);
+            return new WorkerSaved(saved.revision(), saved.versions());
         } finally {
             changes.saved(name);
         }
@@ -1160,12 +1262,12 @@ public class BoardController {
      * @param body the new worker and the versions seen
      * @return the revision after the save, unchanged when the issue had that worker already
      */
-    WorkerSaved workerOf(
+    BoardEdits.Saved workerOf(
             final String name, final String issue, final WorkRequests.WorkerRequest body) {
         return projects.work(name).worker(issue, () -> saveWorker(name, issue, body));
     }
 
-    private WorkerSaved saveWorker(
+    private BoardEdits.Saved saveWorker(
             final String name, final String issue, final WorkRequests.WorkerRequest body) {
         final PlanningStore store = projects.store(name);
         final Board board = store.board();
@@ -1173,24 +1275,26 @@ public class BoardController {
         final Writes writes = Workers.check(board, issue, body.worker());
         if (writes.none()) {
             // Nothing changes, so no repository is locked or asked.
-            return new WorkerSaved(board.revision().value());
+            return new BoardEdits.Saved(
+                    board, WrittenVersions.of(board, board, Set.of(issue), body.seen()));
         }
         try {
-            final String saved =
+            final BoardEdits.Saved saved =
                     submitted(
-                                    name,
-                                    store,
-                                    writes,
-                                    body.seen(),
-                                    Rules.workerRecheck(issue, body.worker()))
-                            .revision()
-                            .value();
+                            name,
+                            store,
+                            writes,
+                            body.seen(),
+                            Rules.workerRecheck(issue, body.worker()),
+                            board,
+                            Set.of(issue),
+                            body.seen());
             LOG.info(
                     "Saved the worker of issue {} of project {} as revision {}",
                     LogText.of(issue),
                     LogText.of(name),
-                    LogText.of(saved));
-            return new WorkerSaved(saved);
+                    LogText.of(saved.revision()));
+            return saved;
         } catch (final UnsupportedOperationException e) {
             throw new Refusal(
                     "NotOffered",
@@ -1234,17 +1338,27 @@ public class BoardController {
         final Writes writes = Priorities.check(board, story, body.priority());
         if (writes.none()) {
             // Nothing changes, so no repository is locked or asked.
-            return new PrioritySaved(board.revision().value());
+            return new PrioritySaved(
+                    board.revision().value(),
+                    WrittenVersions.of(board, board, raised(board, story), body.seen()));
         }
         try {
-            final String saved =
-                    submitted(name, store, writes, body.seen(), Recheck.none()).revision().value();
+            final BoardEdits.Saved saved =
+                    submitted(
+                            name,
+                            store,
+                            writes,
+                            body.seen(),
+                            Recheck.none(),
+                            board,
+                            raised(board, story),
+                            body.seen());
             LOG.info(
                     "Saved the priority of story {} of project {} as revision {}",
                     LogText.of(story),
                     LogText.of(name),
-                    LogText.of(saved));
-            return new PrioritySaved(saved);
+                    LogText.of(saved.revision()));
+            return new PrioritySaved(saved.revision(), saved.versions());
         } catch (final UnsupportedOperationException e) {
             throw new Refusal(
                     "NotOffered",
@@ -1252,6 +1366,14 @@ public class BoardController {
                     "This planner does not save priorities.",
                     Map.of("project", name));
         }
+    }
+
+    /** The story and the issues a priority raised on it may raise with it. */
+    private static Set<String> raised(final Board board, final String story) {
+        final Set<String> ids = new java.util.LinkedHashSet<>();
+        ids.add(story);
+        board.story(story).ifPresent(held -> ids.addAll(held.issues()));
+        return ids;
     }
 
     private static List<Moves.Move> moves(

@@ -72,6 +72,22 @@ class AnswerRecordsTest {
     }
 
     @Test
+    void sparseProblemParametersOmitEveryUnnamedMemberThroughTheAppsMapper() {
+        // Harm: clients reject a useful refusal because an unnamed parameter is serialized as null.
+        final var parameters =
+                mapper.readValue(
+                        "{\"item\":\"AB1\"}",
+                        org.fuin.porelo.planner.app.answers.ProblemParameters.class);
+        final JsonNode written = mapper.valueToTree(parameters);
+        assertThat(names(written))
+                .as("only the named parameter reaches the client")
+                .containsExactly("item");
+        assertThat(written.path("item").asText())
+                .as("the named parameter survives")
+                .isEqualTo("AB1");
+    }
+
+    @Test
     void anAnswerBuiltWithNullInARequiredFieldThatIsNotNullableIsRefusedNamingTheField()
             throws Exception {
         // A null the window does not expect reaching it, where the description promises a value.

@@ -244,7 +244,7 @@ class BoardEditsTest {
         // An edit the windows are not told of leaves every other window showing the old board.
         final Changes.Subscription window = changes.subscribe("alpha");
 
-        assertThat(edits.setBlockedBy("alpha", "AB1", seen(), List.of("AB4")))
+        assertThat(edits.setBlockedBy("alpha", "AB1", seen(), List.of("AB4")).revision())
                 .as("the revision after the save")
                 .isEqualTo("r2");
 
@@ -257,10 +257,10 @@ class BoardEditsTest {
     @Test
     void aListOrBlockersTheItemHoldsWritesNothingAndAnswersTheRevision() {
         // A save of nothing would still announce a change nobody made.
-        assertThat(edits.setStoryIssues("alpha", "ST1", seen(), List.of("AB1", "AB2")))
+        assertThat(edits.setStoryIssues("alpha", "ST1", seen(), List.of("AB1", "AB2")).revision())
                 .as("the list ST1 holds")
                 .isEqualTo("r1");
-        assertThat(edits.setBlockedBy("alpha", "AB2", seen(), List.of("AB3")))
+        assertThat(edits.setBlockedBy("alpha", "AB2", seen(), List.of("AB3")).revision())
                 .as("the blockers AB2 has")
                 .isEqualTo("r1");
         assertThat(written).as("nothing written").isEmpty();
@@ -300,11 +300,15 @@ class BoardEditsTest {
 
         assertThat(
                         edits.setText(
-                                "alpha",
-                                "ST1",
-                                seen(),
-                                new TextEdit(
-                                        TextEdit.Kind.STORY, " One more ", Map.of(), Set.of())))
+                                        "alpha",
+                                        "ST1",
+                                        seen(),
+                                        new TextEdit(
+                                                TextEdit.Kind.STORY,
+                                                " One more ",
+                                                Map.of(),
+                                                Set.of()))
+                                .revision())
                 .as("the revision after the save")
                 .isEqualTo("r2");
 

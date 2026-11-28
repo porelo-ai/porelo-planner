@@ -8,7 +8,6 @@ import org.fuin.porelo.planner.app.answers.EditSaved;
 import org.fuin.porelo.planner.app.answers.StoryAdded;
 import org.fuin.porelo.planner.core.WorkRefusal;
 import org.fuin.porelo.planner.store.Ids;
-import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.TextEdit;
 import org.springframework.http.HttpStatus;
@@ -62,7 +61,7 @@ public class EditsController {
                                 throw notOffered(name, FROM_ISSUES_NOT_OFFERED);
                             }
                         });
-        final NewIdea.Added added;
+        final BoardEdits.Added added;
         try {
             added =
                     switch (read) {
@@ -87,7 +86,10 @@ public class EditsController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(
                         new StoryAdded(
-                                added.story(), added.issues(), added.board().revision().value()));
+                                added.story(),
+                                added.issues(),
+                                added.board().revision().value(),
+                                added.versions()));
     }
 
     /**
@@ -106,7 +108,7 @@ public class EditsController {
         final String name = BoardController.name(project);
         final String id = issueId(name, issue);
         final EditRequests.FieldsEdit body = EditRequests.fields(request, id);
-        return new EditSaved(
+        return answer(
                 offered(
                         name,
                         "This planner does not set an issue's fields.",
@@ -125,7 +127,7 @@ public class EditsController {
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
         final EditRequests.ListRequest body = EditRequests.listed(request);
-        return new EditSaved(
+        return answer(
                 offered(
                         name,
                         "This planner does not add an issue made outside the project.",
@@ -148,7 +150,7 @@ public class EditsController {
         final String name = BoardController.name(project);
         final String id = checked(name, () -> Ids.story(story), "story");
         final EditRequests.StoryIssuesRequest body = EditRequests.storyIssues(request, id);
-        return new EditSaved(
+        return answer(
                 offered(
                         name,
                         "This planner does not set a story's issues.",
@@ -171,7 +173,7 @@ public class EditsController {
         final String name = BoardController.name(project);
         final String id = issueId(name, issue);
         final EditRequests.BlockedByRequest body = EditRequests.blockedBy(request, id);
-        return new EditSaved(
+        return answer(
                 offered(
                         name,
                         "This planner does not set an issue's blockers.",
@@ -216,7 +218,7 @@ public class EditsController {
 
     private EditSaved text(
             final String name, final String id, final EditRequests.TextRequest body) {
-        return new EditSaved(
+        return answer(
                 offered(
                         name,
                         "This planner does not set an item's title and text.",
@@ -254,7 +256,7 @@ public class EditsController {
      * Makes a story over issues that stand; a store's refusal of one issue is a fault of the field
      * that named it, as the description says every fault starts with its field.
      */
-    private NewIdea.Added fromIssues(final String name, final EditRequests.FromIssues body) {
+    private BoardEdits.Added fromIssues(final String name, final EditRequests.FromIssues body) {
         final List<String> existing = body.request().existing();
         try {
             return offered(
@@ -275,6 +277,11 @@ public class EditsController {
                     List.of(index < 0 ? fault : "existing[" + index + "]: " + fault),
                     null);
         }
+    }
+
+    /** Maps the saved snapshot without another store read. */
+    private static EditSaved answer(final BoardEdits.Saved saved) {
+        return new EditSaved(saved.revision(), saved.versions());
     }
 
     private static <T> T offered(final String name, final String words, final Supplier<T> edit) {

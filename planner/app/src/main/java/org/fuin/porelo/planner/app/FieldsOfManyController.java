@@ -11,6 +11,7 @@ import org.fuin.porelo.planner.app.answers.BatchSaved;
 import org.fuin.porelo.planner.app.answers.ItemResult;
 import org.fuin.porelo.planner.core.FieldsOfMany;
 import org.fuin.porelo.planner.core.MovePreview;
+import org.fuin.porelo.planner.core.WrittenVersions;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
@@ -115,19 +116,21 @@ public class FieldsOfManyController {
             final FieldsOfMany.Judged judged = FieldsOfMany.judge(board, issues, stories, running);
             if (judged.steps().isEmpty()) {
                 // Nothing changes, so no repository is locked or asked.
-                return answer(board.revision().value(), judged);
+                return answer(board, board, judged, true);
             }
             try {
-                final Board saved =
-                        CommandGroups.saved(
+                final org.fuin.porelo.planner.store.CommandOutcome.Done done =
+                        CommandGroups.done(
                                 queues.queue(name, store).submit(group(board, judged.steps())),
                                 store);
+                final @Nullable Board read = done.board();
+                final Board saved = read == null ? store.board() : read;
                 LOG.info(
                         "Set fields of {} items of project {} as revision {}",
                         judged.steps().size(),
                         LogText.of(name),
                         LogText.of(saved.revision().value()));
-                return answer(saved.revision().value(), judged);
+                return answer(board, saved, judged, read != null);
             } catch (final StoreException.Changed changed) {
                 if (attempt > 0) {
                     throw changed;
@@ -180,18 +183,37 @@ public class FieldsOfManyController {
                         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
     }
 
-    private static BatchSaved answer(final String revision, final FieldsOfMany.Judged judged) {
+    /**
+     * Includes membership targets and raised issues beside the items the caller named. The call
+     * names no versions seen, so a story that holds a written issue and is no target is left out.
+     */
+    private static BatchSaved answer(
+            final Board before,
+            final Board after,
+            final FieldsOfMany.Judged judged,
+            final boolean known) {
+        final Set<String> targets = new java.util.LinkedHashSet<>();
+        judged.steps().forEach(step -> targets.addAll(step.targets()));
+        judged.items().stream()
+                .filter(item -> item.refusal() == null)
+                .forEach(item -> targets.add(item.item()));
+        final Map<String, String> versions =
+                known ? WrittenVersions.of(before, after, targets, Basis.none()) : Map.of();
         return new BatchSaved(
-                revision, judged.items().stream().map(FieldsOfManyController::result).toList());
+                after.revision().value(),
+                judged.items().stream().map(item -> result(item, versions)).toList(),
+                versions);
     }
 
-    private static ItemResult result(final FieldsOfMany.Item item) {
+    private static ItemResult result(
+            final FieldsOfMany.Item item, final Map<String, String> versions) {
         final @Nullable RuntimeException refusal = item.refusal();
         return new ItemResult(
                 item.item(),
                 null,
                 ItemResult.OutcomeEnum.valueOf(item.outcome().name()),
                 null,
+                refusal == null ? versions.get(item.item()) : null,
                 item.raised(),
                 refusal == null ? null : Problems.answer(refusal));
     }

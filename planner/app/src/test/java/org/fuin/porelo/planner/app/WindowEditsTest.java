@@ -246,12 +246,45 @@ class WindowEditsTest {
     }
 
     @Test
+    void aSavedEditsVersionsComeFromTheQueueSnapshotEvenWhenTheHeldBoardIsOlder() {
+        // Harm: a second store read replaces the saved version with stale data in the answer.
+        final Board saved =
+                new Board(
+                        new Revision("r2"),
+                        current.workflow(),
+                        current.stories(),
+                        current.issues().stream()
+                                .map(
+                                        issue ->
+                                                issue.id().equals("AB1")
+                                                        ? issue.withVersion(
+                                                                org.fuin.porelo.planner.store
+                                                                        .Version.of("saved fields"))
+                                                        : issue)
+                                .toList(),
+                        current.work(),
+                        current.repositories());
+        answer = group -> new CommandOutcome.Done(saved, Map.of());
+        final BoardEdits.Saved result =
+                edits.setFields(
+                        "alpha",
+                        "AB1",
+                        Basis.of(current),
+                        new Fields(Set.of(Fields.Field.SIZE), "M", null, null, null));
+        assertThat(result.board()).as("the queue's saved snapshot").isSameAs(saved);
+        assertThat(result.versions().get("AB1"))
+                .as("the saved version rather than the older held one")
+                .isEqualTo(saved.issue("AB1").orElseThrow().version().value())
+                .isNotEqualTo(current.issue("AB1").orElseThrow().version().value());
+    }
+
+    @Test
     void fieldsAreOneCommandJudgedOnTheWholeSeen() {
         // Harm: an edit written past the queue, or on versions other than those the window saw.
         final Basis seen = Basis.of(current);
         final Fields size = new Fields(Set.of(Fields.Field.SIZE), "M", null, null, null);
 
-        assertThat(edits.setFields("alpha", "AB1", seen, size)).isEqualTo("r2");
+        assertThat(edits.setFields("alpha", "AB1", seen, size).revision()).isEqualTo("r2");
 
         assertThat(only())
                 .isEqualTo(
@@ -365,15 +398,27 @@ class WindowEditsTest {
     @Test
     void aStoryFromAnIdeaCarriesTheCheckedIdeaAndAnswersTheIdsTheQueueMade() {
         // Harm: the window shown ids nothing made, or a story made from an idea core did not check.
+        final List<Story> stories = new ArrayList<>(current.stories());
+        stories.add(new Story("ST7", "A story", "Idea", "High", null, List.of("AB8"), "", null));
+        final List<Issue> issues = new ArrayList<>(current.issues());
+        issues.add(issue("AB8"));
+        final Board saved =
+                new Board(
+                        new Revision("r2"),
+                        current.workflow(),
+                        stories,
+                        issues,
+                        current.work(),
+                        current.repositories());
         answer =
                 group ->
                         new CommandOutcome.Done(
-                                moved(),
+                                saved,
                                 Map.of(
                                         group.commands().getFirst().id(),
                                         new CommandOutcome.Created("ST7", List.of("AB8"))));
 
-        final NewIdea.Added added =
+        final BoardEdits.Added added =
                 edits.createStory(
                         "alpha",
                         Basis.of(current),
@@ -390,6 +435,11 @@ class WindowEditsTest {
 
         assertThat(added.story()).isEqualTo("ST7");
         assertThat(added.issues()).containsExactly("AB8");
+        assertThat(added.versions())
+                .as("the created story and issue can be edited immediately")
+                .containsOnly(
+                        Map.entry("ST7", saved.story("ST7").orElseThrow().version().value()),
+                        Map.entry("AB8", saved.issue("AB8").orElseThrow().version().value()));
         assertThat(((Command.CreateIdea) only()).idea().title()).isEqualTo("A story");
         assertThat(written).as("nothing written past the queue").isEmpty();
     }
@@ -405,7 +455,7 @@ class WindowEditsTest {
                                         group.commands().getFirst().id(),
                                         new CommandOutcome.Created("ST7", List.of("AB4"))));
 
-        final NewIdea.Added added =
+        final BoardEdits.Added added =
                 edits.createStoryFromIssues(
                         "alpha",
                         Basis.of(current),

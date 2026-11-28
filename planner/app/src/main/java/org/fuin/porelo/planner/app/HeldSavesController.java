@@ -15,8 +15,13 @@ import org.fuin.porelo.planner.app.answers.HeldChange;
 import org.fuin.porelo.planner.app.answers.HeldCommand;
 import org.fuin.porelo.planner.app.answers.HeldSave;
 import org.fuin.porelo.planner.app.answers.HeldTry;
+import org.fuin.porelo.planner.core.Operation;
+import org.fuin.porelo.planner.core.Targets;
 import org.fuin.porelo.planner.core.WorkRun;
+import org.fuin.porelo.planner.core.WrittenVersions;
+import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
+import org.fuin.porelo.planner.store.CommandOutcome;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.StoreException;
 import org.fuin.porelo.planner.store.Writes;
@@ -165,6 +170,7 @@ public class HeldSavesController {
                         parameters);
             }
             final Board board;
+            final Map<String, String> known;
             if (!group.story().isEmpty()) {
                 if (!saves.runs().resavable(group.story(), newest)) {
                     throw new Refusal(
@@ -174,18 +180,32 @@ public class HeldSavesController {
                             Map.of("save", newest));
                 }
                 board = saves.runs().resave(group.story(), newest);
+                // The run answers a board read after its save, not the save's own: no version
+                // of it is vouched for.
+                known = Map.of();
             } else {
-                board =
+                final BoardEdits.Saved saved =
                         projects.work(name)
                                 .alone(
-                                        () ->
-                                                CommandGroups.saved(
-                                                        lost(
-                                                                name,
-                                                                saves,
-                                                                newest,
-                                                                () -> saves.resend(newest)),
-                                                        store));
+                                        () -> {
+                                            final Board before = store.board();
+                                            final var done =
+                                                    CommandGroups.done(
+                                                            lost(
+                                                                    name,
+                                                                    saves,
+                                                                    newest,
+                                                                    () -> saves.resend(newest)),
+                                                            store);
+                                            final @Nullable Board read = done.board();
+                                            return new BoardEdits.Saved(
+                                                    read == null ? store.board() : read,
+                                                    read == null
+                                                            ? Map.of()
+                                                            : versions(before, read, group, done));
+                                        });
+                board = saved.board();
+                known = saved.versions();
             }
             // Written once: the saves folded into its line would write the same again. One the
             // outbox refuses to drop stays held, a line of its own; the write stands.
@@ -197,10 +217,43 @@ public class HeldSavesController {
                     LogText.of(name),
                     LogText.of(board.revision().value()),
                     line.size() - 1);
-            return new EditSaved(board.revision().value());
+            return new EditSaved(board.revision().value(), known);
         } finally {
             changes.saved(name);
         }
+    }
+
+    /**
+     * The versions of the targets of the commands resent and of the ids a resumed create made, read
+     * from the board the resend returned. The resend names no versions seen, so a story that holds
+     * one of them and is no target is left out, and so is anything another writer changed.
+     */
+    private static Map<String, String> versions(
+            final Board before,
+            final Board after,
+            final CommandOutbox.Group group,
+            final CommandOutcome.Done done) {
+        final Set<String> ids = new java.util.LinkedHashSet<>();
+        for (final CommandOutbox.Told command : group.commands()) {
+            if (!Set.of("comment", "correctLabels").contains(command.kind())) {
+                ids.add(command.target());
+            }
+            if (command.kind().equals("storyIssues")) {
+                ids.addAll(
+                        Targets.of(
+                                before,
+                                new Operation.SetStoryIssues(
+                                        command.target(), command.changes().ids())));
+            } else if (command.kind().equals("createStory")) {
+                ids.addAll(command.changes().ids());
+            }
+            final CommandOutcome.@Nullable Created made = done.created().get(command.id());
+            if (made != null) {
+                ids.add(made.item());
+                ids.addAll(made.issues());
+            }
+        }
+        return WrittenVersions.of(before, after, ids, Basis.none());
     }
 
     /**

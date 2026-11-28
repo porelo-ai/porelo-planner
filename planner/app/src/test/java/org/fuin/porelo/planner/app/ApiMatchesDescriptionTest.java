@@ -1168,6 +1168,34 @@ class ApiMatchesDescriptionTest {
         return ok.isMissingNode() ? "" : ok.asText().replace("#/components/schemas/", "");
     }
 
+    @Test
+    void writeAnswersDescribeVersionsAsTheSameMapTheNextWriteSees() {
+        // Harm: a caller cannot pass the returned versions unchanged to its next write.
+        final JsonNode schemas = description.path("components").path("schemas");
+        for (final String name :
+                List.of(
+                        "EditSaved",
+                        "BatchSaved",
+                        "StoryAdded",
+                        "WorkerSaved",
+                        "PrioritySaved",
+                        "IssueAdded",
+                        "CorrectionSaved")) {
+            final Set<String> required = new TreeSet<>();
+            schemas.path(name).path("required").forEach(field -> required.add(field.asText()));
+            assertThat(required).as("%s always returns versions", name).contains("versions");
+            assertThat(schemas.path(name).at("/properties/versions/$ref").asText())
+                    .as("%s uses the written versions map", name)
+                    .isEqualTo("#/components/schemas/WrittenVersions");
+        }
+        assertThat(schemas.at("/WrittenVersions/additionalProperties/$ref").asText())
+                .as("returned versions use the version format seen takes")
+                .isEqualTo("#/components/schemas/Version");
+        assertThat(schemas.at("/ItemResult/properties/version/allOf/0/$ref").asText())
+                .as("an item's version uses the same format")
+                .isEqualTo("#/components/schemas/Version");
+    }
+
     private static String path(final String[] value, final String[] path) {
         return value.length > 0 ? value[0] : path[0];
     }

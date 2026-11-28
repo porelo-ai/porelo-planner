@@ -169,6 +169,50 @@ class MoveIssuesEndpointTest {
     }
 
     @Test
+    void savedAndUnchangedItemsAnswerVersionsAndARefusalMatchesItsSchema() throws Exception {
+        // Harm: a client rejects a whole batch when a refusal writes null into a string member.
+        final String answer =
+                moveIssues(
+                                """
+                                {"moves":[{"issue":"AB1","to":"Review"},
+                                          {"issue":"AB2","to":"Review"},
+                                          {"issue":"AB4","to":"Nowhere"}]}
+                                """)
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.results[0].version").exists())
+                        .andExpect(jsonPath("$.results[1].version").exists())
+                        .andExpect(jsonPath("$.results[2].version").doesNotExist())
+                        .andExpect(jsonPath("$.versions.AB1").exists())
+                        .andExpect(jsonPath("$.versions.AB4").doesNotExist())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        final com.fasterxml.jackson.databind.ObjectMapper json =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        final com.fasterxml.jackson.databind.JsonNode result =
+                json.readTree(answer).at("/results/2");
+        assertThat(result.path("outcome").asText())
+                .as("the rules' refusal reaches the caller")
+                .isEqualTo("REFUSED");
+        result.at("/refusal/parameters")
+                .properties()
+                .forEach(
+                        field ->
+                                assertThat(field.getValue().isNull())
+                                        .as("parameter %s is not null", field.getKey())
+                                        .isFalse());
+        ItemResultSchema.matches(answer, 2);
+        final com.fasterxml.jackson.databind.JsonNode results =
+                json.readTree(answer).path("results");
+        for (int i = 0; i < 2; i++) {
+            final String id = results.get(i).path("item").asText();
+            assertThat(results.get(i).path("version").asText())
+                    .as("%s's final version", id)
+                    .isEqualTo(current.issue(id).orElseThrow().version().value());
+        }
+    }
+
+    @Test
     void fiveMovesOfWhichTwoBreakARuleSaveThreeTogetherAndNameTheTwoWithTheirReasons()
             throws Exception {
         // Harm: one broken move holding back the others, or dropped without its reason.

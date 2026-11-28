@@ -138,7 +138,9 @@ class WorkerEndpointTest {
 
         worker("AB01", "{\"worker\": \"MANUAL\", \"seen\": " + Seens.of(current) + "}")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r2"));
+                .andExpect(jsonPath("$.revision").value("r2"))
+                // Without the new version an agent reads the issue again before its next write.
+                .andExpect(jsonPath("$.versions.AB01").isString());
 
         assertThat(saved).as("one save").hasSize(1);
         assertThat(saved.get(0).workers())

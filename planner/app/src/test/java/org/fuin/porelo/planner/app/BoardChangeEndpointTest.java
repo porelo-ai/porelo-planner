@@ -58,6 +58,14 @@ class BoardChangeEndpointTest {
     /** Whether every read of the board finds it moved, as another call's saves would leave it. */
     private boolean moving;
 
+    /** Whether every read of the board finds issue AB1 rewritten, as another writer's saves do. */
+    private boolean rewriting;
+
+    private int rewrites;
+
+    /** A per-item read-back may retain older cached values for the other items. */
+    private @org.jspecify.annotations.Nullable Board snapshotBase;
+
     private MockMvc mvc;
 
     private ChangesRegistry changes;
@@ -77,6 +85,10 @@ class BoardChangeEndpointTest {
     private Board read() {
         if (moving) {
             revision++;
+        }
+        if (rewriting) {
+            rewrites++;
+            issues.put("AB1", stored("AB1", "Rewritten " + rewrites, "M", List.of()));
         }
         return board();
     }
@@ -133,6 +145,23 @@ class BoardChangeEndpointTest {
                         final Issue now = issues.get(id);
                         issues.put(id, stored(id, now.title(), fields.size(), now.blockedBy()));
                         revision++;
+                        final Board base = snapshotBase;
+                        if (base != null) {
+                            final Board after = board();
+                            return new Board(
+                                    after.revision(),
+                                    after.workflow(),
+                                    after.stories(),
+                                    base.issues().stream()
+                                            .map(
+                                                    issue ->
+                                                            issue.id().equals(id)
+                                                                    ? issues.get(id)
+                                                                    : issue)
+                                            .toList(),
+                                    after.work(),
+                                    after.repositories());
+                        }
                         return board();
                     }
 
@@ -197,6 +226,37 @@ class BoardChangeEndpointTest {
                 + "\", \"parts\": {\"whatMustBeTrue\": \"It works.\"}"
                 + (blockedBy.isEmpty() ? "" : ", \"blockedBy\": [" + blockedBy + "]")
                 + "}";
+    }
+
+    @Test
+    void completedItemsKeepTheirVersionsWhenALaterItemIsPartlySaved() throws Exception {
+        // Harm: the last step's cached board replaces versions known from earlier read-backs, or
+        // the partly saved item's version is answered although a step of it failed after writing.
+        issues.put("AB2", stored("AB2", "Second", null, List.of()));
+        snapshotBase = board();
+        blockersFailures.put("AB2", new StoreException.Unreadable("porelo-store", "gone"));
+        change(
+                        "{\"updates\":[{\"issue\":\"AB1\",\"size\":\"M\"},"
+                                + "{\"issue\":\"AB2\",\"size\":\"S\",\"blockedBy\":[\"AB1\"]}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[1].refusal.title").value("PartlySaved"))
+                .andExpect(jsonPath("$.versions.AB1").value(issues.get("AB1").version().value()))
+                .andExpect(jsonPath("$.versions.AB2").doesNotExist())
+                .andExpect(
+                        jsonPath("$.results[0].version").value(issues.get("AB1").version().value()))
+                .andExpect(jsonPath("$.results[1].version").doesNotExist());
+    }
+
+    @Test
+    void aRefusedBoardChangeItemValidatesAgainstThePublishedSchema() throws Exception {
+        // Harm: a schema error conceals the rule that refused an item of an agent's change.
+        final String answer =
+                change("{\"updates\":[{\"issue\":\"AB1\",\"state\":\"Nowhere\"}]}")
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        ItemResultSchema.matches(answer, 0);
     }
 
     @Test
@@ -460,7 +520,8 @@ class BoardChangeEndpointTest {
     @Test
     void anUpdateWhoseLaterStepFailsAfterAnEarlierOneWroteIsRefusedAsPartlySavedNamingIt()
             throws Exception {
-        // Harm: a size written and the blockers lost, with the item answered as a plain refusal.
+        // Harm: a size written and the blockers lost, with the item answered as a plain refusal,
+        // or its targets answered with the version of the step that wrote before the failure.
         issues.put("AB2", stored("AB2", "Second", null, List.of()));
         blockersFailures.put("AB1", new StoreException.Unreadable("porelo-store", "gone"));
 
@@ -469,12 +530,82 @@ class BoardChangeEndpointTest {
                 .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
                 .andExpect(jsonPath("$.results[0].refusal.title").value("PartlySaved"))
                 .andExpect(jsonPath("$.results[0].refusal.parameters.issues").value("AB1"))
+                .andExpect(jsonPath("$.results[0].version").doesNotExist())
+                .andExpect(jsonPath("$.versions.AB1").doesNotExist())
                 .andExpect(jsonPath("$.results[0].refusal.detail").value(containsString("fields")))
                 .andExpect(
                         jsonPath("$.results[0].refusal.detail")
                                 .value(containsString("Unreadable")));
 
         assertThat(issues.get("AB1").size()).as("the step that wrote stands").isEqualTo("S");
+    }
+
+    @Test
+    void aChangeAnswersNewItemsWithTheirFinalVersionsAndAnUnchangedOneWithNone() throws Exception {
+        // Harm: the ids made by a change cannot be edited using that change's answer, or an item
+        // no step wrote is answered with a version read before any lock.
+        change("{\"creates\":[" + create("new", "") + "],\"updates\":[{\"issue\":\"AB1\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.results[0].version").value(issues.get("AB2").version().value()))
+                .andExpect(jsonPath("$.results[1].outcome").value("UNCHANGED"))
+                .andExpect(jsonPath("$.results[1].version").doesNotExist())
+                .andExpect(jsonPath("$.versions.AB1").doesNotExist())
+                .andExpect(jsonPath("$.versions.AB2").value(issues.get("AB2").version().value()));
+    }
+
+    @Test
+    void anUnchangedItemAnotherWriterChangedMeanwhileIsNotAnsweredWithAVersion() throws Exception {
+        // Harm: an agent sends its next write's versions seen with a version of content another
+        // writer saved after the change read the board, and the write passes over it unread.
+        issues.put("AB1", stored("AB1", "Existing", "M", List.of()));
+        rewriting = true;
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"M\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"))
+                .andExpect(jsonPath("$.results[0].version").doesNotExist())
+                .andExpect(jsonPath("$.versions.AB1").doesNotExist());
+    }
+
+    @Test
+    void aMovedStateTheRulesRefuseKeepsTheVersionAnEarlierStepOfTheUpdateGave() throws Exception {
+        // Harm: the refused move answers no version of an issue whose size it did write, so the
+        // agent reads it again, or the move's empty answer erases what the fields step gave.
+        issues.put(
+                "AB1.1",
+                new Issue(
+                        "AB1.1",
+                        "porelo-store",
+                        "Sub",
+                        "Idea",
+                        null,
+                        List.of(),
+                        "AB1",
+                        null,
+                        "Text.",
+                        Worker.AGENT,
+                        Risk.ORDINARY));
+
+        change(
+                        "{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\","
+                                + " \"state\": \"Finished\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("REFUSED"))
+                .andExpect(jsonPath("$.results[0].refusal.title").value("PartlySaved"))
+                .andExpect(jsonPath("$.versions.AB1").value(issues.get("AB1").version().value()));
+    }
+
+    @Test
+    void aStoryHoldingAChangedIssueIsAnsweredOnlyWhenItIsATarget() throws Exception {
+        // Harm: the answer carries the story's version of a change the agent never saw, and its
+        // next write passes the story's check against content it never read.
+        stories.add(new Story("ST1", "A story", "Idea", "High", null, List.of("AB1"), "", null));
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\"}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versions.AB1").value(issues.get("AB1").version().value()))
+                .andExpect(jsonPath("$.versions.ST1").doesNotExist());
     }
 
     @Test

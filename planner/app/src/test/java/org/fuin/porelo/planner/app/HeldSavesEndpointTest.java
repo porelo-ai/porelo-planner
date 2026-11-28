@@ -24,6 +24,7 @@ import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.CommandGroup;
 import org.fuin.porelo.planner.store.CommandOutcome;
 import org.fuin.porelo.planner.store.ForgeAnswer;
+import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.Revision;
@@ -64,6 +65,9 @@ class HeldSavesEndpointTest {
     @TempDir Path directory;
 
     private Board current = board("r1");
+
+    /** The board a resend leaves, or null for the board of revision r2 without an issue. */
+    private @Nullable Board afterResend;
 
     private final Saves saves = new Saves();
 
@@ -117,7 +121,7 @@ class HeldSavesEndpointTest {
             resent.add(group);
             // Written whole, the group is pruned from the file.
             kept.removeIf(each -> each.id().equals(group));
-            current = board("r2");
+            current = afterResend == null ? board("r2") : afterResend;
             return new CommandOutcome.Done(current, Map.of());
         }
 
@@ -156,6 +160,27 @@ class HeldSavesEndpointTest {
                 List.of(new Story("ST1", "A story", "Backlog", "High", null, List.of(), "", null)),
                 List.of(),
                 new Work(Map.of(), List.of()));
+    }
+
+    /** The board of a revision with an issue no held save names, held in the title given. */
+    private static Board boardWithIssue(final String revision, final String title) {
+        final Board base = board(revision);
+        return new Board(
+                base.revision(),
+                base.workflow(),
+                base.stories(),
+                List.of(
+                        new Issue(
+                                "AB9",
+                                "porelo-store",
+                                title,
+                                "Backlog",
+                                null,
+                                List.of(),
+                                null,
+                                null,
+                                "")),
+                base.work());
     }
 
     private static CommandOutbox.Told told(
@@ -295,7 +320,10 @@ class HeldSavesEndpointTest {
 
         mvc.perform(post("/projects/alpha/saves/" + WINDOW + "/resend"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value("r2"));
+                .andExpect(jsonPath("$.revision").value("r2"))
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
         mvc.perform(post("/projects/alpha/saves/" + WINDOW + "/resend"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value("urn:porelo-planner:NoSuchSave"))
@@ -429,11 +457,10 @@ class HeldSavesEndpointTest {
                                         "[{\"at\":\"2026-05-06T07:09:09Z\",\"result\":\"REFUSED\","
                                                 + "\"reason\":\""
                                                 + HeldReasons.of("Unreachable", "")
-                                                + "\"},{\"at\":\"2026-05-06T07:10:09Z\","
-                                                + "\"result\":\"HELD\",\"reason\":\"porelo-store was"
-                                                + " changed elsewhere since it was read.\","
-                                                + "\"answer\":{\"status\":502,\"text\":\"Bad Gateway\","
-                                                + "\"requestId\":\"C0DE:9\"}}]"));
+                                                + "\"},{\"at\":\"2026-05-06T07:10:09Z\",\"result\":\"HELD\",\"reason\":\"porelo-store"
+                                                + " was changed elsewhere since it was"
+                                                + " read.\",\"answer\":{\"status\":502,\"text\":\"Bad"
+                                                + " Gateway\",\"requestId\":\"C0DE:9\"}}]"));
         assertThat(shown.path("answer"))
                 .as("the save's answer, its last try's")
                 .isEqualTo(shown.path("tries").path(1).path("answer"));
@@ -682,6 +709,25 @@ class HeldSavesEndpointTest {
                 .containsExactly(READ.plusSeconds(60).toString(), READ.plusSeconds(360).toString());
         assertThat(shown.path(1).path("saves").size()).as("a save alone names itself").isEqualTo(1);
         assertThat(shown.path(1).path("saves").path(0).asText()).isEqualTo(WINDOW);
+    }
+
+    @Test
+    void aResendAnswersTheVersionsOfItsOwnTargetsNotOfAnItemAnotherWriterChanged()
+            throws Exception {
+        // Harm: a caller sends its next write's versions seen with a version of an issue another
+        // writer changed while the save was resent, so the write passes over content it never
+        // read.
+        current = boardWithIssue("r1", "As the caller saw it");
+        afterResend = boardWithIssue("r2", "As another writer left it");
+        saves.kept.add(refused(WINDOW, ""));
+
+        mvc.perform(post("/projects/alpha/saves/" + WINDOW + "/resend"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("r2"))
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()))
+                .andExpect(jsonPath("$.versions.AB9").doesNotExist());
     }
 
     @Test

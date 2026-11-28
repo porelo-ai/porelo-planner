@@ -1,6 +1,8 @@
 package org.fuin.porelo.planner.app;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import org.fuin.porelo.planner.core.Edits;
@@ -8,12 +10,12 @@ import org.fuin.porelo.planner.core.NewIdeas;
 import org.fuin.porelo.planner.core.Operation;
 import org.fuin.porelo.planner.core.Rules;
 import org.fuin.porelo.planner.core.Targets;
+import org.fuin.porelo.planner.core.WrittenVersions;
 import org.fuin.porelo.planner.store.Basis;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Command;
 import org.fuin.porelo.planner.store.CommandOutcome;
 import org.fuin.porelo.planner.store.Fields;
-import org.fuin.porelo.planner.store.NewIdea;
 import org.fuin.porelo.planner.store.PlanningStore;
 import org.fuin.porelo.planner.store.Recheck;
 import org.fuin.porelo.planner.store.StoreException;
@@ -79,10 +81,70 @@ public class BoardEdits {
         return CommandGroups.one(queues.queue(project, store), store, command);
     }
 
-    /** The answer to a create: what it made and the board after it. */
-    private static NewIdea.Added added(final CommandGroups.Written written) {
+    /**
+     * A saved edit and the versions its targets hold after it, including their holding stories.
+     *
+     * @param board the board the save returned, or the current board for an equal edit
+     * @param versions the versions for the caller's next write
+     */
+    public record Saved(Board board, Map<String, String> versions) {
+
+        /**
+         * Answers the revision of the saved board.
+         *
+         * @return the revision
+         */
+        public String revision() {
+            return board.revision().value();
+        }
+    }
+
+    /**
+     * A created story, its issues and their versions, including the stories the issues left.
+     *
+     * @param story the story's id
+     * @param issues its issues' ids
+     * @param board the board the save returned
+     * @param versions the versions for the caller's next write
+     */
+    public record Added(
+            String story, List<String> issues, Board board, Map<String, String> versions) {}
+
+    /** Includes the created ids beside the operation's targets, using only the saved board. */
+    private static Added added(
+            final Board before,
+            final Set<String> targets,
+            final CommandGroups.Written written,
+            final Basis seen) {
         final CommandOutcome.Created made = written.made();
-        return new NewIdea.Added(made.item(), made.issues(), written.afterCreate());
+        final Board after = written.afterCreate();
+        final Set<String> ids = new LinkedHashSet<>(targets);
+        ids.add(made.item());
+        ids.addAll(made.issues());
+        return new Added(
+                made.item(), made.issues(), after, WrittenVersions.of(before, after, ids, seen));
+    }
+
+    /** Keeps the board and versions together so no controller reads again after a save. */
+    private static Saved saved(
+            final Board before, final Board after, final Operation operation, final Basis seen) {
+        return new Saved(
+                after, WrittenVersions.of(before, after, Targets.of(before, operation), seen));
+    }
+
+    /** A missing read-back must never turn the store's held versions into fresh ones. */
+    private static Saved saved(
+            final Board before,
+            final CommandGroups.Written written,
+            final PlanningStore store,
+            final Operation operation,
+            final Basis seen) {
+        final Board after = written.judged(store);
+        return new Saved(
+                after,
+                written.board() == null
+                        ? Map.of()
+                        : WrittenVersions.of(before, after, Targets.of(before, operation), seen));
     }
 
     /**
@@ -98,13 +160,13 @@ public class BoardEdits {
      *     {@code WorkRunning} while a task of a gone story's run still works
      * @throws UnsupportedOperationException when the store adds no ideas
      */
-    public NewIdea.Added createStory(
+    public Added createStory(
             final String project,
             final Basis seen,
             final NewIdeas.Idea idea,
             final List<String> shape) {
         try {
-            final NewIdea.Added added =
+            final Added added =
                     projects.work(project)
                             .newStory(
                                     board -> {
@@ -116,6 +178,9 @@ public class BoardEdits {
                                     },
                                     (board, checked) ->
                                             added(
+                                                    board,
+                                                    Targets.of(
+                                                            board, new Operation.StoryFromIdea()),
                                                     written(
                                                             project,
                                                             id ->
@@ -123,7 +188,8 @@ public class BoardEdits {
                                                                             id,
                                                                             checked,
                                                                             seen,
-                                                                            Recheck.none()))));
+                                                                            Recheck.none())),
+                                                    seen));
             LOG.info(
                     "Made story {} in project {} as revision {}",
                     LogText.of(added.story()),
@@ -161,14 +227,14 @@ public class BoardEdits {
      *     while a task works one of them, naming it, or a gone story's run
      * @throws UnsupportedOperationException when the store makes no story from issues
      */
-    public NewIdea.Added createStoryFromIssues(
+    public Added createStoryFromIssues(
             final String project,
             final Basis seen,
             final NewIdeas.@Nullable Story story,
             final List<String> existing,
             final List<String> shape) {
         try {
-            final NewIdea.Added added =
+            final Added added =
                     projects.work(project)
                             .newStory(
                                     existing,
@@ -187,6 +253,11 @@ public class BoardEdits {
                                     },
                                     (board, checked) ->
                                             added(
+                                                    board,
+                                                    Targets.of(
+                                                            board,
+                                                            new Operation.CreateStoryFromIssues(
+                                                                    checked)),
                                                     written(
                                                             project,
                                                             id ->
@@ -194,7 +265,8 @@ public class BoardEdits {
                                                                             id,
                                                                             checked,
                                                                             seen,
-                                                                            Recheck.none()))));
+                                                                            Recheck.none())),
+                                                    seen));
             LOG.info(
                     "Made story {} of {} issues in project {} as revision {}",
                     LogText.of(added.story()),
@@ -214,9 +286,9 @@ public class BoardEdits {
      * @param issue the issue's checked id
      * @param seen the versions the caller saw
      * @param fields the fields to set
-     * @return the revision after the save
+     * @return the saved board and versions
      */
-    public String setFields(
+    public Saved setFields(
             final String project, final String issue, final Basis seen, final Fields fields) {
         try {
             return projects.work(project)
@@ -229,8 +301,10 @@ public class BoardEdits {
                                         seen,
                                         Targets.of(board, new Operation.SetFields(issue)));
                                 Edits.fields(board, issue, fields);
-                                final String saved =
-                                        written(
+                                final Saved saved =
+                                        saved(
+                                                board,
+                                                written(
                                                         project,
                                                         id ->
                                                                 new Command.SetFields(
@@ -238,11 +312,11 @@ public class BoardEdits {
                                                                         issue,
                                                                         fields,
                                                                         seen,
-                                                                        Recheck.none()))
-                                                .judged(projects.store(project))
-                                                .revision()
-                                                .value();
-                                saved("the fields of issue", issue, project, saved);
+                                                                        Recheck.none())),
+                                                store,
+                                                new Operation.SetFields(issue),
+                                                seen);
+                                saved("the fields of issue", issue, project, saved.revision());
                                 return saved;
                             });
         } finally {
@@ -258,9 +332,9 @@ public class BoardEdits {
      * @param story the story's checked id
      * @param seen the versions the caller saw
      * @param issues the issues' checked ids, in the story's order
-     * @return the revision after the save, the current one when nothing changed
+     * @return the saved board and versions, current when nothing changed
      */
-    public String setStoryIssues(
+    public Saved setStoryIssues(
             final String project, final String story, final Basis seen, final List<String> issues) {
         try {
             return projects.work(project)
@@ -281,10 +355,16 @@ public class BoardEdits {
                                         .map(Story::issues)
                                         .orElseThrow()
                                         .equals(issues)) {
-                                    return board.revision().value();
+                                    return saved(
+                                            board,
+                                            board,
+                                            new Operation.SetStoryIssues(story, issues),
+                                            seen);
                                 }
-                                final String saved =
-                                        written(
+                                final Saved saved =
+                                        saved(
+                                                board,
+                                                written(
                                                         project,
                                                         id ->
                                                                 new Command.SetStoryIssues(
@@ -292,11 +372,11 @@ public class BoardEdits {
                                                                         story,
                                                                         issues,
                                                                         seen,
-                                                                        Recheck.none()))
-                                                .judged(projects.store(project))
-                                                .revision()
-                                                .value();
-                                saved("the issues of story", story, project, saved);
+                                                                        Recheck.none())),
+                                                projects.store(project),
+                                                new Operation.SetStoryIssues(story, issues),
+                                                seen);
+                                saved("the issues of story", story, project, saved.revision());
                                 return saved;
                             });
         } finally {
@@ -313,9 +393,9 @@ public class BoardEdits {
      * @param issue the issue's checked id
      * @param seen the versions the caller saw
      * @param blockedBy the blockers' checked ids
-     * @return the revision after the save, the current one when nothing changed
+     * @return the saved board and versions, current when nothing changed
      */
-    public String setBlockedBy(
+    public Saved setBlockedBy(
             final String project,
             final String issue,
             final Basis seen,
@@ -331,7 +411,8 @@ public class BoardEdits {
                                         seen,
                                         Targets.of(board, new Operation.SetBlockedBy(issue)));
                                 if (!Edits.blockedBy(board, issue, blockedBy)) {
-                                    return board.revision().value();
+                                    return saved(
+                                            board, board, new Operation.SetBlockedBy(issue), seen);
                                 }
                                 final Recheck blockers =
                                         new Recheck(
@@ -340,17 +421,19 @@ public class BoardEdits {
                                                 dependencies ->
                                                         Rules.blockedBy(
                                                                 dependencies, issue, blockedBy));
-                                final String saved =
-                                        written(
+                                final Saved saved =
+                                        saved(
+                                                board,
+                                                written(
                                                         project,
                                                         id ->
                                                                 new Command.SetBlockers(
                                                                         id, issue, blockedBy, seen,
-                                                                        blockers))
-                                                .judged(projects.store(project))
-                                                .revision()
-                                                .value();
-                                saved("the blockers of issue", issue, project, saved);
+                                                                        blockers)),
+                                                store,
+                                                new Operation.SetBlockedBy(issue),
+                                                seen);
+                                saved("the blockers of issue", issue, project, saved.revision());
                                 return saved;
                             });
         } finally {
@@ -366,11 +449,11 @@ public class BoardEdits {
      * @param id the item's checked id
      * @param seen the versions the caller saw
      * @param edit the change
-     * @return the revision after the save, the current one when nothing changed
+     * @return the saved board and versions, current when nothing changed
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code EditNotAllowed} for a change core
      *     or the store refuses
      */
-    public String setText(
+    public Saved setText(
             final String project, final String id, final Basis seen, final TextEdit edit) {
         try {
             return projects.work(project)
@@ -387,10 +470,12 @@ public class BoardEdits {
                                                         ? new Operation.SetStoryText(id)
                                                         : new Operation.SetIssueText(id)));
                                 final TextEdit checked = Edits.text(board, id, edit);
-                                final String saved;
+                                final Saved saved;
                                 try {
                                     saved =
-                                            written(
+                                            saved(
+                                                    board,
+                                                    written(
                                                             project,
                                                             command ->
                                                                     new Command.SetText(
@@ -398,10 +483,12 @@ public class BoardEdits {
                                                                             id,
                                                                             checked,
                                                                             seen,
-                                                                            Recheck.none()))
-                                                    .judged(projects.store(project))
-                                                    .revision()
-                                                    .value();
+                                                                            Recheck.none())),
+                                                    store,
+                                                    edit.kind() == TextEdit.Kind.STORY
+                                                            ? new Operation.SetStoryText(id)
+                                                            : new Operation.SetIssueText(id),
+                                                    seen);
                                 } catch (final TextEdit.Refused refused) {
                                     throw Edits.refused(refused, "");
                                 }
@@ -411,7 +498,7 @@ public class BoardEdits {
                                                 : "the text of issue",
                                         id,
                                         project,
-                                        saved);
+                                        saved.revision());
                                 return saved;
                             });
         } finally {
@@ -427,13 +514,13 @@ public class BoardEdits {
      * @param project the project's checked name
      * @param issue the issue's checked tracker reference
      * @param seen the versions the caller saw
-     * @return the revision after the save
+     * @return the saved board and versions
      * @throws UnsupportedOperationException when the store adds no issue made outside the project
      * @throws org.fuin.porelo.planner.core.Moves.Refused {@code NotUnlisted} for an issue the board
      *     does not offer or the tracker no longer holds, {@code EditNotAllowed} for one the board
      *     could not hold once added
      */
-    public String addUnlistedIssue(final String project, final String issue, final Basis seen) {
+    public Saved addUnlistedIssue(final String project, final String issue, final Basis seen) {
         try {
             return projects.work(project)
                     .alone(
@@ -449,20 +536,22 @@ public class BoardEdits {
                                         board,
                                         seen,
                                         Targets.of(board, new Operation.AddUnlistedIssue(issue)));
-                                final String saved;
+                                final Saved saved;
                                 try {
                                     saved =
-                                            written(
+                                            saved(
+                                                    board,
+                                                    written(
                                                             project,
                                                             id ->
                                                                     new Command.AddUnlisted(
                                                                             id,
                                                                             issue,
                                                                             seen,
-                                                                            Recheck.none()))
-                                                    .judged(projects.store(project))
-                                                    .revision()
-                                                    .value();
+                                                                            Recheck.none())),
+                                                    store,
+                                                    new Operation.AddUnlistedIssue(issue),
+                                                    seen);
                                 } catch (final StoreException.NoSuchIssue gone) {
                                     throw Edits.notUnlisted(issue);
                                 } catch (final StoreException.NotSavable refused) {
@@ -470,7 +559,11 @@ public class BoardEdits {
                                     throw Edits.refused(
                                             issue, "issue", String.valueOf(refused.getMessage()));
                                 }
-                                saved("the issue made outside the project", issue, project, saved);
+                                saved(
+                                        "the issue made outside the project",
+                                        issue,
+                                        project,
+                                        saved.revision());
                                 return saved;
                             });
         } finally {

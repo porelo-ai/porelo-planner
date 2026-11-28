@@ -127,6 +127,9 @@ final class SerializationCheck {
 
     /** Writes a filled record or answer with the planner's JSON, and reads it back. */
     private static int own(final Class<?> type) {
+        if (type == org.fuin.porelo.planner.app.answers.ProblemParameters.class) {
+            sparseParameters();
+        }
         final Object sample = sample(type);
         final JsonMapper mapper =
                 type.getPackageName().equals("org.fuin.porelo.planner.app.answers")
@@ -138,6 +141,25 @@ final class SerializationCheck {
             throw new IllegalStateException("written " + written + ", read back differently");
         }
         return mapper.readTree(written).size();
+    }
+
+    /**
+     * Reads a sparse refusal's parameters back with the answer mapper, checking omitted members.
+     *
+     * @return the sparse parameters after the round trip
+     */
+    static tools.jackson.databind.JsonNode sparseParameters() {
+        final Class<org.fuin.porelo.planner.app.answers.ProblemParameters> type =
+                org.fuin.porelo.planner.app.answers.ProblemParameters.class;
+        final Object sample = ANSWERS.readValue("{\"item\":\"AB1\"}", type);
+        final String written = ANSWERS.writerFor(type).writeValueAsString(sample);
+        final Object read = ANSWERS.readerFor(type).readValue(written);
+        final tools.jackson.databind.JsonNode tree = ANSWERS.valueToTree(read);
+        if (!sample.equals(read) || tree.size() != 1 || !"AB1".equals(tree.path("item").asText())) {
+            throw new IllegalStateException(
+                    "Sparse problem parameters did not retain only their named item.");
+        }
+        return tree;
     }
 
     /**

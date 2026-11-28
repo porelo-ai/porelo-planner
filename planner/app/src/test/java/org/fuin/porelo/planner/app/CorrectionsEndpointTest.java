@@ -380,7 +380,10 @@ class CorrectionsEndpointTest {
                                 + ", \"digest\": \""
                                 + JsonPath.read(preview, "$.digest")
                                 + "\"}")
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.versions.ST1")
+                                .value(current.story("ST1").orElseThrow().version().value()));
         assertThat(saved)
                 .as("the story's priority alone, written once")
                 .containsExactly(new Writes(Map.of(), Map.of(), Map.of(), Map.of("ST1", "Low")));
