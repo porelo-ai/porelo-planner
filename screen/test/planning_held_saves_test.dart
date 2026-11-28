@@ -147,6 +147,7 @@ void main() {
   // Harm: the person cannot see a save the planner keeps for them, cannot act on it, or is offered to resend a save
   // the planner never writes here, a halted run's or one kept from another branch.
   testWidgets('held saves show with Resend and Drop', (tester) async {
+    _desktop(tester);
     final source = _Source({...smallBoard(), 'heldSaves': _held()});
     final client = FakePlanningClient([provider('local', source)]);
     final boards = PlanningBoards(client);
@@ -262,31 +263,46 @@ void main() {
     final source = await _shown(tester, [held]);
 
     expect(find.byKey(const Key('held-save-details $_window')), findsNothing, reason: 'closed at first');
-    expect(find.text('I2 was changed elsewhere since it was read.'), findsOneWidget, reason: 'why, on the line');
-    expect(find.text('2 tries'), findsOneWidget, reason: 'how often, on the line');
+    expect(find.text('Changed on GitHub'), findsOneWidget, reason: 'why, on the card');
+    expect(find.text('2 tries'), findsOneWidget, reason: 'how often, on the card');
     expect(find.byKey(const Key('held-save-resend $_window')), findsOneWidget, reason: 'Resend on the closed line');
     expect(find.byKey(const Key('held-save-drop $_window')), findsOneWidget, reason: 'Drop on the closed line');
 
     await tester.tap(find.byKey(const Key('held-save-open $_window')));
     await settle(tester);
 
-    final read = tester.widget<Text>(find.byKey(const Key('held-save-change $_window 0'))).data!;
-    expect(read, startsWith('I2 state: Ready → Building · last read on GitHub '), reason: 'from the value last read');
+    String text(String key) => tester.widget<Text>(find.byKey(Key(key))).data!;
     expect(
-      tester.widget<Text>(find.byKey(const Key('held-save-change $_window 1'))).data,
-      'I2 plan: not read → The plan.',
+      [text('held-save-field $_window 0'), text('held-save-before $_window 0'), text('held-save-after $_window 0')],
+      ['Status', 'Ready', 'Building'],
+      reason: 'from the value last read',
+    );
+    expect(text('held-save-read $_window 0'), startsWith('Status of I2 last read on GitHub '));
+    expect(
+      [text('held-save-field $_window 1'), text('held-save-before $_window 1'), text('held-save-after $_window 1')],
+      ['Plan', 'not read', 'The plan.'],
+    );
+    expect(
+      find.byKey(const Key('held-save-read $_window 1')),
+      findsNothing,
       reason: 'a value never read names no time',
     );
+    expect(text('held-save-why $_window'), 'I2 was changed elsewhere since it was read.');
     expect(
       tester.widget<SelectableText>(find.byKey(const Key('held-save-answer $_window'))).data,
       'HTTP 502 · Server Error',
       reason: 'GitHub\'s answer word for word',
     );
-    expect(find.text('Request id C0DE:1234'), findsOneWidget);
+    expect(tester.widget<SelectableText>(find.byKey(const Key('held-save-request $_window'))).data, 'C0DE:1234');
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('held-save-try $_window 0'))).data,
+      endsWith(' · saved on the board · refused'),
+      reason: 'every try',
+    );
     expect(
       tester.widget<SelectableText>(find.byKey(const Key('held-save-try $_window 1'))).data,
-      endsWith(' · held · The server could not be reached. · HTTP 502 · Server Error'),
-      reason: 'every try',
+      endsWith(' · resent · held'),
+      reason: 'a try past the line\'s saves is a resend',
     );
 
     await tester.tap(find.byKey(const Key('held-save-copy-request $_window')));
@@ -337,18 +353,17 @@ void main() {
       line(_window, [older, _window], 3),
     ]);
 
-    expect(find.text('2 saves of one change · 3 tries'), findsOneWidget);
-    expect(find.text('Resend once'), findsOneWidget);
-    expect(find.text('Drop all'), findsOneWidget);
+    expect(find.text('3 tries, same change'), findsOneWidget);
     await tester.tap(find.byKey(const Key('held-save-open $_window')));
     await settle(tester);
-
+    expect(tester.widget<Text>(find.byKey(const Key('held-save-fold $_window'))).data, startsWith('Two saves'));
+    expect(find.text('Resend all (1)'), findsOneWidget, reason: 'one line, sent once');
     source.hold([
       line(newest, [older, _window, newest], 4),
     ]);
     await settle(tester);
     expect(find.byKey(const Key('held-save-details $newest')), findsOneWidget, reason: 'still open');
-    expect(find.text('3 saves of one change · 4 tries'), findsOneWidget);
+    expect(find.text('4 tries, same change'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('held-save-resend $newest')));
     await settle(tester);
@@ -379,6 +394,7 @@ void main() {
   // Harm: the window's kept row shows held saves with other words than the live view, without their details or Copy,
   // or offers a Resend or Drop that reaches no planner.
   testWidgets('kept held saves show the same lines, details and Copy, without Resend or Drop', (tester) async {
+    _desktop(tester);
     final copied = _copies(tester);
     final saves = [
       for (final held in _held())
@@ -404,7 +420,7 @@ void main() {
       expect(find.byKey(Key('held-save-resend ${save.id}')), findsNothing, reason: 'no Resend');
       expect(find.byKey(Key('held-save-drop ${save.id}')), findsNothing, reason: 'no Drop');
     }
-    expect(find.text('A save made on the board.'), findsOneWidget, reason: 'the live view\'s words');
+    expect(find.text('Status → Building'), findsOneWidget, reason: 'the live view\'s words');
 
     await tester.tap(find.byKey(const Key('held-save-open $_window')));
     await tester.pump();
@@ -470,18 +486,9 @@ void main() {
       tester.widget<SelectableText>(find.byKey(const Key('held-save-answer $_window'))).data,
       'HTTP 404 · Not Found See docs now',
     );
-    expect(
-      tester.widget<SelectableText>(find.byKey(const Key('held-save-request $_window'))).data,
-      'Request id C0DE:1 2',
-    );
-    expect(
-      tester.widget<Text>(find.byKey(const Key('held-save-change $_window 0'))).data,
-      startsWith('I2 state: Ready → Building · '),
-    );
-    expect(
-      tester.widget<SelectableText>(find.byKey(const Key('held-save-try $_window 0'))).data,
-      endsWith(' · held · Unreachable. · HTTP 404 · Not Found See docs now'),
-    );
+    expect(tester.widget<SelectableText>(find.byKey(const Key('held-save-request $_window'))).data, 'C0DE:1 2');
+    expect(tester.widget<Text>(find.byKey(const Key('held-save-before $_window 0'))).data, 'Ready');
+    expect(tester.widget<Text>(find.byKey(const Key('held-save-after $_window 0'))).data, 'Building');
 
     await tester.tap(find.byKey(const Key('held-save-copy-request $_window')));
     await tester.tap(find.byKey(const Key('held-save-copy $_window')));
@@ -574,7 +581,15 @@ void main() {
   });
 }
 
+/// A desktop window's room, so that every card's details lie on the test's screen.
+void _desktop(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1400, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
 Future<_Source> _shown(WidgetTester tester, List<Map<String, dynamic>> held) async {
+  _desktop(tester);
   final source = _Source({...smallBoard(), 'heldSaves': held});
   final client = FakePlanningClient([provider('local', source)]);
   final boards = PlanningBoards(client);
