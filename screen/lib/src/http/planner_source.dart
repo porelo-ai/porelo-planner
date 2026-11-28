@@ -1736,6 +1736,93 @@ class _Watch {
     }
   }
 
+  /// [board] with [delta] applied as the planner's `BoardDelta` says, or null when the delta is malformed or does not
+  /// follow the board at [frame] and its revision.
+  static Map<String, dynamic>? _merged(Map<String, dynamic> board, int frame, Map<String, dynamic> delta) {
+    final after = delta['after'];
+    final before = delta['before'];
+    final next = delta['frame'];
+    if (after is! int || next is! int || next <= after || after != frame || before is! String) return null;
+    if (before != board['revision'] || delta['revision'] is! String) return null;
+    final stories = _collection(board, delta, 'stories', 'removedStories', 'storyOrder');
+    final noStory = _collection(board, delta, 'noStory', 'removedIssues', 'noStoryOrder');
+    if (stories == null || noStory == null) return null;
+    const patch = {
+      'frame',
+      'after',
+      'before',
+      'stories',
+      'removedStories',
+      'noStory',
+      'removedIssues',
+      'storyOrder',
+      'noStoryOrder',
+    };
+    return {
+      ...board,
+      'stories': stories,
+      'noStory': noStory,
+      for (final entry in delta.entries)
+        if (!patch.contains(entry.key)) entry.key: entry.value,
+    };
+  }
+
+  /// The rows of [member] after [delta]: the rows of each id it supplies replace those held, those of each removed id
+  /// go, and the order is the delta's when it gives one; without it the held order stays, a removed id drops out and
+  /// a new row follows. Null when the delta is malformed.
+  static List<Object?>? _collection(
+    Map<String, dynamic> board,
+    Map<String, dynamic> delta,
+    String member,
+    String removed,
+    String order,
+  ) {
+    final held = board[member] ?? const <Object?>[];
+    final given = delta[member];
+    final gone = delta[removed];
+    final sequence = delta[order];
+    if (held is! List || given is! List || gone is! List) return null;
+    if (sequence != null && (sequence is! List || sequence.any((id) => id is! String))) return null;
+    if (gone.any((id) => id is! String)) return null;
+    if (given.any((row) => row is! Map || row['id'] is! String)) return null;
+    final rows = <String, List<Object?>>{};
+    final ids = <String>[];
+    for (final row in held) {
+      if (row is! Map || row['id'] is! String) return null;
+      ids.add(row['id'] as String);
+      rows.putIfAbsent(row['id'] as String, () => []).add(row);
+    }
+    gone.forEach(rows.remove);
+    for (final row in given) {
+      rows.remove((row as Map)['id']);
+    }
+    for (final row in given) {
+      rows.putIfAbsent((row as Map)['id'] as String, () => []).add(row);
+    }
+    final used = Set<Object?>.identity();
+    final result = <Object?>[];
+    void take(String id) {
+      final list = rows[id];
+      if (list == null || list.isEmpty) return;
+      final row = list.removeAt(0);
+      used.add(row);
+      result.add(row);
+    }
+
+    if (sequence is List) {
+      for (final id in sequence) {
+        if (rows[id as String]?.isEmpty ?? true) return null;
+        take(id);
+      }
+      return result;
+    }
+    ids.forEach(take);
+    for (final row in given) {
+      if (!used.contains(row)) result.add(row);
+    }
+    return result;
+  }
+
   void _end(PlanningRefusal failure, [StackTrace? stack]) {
     if (_ended) return;
     _ended = true;
@@ -1913,6 +2000,11 @@ class _Watch {
     String? event;
     var renewed = false;
     var boards = 0;
+    // The last board of this connection as its JSON map, and the frame it stands at: 0 for the whole board, then the
+    // frame of each change applied to it. A change that does not follow it ends the connection.
+    Map<String, dynamic>? heldBoard;
+    var frame = 0;
+    var gapped = false;
     Timer? quiet;
     Timer? first;
 
@@ -1927,8 +2019,9 @@ class _Watch {
       if (done.isCompleted) return;
       close();
       // A connection that stayed open for the longest wait with its board starts the waits over too.
+      // A connection closed for a change that did not follow its board restored nothing: the silence still runs.
       final stayed = boards > 0 && DateTime.now().difference(opened) >= source.backoffMost;
-      done.complete((restored: boards > 0, renewed: renewed || stayed, lost: why));
+      done.complete((restored: boards > 0 && !gapped, renewed: !gapped && (renewed || stayed), lost: why));
     }
 
     void fail(Object failure) {
@@ -2010,21 +2103,14 @@ class _Watch {
       _setLoad(load);
     }
 
-    void dispatch() {
-      eventBytes = 0;
-      final kind = event ?? 'message';
-      event = null;
-      if (data.isEmpty) return;
-      final text = data.join('\n');
-      data.clear();
-      if (kind == 'load') return told(text);
-      if (kind != 'board') return;
-      final Object? json;
-      try {
-        json = jsonDecode(text);
-      } on FormatException {
-        throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board that is not JSON');
-      }
+    // A change that does not follow ends the connection; the next one reads a whole board.
+    void gap() {
+      gapped = true;
+      lose(const PlanningRefusal('PlannerUnreachable', {}, 'the planner streamed a change that does not follow'));
+    }
+
+    // The checks of a whole board, which a merged board passes as well.
+    PlanningSnapshot checked(Object? json) {
       if (json is! Map<String, dynamic> ||
           json['revision'] is! String ||
           !_revision.hasMatch(json['revision'] as String)) {
@@ -2066,7 +2152,49 @@ class _Watch {
           snapshot.repositories.any((name) => !HttpPlanningSource._name.hasMatch(name))) {
         throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board without its repositories');
       }
+      return snapshot;
+    }
+
+    void dispatch() {
+      eventBytes = 0;
+      final kind = event ?? 'message';
+      event = null;
+      if (data.isEmpty) return;
+      final text = data.join('\n');
+      data.clear();
+      if (kind == 'load') return told(text);
+      if (kind != 'board' && kind != 'change') return;
+      Object? decoded;
+      try {
+        decoded = jsonDecode(text);
+      } on FormatException {
+        if (kind == 'board') {
+          throw const PlanningRefusal('BadAnswer', {}, 'the planner streamed a board that is not JSON');
+        }
+        decoded = null;
+      }
+      var nextFrame = 0;
+      if (kind == 'change') {
+        // A change applies only to the board and frame it names; any other starts the stream again with a whole board.
+        final merged = heldBoard == null || decoded is! Map<String, dynamic>
+            ? null
+            : _merged(heldBoard!, frame, decoded);
+        if (merged == null) return gap();
+        nextFrame = (decoded as Map<String, dynamic>)['frame'] as int;
+        decoded = merged;
+      }
+      final PlanningSnapshot snapshot;
+      try {
+        snapshot = checked(decoded);
+      } on PlanningRefusal {
+        // A merged board that fails the checks is a change that did not follow: the stream reads a whole board again.
+        if (kind != 'change') rethrow;
+        return gap();
+      }
+      final json = decoded as Map<String, dynamic>;
       boards++;
+      heldBoard = json;
+      frame = nextFrame;
       first?.cancel();
       _setLoad(null);
       readFailed.value = null;

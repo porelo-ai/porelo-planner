@@ -251,6 +251,46 @@ List<int> _event(
 /// One `load` event as the planner sends it while it reads a board.
 List<int> _load(Map<String, Object?> data) => utf8.encode('event: load\ndata: ${jsonEncode(data)}\n\n');
 
+/// One `board` event for exactly [board].
+List<int> _whole(Map<String, Object?> board) =>
+    utf8.encode('event:board\nid:${board['revision']}\ndata:${jsonEncode(board)}\n\n');
+
+/// One `change` event as the planner sends it: [delta] with its empty lists the contract requires, at [frame].
+List<int> _change(int frame, String before, String revision, [Map<String, Object?> delta = const {}]) => utf8.encode(
+  'event:change\nid:$revision\ndata:${jsonEncode({'frame': frame, 'after': frame - 1, 'before': before, 'revision': revision, 'stories': <Object?>[], 'removedStories': <Object?>[], 'noStory': <Object?>[], 'removedIssues': <Object?>[], ...delta})}\n\n',
+);
+
+/// A whole board at [revision] holding [stories] and [noStory].
+Map<String, Object?> _boardOf(
+  String revision,
+  List<Map<String, dynamic>> stories,
+  List<Map<String, dynamic>> noStory,
+) => {
+  ..._workflow(revision),
+  'stories': stories,
+  'noStory': noStory,
+  'repositories': const ['porelo-project', 'porelo-other'],
+};
+
+/// What a snapshot shows of the board, as one comparable value.
+Map<String, Object?> _shown(PlanningSnapshot snapshot) => {
+  'revision': snapshot.revision,
+  'faults': snapshot.faults,
+  'work': [for (final rule in snapshot.work) '${rule.state}:${rule.order}'],
+  'states': [for (final state in snapshot.states) state.name],
+  'repositories': snapshot.repositories,
+  'stories': [
+    for (final story in snapshot.stories)
+      {
+        'id': story.id,
+        'title': story.title,
+        'state': story.state,
+        'priority': story.priority,
+        'issues': [for (final issue in story.issues) '${issue.id}:${issue.state}'],
+      },
+  ],
+};
+
 class _Streams {
   _Streams(this.planner, {this.first = true}) {
     planner.routes['GET /projects/demo/events'] = () {
@@ -1467,6 +1507,188 @@ void main() {
 
     expect(revisions, ['r1', 'r2', 'r3'], reason: 'the first board, then each new revision once');
     expect(planner.targets.where((target) => target == 'PUT /projects/demo'), hasLength(1));
+  });
+
+  // Harm: the board stays at its first state while the planner sends only the changes, or merges them wrongly.
+  test('changes merged into the board give the board a whole event at the final state gives', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final snapshots = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(snapshots.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the connection');
+
+    final moved = {..._story('ST1', 'Building'), 'title': 'Moved'};
+    final added = _story('ST3', 'Backlog');
+    final reworked = {..._workflow('r7')['work'][0] as Map<String, dynamic>, 'order': 'Build again.'};
+    streams.opened.last
+      ..add(_whole(_boardOf('r1', [_story('ST1', 'Backlog'), _story('ST2', 'Building')], [])))
+      ..add(
+        _change(1, 'r1', 'r2', {
+          'stories': [added],
+          'storyOrder': ['ST1', 'ST2', 'ST3'],
+        }),
+      )
+      ..add(
+        _change(2, 'r2', 'r3', {
+          'stories': [moved],
+        }),
+      )
+      ..add(
+        _change(3, 'r3', 'r4', {
+          'removedStories': ['ST2'],
+          'storyOrder': ['ST1', 'ST3'],
+        }),
+      )
+      ..add(
+        _change(4, 'r4', 'r5', {
+          'noStory': [_issue('N1', 'Backlog')],
+          'noStoryOrder': ['N1'],
+        }),
+      )
+      ..add(
+        _change(5, 'r5', 'r6', {
+          'removedIssues': ['N1'],
+          'noStoryOrder': <String>[],
+        }),
+      )
+      ..add(
+        _change(6, 'r6', 'r7', {
+          'storyOrder': ['ST3', 'ST1'],
+        }),
+      )
+      ..add(
+        _change(7, 'r7', 'r7', {
+          'work': [reworked],
+        }),
+      )
+      ..add(_change(8, 'r7', 'r8', {'faults': <String>[]}));
+    await _until(() => snapshots.length == 9, 'the board and its eight changes');
+    expect(planner.calls.where((call) => call.target == '/projects/demo/events'), hasLength(1));
+
+    // The same final board as one whole event, on a connection of its own.
+    final (whole, wholeSource) = await _started();
+    final wholeStreams = _Streams(whole, first: false);
+    final wholeSnapshots = <PlanningSnapshot>[];
+    final wholeWatching = wholeSource.watchStories('demo').listen(wholeSnapshots.add);
+    addTearDown(wholeWatching.cancel);
+    await _until(() => wholeStreams.opened.isNotEmpty, 'the second connection');
+    final finalBoard = _boardOf('r8', [_story('ST3', 'Backlog'), moved], [])
+      ..['work'] = [reworked]
+      ..['faults'] = <String>[];
+    wholeStreams.opened.last.add(_whole(finalBoard));
+    await _until(() => wholeSnapshots.isNotEmpty, 'the whole board');
+
+    expect(_shown(snapshots.last), _shown(wholeSnapshots.single));
+    expect(snapshots.map((snapshot) => snapshot.revision), ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r7', 'r8']);
+    expect(snapshots[7].work.single.order, 'Build again.', reason: 'a work-only change at one revision is handed on');
+    expect(snapshots.last.faults, isEmpty);
+  });
+
+  // Harm: a change that skipped a frame is applied to a board it was not taken against, and the board is wrong.
+  test('a change that skips a frame is dropped and the stream reads a whole board again', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner, first: false);
+    final snapshots = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(snapshots.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.length == 1, 'the connection');
+    streams.opened.last
+      ..add(_whole(_boardOf('r1', [_story('ST1', 'Backlog')], [])))
+      ..add(
+        _change(3, 'r1', 'r2', {
+          'stories': [_story('ST9', 'Backlog')],
+        }),
+      );
+    await _until(() => streams.opened.length == 2, 'the connection read again');
+    streams.opened.last.add(_whole(_boardOf('r2', [_story('ST1', 'Building')], [])));
+    await _until(() => snapshots.length == 2, 'the whole board');
+
+    expect(snapshots.first.stories.map((story) => story.id), ['ST1']);
+    expect(snapshots.last.stories.map((story) => story.id), ['ST1']);
+    expect(snapshots.last.stories.single.state, 'Building');
+    expect(snapshots.map((snapshot) => snapshot.revision), ['r1', 'r2'], reason: 'the skipping change was never shown');
+  });
+
+  // Harm: rows of one id are merged into one, kept stale or left behind, so the board shows what the planner does not.
+  test('changes to an id held twice replace both rows in occurrence order and then remove both', () async {
+    final (planner, source) = await _started();
+    final streams = _Streams(planner, first: false);
+    final snapshots = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(snapshots.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.isNotEmpty, 'the connection');
+    Map<String, dynamic> twin(String title, String state) => {..._story('ST2', state), 'title': title};
+    streams.opened.last
+      ..add(_whole(_boardOf('r1', [_story('ST1', 'Backlog'), twin('First', 'Backlog'), twin('Second', 'Backlog')], [])))
+      ..add(
+        _change(1, 'r1', 'r2', {
+          'stories': [twin('Newer first', 'Building'), twin('Newer second', 'Building')],
+          'storyOrder': ['ST2', 'ST1', 'ST2'],
+        }),
+      )
+      ..add(
+        _change(2, 'r2', 'r3', {
+          'removedStories': ['ST2'],
+          'storyOrder': ['ST1'],
+        }),
+      );
+    await _until(() => snapshots.length == 3, 'the board and its two changes');
+
+    expect(snapshots[1].stories.map((story) => '${story.id}:${story.title}'), [
+      'ST2:Newer first',
+      'ST1:Story ST1',
+      'ST2:Newer second',
+    ]);
+    expect(snapshots[2].stories.map((story) => story.id), ['ST1']);
+  });
+
+  // Harm: a change taken against another revision than the one held is applied because its frame fits.
+  test('a change whose before is not the held revision is dropped and the stream reads a whole board again', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner, first: false);
+    final snapshots = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(snapshots.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.length == 1, 'the connection');
+    streams.opened.last
+      ..add(_whole(_boardOf('r1', [_story('ST1', 'Backlog')], [])))
+      ..add(
+        _change(1, 'r9', 'r2', {
+          'stories': [_story('ST9', 'Backlog')],
+        }),
+      );
+    await _until(() => streams.opened.length == 2, 'the connection read again');
+    streams.opened.last.add(_whole(_boardOf('r3', [_story('ST1', 'Building')], [])));
+    await _until(() => snapshots.length == 2, 'the whole board');
+
+    expect(snapshots.map((snapshot) => snapshot.revision), ['r1', 'r3'], reason: 'the change was never shown');
+    expect(snapshots.last.stories.map((story) => story.id), ['ST1']);
+  });
+
+  // Harm: a change that comes before any board is merged into nothing, or shown as a board.
+  test('a change before any board on a connection is dropped and the stream reads a whole board again', () async {
+    final (planner, source) = await _started(backoff: Duration.zero);
+    final streams = _Streams(planner, first: false);
+    final snapshots = <PlanningSnapshot>[];
+    final watching = source.watchStories('demo').listen(snapshots.add);
+    addTearDown(watching.cancel);
+    await _until(() => streams.opened.length == 1, 'the connection');
+    streams.opened.last.add(_whole(_boardOf('r1', [_story('ST1', 'Backlog')], [])));
+    await _until(() => snapshots.length == 1, 'the first board');
+    await streams.end();
+    await _until(() => streams.opened.length == 2, 'the second connection');
+    streams.opened.last.add(
+      _change(1, 'r1', 'r2', {
+        'stories': [_story('ST9', 'Backlog')],
+      }),
+    );
+    await _until(() => streams.opened.length == 3, 'the connection read again');
+    streams.opened.last.add(_whole(_boardOf('r3', [_story('ST1', 'Building')], [])));
+    await _until(() => snapshots.length == 2, 'the whole board');
+
+    expect(snapshots.map((snapshot) => snapshot.revision), ['r1', 'r3']);
+    expect(snapshots.last.stories.map((story) => story.id), ['ST1']);
   });
 
   // Harm: an internally reconnecting stream leaves the board authorizing work on stale planning.
