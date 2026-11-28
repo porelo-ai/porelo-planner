@@ -15,7 +15,7 @@ What holds and why: one row per decision, and its full text below.
 | Access | [The window never sends the planner's token](#the-window-never-sends-the-planners-token) |
 | Access | [A lent login is Porelo's alone](#a-lent-login-is-porelos-alone) |
 | Access | [The planner ends with the window that started it](#the-planner-ends-with-the-window-that-started-it) |
-| Work | [A handed-in idea is saved once per offer, not per request](#a-handed-in-idea-is-saved-once-per-offer-not-per-request) |
+| Work | [A reported idea is saved once per task and report number, not per read](#a-reported-idea-is-saved-once-per-task-and-report-number-not-per-read) |
 | Work | [A story is the sum of its issues](#a-story-is-the-sum-of-its-issues) |
 | Build | [Windows ships beside Linux, never holding it back](#windows-ships-beside-linux-never-holding-it-back) |
 | Work | [A move is saved at once, warned where it can do harm](#a-move-is-saved-at-once-warned-where-it-can-do-harm) |
