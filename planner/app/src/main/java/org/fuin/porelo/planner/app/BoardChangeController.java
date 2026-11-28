@@ -327,12 +327,17 @@ public class BoardChangeController {
                 asked == null || java.util.Objects.equals(asked.value(), held.size())
                         ? null
                         : asked;
+        final BoardChangeRequests.@Nullable Estimate estimate =
+                unchanged(item.estimateMinutes(), held.estimate()) ? null : item.estimateMinutes();
         final @Nullable String priority =
                 java.util.Objects.equals(item.priority(), held.priority()) ? null : item.priority();
-        if (size != null || priority != null) {
+        if (size != null || estimate != null || priority != null) {
             final Set<Fields.Field> named = EnumSet.noneOf(Fields.Field.class);
             if (size != null) {
                 named.add(Fields.Field.SIZE);
+            }
+            if (estimate != null) {
+                named.add(Fields.Field.ESTIMATE);
             }
             if (priority != null) {
                 named.add(Fields.Field.PRIORITY);
@@ -349,7 +354,7 @@ public class BoardChangeController {
                                     new Fields(
                                             named,
                                             size == null ? null : size.value(),
-                                            null,
+                                            estimate == null ? null : estimate.minutes(),
                                             priority,
                                             null)));
         }
@@ -412,6 +417,22 @@ public class BoardChangeController {
                 outcome.stands("state");
             }
         }
+    }
+
+    /**
+     * Whether an update's estimate is what the issue holds already, so naming it writes nothing.
+     *
+     * @param asked the estimate the update names, or null when it names none
+     * @param held the issue's estimate in minutes, or null when it has none
+     * @return true when the update names no estimate or the one the issue holds
+     */
+    private static boolean unchanged(
+            final BoardChangeRequests.@Nullable Estimate asked, final @Nullable Double held) {
+        if (asked == null) {
+            return true;
+        }
+        final @Nullable Integer minutes = asked.minutes();
+        return minutes == null ? held == null : held != null && held == minutes.doubleValue();
     }
 
     /** Refuses a new issue before it is made when a blocker's new issue was refused already. */

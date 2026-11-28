@@ -1,0 +1,2 @@
+title: A board change writes an issue's estimate in minutes beside its size, as setIssueFields does.
+type: added

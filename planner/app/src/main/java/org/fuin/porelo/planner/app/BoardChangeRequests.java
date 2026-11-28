@@ -62,6 +62,7 @@ final class BoardChangeRequests {
                     "title",
                     "parts",
                     "size",
+                    "estimateMinutes",
                     "state",
                     "priority",
                     "worker",
@@ -120,6 +121,7 @@ final class BoardChangeRequests {
      * @param title its new title, or null to keep it
      * @param parts the parts written and removed, or null to keep its text
      * @param size its new size, or null to keep it
+     * @param estimateMinutes its new estimate in minutes, or null to keep it
      * @param state the state it moves to, or null to keep it
      * @param priority its new priority, or null to keep it
      * @param worker who works it from now, or null to keep it
@@ -131,11 +133,20 @@ final class BoardChangeRequests {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String title,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable TextEdit parts,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Size size,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Estimate estimateMinutes,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String state,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String priority,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable Worker worker,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String story,
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable List<String> blockedBy) {}
+
+    /**
+     * An estimate an update names: minutes within the bounds setIssueFields takes, or null to clear
+     * it.
+     *
+     * @param minutes the estimate in minutes, or null
+     */
+    record Estimate(@Nullable Integer minutes) {}
 
     /**
      * Reads a board change of at most {@link AccessFilter#MOST_LARGE_BODY} bytes.
@@ -260,11 +271,33 @@ final class BoardChangeRequests {
                 title == null ? null : title(title),
                 parts,
                 size,
+                estimate(item),
                 state(optional(item, "state")),
                 priority(optional(item, "priority")),
                 worker(optional(item, "worker")),
                 reference(optional(item, "story"), "story"),
                 item.has("blockedBy") ? references(item) : null);
+    }
+
+    private static @Nullable Estimate estimate(final JsonNode item) {
+        if (!item.has("estimateMinutes")) {
+            return null;
+        }
+        final JsonNode value = item.get("estimateMinutes");
+        if (value.isNull()) {
+            return new Estimate(null);
+        }
+        if (!value.isIntegralNumber()
+                || !value.canConvertToInt()
+                || value.asInt() < 1
+                || value.asInt() > Fields.MOST_ESTIMATE) {
+            throw refused(
+                    "estimateMinutes",
+                    "The estimate must be a whole number of 1 to "
+                            + Fields.MOST_ESTIMATE
+                            + " minutes, or null.");
+        }
+        return new Estimate(value.asInt());
     }
 
     private static void parts(

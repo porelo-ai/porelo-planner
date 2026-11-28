@@ -50,6 +50,9 @@ class BoardChangeEndpointTest {
 
     private final Map<String, RuntimeException> blockersFailures = new LinkedHashMap<>();
 
+    /** The fields each issue's last field write named, by the issue's id. */
+    private final Map<String, Fields> fieldsWritten = new LinkedHashMap<>();
+
     /** The lists a story was written with, by its id. */
     private final Map<String, List<String>> storyWrites = new LinkedHashMap<>();
 
@@ -142,8 +145,38 @@ class BoardChangeEndpointTest {
                         if (fieldsFailures.containsKey(id)) {
                             throw fieldsFailures.get(id);
                         }
+                        fieldsWritten.put(id, fields);
                         final Issue now = issues.get(id);
-                        issues.put(id, stored(id, now.title(), fields.size(), now.blockedBy()));
+                        final String size =
+                                fields.named().contains(Fields.Field.SIZE)
+                                        ? fields.size()
+                                        : now.size();
+                        final Issue kept = stored(id, now.title(), size, now.blockedBy());
+                        final Double estimate =
+                                fields.named().contains(Fields.Field.ESTIMATE)
+                                        ? (fields.estimateMinutes() == null
+                                                ? null
+                                                : fields.estimateMinutes().doubleValue())
+                                        : now.estimate();
+                        issues.put(
+                                id,
+                                new Issue(
+                                        id,
+                                        kept.repository(),
+                                        kept.title(),
+                                        kept.state(),
+                                        kept.size(),
+                                        kept.blockedBy(),
+                                        null,
+                                        null,
+                                        kept.text(),
+                                        kept.worker(),
+                                        kept.risk(),
+                                        estimate,
+                                        null,
+                                        null,
+                                        List.of(),
+                                        List.of()));
                         revision++;
                         final Board base = snapshotBase;
                         if (base != null) {
@@ -617,5 +650,66 @@ class BoardChangeEndpointTest {
         change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"M\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"));
+    }
+
+    @Test
+    void anUpdateWritesTheIssuesEstimateBesideItsSizeAndANullEstimateClearsIt() throws Exception {
+        // Harm: an agent's estimate needing a field write of its own, or dropped without a word.
+        change("{\"updates\": [{\"issue\": \"AB1\", \"size\": \"M\", \"estimateMinutes\": 42}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"));
+
+        assertThat(fieldsWritten.get("AB1").named())
+                .as("the size and the estimate, written in one field write")
+                .containsExactlyInAnyOrder(Fields.Field.SIZE, Fields.Field.ESTIMATE);
+        assertThat(fieldsWritten.get("AB1").estimateMinutes()).isEqualTo(42);
+        assertThat(issues.get("AB1").size()).isEqualTo("M");
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"estimateMinutes\": null}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("SAVED"));
+
+        assertThat(fieldsWritten.get("AB1").named())
+                .as("only the estimate named, so the size stays")
+                .containsExactly(Fields.Field.ESTIMATE);
+        assertThat(fieldsWritten.get("AB1").estimateMinutes()).as("the estimate cleared").isNull();
+        assertThat(issues.get("AB1").size()).isEqualTo("M");
+    }
+
+    @Test
+    void anEstimateOutOfItsBoundsOrNoWholeNumberRefusesTheWholeBodyBeforeAnythingIsWritten()
+            throws Exception {
+        // Harm: an estimate of no meaning written to the board, or the change half applied.
+        for (final String estimate : List.of("0", "100001", "4.5", "\"42\"")) {
+            change(
+                            "{\"updates\": [{\"issue\": \"AB1\", \"size\": \"S\","
+                                    + " \"estimateMinutes\": "
+                                    + estimate
+                                    + "}]}")
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.title").value("EditNotAllowed"))
+                    .andExpect(jsonPath("$.parameters.field").value("estimateMinutes"));
+        }
+
+        assertThat(fieldsWritten).as("nothing written").isEmpty();
+    }
+
+    @Test
+    void anEstimateAtEitherBoundIsWrittenAndTheEstimateTheIssueHoldsWritesNothing() throws Exception {
+        // Harm: a bound shifted by one refusing a sound estimate, or a save made for nothing.
+        for (final int minutes : List.of(1, 100000)) {
+            change("{\"updates\": [{\"issue\": \"AB1\", \"estimateMinutes\": " + minutes + "}]}")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.results[0].outcome").value("SAVED"));
+
+            assertThat(fieldsWritten.get("AB1").estimateMinutes()).isEqualTo(minutes);
+        }
+        final int before = revision;
+
+        change("{\"updates\": [{\"issue\": \"AB1\", \"estimateMinutes\": 100000}]}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("UNCHANGED"));
+
+        assertThat(revision).as("no save").isEqualTo(before);
     }
 }

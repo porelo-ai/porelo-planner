@@ -6962,6 +6962,13 @@ components:
         size:
           type: [string, 'null']
           pattern: '^(XS|S|M|L|XL)$'
+        estimateMinutes:
+          type: [integer, 'null']
+          description: >-
+            The issue's estimate in minutes, written beside its size as setIssueFields writes it; null clears it. A
+            store that keeps no estimate refuses the update as setIssueFields does.
+          minimum: 1
+          maximum: 100000
         state:
           type: string
           pattern: '^[A-Za-z][A-Za-z0-9 _-]{0,63}$'
