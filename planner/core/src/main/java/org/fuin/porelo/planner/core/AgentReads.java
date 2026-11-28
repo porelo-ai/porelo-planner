@@ -8,13 +8,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.ToIntFunction;
-import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.StoreException;
@@ -424,7 +421,20 @@ public final class AgentReads {
      */
     public static Found search(
             final Board board, final List<String> words, final Splitter splitter) {
-        final List<Match> all = searchAll(board, words, splitter);
+        return search(SearchIndex.of(board, splitter), words);
+    }
+
+    /**
+     * Finds the stories and issues in a built search index whose title or text holds every word,
+     * each as a whole word and without regard to case: a word may stand in the title and another in
+     * the text.
+     *
+     * @param index the board's search index
+     * @param words the words, none blank
+     * @return the matches, stories first, then issues, each in the board's order
+     */
+    public static Found search(final SearchIndex index, final List<String> words) {
+        final List<Match> all = searchAll(index, words);
         return new Found(
                 List.copyOf(all.subList(0, Math.min(all.size(), MOST_MATCHES))),
                 all.size() > MOST_MATCHES);
@@ -440,73 +450,18 @@ public final class AgentReads {
      */
     public static List<Match> searchAll(
             final Board board, final List<String> words, final Splitter splitter) {
-        final List<Pattern> patterns = words.stream().map(AgentReads::whole).toList();
-        final List<Match> all = new ArrayList<>();
-        for (final Story story : board.stories()) {
-            final Map<String, String> places = new LinkedHashMap<>();
-            places.put(TITLE, story.title());
-            places.put(TEXT, story.description());
-            matched(story.id(), Kind.STORY, story.title(), story.state(), places, patterns, null)
-                    .ifPresent(all::add);
-        }
-        for (final Issue issue : board.issues()) {
-            final Map<String, String> places = new LinkedHashMap<>();
-            places.put(TITLE, issue.title());
-            final Split split = splitter.split(issue.text());
-            if (split.parts() != null) {
-                places.putAll(split.parts());
-            }
-            // A section of the person's own or a second paragraph is in no part, yet still text.
-            matched(
-                            issue.id(),
-                            Kind.ISSUE,
-                            issue.title(),
-                            issue.state(),
-                            places,
-                            patterns,
-                            issue.text())
-                    .ifPresent(all::add);
-        }
-        return List.copyOf(all);
+        return searchAll(SearchIndex.of(board, splitter), words);
     }
 
-    private static Optional<Match> matched(
-            final String id,
-            final Kind kind,
-            final String title,
-            final String state,
-            final Map<String, String> places,
-            final List<Pattern> patterns,
-            final @Nullable String rest) {
-        final Set<String> found = new LinkedHashSet<>();
-        for (final Pattern pattern : patterns) {
-            boolean held = false;
-            for (final Map.Entry<String, String> place : places.entrySet()) {
-                if (pattern.matcher(place.getValue()).find()) {
-                    found.add(place.getKey());
-                    held = true;
-                }
-            }
-            if (!held && rest != null && pattern.matcher(rest).find()) {
-                found.add(TEXT);
-                held = true;
-            }
-            if (!held) {
-                return Optional.empty();
-            }
-        }
-        // Each place once, in the order the item holds them, the rest of the text last.
-        final List<String> ordered =
-                new ArrayList<>(places.keySet().stream().filter(found::contains).toList());
-        if (found.contains(TEXT) && !ordered.contains(TEXT)) {
-            ordered.add(TEXT);
-        }
-        return Optional.of(new Match(id, kind, title, state, ordered));
-    }
-
-    private static Pattern whole(final String word) {
-        return Pattern.compile(
-                "(?<![\\p{L}\\p{N}_])" + Pattern.quote(word.strip()) + "(?![\\p{L}\\p{N}_])",
-                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /**
+     * Finds the complete ordered match list from a built search index before a caller selects a
+     * bounded page.
+     *
+     * @param index the board's search index
+     * @param words the words, none blank
+     * @return every matching story, then every matching issue
+     */
+    public static List<Match> searchAll(final SearchIndex index, final List<String> words) {
+        return index.search(words);
     }
 }

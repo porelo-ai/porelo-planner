@@ -8,9 +8,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.fuin.porelo.planner.core.AgentReads;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
 import org.fuin.porelo.planner.store.PlanningStore;
@@ -636,5 +640,161 @@ class AgentReadsEndpointTest {
         mvc.perform(get("/projects/alpha/search").param("words", "x".repeat(101)))
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/projects/alpha/search").param("words", "a,b")).andExpect(status().isOk());
+    }
+
+    /**
+     * Guards per-project and per-revision search index caching: no index is built before a search,
+     * repeated searches and pages reuse it, and a revision change re-splits only changed issues.
+     */
+    @Test
+    void searchCachesIndexPerProjectAndRevisionAndRebuildsLazilyOnSearch() throws Exception {
+        // Harm: every search splits the entire board anew, or an unused revision eagerly builds an
+        // index.
+        final AtomicInteger splits = new AtomicInteger();
+        final AgentReads.Splitter counting =
+                text -> {
+                    splits.incrementAndGet();
+                    return IssueTextSplit.INSTANCE.split(text);
+                };
+        final Map<String, Board> boards = new HashMap<>();
+        boards.put("alpha", board());
+        boards.put(
+                "beta",
+                new Board(
+                        new Revision("beta@c1"),
+                        board().workflow(),
+                        List.of(),
+                        List.of(issue("AB1", "Beta", "Backlog", "S", "High", null, "Beta cache.")),
+                        board().work()));
+        final Projects isolated =
+                new Projects(
+                        (project, repository, branch) ->
+                                new PlanningStore() {
+                                    @Override
+                                    public Board board() {
+                                        return Objects.requireNonNull(boards.get(project));
+                                    }
+
+                                    @Override
+                                    public Board refresh() {
+                                        return board();
+                                    }
+
+                                    @Override
+                                    public @Nullable String storyState(
+                                            final List<String> issueStates) {
+                                        return null;
+                                    }
+
+                                    @Override
+                                    public TextFormat textFormat() {
+                                        return TextFormat.MARKDOWN;
+                                    }
+                                },
+                        new WorkRecord(Map.of(), true));
+        final MockMvc cachedMvc =
+                MockMvcBuilders.standaloneSetup(
+                                new BoardController(
+                                        isolated,
+                                        new ChangesRegistry(
+                                                isolated,
+                                                Duration.ofHours(1),
+                                                Executors.newSingleThreadScheduledExecutor())),
+                                new AgentReadsController(isolated, counting))
+                        .setControllerAdvice(new Problems(isolated))
+                        .build();
+        cachedMvc
+                .perform(
+                        put("/projects/alpha")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(SOURCE))
+                .andExpect(status().isNoContent());
+        cachedMvc
+                .perform(
+                        put("/projects/beta")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(SOURCE))
+                .andExpect(status().isNoContent());
+
+        assertThat(splits.get()).as("registering projects builds no search index").isZero();
+
+        final JsonNode firstPage =
+                JsonMapper.builder()
+                        .build()
+                        .readTree(
+                                cachedMvc
+                                        .perform(
+                                                get("/projects/alpha/search")
+                                                        .param("words", "cache")
+                                                        .param("limit", "1"))
+                                        .andExpect(status().isOk())
+                                        .andReturn()
+                                        .getResponse()
+                                        .getContentAsString());
+        assertThat(splits.get())
+                .as("first search on alpha splits each of alpha's four issues once")
+                .isEqualTo(4);
+        assertThat(firstPage.path("matches").get(0).path("id").asString()).isEqualTo("ST1");
+        final String next = firstPage.path("next").asString();
+
+        cachedMvc
+                .perform(
+                        get("/projects/alpha/search")
+                                .param("words", "cache")
+                                .param("limit", "1")
+                                .param("after", next))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matches[0].id").value("AB1"));
+        assertThat(splits.get())
+                .as("following a page at the same revision reuses the cached index")
+                .isEqualTo(4);
+
+        cachedMvc
+                .perform(get("/projects/beta/search").param("words", "cache"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matches[0].id").value("AB1"));
+        assertThat(splits.get())
+                .as("first search on beta splits only beta's one issue")
+                .isEqualTo(5);
+
+        cachedMvc
+                .perform(get("/projects/alpha/search").param("words", "latency"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matches[0].id").value("ST1"));
+        assertThat(splits.get())
+                .as("searching beta did not evict alpha's cached index")
+                .isEqualTo(5);
+
+        final Board before = Objects.requireNonNull(boards.get("alpha"));
+        final List<Issue> updatedIssues = new ArrayList<>(before.issues());
+        updatedIssues.set(
+                2, issue("AB2", "Second", "Backlog", "M", "Medium", null, "Added gateway."));
+        boards.put(
+                "alpha",
+                new Board(
+                        new Revision("porelo-store@c2"),
+                        before.workflow(),
+                        before.stories(),
+                        updatedIssues,
+                        before.work()));
+        assertThat(splits.get())
+                .as("changing the board builds nothing until a search asks")
+                .isEqualTo(5);
+
+        cachedMvc
+                .perform(get("/projects/alpha/search").param("words", "gateway"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value("porelo-store@c2"))
+                .andExpect(jsonPath("$.matches[0].id").value("AB2"));
+        assertThat(splits.get())
+                .as("first search after one issue changed splits only that changed issue")
+                .isEqualTo(6);
+
+        cachedMvc
+                .perform(get("/projects/alpha/search").param("words", "gateway"))
+                .andExpect(status().isOk());
+        assertThat(splits.get())
+                .as("repeated search at the new revision reuses the updated index")
+                .isEqualTo(6);
     }
 }

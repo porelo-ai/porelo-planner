@@ -4,6 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.fuin.porelo.planner.app.answers.Breach;
 import org.fuin.porelo.planner.app.answers.Breaches;
 import org.fuin.porelo.planner.app.answers.IssueParts;
@@ -14,6 +17,7 @@ import org.fuin.porelo.planner.app.answers.SearchAnswer;
 import org.fuin.porelo.planner.app.answers.SearchMatch;
 import org.fuin.porelo.planner.app.answers.TextParts;
 import org.fuin.porelo.planner.core.AgentReads;
+import org.fuin.porelo.planner.core.SearchIndex;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.jspecify.annotations.Nullable;
@@ -37,6 +41,10 @@ public class AgentReadsController {
 
     private final Projects projects;
 
+    private final AgentReads.Splitter splitter;
+
+    private final ConcurrentMap<String, SearchIndex> indexes = new ConcurrentHashMap<>();
+
     private PageReads pages = PageReads.plain();
 
     /** Uses the application's HTTP mapper for complete page measurements. */
@@ -50,8 +58,20 @@ public class AgentReadsController {
      *
      * @param projects the projects the window has given
      */
+    @Autowired
     public AgentReadsController(final Projects projects) {
+        this(projects, IssueTextSplit.INSTANCE);
+    }
+
+    /**
+     * Makes the controller with a given text splitter for search indexing.
+     *
+     * @param projects the projects the window has given
+     * @param splitter splits an issue's text
+     */
+    AgentReadsController(final Projects projects, final AgentReads.Splitter splitter) {
         this.projects = projects;
+        this.splitter = splitter;
     }
 
     /**
@@ -171,8 +191,9 @@ public class AgentReadsController {
         PageReads.checkPage(request, name);
         final Board board = projects.store(name).board();
         final AgentReads.Filters filters = new AgentReads.Filters(List.of(), List.of(), List.of());
+        final SearchIndex index = index(name, board);
         final List<SearchMatch> matches =
-                AgentReads.searchAll(board, words, IssueTextSplit.INSTANCE).stream()
+                AgentReads.searchAll(index, words).stream()
                         .map(
                                 match ->
                                         new SearchMatch(
@@ -196,6 +217,24 @@ public class AgentReadsController {
                                 page.items(),
                                 page.next() != null,
                                 page.next()));
+    }
+
+    private SearchIndex index(final String project, final Board board) {
+        final @Nullable SearchIndex held = indexes.get(project);
+        if (held != null && held.revision().equals(board.revision())) {
+            return held;
+        }
+        return Objects.requireNonNull(
+                indexes.compute(
+                        project,
+                        (key, current) -> {
+                            if (current != null && current.revision().equals(board.revision())) {
+                                return current;
+                            }
+                            return current == null
+                                    ? SearchIndex.of(board, splitter)
+                                    : current.update(board, splitter);
+                        }));
     }
 
     private Board board(final String project) {
