@@ -350,19 +350,20 @@ paths:
       operationId: listStories
       x-mcp: true
       summary: List the stories
-      description: Answers the project's stories with their issues, all of them or only those in the named states.
+      description: >-
+        Answers a page of the project's stories with all their issues, without descriptions. State and priority
+        select the story's own fields; repository selects a story when any of its issues is of that repository.
+        Values within a filter are alternatives; different filters must all match. The open counts cover the whole
+        board on every page. Follow next until null, keeping the same filters. The revision identifies store content;
+        live work status may change between pages. Pages contain at most 60,000 JSON characters including their
+        envelope, except an indivisible item larger than that bound, which is answered alone.
       tags: [board]
       parameters:
-        - name: state
-          in: query
-          required: false
-          description: A state whose stories are answered; repeated for several, and absent for all stories.
-          style: form
-          explode: true
-          schema:
-            type: array
-            items:
-              type: string
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageAfter'
+        - $ref: '#/components/parameters/ReadState'
+        - $ref: '#/components/parameters/ReadRepository'
+        - $ref: '#/components/parameters/ReadPriority'
       responses:
         '200':
           description: The stories at the given revision, without their descriptions.
@@ -377,7 +378,9 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchProject'
         '409':
-          $ref: '#/components/responses/ItemsDirectoryRefused'
+          $ref: '#/components/responses/PageConflict'
+        '422':
+          $ref: '#/components/responses/PageTooLarge'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -1401,9 +1404,17 @@ paths:
         story names. An issue in a state the workflow does not have is listed too, with its warning, after those in
         the workflow's states. Issues follow the board's order of states, then the order in which the store
         supplies the board's issues. The story query parameter is required and accepts only none; a missing or other value is refused
-        before any board or work record is read (InvalidName).
+        before any board or work record is read (InvalidName). State and repository filter each issue's own fields;
+        values within a filter are alternatives and different filters must all match. Follow next until null with
+        the same filters. The revision identifies store content; live work status may change between pages. Pages
+        contain at most 60,000 JSON characters including their envelope, except an indivisible larger issue, which
+        is answered alone.
       tags: [board]
       parameters:
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageAfter'
+        - $ref: '#/components/parameters/ReadState'
+        - $ref: '#/components/parameters/ReadRepository'
         - name: story
           in: query
           required: true
@@ -1425,7 +1436,9 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchProject'
         '409':
-          $ref: '#/components/responses/ItemsDirectoryRefused'
+          $ref: '#/components/responses/PageConflict'
+        '422':
+          $ref: '#/components/responses/PageTooLarge'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -1936,8 +1949,19 @@ paths:
         Answers the board the planner holds in short, without reading the store anew: each story with its id, title,
         state and priority and each of its issues with its id, state, size and priority, in the board's order, then the
         issues no story names that are not sub-issues of an issue a story names. What it says of an item equals what
-        the board says of it at the same revision.
+        the board says of it at the same revision. State and priority select each story's own fields and each loose
+        issue's own fields; repository selects a story when any of its issues is of that repository, and a loose issue
+        by its own repository. All of a selected
+        story's issues are included. Values within a filter are alternatives; different filters must all match.
+        Follow next until null with the same filters. A story is never split. Pages contain at most 60,000 JSON
+        characters including their envelope, except an indivisible larger item, which is answered alone.
       tags: [board]
+      parameters:
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageAfter'
+        - $ref: '#/components/parameters/ReadState'
+        - $ref: '#/components/parameters/ReadRepository'
+        - $ref: '#/components/parameters/ReadPriority'
       responses:
         '200':
           description: The board in short at the given revision.
@@ -1952,7 +1976,9 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchProject'
         '409':
-          $ref: '#/components/responses/ItemsDirectoryRefused'
+          $ref: '#/components/responses/PageConflict'
+        '422':
+          $ref: '#/components/responses/PageTooLarge'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -2042,9 +2068,13 @@ paths:
         matched without regard to case as a whole word, each with its id, kind, title, state and where the words were
         found: `title`, or the name of the text part as setIssueText names it, or `text` for a story's text and a text
         whose parts cannot be told apart. Stories come first, then issues, each in the board's order; at most 200 are
-        answered and `more` says whether others matched. Nothing is read from the store anew.
+        answered per page and more says whether next is non-null. Follow next until null with the same words to reach
+        every match. Pages contain at most 60,000 JSON characters including their envelope, except an indivisible
+        larger match, which is answered alone. Nothing is read from the store anew.
       tags: [board]
       parameters:
+        - $ref: '#/components/parameters/PageLimit'
+        - $ref: '#/components/parameters/PageAfter'
         - name: words
           in: query
           required: true
@@ -2072,7 +2102,9 @@ paths:
         '404':
           $ref: '#/components/responses/NoSuchProject'
         '409':
-          $ref: '#/components/responses/ItemsDirectoryRefused'
+          $ref: '#/components/responses/PageConflict'
+        '422':
+          $ref: '#/components/responses/PageTooLarge'
         '502':
           $ref: '#/components/responses/StoreRefused'
         '503':
@@ -2250,6 +2282,68 @@ components:
         or one over anything but the request as sent, answers 401.
 
   parameters:
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum top-level items on this page; the character bound may end it earlier.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    PageAfter:
+      name: after
+      in: query
+      required: false
+      description: >-
+        Opaque next cursor from the preceding page of this project and read, with the same filters or search words.
+        Invalid cursors or changed selections answer InvalidName (400); a changed store revision answers PageChanged
+        (409), requiring a restart without after. The cursor is a continuation, not an authorization credential.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
+    ReadState:
+      name: state
+      in: query
+      required: false
+      description: Select these states; repeated values are alternatives, absent selects all.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 200
+        items:
+          type: string
+          minLength: 1
+          maxLength: 200
+    ReadPriority:
+      name: priority
+      in: query
+      required: false
+      description: Select these priorities; repeated values are alternatives, absent selects all.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 200
+        items:
+          type: string
+          minLength: 1
+          maxLength: 200
+    ReadRepository:
+      name: repository
+      in: query
+      required: false
+      description: Select these repository names; repeated values are alternatives, absent selects all.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 200
+        items:
+          $ref: '#/components/schemas/Name'
     Project:
       name: project
       in: path
@@ -2352,6 +2446,37 @@ components:
             title: InvalidLevel
             status: 400
             detail: The level is none of ERROR, WARN, INFO, DEBUG.
+    PageTooLarge:
+      description: >-
+        Mandatory page metadata alone exceeds 60,000 JSON characters (PageTooLarge); for full story lists, use
+        getOutline, which omits the whole-board open counts. No incomplete or oversized metadata is returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: urn:porelo-planner:PageTooLarge
+            title: PageTooLarge
+            status: 422
+            detail: The page metadata exceeds the answer bound; read the board outline instead.
+            parameters: {}
+    PageConflict:
+      description: >-
+        PageChanged when the store revision differs from the cursor's revision; discard all pages and read again
+        from the start. ItemsDirectoryRefused retains the directory refusal described by ItemsDirectoryRefused
+        when the local store cannot be read.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            PageChanged:
+              value:
+                type: urn:porelo-planner:PageChanged
+                title: PageChanged
+                status: 409
+                detail: The board changed since the first page; read again from its start.
+                parameters: {}
     InvalidName:
       description: >-
         A project name, story id, issue id or query parameter was refused (InvalidName); its parameters name the
@@ -4534,7 +4659,7 @@ components:
     StoryList:
       description: Stories at one revision.
       type: object
-      required: [revision, stories, open]
+      required: [revision, stories, open, next]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -4548,6 +4673,10 @@ components:
             filter answers.
           allOf:
             - $ref: '#/components/schemas/OpenWork'
+        next:
+          description: The next page cursor, or null when the selection is complete.
+          type: [string, 'null']
+
     OpenWork:
       description: >-
         What is still open of a story or a board. An issue is left to build while it stands neither in a closed state
@@ -4698,9 +4827,9 @@ components:
               $ref: '#/components/schemas/TextFormat'
 
     IssueList:
-      description: "Issues at one revision: a story's, or those in no story."
+      description: "Issues at one revision: a whole story's with next null, or a page of those in no story."
       type: object
-      required: [revision, issues]
+      required: [revision, issues, next]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -4708,6 +4837,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Issue'
+        next:
+          description: The next page cursor, or null when the selection is complete.
+          type: [string, 'null']
+
     IssueReply:
       description: One issue at one revision.
       type: object
@@ -6377,7 +6510,7 @@ components:
     Outline:
       description: The board in short, as getOutline answers it.
       type: object
-      required: [revision, stories, issues]
+      required: [revision, stories, issues, next]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -6390,6 +6523,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OutlineIssue'
+        next:
+          description: The next page cursor, or null when the selection is complete.
+          type: [string, 'null']
+
     OutlineStory:
       description: One story in short.
       type: object
@@ -6527,7 +6664,7 @@ components:
     SearchAnswer:
       description: The items whose title or text holds every word searched for.
       type: object
-      required: [revision, matches, more]
+      required: [revision, matches, more, next]
       properties:
         revision:
           $ref: '#/components/schemas/Revision'
@@ -6538,6 +6675,10 @@ components:
             $ref: '#/components/schemas/SearchMatch'
         more:
           type: boolean
+        next:
+          description: The next page cursor, or null when the selection is complete.
+          type: [string, 'null']
+
     SearchMatch:
       description: One matching story or issue and where its words were found.
       type: object

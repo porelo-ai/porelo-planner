@@ -47,6 +47,183 @@ class AgentReadsTest {
                 return AgentReads.Split.of(parts);
             };
 
+    /** Guards complete traversal without splitting stories. */
+    @Test
+    void pagesReachEveryWholeStoryAndLooseIssueExactlyOnce() {
+        // Harm: a board read silently drops or duplicates items at page boundaries.
+        final Board board =
+                board(
+                        List.of(
+                                story("ST1", "First", "Backlog", "High", "AB1", "AB2"),
+                                story("ST2", "Second", "Idea", "Low")),
+                        issue("AB1", "One", "Backlog", "S", "High", ""),
+                        issue("AB2", "Two", "Review", null, null, ""),
+                        issue("AB3", "Loose", "Idea", "M", "Low", ""));
+        final AgentReads.Outline outline = AgentReads.outline(board);
+        final List<Object> items = new ArrayList<>(outline.stories());
+        items.addAll(outline.issues());
+        final List<Object> read = new ArrayList<>();
+        @Nullable String after = null;
+        do {
+            final AgentReads.Page<Object> page =
+                    AgentReads.page(
+                            board.revision().value(), "outline", items, 1, after, value -> 100);
+            read.addAll(page.items());
+            after = page.next();
+        } while (after != null);
+        assertThat(read)
+                .as("every top-level item, with the first story's two issues intact")
+                .containsExactlyElementsOf(items);
+        assertThat(((AgentReads.OutlineStory) read.getFirst()).issues())
+                .as("a story never splits between pages")
+                .hasSize(2);
+    }
+
+    /** Guards the answer bound and progress for an indivisible large item. */
+    @Test
+    void aPageEndsBeforeTheCompleteAnswerExceedsTheCharacterBound() {
+        // Harm: a count-only page still exceeds the tool client's answer limit.
+        final List<String> items = List.of("a", "b", "c");
+        final AgentReads.Page<String> page =
+                AgentReads.page(
+                        "r1",
+                        "stories",
+                        items,
+                        200,
+                        null,
+                        value -> 100 + value.items().size() * 30000);
+        assertThat(page.items()).as("the envelope also consumes characters").containsExactly("a");
+        assertThat(page.next()).as("the excluded items remain reachable").isNotNull();
+        assertThat(
+                        AgentReads.page(
+                                        "r1",
+                                        "stories",
+                                        items,
+                                        200,
+                                        null,
+                                        value -> 100 + value.items().size() * 70000)
+                                .items())
+                .as("an oversized indivisible item still makes progress")
+                .containsExactly("a");
+    }
+
+    /** Guards oversized mandatory metadata, including an empty selection. */
+    @Test
+    void unavoidableMetadataCannotBypassThePageBoundEvenForAnEmptySelection() {
+        // Harm: an unmatched filter returns oversized whole-board counts with no item to page.
+        for (final List<String> items : List.of(List.<String>of(), List.of("one"))) {
+            assertThatThrownBy(
+                            () -> AgentReads.page("r1", "stories", items, 1, null, page -> 60001))
+                    .as("metadata must fit even before items are added")
+                    .isInstanceOf(WorkRefusal.class)
+                    .extracting(e -> ((WorkRefusal) e).name())
+                    .isEqualTo("PageTooLarge");
+        }
+        final AgentReads.Page<String> empty =
+                AgentReads.page("r1", "stories", List.of(), 1, null, page -> 100);
+        assertThat(empty.items()).as("an empty selection still has a terminal page").isEmpty();
+        assertThat(empty.next()).as("no page follows an empty selection").isNull();
+    }
+
+    /** Guards continuation validation and revision consistency. */
+    @Test
+    void cursorsRefuseAnotherRevisionOrSelectionAndMalformedPositions() {
+        // Harm: pages of different boards or selections are mixed into one board.
+        final List<String> items = List.of("a", "b", "c");
+        final @Nullable String next =
+                AgentReads.page("r1", "stories:Backlog", items, 1, null, p -> 1).next();
+        assertThatThrownBy(() -> AgentReads.page("r2", "stories:Backlog", items, 1, next, p -> 1))
+                .as("a stale board must be restarted")
+                .isInstanceOf(WorkRefusal.class)
+                .extracting(e -> ((WorkRefusal) e).name())
+                .isEqualTo("PageChanged");
+        for (final String scope : List.of("outline:Backlog", "stories:Review")) {
+            assertThatThrownBy(() -> AgentReads.page("r1", scope, items, 1, next, p -> 1))
+                    .as("the cursor belongs to its original selection")
+                    .isInstanceOf(WorkRefusal.class)
+                    .extracting(e -> ((WorkRefusal) e).name())
+                    .isEqualTo("InvalidName");
+        }
+        for (final String bad : List.of("", "not-a-cursor", "%%%", "A".repeat(5000))) {
+            assertThatThrownBy(
+                            () -> AgentReads.page("r1", "stories:Backlog", items, 1, bad, p -> 1))
+                    .as("malformed cursors fail closed")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+        assertThatThrownBy(
+                        () -> AgentReads.page("r1", "stories:Backlog", List.of(), 1, next, p -> 1))
+                .as("an offset outside the selection is invalid")
+                .isInstanceOf(WorkRefusal.class);
+        for (final int limit : List.of(0, -1, 201)) {
+            assertThatThrownBy(() -> AgentReads.page("r1", "stories", items, limit, null, p -> 1))
+                    .as("a page limit is bounded")
+                    .isInstanceOf(WorkRefusal.class);
+        }
+    }
+
+    /** Guards story selection without losing its issues. */
+    @Test
+    void filtersSelectAStoryByItsOwnStateAndPriorityAndAnyIssuesRepository() {
+        // Harm: filtering a story loses issues needed to plan its work.
+        final Board board =
+                board(
+                        List.of(
+                                story("ST1", "First", "Backlog", "High", "AB1", "AB2"),
+                                story("ST2", "Second", "Idea", "Low")),
+                        issue("AB1", "One", "Review", "S", "Low", ""),
+                        issue("AB2", "Two", "Idea", "M", "High", ""));
+        final AgentReads.Filters filters =
+                new AgentReads.Filters(
+                        List.of("Review", "Backlog"), List.of("High"), List.of("example-lib"));
+        assertThat(board.stories().stream().filter(story -> filters.matches(board, story)).toList())
+                .as("OR within a key, AND across keys, using the story's own fields")
+                .containsExactly(board.stories().getFirst());
+        assertThat(AgentReads.outline(board, filters).stories())
+                .as("the selected story retains issues whose own state and priority do not match")
+                .containsExactly(
+                        new AgentReads.OutlineStory(
+                                "ST1",
+                                "First",
+                                "Backlog",
+                                "High",
+                                List.of(
+                                        new AgentReads.OutlineIssue(
+                                                "AB1", "One", "Review", "S", "Low"),
+                                        new AgentReads.OutlineIssue(
+                                                "AB2", "Two", "Idea", "M", "High"))));
+        assertThat(filters.matches(issue("AB3", "No priority", "Backlog", null, null, "")))
+                .as("an issue without a priority does not match a priority filter")
+                .isFalse();
+        assertThat(
+                        new AgentReads.Filters(List.of(), List.of(), List.of("other"))
+                                .matches(board, board.stories().getFirst()))
+                .as("the repository must occur")
+                .isFalse();
+    }
+
+    /** Guards the loose issues kept or left out by each filter on its own. */
+    @Test
+    void aLooseIssueIsKeptOrLeftOutByItsOwnStatePriorityAndRepository() {
+        // Harm: a filter hides a loose issue it matches or shows one it does not.
+        final Board board =
+                board(
+                        List.of(story("ST1", "First", "Backlog", "High", "AB1")),
+                        issue("AB1", "One", "Review", "S", "Low", ""),
+                        issue("LO1", "example-lib", "Kept", "Review", "S", "High", ""),
+                        issue("LO2", "other", "Left out", "Idea", "S", "Low", ""));
+        final List<AgentReads.Filters> filters =
+                List.of(
+                        new AgentReads.Filters(List.of("Review"), List.of(), List.of()),
+                        new AgentReads.Filters(List.of(), List.of("High"), List.of()),
+                        new AgentReads.Filters(List.of(), List.of(), List.of("example-lib")));
+        for (final AgentReads.Filters filter : filters) {
+            assertThat(AgentReads.outline(board, filter).issues())
+                    .as("the loose issues %s selects", filter)
+                    .containsExactly(
+                            new AgentReads.OutlineIssue("LO1", "Kept", "Review", "S", "High"));
+        }
+    }
+
     @Test
     void theOutlineHoldsWhatTheBoardSaysOfEachItemInTheBoardsOrder() {
         // Harm: an agent plans from a shorter view that disagrees with the board.
@@ -230,6 +407,9 @@ class AgentReadsTest {
                         List.of(),
                         issues,
                         new Work(Map.of(), List.of()));
+        assertThat(AgentReads.searchAll(many, List.of("common"), LINES))
+                .as("paging can still reach matches beyond the legacy first two hundred")
+                .hasSize(201);
         final AgentReads.Found found = AgentReads.search(many, List.of("common"), LINES);
         assertThat(found.matches()).as("the bound").hasSize(AgentReads.MOST_MATCHES);
         assertThat(found.more()).as("one more matched").isTrue();
@@ -276,9 +456,20 @@ class AgentReadsTest {
             final @Nullable String size,
             final @Nullable String priority,
             final String text) {
+        return issue(id, "example-lib", title, state, size, priority, text);
+    }
+
+    private static Issue issue(
+            final String id,
+            final String repository,
+            final String title,
+            final String state,
+            final @Nullable String size,
+            final @Nullable String priority,
+            final String text) {
         return new Issue(
                 id,
-                "example-lib",
+                repository,
                 title,
                 state,
                 size,

@@ -129,6 +129,8 @@ final class BoundTypes {
                     CommandOutbox.Document.class,
                     TaskEventReply.class,
                     ReadingReply.class,
+                    org.fuin.porelo.planner.app.answers.StoryList.class,
+                    org.fuin.porelo.planner.app.answers.IssueList.class,
                     Outline.class,
                     OutlineStory.class,
                     OutlineIssue.class,

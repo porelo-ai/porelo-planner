@@ -156,6 +156,36 @@ api() {
     get "/projects/$PROJECT$1"
 }
 
+# Collect a complete read before printing anything, so a stale page cannot look like a complete scan.
+pages() {
+    local path=$1 member=$2 reply revision next target separator combined='[]' seen='[]'
+    target=$path
+    separator='?'
+    [[ $path != *'?'* ]] || separator='&'
+    revision=''
+    while :; do
+        reply=$(api "$target") || return "$?"
+        next=$(jq -er --arg m "$member" '
+            if (.revision | type) == "string" and (.revision | length) > 0 and
+                (.[$m] | type) == "array" and has("next") and
+                (.next == null or ((.next | type) == "string" and (.next | test("^[A-Za-z0-9_-]{1,4096}$"))))
+            then .next // "" else error("invalid page") end' <<<"$reply") || die "GET $target answered an invalid page"
+        if [[ -z $revision ]]; then
+            revision=$(jq -r '.revision' <<<"$reply")
+        elif [[ $(jq -r '.revision' <<<"$reply") != "$revision" ]]; then
+            die "GET $target answered another revision; read again from the start"
+        fi
+        combined=$(jq -sc --arg m "$member" '.[0] + .[1][$m]' <<<"$combined
+$reply") || die "GET $target could not be collected"
+        [[ -n $next ]] || break
+        jq -e --arg next "$next" 'index($next) == null' <<<"$seen" >/dev/null || die "GET $target repeated a cursor"
+        seen=$(jq -c --arg next "$next" '. + [$next]' <<<"$seen") || die "GET $target could not keep its cursor"
+        target="$path${separator}after=$(segment "$next")"
+    done
+    jq -c --arg revision "$revision" --arg m "$member" \
+        '{revision: $revision, ($m): ., next: null}' <<<"$combined" || die "GET $path could not be collected"
+}
+
 # An item's id in either form the API takes: the Git store's (a story ST and its number, an issue
 # a capital prefix and its number, a sub-issue's number after a dot) or a tracker reference,
 # <repository>#<number>, as a local items folder and GitHub name theirs.
@@ -214,7 +244,7 @@ faults)
     ;;
 story-id)
     title=${1:?story-id needs a title}
-    ids=$(api /stories | jq -r --arg t "$title" '[.stories[] | select(.title == $t) | .id] | join(" ")')
+    ids=$(pages /stories stories | jq -r --arg t "$title" '[.stories[] | select(.title == $t) | .id] | join(" ")')
     [[ $ids =~ $STORY_PATTERN ]] || fail "story-id" "one story titled '$title'" "${ids:-none}"
     printf '%s\n' "$ids"
     ;;
@@ -242,12 +272,16 @@ issues)
 issues-in)
     [[ -n ${1:-} ]] || die "issues-in needs a state"
     want=$1
-    # The stories' issues first, then those in no story, each once.
-    {
-        api /stories | jq -r --arg s "$want" '.stories[].issues[]? | select(.state == $s) | .id'
-        api '/issues?story=none' | jq -r --arg s "$want" '.issues[] | select(.state == $s) | .id'
-    } |
-        awk '!seen[$0]++'
+    # Collect both lists before printing, so a refusal cannot leave a successful partial scan.
+    stories=$(pages /stories stories) || exit "$?"
+    loose=$(pages '/issues?story=none' issues) || exit "$?"
+    ids=$(jq -sr --arg s "$want" '
+        if .[0].revision != .[1].revision then error("the board changed between lists")
+        else (.[0].stories[].issues[]?, .[1].issues[]) | select(.state == $s) | .id end' <<<"$stories
+$loose") || die "the issues scan could not read one complete board; read again from the start"
+    if [[ -n $ids ]]; then
+        printf '%s\n' "$ids" | awk '!seen[$0]++'
+    fi
     ;;
 work)
     story_arg "${1:-}"

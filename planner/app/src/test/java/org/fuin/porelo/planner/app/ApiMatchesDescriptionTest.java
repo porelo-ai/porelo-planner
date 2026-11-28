@@ -235,6 +235,60 @@ class ApiMatchesDescriptionTest {
         }
     }
 
+    /** Guards the parameters, answer members and refusals consumed by generated tools. */
+    @Test
+    void pagedReadsDescribeTheirContinuationFiltersAndBoardChangeRefusal() {
+        // Harm: generated tools cannot reach the rest of the board or recognize a stale page.
+        for (final String path : List.of("stories", "outline", "issues", "search")) {
+            final JsonNode operation =
+                    description.path("paths").path("/projects/{project}/" + path).path("get");
+            final List<String> parameters = new ArrayList<>();
+            operation
+                    .path("parameters")
+                    .forEach(
+                            parameter ->
+                                    parameters.add(
+                                            parameter.has("$ref")
+                                                    ? parameter.path("$ref").asText()
+                                                    : parameter.path("name").asText()));
+            assertThat(parameters)
+                    .as("%s can request another bounded page", path)
+                    .contains(
+                            "#/components/parameters/PageLimit",
+                            "#/components/parameters/PageAfter");
+            if (!path.equals("search")) {
+                assertThat(parameters)
+                        .as("%s exposes repeated selection filters", path)
+                        .contains(
+                                "#/components/parameters/ReadState",
+                                "#/components/parameters/ReadRepository");
+            }
+            if (path.equals("stories") || path.equals("outline")) {
+                assertThat(parameters)
+                        .as("%s selects by priority", path)
+                        .contains("#/components/parameters/ReadPriority");
+            }
+            assertThat(operation.path("responses").path("422").path("$ref").asText())
+                    .as("%s cannot return oversized metadata", path)
+                    .isEqualTo("#/components/responses/PageTooLarge");
+            assertThat(operation.path("responses").path("409").path("$ref").asText())
+                    .as("%s describes both board changes and existing directory refusals", path)
+                    .isEqualTo("#/components/responses/PageConflict");
+        }
+        for (final String schema : List.of("StoryList", "Outline", "IssueList", "SearchAnswer")) {
+            final Set<String> required = new HashSet<>();
+            description
+                    .path("components")
+                    .path("schemas")
+                    .path(schema)
+                    .path("required")
+                    .forEach(member -> required.add(member.asText()));
+            assertThat(required)
+                    .as("%s always answers a continuation, null at the end", schema)
+                    .contains("next");
+        }
+    }
+
     @Test
     void everyOperationIsServedAndEveryServedPathIsDescribedWithItsAnswer() throws Exception {
         // An undocumented or missing operation breaks the window's calls.

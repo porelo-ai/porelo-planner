@@ -688,9 +688,19 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
 
   @override
   Future<PlanIssueList> listIssues(String project) async {
-    final list = PlanIssueList.from(await _read(project, ['issues'], query: {'story': 'none'}));
-    _workersNamed(list.issues);
-    return list;
+    final given = await _told(project);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final list = PlanIssueList.from(
+          await _pages(project, ['issues'], 'issues', given: given, query: {'story': 'none'}),
+        );
+        _workersNamed(list.issues);
+        return list;
+      } on PlanningRefusal catch (refusal) {
+        if (refusal.name != 'PageChanged') rethrow;
+      }
+    }
+    throw const PlanningRefusal('RevisionMoved', {}, 'the board changed while it was read; read it again');
   }
 
   @override
@@ -1236,14 +1246,22 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
   /// The workflow and the stories read at one revision, read once more when the store moved between the two.
   Future<PlanningSnapshot> _snapshot(String project) async {
     final given = await _told(project);
-    var workflow = await _read(project, ['workflow']);
-    var board = await _read(project, ['stories']);
-    if (workflow['revision'] != board['revision']) {
-      workflow = await _read(project, ['workflow']);
-      board = await _read(project, ['stories']);
-      if (workflow['revision'] != board['revision']) {
-        throw const PlanningRefusal('RevisionMoved', {}, 'the board changed while it was read; read it again');
+    Map<String, dynamic>? workflow;
+    Map<String, dynamic>? board;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final readWorkflow = await _read(project, ['workflow']);
+        final readBoard = await _pages(project, ['stories'], 'stories', given: given);
+        if (readWorkflow['revision'] != readBoard['revision']) continue;
+        workflow = readWorkflow;
+        board = readBoard;
+        break;
+      } on PlanningRefusal catch (refusal) {
+        if (refusal.name != 'PageChanged') rethrow;
       }
+    }
+    if (workflow == null || board == null) {
+      throw const PlanningRefusal('RevisionMoved', {}, 'the board changed while it was read; read it again');
     }
     await _stillBound(project, given);
     _readSources[project] = given.source;
@@ -1263,6 +1281,62 @@ class HttpPlanningSource extends ChangeNotifier implements PlanningSource, Plann
     }
     _workersNamed(snapshot.stories.expand((story) => story.issues));
     return snapshot;
+  }
+
+  /// The most pages a read follows after the first, so a planner that never ends its pages cannot hold it.
+  static const _mostPages = 1000;
+
+  /// Reads every page at one store revision, at most [_mostPages] after the first; callers restart the entire read
+  /// after PageChanged.
+  Future<Map<String, dynamic>> _pages(
+    String project,
+    List<String> path,
+    String member, {
+    required _Given given,
+    Map<String, String>? query,
+  }) async {
+    final first = await _page(project, path, given, query: query);
+    var page = first;
+    final items = <dynamic>[];
+    final seen = <String>{};
+    while (true) {
+      final listed = page[member];
+      if (listed is List) {
+        items.addAll(listed);
+      } else if (page['next'] != null || seen.isNotEmpty) {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner answered a page without its item list');
+      }
+      final next = page['next'];
+      if (next == null) {
+        await _stillBound(project, given);
+        return {...first, if (listed is List) member: items};
+      }
+      if (next is! String || next.trim().isEmpty || next.length > 4096 || !seen.add(next)) {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner answered an invalid or repeated page cursor');
+      }
+      if (seen.length > _mostPages) {
+        throw const PlanningRefusal('BadAnswer', {}, 'the planner answered more pages than a board can have');
+      }
+      page = await _page(project, path, given, query: {...?query, 'after': next});
+      if (page['revision'] != first['revision']) {
+        throw const PlanningRefusal('PageChanged', {}, 'the board changed between pages; read it again');
+      }
+    }
+  }
+
+  /// Keeps an in-flight page bound to its original source, including a refused page before a retry.
+  Future<Map<String, dynamic>> _page(
+    String project,
+    List<String> path,
+    _Given given, {
+    Map<String, String>? query,
+  }) async {
+    await _stillBound(project, given);
+    try {
+      return await _read(project, path, query: query);
+    } finally {
+      await _stillBound(project, given);
+    }
   }
 
   /// Reads `projects/{project}/<path>`, telling the planner the project first, again whenever the window names

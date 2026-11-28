@@ -14,6 +14,20 @@ final _served = Directory('test/served/mock');
 
 String _file(String name) => File('${_served.path}/$name').readAsStringSync();
 
+/// The recorded pages of the stories by the `after` that asks for each; the first page is asked for by none.
+final Map<String?, String> _storyPages = () {
+  final pages = <String?, String>{};
+  String? after;
+  var name = 'stories.json';
+  while (true) {
+    final file = _file(name);
+    pages[after] = name;
+    after = (jsonDecode(file) as Map<String, dynamic>)['next'] as String?;
+    if (after == null) return pages;
+    name = 'stories-${pages.length + 1}.json';
+  }
+}();
+
 /// The bodies the planner's own test sent for the answers recorded, as the planner reads them.
 final _sent = <String, Object>{
   'PUT /projects/demo': {'repository': 'https://example.org/porelo/porelo.git', 'branch': 'main'},
@@ -68,7 +82,7 @@ class _RecordedMock {
     final file = switch (call) {
       'PUT /projects/demo' => null,
       'GET /projects/demo/workflow' => 'workflow.json',
-      'GET /projects/demo/stories' => 'stories.json',
+      'GET /projects/demo/stories' => _storyPages[request.uri.queryParameters['after']] ?? '',
       'GET /projects/demo/issues/B541' => 'issue-B541.json',
       'POST /projects/demo/moves/preview' => 'preview-B542.json',
       'POST /projects/demo/moves' => 'move-B542.json',

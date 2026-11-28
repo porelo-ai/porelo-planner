@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -122,14 +123,29 @@ class MockAnswersTest {
         }
     }
 
-    /** What the screen asks at a board's start, and of one issue and one move, by file name. */
+    /**
+     * What the screen asks at a board's start, every page of the stories, and of one issue and one
+     * move, by file name.
+     */
     private static Map<String, String> answers() throws Exception {
         final Map<String, String> answers = new LinkedHashMap<>();
         assertThat(call("PUT", "/projects/demo", SOURCE).statusCode())
                 .as("the project given, as the screen gives it")
                 .isEqualTo(204);
         answers.put("workflow.json", body(call("GET", "/projects/demo/workflow", null)));
-        answers.put("stories.json", body(call("GET", "/projects/demo/stories", null)));
+        String page = body(call("GET", "/projects/demo/stories", null));
+        answers.put("stories.json", page);
+        for (int number = 2; JSON.readTree(page).hasNonNull("next"); number++) {
+            final String cursor = JSON.readTree(page).get("next").asString();
+            page =
+                    body(
+                            call(
+                                    "GET",
+                                    "/projects/demo/stories?after="
+                                            + URLEncoder.encode(cursor, StandardCharsets.UTF_8),
+                                    null));
+            answers.put("stories-" + number + ".json", page);
+        }
         answers.put("board-event.json", firstBoardEvent());
         answers.put("issue-B541.json", body(call("GET", "/projects/demo/issues/B541", null)));
         final String preview = body(call("POST", "/projects/demo/moves/preview", MOVE_B542));

@@ -3,6 +3,7 @@ package org.fuin.porelo.planner.app;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /** The planner started with {@code --mock}, called over HTTP as the window's tests call it. */
 class MockModeTest {
@@ -63,7 +66,8 @@ class MockModeTest {
                 .as("giving a project whose repository is never reached, in the mock mode")
                 .isEqualTo(204);
 
-        final JsonNode stories = json(call(runtime, "GET", "/projects/any/stories", null));
+        // The board comes in pages, so every page up to the last is read before comparing.
+        final JsonNode stories = allStories("any");
         assertThat(ids(stories.get("stories")))
                 .as("the stories served, against the window's mock board in its order")
                 .isNotEmpty()
@@ -132,7 +136,7 @@ class MockModeTest {
         // person's issue nothing to show.
         call(runtime, "PUT", "/projects/any", SOURCE);
         final List<String> workers = new ArrayList<>();
-        json(call(runtime, "GET", "/projects/any/stories", null))
+        allStories("any")
                 .get("stories")
                 .forEach(
                         story ->
@@ -251,10 +255,7 @@ class MockModeTest {
         assertThat(problem.path("parameters").path("failed").asString())
                 .as("the repository that failed")
                 .isEqualTo("porelo-host");
-        assertThat(
-                        json(call(runtime, "GET", "/projects/any/stories", null))
-                                .get("revision")
-                                .asString())
+        assertThat(allStories("any").get("revision").asString())
                 .as("the revision holding what was pushed")
                 .isEqualTo("mock@2");
     }
@@ -605,9 +606,41 @@ class MockModeTest {
     }
 
     private static String revision(final String project) throws Exception {
-        return json(call(runtime, "GET", "/projects/" + project + "/stories", null))
-                .get("revision")
-                .asString();
+        return allStories(project).get("revision").asString();
+    }
+
+    /**
+     * Reads every page of a project's stories and answers them as one list beside the first page's
+     * revision.
+     */
+    private static JsonNode allStories(final String project)
+            throws IOException, InterruptedException {
+        final JsonNode first =
+                json(call(runtime, "GET", "/projects/" + project + "/stories", null));
+        final ArrayNode all = JSON.createArrayNode();
+        JsonNode page = first;
+        while (true) {
+            all.addAll((ArrayNode) page.get("stories"));
+            if (!page.hasNonNull("next")) {
+                break;
+            }
+            page =
+                    json(
+                            call(
+                                    runtime,
+                                    "GET",
+                                    "/projects/"
+                                            + project
+                                            + "/stories?after="
+                                            + URLEncoder.encode(
+                                                    page.get("next").asString(),
+                                                    StandardCharsets.UTF_8),
+                                    null));
+        }
+        final ObjectNode board = JSON.createObjectNode();
+        board.put("revision", first.get("revision").asString());
+        board.set("stories", all);
+        return board;
     }
 
     private static JsonNode json(final HttpResponse<String> answer) {
@@ -627,7 +660,7 @@ class MockModeTest {
     /** The versions of the project's items as its board answers them, as the window keeps them. */
     private static String seen(final Path runtime, final String project)
             throws IOException, InterruptedException {
-        return Seens.ofAnswer(call(runtime, "GET", project + "/stories", null).body());
+        return Seens.ofAnswer(allStories(project.substring("/projects/".length())).toString());
     }
 
     private static HttpResponse<String> call(

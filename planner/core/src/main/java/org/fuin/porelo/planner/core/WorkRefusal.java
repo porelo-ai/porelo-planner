@@ -27,6 +27,30 @@ public final class WorkRefusal extends RuntimeException {
         return parameters;
     }
 
+    /** Refuses an invalid limit, continuation or changed page selection without echoing input. */
+    public static WorkRefusal invalidPage() {
+        return new WorkRefusal(
+                "InvalidName",
+                "The page limit or continuation is invalid for this selection.",
+                Map.of());
+    }
+
+    /** Refuses mandatory metadata that cannot fit even without any listed items. */
+    public static WorkRefusal pageTooLarge() {
+        return new WorkRefusal(
+                "PageTooLarge",
+                "The page metadata exceeds the answer bound; read the board outline instead.",
+                Map.of());
+    }
+
+    /** Refuses a continuation from another store revision. */
+    public static WorkRefusal pageChanged() {
+        return new WorkRefusal(
+                "PageChanged",
+                "The board changed since the first page; read again from its start.",
+                Map.of());
+    }
+
     /** Refuses a story absent from the board. */
     public static WorkRefusal noSuchStory(final String story) {
         return new WorkRefusal(

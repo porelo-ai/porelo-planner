@@ -318,6 +318,135 @@ Future<PlanningRefusal> _refusal(Future<Object?> call) async {
 }
 
 void main() {
+  // Harm: later pages are hidden, or stale pages are mixed into the displayed board.
+  for (final stories in [true, false]) {
+    final path = stories ? 'stories' : 'issues';
+    test('$path follows every next cursor at the first revision', () async {
+      final (planner, source) = await _started();
+      var page = 0;
+      planner.routes['GET /projects/demo/$path'] = () {
+        page++;
+        return _Reply(200, {
+          'revision': 'r1',
+          path: [stories ? _story('ST$page', 'Backlog') : _issue('PR$page', 'Backlog')],
+          'next': page == 1 ? 'opaque+/=cursor' : null,
+        });
+      };
+      final ids = stories
+          ? (await source.stories('demo')).stories.map((story) => story.id).toList()
+          : (await source.listIssues('demo')).issues.map((issue) => issue.id).toList();
+      expect(ids, stories ? ['ST1', 'ST2'] : ['PR1', 'PR2'], reason: 'every page contributes once');
+      final calls = planner.calls.where((call) => Uri.parse(call.target).path == '/projects/demo/$path').toList();
+      expect(Uri.parse(calls.last.target).queryParameters['after'], 'opaque+/=cursor', reason: 'the cursor is opaque');
+      if (!stories) {
+        expect(Uri.parse(calls.last.target).queryParameters['story'], 'none', reason: 'the selection survives paging');
+      }
+    });
+
+    for (final mismatch in [false, true]) {
+      final change = mismatch ? 'a revision mismatch' : 'PageChanged';
+      test('$path restarts the whole read after $change', () async {
+        final (planner, source) = await _started();
+        var page = 0;
+        planner.routes['GET /projects/demo/$path'] = () {
+          page++;
+          if (page == 2) {
+            planner.workflowRevision = 'r2';
+            if (!mismatch) return _Reply.problem('PageChanged', {}, 'Read again from the start.', 409);
+          }
+          return _Reply(200, {
+            'revision': page == 1 ? 'r1' : 'r2',
+            path: [stories ? _story('ST$page', 'Backlog') : _issue('PR$page', 'Backlog')],
+            'next': page == 1 || page == 3 ? 'next-page' : null,
+          });
+        };
+        final ids = stories
+            ? (await source.stories('demo')).stories.map((story) => story.id).toList()
+            : (await source.listIssues('demo')).issues.map((issue) => issue.id).toList();
+        expect(ids, stories ? ['ST3', 'ST4'] : ['PR3', 'PR4'], reason: 'all old pages are discarded');
+        expect(page, 4, reason: 'one complete restart');
+        if (stories) {
+          expect(
+            planner.calls.where((call) => call.target == '/projects/demo/workflow').length,
+            2,
+            reason: 'workflow restarts with the stories',
+          );
+        }
+      });
+    }
+
+    // Harm: a pending list read from one repository returns another repository's issues after a retry.
+    for (final changed in [false, true]) {
+      final change = changed ? 'a revision mismatch' : 'PageChanged';
+      test('$path keeps its original project binding after $change', () async {
+        var repository = PlannerProject('https://example.org/first.git', 'main');
+        final (planner, source) = await _started(projects: (_) => repository);
+        var page = 0;
+        planner.routes['GET /projects/demo/$path'] = () {
+          page++;
+          if (page == 2) {
+            repository = PlannerProject('https://example.org/second.git', 'main');
+            planner.workflowRevision = 'r2';
+            if (!changed) return _Reply.problem('PageChanged', {}, 'Read again from the start.', 409);
+          }
+          return _Reply(200, {
+            'revision': page == 1 ? 'r1' : 'r2',
+            path: [stories ? _story('ST$page', 'Backlog') : _issue('PR$page', 'Backlog')],
+            'next': page == 1 ? 'next-page' : null,
+          });
+        };
+        final refusal = await _refusal(stories ? source.stories('demo') : source.listIssues('demo'));
+        expect(refusal.name, 'ProjectChanged', reason: 'a retry cannot adopt another repository');
+        expect(page, 2, reason: 'the pending read cannot continue against the new binding');
+      });
+    }
+
+    test('$path stops after one restart when the board keeps changing', () async {
+      final (planner, source) = await _started();
+      var pages = 0;
+      planner.routes['GET /projects/demo/$path'] = () {
+        pages++;
+        return pages.isEven
+            ? _Reply.problem('PageChanged', {}, 'Read again from the start.', 409)
+            : _Reply(200, {
+                'revision': 'r1',
+                path: [stories ? _story('ST1', 'Backlog') : _issue('PR1', 'Backlog')],
+                'next': 'next-page',
+              });
+      };
+      final refusal = await _refusal(stories ? source.stories('demo') : source.listIssues('demo'));
+      expect(refusal.name, 'RevisionMoved', reason: 'the window cannot present mixed pages');
+      expect(pages, 4, reason: 'bounded retry');
+    });
+
+    test('$path refuses a repeated next cursor', () async {
+      final (planner, source) = await _started();
+      planner.routes['GET /projects/demo/$path'] = () => _Reply(200, {
+        'revision': 'r1',
+        path: [stories ? _story('ST1', 'Backlog') : _issue('PR1', 'Backlog')],
+        'next': 'same-page',
+      });
+      final refusal = await _refusal(stories ? source.stories('demo') : source.listIssues('demo'));
+      expect(refusal.name, 'BadAnswer', reason: 'a repeated cursor must not hang the window');
+    });
+
+    test('$path refuses a board of endless new cursors', () async {
+      final (planner, source) = await _started();
+      var page = 0;
+      planner.routes['GET /projects/demo/$path'] = () {
+        page++;
+        return _Reply(200, {
+          'revision': 'r1',
+          path: [stories ? _story('ST1', 'Backlog') : _issue('PR1', 'Backlog')],
+          'next': 'page-$page',
+        });
+      };
+      final refusal = await _refusal(stories ? source.stories('demo') : source.listIssues('demo'));
+      expect(refusal.name, 'BadAnswer', reason: 'a planner that never ends its pages must not hang the window');
+      expect(page, 1001, reason: 'the first page and at most 1000 more');
+    });
+  }
+
   // Harm: the window's Needs you count unknown, or wrong, though the planner answered it.
   test('the stories read carries the board\'s open work as the planner answers it', () async {
     final (planner, source) = await _started();

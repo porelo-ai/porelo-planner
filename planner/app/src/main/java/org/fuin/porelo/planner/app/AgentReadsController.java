@@ -1,6 +1,7 @@
 package org.fuin.porelo.planner.app;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.fuin.porelo.planner.app.answers.Breach;
@@ -16,6 +17,7 @@ import org.fuin.porelo.planner.core.AgentReads;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Ids;
 import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,6 +37,14 @@ public class AgentReadsController {
 
     private final Projects projects;
 
+    private PageReads pages = PageReads.plain();
+
+    /** Uses the application's HTTP mapper for complete page measurements. */
+    @Autowired
+    void pageReads(final PageReads reads) {
+        pages = reads;
+    }
+
     /**
      * Makes the controller.
      *
@@ -48,16 +58,41 @@ public class AgentReadsController {
      * Answers the board in short.
      *
      * @param project the project's name
+     * @param request the page and repeated filters
      * @return the stories with their issues, then the issues in no story
      */
     @GetMapping("/projects/{project}/outline")
-    public Outline getOutline(@PathVariable("project") final String project) {
-        final Board board = board(project);
-        final AgentReads.Outline outline = AgentReads.outline(board);
-        return new Outline(
-                board.revision().value(),
-                outline.stories().stream().map(AgentReadsController::story).toList(),
-                outline.issues().stream().map(AgentReadsController::issue).toList());
+    public Outline getOutline(
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = BoardController.name(project);
+        final AgentReads.Filters filters = PageReads.filters(request, true, name);
+        PageReads.checkPage(request, name);
+        final Board board = board(name);
+        final AgentReads.Outline outline = AgentReads.outline(board, filters);
+        final List<Object> items =
+                new ArrayList<>(
+                        outline.stories().stream().map(AgentReadsController::story).toList());
+        items.addAll(outline.issues().stream().map(AgentReadsController::issue).toList());
+        return pages.read(
+                board,
+                name,
+                "outline",
+                filters,
+                List.of(),
+                request,
+                items,
+                page ->
+                        new Outline(
+                                board.revision().value(),
+                                page.items().stream()
+                                        .filter(OutlineStory.class::isInstance)
+                                        .map(OutlineStory.class::cast)
+                                        .toList(),
+                                page.items().stream()
+                                        .filter(OutlineIssue.class::isInstance)
+                                        .map(OutlineIssue.class::cast)
+                                        .toList(),
+                                page.next()));
     }
 
     /**
@@ -133,11 +168,11 @@ public class AgentReadsController {
             @PathVariable("project") final String project, final HttpServletRequest request) {
         final String name = BoardController.name(project);
         final List<String> words = words(request, name);
+        PageReads.checkPage(request, name);
         final Board board = projects.store(name).board();
-        final AgentReads.Found found = AgentReads.search(board, words, IssueTextSplit.INSTANCE);
-        return new SearchAnswer(
-                board.revision().value(),
-                found.matches().stream()
+        final AgentReads.Filters filters = new AgentReads.Filters(List.of(), List.of(), List.of());
+        final List<SearchMatch> matches =
+                AgentReads.searchAll(board, words, IssueTextSplit.INSTANCE).stream()
                         .map(
                                 match ->
                                         new SearchMatch(
@@ -146,8 +181,21 @@ public class AgentReadsController {
                                                 match.title(),
                                                 match.state(),
                                                 match.found()))
-                        .toList(),
-                found.more());
+                        .toList();
+        return pages.read(
+                board,
+                name,
+                "search",
+                filters,
+                words,
+                request,
+                matches,
+                page ->
+                        new SearchAnswer(
+                                board.revision().value(),
+                                page.items(),
+                                page.next() != null,
+                                page.next()));
     }
 
     private Board board(final String project) {

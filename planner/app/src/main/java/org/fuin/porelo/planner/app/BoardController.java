@@ -47,6 +47,7 @@ import org.fuin.porelo.planner.app.answers.Target;
 import org.fuin.porelo.planner.app.answers.TaskEventReply;
 import org.fuin.porelo.planner.app.answers.Tracker;
 import org.fuin.porelo.planner.app.answers.WorkerSaved;
+import org.fuin.porelo.planner.core.AgentReads;
 import org.fuin.porelo.planner.core.Corrections;
 import org.fuin.porelo.planner.core.Edits;
 import org.fuin.porelo.planner.core.HandedResults;
@@ -133,6 +134,14 @@ public class BoardController {
     private final ReportReading reading;
 
     private final TaskHelds helds;
+
+    private PageReads pages = PageReads.plain();
+
+    /** Uses the application's HTTP mapper for complete page measurements. */
+    @Autowired
+    void pageReads(final PageReads reads) {
+        pages = reads;
+    }
 
     /**
      * Makes the controller, its saves written by calling each project's store directly.
@@ -1517,35 +1526,45 @@ public class BoardController {
      * Answers the stories, all or those of the given states, without their descriptions.
      *
      * @param project the project's name
-     * @param states the states asked for, none for all
+     * @param request the page and repeated filters
      * @return the stories
      */
     @GetMapping("/projects/{project}/stories")
     public StoryList stories(
-            @PathVariable("project") final String project,
-            @RequestParam(name = "state", required = false) final @Nullable List<String> states) {
-        final WorkRun work = projects.work(name(project));
+            @PathVariable("project") final String project, final HttpServletRequest request) {
+        final String name = name(project);
+        final AgentReads.Filters filters = PageReads.filters(request, true, name);
+        final WorkRun work = projects.work(name);
         return work.view(
                 (board, snapshot) -> {
                     final OpenWork.Counter counter = new OpenWork.Counter(board);
-                    return new StoryList(
-                            board.revision().value(),
+                    final List<org.fuin.porelo.planner.app.answers.Story> stories =
                             board.stories().stream()
-                                    .filter(
-                                            story ->
-                                                    states == null
-                                                            || states.isEmpty()
-                                                            || states.contains(story.state()))
+                                    .filter(story -> filters.matches(board, story))
                                     .map(
                                             story ->
                                                     story(
-                                                            helds.in(name(project)),
+                                                            helds.in(name),
                                                             board,
                                                             story,
                                                             snapshot,
                                                             counter))
-                                    .toList(),
-                            open(counter.board()));
+                                    .toList();
+                    final var open = open(counter.board());
+                    return pages.read(
+                            board,
+                            name,
+                            "stories",
+                            filters,
+                            List.of(),
+                            request,
+                            stories,
+                            page ->
+                                    new StoryList(
+                                            board.revision().value(),
+                                            page.items(),
+                                            open,
+                                            page.next()));
                 });
     }
 
@@ -1616,7 +1635,8 @@ public class BoardController {
                                                 board,
                                                 found(board, checked),
                                                 snapshot,
-                                                OpenWork.minutesLeft(board))));
+                                                OpenWork.minutesLeft(board)),
+                                        null));
     }
 
     /**
@@ -1624,28 +1644,33 @@ public class BoardController {
      *
      * @param project the project's name
      * @param story the required filter, whose only value is {@code none}
+     * @param request the page and repeated filters
      * @return the issues and the board's revision
      */
     @GetMapping("/projects/{project}/issues")
     public IssueList issues(
             @PathVariable("project") final String project,
-            @RequestParam(name = "story", required = false) final @Nullable String story) {
+            @RequestParam(name = "story", required = false) final @Nullable String story,
+            final HttpServletRequest request) {
         final String name = name(project);
         if (!"none".equals(story)) {
             throw Refusal.invalidName(
                     "The story query parameter must be none.", Map.of("project", name));
         }
+        final AgentReads.Filters filters = PageReads.filters(request, false, name);
         return projects.work(name)
                 .view(
                         (board, snapshot) -> {
                             final Set<String> assigned = StoryRules.inStories(board);
                             final Map<String, Double> minutes = OpenWork.minutesLeft(board);
-                            return new IssueList(
-                                    board.revision().value(),
+                            final List<org.fuin.porelo.planner.app.answers.Issue> issues =
                                     board.issues().stream()
-                                            .filter(issue -> !assigned.contains(issue.id()))
-                                            // Priority and rank live in the store's issue order.
-                                            // One outside the workflow follows its states.
+                                            .filter(
+                                                    issue ->
+                                                            !assigned.contains(issue.id())
+                                                                    && filters.matches(issue))
+                                            // Priority and rank live in the store's order within
+                                            // each state.
                                             .sorted(
                                                     Comparator.comparingInt(
                                                             issue -> place(board, issue.state())))
@@ -1654,7 +1679,20 @@ public class BoardController {
                                                             WorkAnswers.issue(
                                                                     board, issue, snapshot,
                                                                     minutes))
-                                            .toList());
+                                            .toList();
+                            return pages.read(
+                                    board,
+                                    name,
+                                    "issues",
+                                    filters,
+                                    List.of(),
+                                    request,
+                                    issues,
+                                    page ->
+                                            new IssueList(
+                                                    board.revision().value(),
+                                                    page.items(),
+                                                    page.next()));
                         });
     }
 

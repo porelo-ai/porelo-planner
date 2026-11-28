@@ -20,14 +20,16 @@ class SerializationCheckTest {
     /** Counts include optional and nullable fields, so a sample that leaves one out fails. */
     private static final Map<Class<?>, Integer> AGENT_ANSWERS =
             Map.ofEntries(
-                    Map.entry(org.fuin.porelo.planner.app.answers.Outline.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.Outline.class, 4),
+                    Map.entry(org.fuin.porelo.planner.app.answers.StoryList.class, 4),
+                    Map.entry(org.fuin.porelo.planner.app.answers.IssueList.class, 3),
                     Map.entry(org.fuin.porelo.planner.app.answers.OutlineStory.class, 5),
                     Map.entry(org.fuin.porelo.planner.app.answers.OutlineIssue.class, 5),
                     Map.entry(org.fuin.porelo.planner.app.answers.IssueParts.class, 14),
                     Map.entry(org.fuin.porelo.planner.app.answers.TextParts.class, 8),
                     Map.entry(org.fuin.porelo.planner.app.answers.Breaches.class, 2),
                     Map.entry(org.fuin.porelo.planner.app.answers.Breach.class, 4),
-                    Map.entry(org.fuin.porelo.planner.app.answers.SearchAnswer.class, 3),
+                    Map.entry(org.fuin.porelo.planner.app.answers.SearchAnswer.class, 4),
                     Map.entry(org.fuin.porelo.planner.app.answers.SearchMatch.class, 5),
                     Map.entry(org.fuin.porelo.planner.app.answers.BatchSaved.class, 2),
                     Map.entry(org.fuin.porelo.planner.app.answers.ItemResult.class, 6),

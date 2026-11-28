@@ -1,12 +1,19 @@
 package org.fuin.porelo.planner.core;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.ToIntFunction;
 import java.util.regex.Pattern;
 import org.fuin.porelo.planner.store.Board;
 import org.fuin.porelo.planner.store.Issue;
@@ -23,6 +30,147 @@ public final class AgentReads {
 
     /** The most items a search answers. */
     public static final int MOST_MATCHES = 200;
+
+    /** The largest complete JSON page, except an indivisible item answered alone. */
+    public static final int PAGE_CHARACTERS = 60000;
+
+    /** The page size when no limit is given. */
+    public static final int DEFAULT_LIMIT = 50;
+
+    /**
+     * A page of whole top-level items.
+     *
+     * @param items the selected items, in their original order
+     * @param next the continuation, or null at the end
+     * @param <T> the whole top-level item type
+     */
+    public record Page<T>(List<T> items, @Nullable String next) {
+        /** Copies the items so a size measurement and the returned page agree. */
+        public Page {
+            items = List.copyOf(items);
+        }
+    }
+
+    /**
+     * Alternatives within a key and conjunction across keys.
+     *
+     * @param states the states, none for all
+     * @param priorities the priorities, none for all
+     * @param repositories the repository names, none for all
+     */
+    public record Filters(List<String> states, List<String> priorities, List<String> repositories) {
+        /** Canonicalizes selections so reordering alternatives does not change a cursor. */
+        public Filters {
+            states = states.stream().distinct().sorted().toList();
+            priorities = priorities.stream().distinct().sorted().toList();
+            repositories = repositories.stream().distinct().sorted().toList();
+        }
+
+        /** Selects a story by its own fields and the repositories of the issues it names. */
+        public boolean matches(final Board board, final Story story) {
+            return (states.isEmpty() || states.contains(story.state()))
+                    && (priorities.isEmpty() || priorities.contains(story.priority()))
+                    && (repositories.isEmpty()
+                            || board.issues().stream()
+                                    .anyMatch(
+                                            issue ->
+                                                    story.issues().contains(issue.id())
+                                                            && repositories.contains(
+                                                                    issue.repository())));
+        }
+
+        /** Selects an issue by its own fields. */
+        public boolean matches(final Issue issue) {
+            return (states.isEmpty() || states.contains(issue.state()))
+                    && (priorities.isEmpty()
+                            || issue.priority() != null && priorities.contains(issue.priority()))
+                    && (repositories.isEmpty() || repositories.contains(issue.repository()));
+        }
+    }
+
+    /**
+     * Selects whole items by count and the size of the complete serialized answer.
+     *
+     * @param revision the store content revision
+     * @param scope the caller's project, read and canonical selection identity
+     * @param items all selected items in stable order
+     * @param limit the maximum item count, from 1 to 200
+     * @param after the preceding page's continuation, or null
+     * @param characters measures the complete answer, including its continuation and envelope
+     * @param <T> the whole top-level item type
+     * @return a page that makes progress, including an oversized item alone when necessary
+     */
+    public static <T> Page<T> page(
+            final String revision,
+            final String scope,
+            final List<T> items,
+            final int limit,
+            final @Nullable String after,
+            final ToIntFunction<Page<T>> characters) {
+        if (limit < 1 || limit > MOST_MATCHES) {
+            throw WorkRefusal.invalidPage();
+        }
+        final int start = after == null ? 0 : position(after, revision, scope, items.size());
+        Page<T> chosen = new Page<>(List.of(), null);
+        if (characters.applyAsInt(chosen) > PAGE_CHARACTERS) {
+            throw WorkRefusal.pageTooLarge();
+        }
+        final int end = start + Math.min(limit, items.size() - start);
+        for (int stop = start + 1; stop <= end; stop++) {
+            final Page<T> candidate =
+                    new Page<>(
+                            items.subList(start, stop),
+                            stop < items.size() ? cursor(revision, scope, stop) : null);
+            if (characters.applyAsInt(candidate) > PAGE_CHARACTERS) {
+                if (chosen.items().isEmpty()) chosen = candidate;
+                break;
+            }
+            chosen = candidate;
+        }
+        return chosen;
+    }
+
+    private static String cursor(final String revision, final String scope, final int position) {
+        try {
+            final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (final DataOutputStream out = new DataOutputStream(bytes)) {
+                out.writeByte(1);
+                out.writeUTF(revision);
+                out.writeUTF(scope);
+                out.writeInt(position);
+            }
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes.toByteArray());
+        } catch (final IOException failure) {
+            throw new IllegalStateException("The page continuation cannot be written.", failure);
+        }
+    }
+
+    private static int position(
+            final String after, final String revision, final String scope, final int count) {
+        if (after.isEmpty() || after.length() > 4096 || !after.matches("[A-Za-z0-9_-]+")) {
+            throw WorkRefusal.invalidPage();
+        }
+        try {
+            final byte[] bytes = Base64.getUrlDecoder().decode(after);
+            if (!Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).equals(after)) {
+                throw WorkRefusal.invalidPage();
+            }
+            try (final DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
+                if (in.readUnsignedByte() != 1) throw WorkRefusal.invalidPage();
+                final String heldRevision = in.readUTF();
+                final String heldScope = in.readUTF();
+                final int position = in.readInt();
+                if (in.available() != 0 || !heldScope.equals(scope) || position < 1) {
+                    throw WorkRefusal.invalidPage();
+                }
+                if (!heldRevision.equals(revision)) throw WorkRefusal.pageChanged();
+                if (position >= count) throw WorkRefusal.invalidPage();
+                return position;
+            }
+        } catch (final IOException | IllegalArgumentException failure) {
+            throw WorkRefusal.invalidPage();
+        }
+    }
 
     /** Where a story's text, or a text whose parts cannot be told apart, is found by a search. */
     public static final String TEXT = "text";
@@ -172,8 +320,20 @@ public final class AgentReads {
      * @return each story with its issues, then the issues in no story
      */
     public static Outline outline(final Board board) {
+        return outline(board, new Filters(List.of(), List.of(), List.of()));
+    }
+
+    /**
+     * Shortens the selected stories and loose issues, keeping every selected story whole.
+     *
+     * @param board the board
+     * @param filters the item selection
+     * @return selected stories followed by selected issues in no story
+     */
+    public static Outline outline(final Board board, final Filters filters) {
         final List<OutlineStory> stories = new ArrayList<>();
         for (final Story story : board.stories()) {
+            if (!filters.matches(board, story)) continue;
             final List<OutlineIssue> issues = new ArrayList<>();
             for (final String id : story.issues()) {
                 // An id on two issues shows each, as the board's answer does.
@@ -189,7 +349,7 @@ public final class AgentReads {
         return new Outline(
                 List.copyOf(stories),
                 board.issues().stream()
-                        .filter(issue -> !assigned.contains(issue.id()))
+                        .filter(issue -> !assigned.contains(issue.id()) && filters.matches(issue))
                         .map(AgentReads::outline)
                         .toList());
     }
@@ -264,6 +424,22 @@ public final class AgentReads {
      */
     public static Found search(
             final Board board, final List<String> words, final Splitter splitter) {
+        final List<Match> all = searchAll(board, words, splitter);
+        return new Found(
+                List.copyOf(all.subList(0, Math.min(all.size(), MOST_MATCHES))),
+                all.size() > MOST_MATCHES);
+    }
+
+    /**
+     * Finds the complete ordered match list before a caller selects a bounded page.
+     *
+     * @param board the board
+     * @param words the words, none blank
+     * @param splitter splits an issue's text
+     * @return every matching story, then every matching issue
+     */
+    public static List<Match> searchAll(
+            final Board board, final List<String> words, final Splitter splitter) {
         final List<Pattern> patterns = words.stream().map(AgentReads::whole).toList();
         final List<Match> all = new ArrayList<>();
         for (final Story story : board.stories()) {
@@ -291,8 +467,7 @@ public final class AgentReads {
                             issue.text())
                     .ifPresent(all::add);
         }
-        final boolean more = all.size() > MOST_MATCHES;
-        return new Found(List.copyOf(all.subList(0, Math.min(all.size(), MOST_MATCHES))), more);
+        return List.copyOf(all);
     }
 
     private static Optional<Match> matched(
