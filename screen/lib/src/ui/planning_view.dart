@@ -608,8 +608,8 @@ class _BoardViewState extends State<_BoardView> {
     if (host.place.filter != filter) host.go(host.place.copyWith(filter: () => filter));
   }
 
-  /// The filter chips, each with the stories it keeps; while the figures are stale no count is told.
-  List<Widget> _chips(BuildContext context) {
+  /// The story filters, each with the stories it keeps; while the figures are stale no count is told.
+  List<_FilterEntry> _entries() {
     final listed = _listed();
     final counts = _filters.counts(listed);
     String count(PlanningFilterCount? count) => !_known || count == null
@@ -635,49 +635,23 @@ class _BoardViewState extends State<_BoardView> {
       return 'Stories with $what: $stories';
     }
 
-    Widget chip(PlanningFilter? filter, String label, String number, String tooltip) {
-      final selected = _chosen == filter;
-      final kind = switch (filter) {
-        null || PlanningFilter.openWork => null,
-        PlanningFilter.blocked => PlanningStateKind.blocked,
-        PlanningFilter.review => PlanningStateKind.review,
-        PlanningFilter.implementing => PlanningStateKind.implementing,
-        PlanningFilter.analysis => PlanningStateKind.analysis,
-        PlanningFilter.backlog => PlanningStateKind.backlog,
-        PlanningFilter.estimated => PlanningStateKind.estimated,
-        PlanningFilter.idea => PlanningStateKind.idea,
-      };
-      return Tooltip(
-        message: tooltip,
-        child: FilterChip(
-          key: Key('planning-filter ${filter?.name ?? 'all'}'),
-          selected: selected,
-          showCheckmark: false,
-          visualDensity: VisualDensity.compact,
-          avatar: kind == null ? null : PlanningStateIcon(kind, size: PlanningStyle.rowIcon),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: Space.tight,
-            children: [
-              Text(label),
-              Text(
-                number,
-                key: Key('planning-filter-count ${filter?.name ?? 'all'}'),
-                style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]),
-              ),
-            ],
-          ),
-          onSelected: (on) => _pick(on ? filter : null),
-        ),
-      );
-    }
+    PlanningStateKind? kind(PlanningFilter? filter) => switch (filter) {
+      null || PlanningFilter.openWork => null,
+      PlanningFilter.blocked => PlanningStateKind.blocked,
+      PlanningFilter.review => PlanningStateKind.review,
+      PlanningFilter.implementing => PlanningStateKind.implementing,
+      PlanningFilter.analysis => PlanningStateKind.analysis,
+      PlanningFilter.backlog => PlanningStateKind.backlog,
+      PlanningFilter.estimated => PlanningStateKind.estimated,
+      PlanningFilter.idea => PlanningStateKind.idea,
+    };
 
     return [
-      chip(null, 'All', '${listed.length}', 'Every story: ${listed.length}'),
+      (filter: null, label: 'All', number: '${listed.length}', hint: 'Every story: ${listed.length}', kind: null),
       for (final filter in _filters.filters)
-        chip(
-          filter,
-          switch (filter) {
+        (
+          filter: filter,
+          label: switch (filter) {
             PlanningFilter.openWork => 'Open work',
             PlanningFilter.review => 'Needs your review',
             PlanningFilter.blocked => 'Blocked',
@@ -687,10 +661,133 @@ class _BoardViewState extends State<_BoardView> {
             PlanningFilter.estimated => 'Estimated',
             PlanningFilter.idea => 'Idea',
           },
-          count(counts[filter]),
-          hint(filter, counts[filter]),
+          number: count(counts[filter]),
+          hint: hint(filter, counts[filter]),
+          kind: kind(filter),
         ),
     ];
+  }
+
+  /// The story filter as one dropdown button naming the picked filter and its count; its menu lists every filter with
+  /// its icon, name and count, the picked one marked.
+  Widget _storiesMenu(List<_FilterEntry> entries) {
+    final picked = entries.firstWhere((entry) => entry.filter == _chosen, orElse: () => entries.first);
+    Widget icon(_FilterEntry entry) => entry.kind == null
+        ? Icon(entry.filter == null ? Icons.view_list_outlined : Icons.schedule, size: PlanningStyle.rowIcon)
+        : PlanningStateIcon(entry.kind!, size: PlanningStyle.rowIcon);
+    const figures = TextStyle(fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]);
+    return MenuAnchor(
+      menuChildren: [
+        for (final entry in entries)
+          Tooltip(
+            message: entry.hint,
+            child: MergeSemantics(
+              key: Key('planning-filter ${entry.filter?.name ?? 'all'}'),
+              child: Semantics(
+                checked: entry.filter == picked.filter,
+                inMutuallyExclusiveGroup: true,
+                child: MenuItemButton(
+                  leadingIcon: icon(entry),
+                  trailingIcon: Text(
+                    entry.number,
+                    key: Key('planning-filter-count ${entry.filter?.name ?? 'all'}'),
+                    style: figures,
+                  ),
+                  style: entry.filter == picked.filter
+                      ? MenuItemButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.secondaryContainer)
+                      : null,
+                  onPressed: () => _pick(entry.filter),
+                  child: Text(entry.label),
+                ),
+              ),
+            ),
+          ),
+      ],
+      builder: (context, menu, _) => Semantics(
+        label: 'Show stories with',
+        child: OutlinedButton(
+          key: const Key('planning-stories'),
+          style: OutlinedButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: Space.normal),
+          ),
+          onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: Space.tight,
+            children: [
+              icon(picked),
+              const Text('Stories:'),
+              Flexible(
+                child: Text(
+                  picked.label,
+                  key: const Key('planning-stories-picked'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(picked.number, key: const Key('planning-stories-count'), style: figures),
+              const Icon(Icons.arrow_drop_down, size: PlanningStyle.rowIcon),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The narrow segment beside the dropdown: one icon-and-count button for each filter that asks for the person, a
+  /// press filtering to it and a second press going back to All.
+  Widget? _segment(List<_FilterEntry> entries) {
+    final asking = [
+      for (final filter in [PlanningFilter.review, PlanningFilter.blocked])
+        ?entries.where((entry) => entry.filter == filter).firstOrNull,
+    ];
+    if (asking.isEmpty) return null;
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('planning-segment'),
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(Space.wide),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final entry in asking)
+            Tooltip(
+              message: '${entry.label}: ${entry.number} ${entry.number == '1' ? 'story' : 'stories'}',
+              child: Semantics(
+                key: Key('planning-segment ${entry.filter!.name}'),
+                label: '${entry.label}, ${entry.number}',
+                button: true,
+                toggled: _chosen == entry.filter,
+                excludeSemantics: true,
+                child: InkWell(
+                  onTap: () => _pick(_chosen == entry.filter ? null : entry.filter),
+                  child: Ink(
+                    color: _chosen == entry.filter ? colors.secondaryContainer : null,
+                    padding: const EdgeInsets.symmetric(horizontal: Space.small, vertical: Space.tight + 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: Space.tight,
+                      children: [
+                        PlanningStateIcon(entry.kind!, size: PlanningStyle.rowIcon),
+                        Text(
+                          entry.number,
+                          key: Key('planning-segment-count ${entry.filter!.name}'),
+                          style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   /// What the filters cannot tell now, each a line below the figures.
@@ -734,17 +831,19 @@ class _BoardViewState extends State<_BoardView> {
         else
           _boardInfo(page),
       ];
-      final chips = _offered
-          ? Semantics(
-              label: 'Show stories with',
-              container: true,
-              child: SingleChildScrollView(
-                key: const Key('planning-filters'),
-                scrollDirection: Axis.horizontal,
-                child: Row(spacing: Space.small, children: _chips(context)),
-              ),
-            )
-          : null;
+      final entries = _offered ? _entries() : null;
+      final segment = entries == null ? null : _segment(entries);
+      final chips = entries == null
+          ? null
+          : Row(
+              key: const Key('planning-filters'),
+              mainAxisSize: MainAxisSize.min,
+              spacing: Space.small,
+              children: [
+                Flexible(child: _storiesMenu(entries)),
+                ?segment,
+              ],
+            );
       final (choices, buttons) = _controls(narrow: narrow);
       if (!narrow) {
         return Row(
@@ -784,8 +883,12 @@ class _BoardViewState extends State<_BoardView> {
   /// The toolbar's choices (project, priority and the open search) and its buttons (search, reload and the board's
   /// menu); a choice takes a fixed width, or at phone width an equal share of its own row.
   (List<Widget>, List<Widget>) _controls({required bool narrow}) {
-    Widget sized(Widget child, {Key? key}) =>
-        narrow ? Expanded(key: key, child: child) : SizedBox(key: key, width: PlanningStyle.filter, child: child);
+    Widget sized(Widget child, {Key? key, bool whole = false}) => narrow
+        ? Expanded(key: key, child: child)
+        : whole
+        // As wide as its widest label, so the picked one reads in full.
+        ? IntrinsicWidth(key: key, child: child)
+        : SizedBox(key: key, width: PlanningStyle.filter, child: child);
     const dense = InputDecoration(
       isDense: true,
       contentPadding: EdgeInsets.symmetric(horizontal: Space.normal, vertical: Space.small),
@@ -816,13 +919,14 @@ class _BoardViewState extends State<_BoardView> {
           ),
         ),
       sized(
+        whole: true,
         Semantics(
           label: 'Priority',
           child: DropdownButtonFormField<PlanningPriority>(
             key: const Key('planning-priority'),
             initialValue: board.preferences.priority,
             decoration: dense,
-            isExpanded: true,
+            isExpanded: narrow,
             selectedItemBuilder: (context) => [
               for (final priority in PlanningPriority.values)
                 Text('Priority: ${priority.label}', maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -921,11 +1025,7 @@ class _BoardViewState extends State<_BoardView> {
       for (final story in _listed())
         if (_filters.keeps(story, _applied)) story,
     ].length;
-    // Over the whole board, as the window's count beside Needs you and the other figures here.
-    final review = _filters.storyReview;
-    final reviewed = review == null ? null : board.stories.where((story) => story.state == review).length;
     final open = _known ? board.snapshot?.open : null;
-    final colors = theme.colorScheme;
     String figure(int? count) => count == null ? '?' : '$count';
     final time = open != null && open.left == 0
         ? 'nothing left'
@@ -935,7 +1035,7 @@ class _BoardViewState extends State<_BoardView> {
         ? 'at least ${planningMinutes(open.minutes)} left by velocity, '
               '${open.unestimated} ${open.unestimated == 1 ? 'issue' : 'issues'} without an estimate'
         : 'about ${planningMinutes(open.minutes)} left by velocity';
-    Widget part(String key, String number, String words, {Color? color}) => Text.rich(
+    Widget part(String key, String number, String words) => Text.rich(
       key: Key('planning-summary $key'),
       TextSpan(
         children: [
@@ -946,7 +1046,6 @@ class _BoardViewState extends State<_BoardView> {
           TextSpan(text: ' $words'),
         ],
       ),
-      style: TextStyle(color: color),
     );
     return Wrap(
       key: const Key('planning-summary'),
@@ -960,13 +1059,6 @@ class _BoardViewState extends State<_BoardView> {
           _boardInfo(part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown')),
         part('left', figure(open?.left), 'issues still to build'),
         Text(time, key: const Key('planning-summary time')),
-        part(
-          'review',
-          _known && reviewed != null ? '$reviewed' : '?',
-          reviewed == 1 ? 'story waits for your review' : 'stories wait for your review',
-          color: planningStateColor(PlanningStateKind.review, colors),
-        ),
-        part('blocked', figure(open?.blocked), 'blocked', color: planningStateColor(PlanningStateKind.blocked, colors)),
         if (board.rules.isNotEmpty) _notesMarker(theme),
         _reloadProgress(),
       ],
@@ -2502,6 +2594,9 @@ String _line(String text) => planningShown(text, multiline: false);
 
 /// A card being dragged: its story and the board's revision when the drag began.
 typedef _CardDrag = ({String story, String revision});
+
+/// One story filter as the dropdown and the segment show it: null for All.
+typedef _FilterEntry = ({PlanningFilter? filter, String label, String number, String hint, PlanningStateKind? kind});
 
 /// A scroll that starts where its column was left, read when it attaches, so a column built again keeps its place.
 class _RememberedScroll extends ScrollController {

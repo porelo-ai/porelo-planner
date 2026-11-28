@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:porelo_planning/planning_fake.dart';
@@ -102,6 +103,9 @@ Future<PlanningBoards> _show(
   return boards;
 }
 
+/// The words of the text widget keyed [key].
+String? _text(WidgetTester tester, String key) => tester.widget<Text>(find.byKey(Key(key))).data;
+
 /// The vertical middle of a widget, to tell whether two stand in one row.
 double _middle(WidgetTester tester, Finder finder) => tester.getCenter(finder.first).dy;
 
@@ -127,7 +131,9 @@ void main() {
 
     final row = _middle(tester, find.byKey(const Key('planning-board-info')));
     for (final key in [
-      'planning-filter all',
+      'planning-stories',
+      'planning-segment review',
+      'planning-segment blocked',
       'planning-priority',
       'planning-search-open',
       'planning-reload',
@@ -186,7 +192,7 @@ void main() {
       reason: 'no box around the figures',
     );
     final line = _middle(tester, find.byKey(const Key('planning-summary stories')));
-    expect(_middle(tester, find.byKey(const Key('planning-summary blocked'))), closeTo(line, 4), reason: 'one line');
+    expect(_middle(tester, find.byKey(const Key('planning-summary time'))), closeTo(line, 4), reason: 'one line');
     expect(find.text('SA has a lower priority than its open issue SA-0.'), findsNothing, reason: 'the note waits');
     final marker = find.byKey(const Key('planning-rules'));
     expect(
@@ -202,7 +208,7 @@ void main() {
   });
 
   // Harm: at phone width the toolbar overflows or a control falls out of reach.
-  testWidgets('at phone width every control stays reachable and the chips scroll sideways', (tester) async {
+  testWidgets('at phone width every control stays reachable', (tester) async {
     await _show(tester, size: const Size(360, 740), notes: 3);
 
     expect(tester.takeException(), isNull, reason: 'nothing overflows');
@@ -212,18 +218,13 @@ void main() {
       'planning-search-open',
       'planning-reload',
       'planning-board-menu',
-      'planning-filter all',
+      'planning-stories',
+      'planning-segment review',
+      'planning-segment blocked',
       'planning-rules',
     ]) {
       expect(find.byKey(Key(key)).hitTestable(), findsOneWidget, reason: '$key can be reached');
     }
-    final chips = find.ancestor(
-      of: find.byKey(const Key('planning-filter all')),
-      matching: find.byWidgetPredicate(
-        (widget) => widget is SingleChildScrollView && widget.scrollDirection == Axis.horizontal,
-      ),
-    );
-    expect(chips, findsOneWidget, reason: 'the chips scroll sideways');
     expect(find.text('3 notes'), findsOneWidget, reason: 'several notes behind one marker');
   });
 
@@ -316,5 +317,111 @@ void main() {
       findsOneWidget,
       reason: 'they are told on the board\'s first figure',
     );
+  });
+
+  // Harm: nine filter chips push into the priority choice, so neither a filter nor the priority can be read whole.
+  testWidgets('the story filter is one dropdown naming the picked filter, with each filter and its count in its menu', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _show(tester);
+
+    final toolbar = find.byKey(const Key('planning-toolbar'));
+    expect(
+      find.descendant(of: toolbar, matching: find.byType(FilterChip)),
+      findsNothing,
+      reason: 'no chips',
+    );
+    expect(_text(tester, 'planning-stories-picked'), 'All', reason: 'the button names the picked filter');
+    expect(_text(tester, 'planning-stories-count'), '3', reason: 'and its count');
+    expect(find.byKey(const Key('planning-filter implementing')), findsNothing, reason: 'the menu is shut');
+
+    await tester.tap(find.byKey(const Key('planning-stories')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSemantics(find.byKey(const Key('planning-filter all'))),
+      isSemantics(isChecked: true),
+      reason: 'the picked filter is marked',
+    );
+    expect(
+      tester.getSemantics(find.byKey(const Key('planning-filter implementing'))),
+      isSemantics(isChecked: false),
+      reason: 'another is not',
+    );
+    expect(_text(tester, 'planning-filter-count implementing'), '1', reason: 'each filter tells its count');
+
+    await tester.tap(find.byKey(const Key('planning-filter implementing')));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'planning-stories-picked'), 'Implementing', reason: 'the pick is named');
+    expect(_text(tester, 'planning-stories-count'), '1', reason: 'with its count');
+    expect(find.byKey(const Key('planning-card SA')), findsNothing, reason: 'the filter keeps SB alone');
+    expect(find.byKey(const Key('planning-card SB')), findsOneWidget, reason: 'SB is implemented');
+    semantics.dispose();
+  });
+
+  // Harm: the stories that need the person lose their one-press filter and their counts in the dropdown's menu.
+  testWidgets('a narrow segment filters to Needs your review or Blocked, and a second press goes back to All', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await _show(tester);
+
+    final row = _middle(tester, find.byKey(const Key('planning-stories')));
+    for (final key in ['review', 'blocked']) {
+      expect(_middle(tester, find.byKey(Key('planning-segment $key'))), closeTo(row, 4), reason: '$key beside it');
+    }
+    expect(_text(tester, 'planning-segment-count review'), '1', reason: 'SC waits for review');
+    expect(_text(tester, 'planning-segment-count blocked'), '0', reason: 'nothing is blocked');
+    expect(
+      tester.getSemantics(find.byKey(const Key('planning-segment review'))),
+      isSemantics(label: 'Needs your review, 1', isButton: true),
+      reason: 'a screen reader says what the icon means',
+    );
+    expect(
+      tester
+          .widget<Tooltip>(
+            find.ancestor(of: find.byKey(const Key('planning-segment blocked')), matching: find.byType(Tooltip)).first,
+          )
+          .message,
+      startsWith('Blocked'),
+      reason: 'a tooltip says it too',
+    );
+
+    await tester.tap(find.byKey(const Key('planning-segment review')));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'planning-stories-picked'), 'Needs your review', reason: 'the press filters');
+    expect(find.byKey(const Key('planning-card SB')), findsNothing, reason: 'SB needs no review');
+    await tester.tap(find.byKey(const Key('planning-segment review')));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'planning-stories-picked'), 'All', reason: 'a second press goes back to All');
+
+    await tester.tap(find.byKey(const Key('planning-segment blocked')));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'planning-stories-picked'), 'Blocked', reason: 'Blocked filters');
+    await tester.tap(find.byKey(const Key('planning-segment blocked')));
+    await tester.pumpAndSettle();
+    expect(_text(tester, 'planning-stories-picked'), 'All', reason: 'and goes back');
+    semantics.dispose();
+  });
+
+  // Harm: the figures say twice what the segment already counts.
+  testWidgets('the figures leave the stories in review and the blocked ones to the segment', (tester) async {
+    await _show(tester);
+
+    expect(find.byKey(const Key('planning-summary review')), findsNothing, reason: 'the segment counts them');
+    expect(find.byKey(const Key('planning-summary blocked')), findsNothing, reason: 'the segment counts them');
+    expect(find.byKey(const Key('planning-summary stories')), findsOneWidget, reason: 'the other figures stay');
+  });
+
+  // Harm: the priority choice cuts its own label, so the person reads the priority only in the open menu.
+  testWidgets('the priority choice reads its whole label at the desktop width', (tester) async {
+    await _show(tester);
+
+    final label = find.descendant(
+      of: find.byKey(const Key('planning-priority')),
+      matching: find.text('Priority: All priorities'),
+    );
+    final paragraph = tester.renderObject<RenderParagraph>(find.descendant(of: label, matching: find.byType(RichText)));
+    expect(paragraph.didExceedMaxLines, isFalse, reason: 'the label is not cut');
   });
 }

@@ -211,18 +211,20 @@ void main() {
       expect(find.byKey(Key('planning-card $other')), findsNothing, reason: '$other has nothing to review');
     }
     expect(
-      _text(tester, 'planning-filter-count review'),
+      _text(tester, 'planning-segment-count review'),
       startsWith('1'),
       reason: 'one story, not the two issues in review, at least since SN is not known',
     );
 
-    await tester.tap(find.byKey(const Key('planning-filter blocked')));
+    await tester.tap(find.byKey(const Key('planning-segment blocked')));
     await tester.pumpAndSettle();
 
     expect(host.history.last.filter, PlanningFilter.blocked, reason: 'the window holds the new filter');
     expect(find.byKey(const Key('planning-card SB')), findsOneWidget, reason: 'its issue is blocked');
     expect(find.byKey(const Key('planning-card SR')), findsNothing, reason: 'nothing of it is blocked');
 
+    await tester.tap(find.byKey(const Key('planning-stories')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('planning-filter all')));
     await tester.pumpAndSettle();
     expect(host.history.last.filter, isNull, reason: 'All clears the filter');
@@ -256,17 +258,16 @@ void main() {
   // Harm: the last figures shown as current once the board stopped answering, so a count reads as what is open now.
   testWidgets('a stale board tells no figure as known and filters no story by them', (tester) async {
     final (source, _) = await _show(tester, place: const PlanningPlace(filter: PlanningFilter.review));
-    expect(_text(tester, 'planning-summary review'), contains('1'), reason: 'SR stands in review');
+    expect(_text(tester, 'planning-segment-count review'), contains('1'), reason: 'SR stands in review');
     expect(_text(tester, 'planning-card-left SR'), isNotEmpty, reason: 'a card tells its figures');
 
     source.fail(StateError('gone'));
     await tester.pumpAndSettle();
 
-    for (final key in ['review', 'left', 'blocked']) {
-      expect(_text(tester, 'planning-summary $key'), isNot(matches(RegExp(r'\d'))), reason: '$key is not known now');
+    for (final key in ['planning-segment-count review', 'planning-summary left', 'planning-segment-count blocked']) {
+      expect(_text(tester, key), isNot(matches(RegExp(r'\d'))), reason: '$key is not known now');
     }
     expect(_text(tester, 'planning-summary time'), isNot(matches(RegExp(r'\d'))), reason: 'time left not known');
-    expect(_text(tester, 'planning-filter-count review'), isNot(matches(RegExp(r'\d'))), reason: 'no count');
     expect(find.byKey(const Key('planning-card-left SR')), findsNothing, reason: 'the card tells no figure');
     expect(find.byKey(const Key('planning-card SB')), findsOneWidget, reason: 'no story is hidden by old figures');
   });
