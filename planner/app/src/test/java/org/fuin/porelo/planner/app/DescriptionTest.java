@@ -112,6 +112,16 @@ class DescriptionTest {
             assertThat(served.at("/paths/~1openapi/get/x-mcp").asText())
                     .as("the description itself is not offered to agents")
                     .startsWith("false ");
+            // Without them an agent applies a correction the window offers only by a signed script.
+            final JsonNode preview =
+                    served.at("/paths/~1projects~1{project}~1corrections~1preview/post/x-mcp");
+            assertThat(preview.isBoolean() && preview.asBoolean())
+                    .as("a correction's preview is offered to agents: %s", preview)
+                    .isTrue();
+            final JsonNode save = served.at("/paths/~1projects~1{project}~1corrections/post/x-mcp");
+            assertThat(save.isBoolean() && save.asBoolean())
+                    .as("a correction's save is offered to agents: %s", save)
+                    .isTrue();
         }
 
         @Test

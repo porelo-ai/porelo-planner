@@ -1287,7 +1287,7 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: previewCorrection
-      x-mcp: false the preview of a warning's correction, which the person confirms in the window
+      x-mcp: true
       summary: Answer what the correction of one warning would write, writing nothing
       description: >-
         Checks the correction a warning's `correction` offers, other than a Move, against the board as the planner
@@ -1305,6 +1305,9 @@ paths:
         (MoveNotAllowed), named by the forge's status alone, and a read the forge does not answer, or refuses for the
         login, as the store's refusals answer it. A Move is previewed and saved through
         /moves/preview and /moves, as any move of the issue.
+        The correction is confirmed by the person in the window or by an agent through its tool, which then sends
+        the preview's targets back as `seen` with its digest; a Move warning's correction stays with moveIssues for
+        an agent, and its preview here answers NotOffered.
       tags: [board]
       requestBody:
         required: true
@@ -1343,10 +1346,11 @@ paths:
       - $ref: '#/components/parameters/Project'
     post:
       operationId: saveCorrection
-      x-mcp: false the save of a correction the person confirmed in the window
-      summary: Save the correction of one warning whose preview the person confirmed
+      x-mcp: true
+      summary: Save the correction of one warning whose preview was confirmed
       description: >-
-        Saves the correction its preview showed, as a move is saved: one commit in the planner's own clone, pushed
+        Saves the correction its preview showed, once the person in the window or an agent through its tool confirmed
+        it, as a move is saved: one commit in the planner's own clone, pushed
         after the answer under the person's own Git login, or nothing at all. Under the writer lock, before anything
         is written, the correction is checked again on the board as it stands: each of the preview's targets must
         stand at the version `seen` holds for it (ItemChanged; BasisIncomplete for one `seen` lacks), the warning must
