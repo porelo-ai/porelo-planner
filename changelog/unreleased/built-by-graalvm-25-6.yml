@@ -1,0 +1,2 @@
+title: The planner's executable is built by GraalVM 25.6, which decodes Base64 safely on a CPU with avx512vbmi, and the build refuses an executable built by an older GraalVM.
+type: security
