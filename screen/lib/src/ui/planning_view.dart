@@ -710,26 +710,29 @@ class _BoardViewState extends State<_BoardView> {
     ];
   }
 
-  /// The board's one toolbar row: its own info, the window's page button, the state filters scrolling sideways, then
+  /// The board's one toolbar row: the window's page button, or the board's own info where no window gives one, the
+  /// state filters scrolling sideways, then
   /// the project and priority choices, search, reload and the board's menu. Below [PlanningStyle.toolbarRow] the
   /// buttons stay in the first row, the choices and an open search share a row of their own and the filters scroll in
   /// a third, so every control stays reachable down to phone width.
   Widget _toolbar(BuildContext context) => LayoutBuilder(
     builder: (context, room) {
       final narrow = room.maxWidth < PlanningStyle.toolbarRow;
+      // One info icon: the window's page button explains the page, and the board's own words then stand on its first
+      // figure; only a board shown without a page button, or without figures, carries them on its own.
+      final page = widget.pageButton;
       final lead = <Widget>[
-        Tooltip(
-          key: const Key('planning-board-info'),
-          message:
-              'The stories of project ${board.project} by state, the most important first.\n'
-              'From ${board.backend.label}',
-          triggerMode: TooltipTriggerMode.tap,
-          child: const Padding(
-            padding: EdgeInsets.all(Space.small),
-            child: Icon(Icons.info_outline, size: PlanningStyle.rowIcon + 2),
-          ),
-        ),
-        ?widget.pageButton,
+        if (page == null)
+          _boardInfo(
+            const Padding(
+              padding: EdgeInsets.all(Space.small),
+              child: Icon(Icons.info_outline, size: PlanningStyle.rowIcon + 2),
+            ),
+          )
+        else if (_offered)
+          page
+        else
+          _boardInfo(page),
       ];
       final chips = _offered
           ? Semantics(
@@ -766,6 +769,16 @@ class _BoardViewState extends State<_BoardView> {
         ],
       );
     },
+  );
+
+  /// The board's description and where it is read from, told on [child]; one tap shows it on a touch screen.
+  Widget _boardInfo(Widget child) => Tooltip(
+    key: const Key('planning-board-info'),
+    message:
+        'The stories of project ${board.project} by state, the most important first.\n'
+        'From ${board.backend.label}',
+    triggerMode: TooltipTriggerMode.tap,
+    child: child,
   );
 
   /// The toolbar's choices (project, priority and the open search) and its buttons (search, reload and the board's
@@ -941,7 +954,10 @@ class _BoardViewState extends State<_BoardView> {
       runSpacing: Space.tight,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown'),
+        if (widget.pageButton == null)
+          part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown')
+        else
+          _boardInfo(part('stories', '$shown', shown == 1 ? 'story shown' : 'stories shown')),
         part('left', figure(open?.left), 'issues still to build'),
         Text(time, key: const Key('planning-summary time')),
         part(
@@ -961,15 +977,8 @@ class _BoardViewState extends State<_BoardView> {
   /// and only once it takes longer than a moment; a look for changes on a live board is words alone, no bar, so it
   /// never reads as a load.
   Widget _reloadProgress() => board.lookingLive && !board.fetching
-      ? ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: PlanningStyle.filter),
-          child: Text(
-            board.loading!.words,
-            key: const Key('planning-look'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        )
+      // As wide as its words, up to the whole line: the figures' line wraps before it cuts them.
+      ? Text(board.loading!.words, key: const Key('planning-look'), maxLines: 1, overflow: TextOverflow.ellipsis)
       : _SlowProgress(
           active: board.fetching || board.loading != null,
           child: SizedBox(

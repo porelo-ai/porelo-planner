@@ -71,7 +71,12 @@ Map<String, dynamic> _board({int notes = 1}) => {
   ],
 };
 
-Future<PlanningBoards> _show(WidgetTester tester, {Size size = const Size(1600, 1000), int notes = 1}) async {
+Future<PlanningBoards> _show(
+  WidgetTester tester, {
+  Size size = const Size(1600, 1000),
+  int notes = 1,
+  Widget? pageButton,
+}) async {
   tester.view
     ..physicalSize = size
     ..devicePixelRatio = 1;
@@ -85,7 +90,7 @@ Future<PlanningBoards> _show(WidgetTester tester, {Size size = const Size(1600, 
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: planningView(boards: boards, host: TestHost()),
+        body: planningView(boards: boards, host: TestHost(), pageButton: pageButton),
       ),
     ),
   );
@@ -278,6 +283,38 @@ void main() {
       _middle(tester, find.byKey(const Key('planning-reload'))),
       lessThan(choices),
       reason: 'the buttons stand in the row above',
+    );
+  });
+
+  // Harm: the window's page button and the board's own info stand side by side as two equal info icons.
+  testWidgets('beside the window\'s page button the board draws no info icon of its own', (tester) async {
+    await _show(
+      tester,
+      pageButton: IconButton(
+        key: const Key('window-page-button'),
+        tooltip: 'What this page is',
+        onPressed: () {},
+        icon: const Icon(Icons.info_outline),
+      ),
+    );
+
+    final toolbar = find.byKey(const Key('planning-toolbar'));
+    expect(
+      find.descendant(of: toolbar, matching: find.byIcon(Icons.info_outline)),
+      findsOneWidget,
+      reason: 'one info icon, the window\'s',
+    );
+    expect(find.byKey(const Key('window-page-button')), findsOneWidget, reason: 'the window\'s button stays');
+    final info = find.byKey(const Key('planning-board-info'));
+    expect(
+      tester.widget<Tooltip>(info).message,
+      'The stories of project demo by state, the most important first.\nFrom mock',
+      reason: 'the description and the source stay with the board',
+    );
+    expect(
+      find.descendant(of: info, matching: find.byKey(const Key('planning-summary stories'))),
+      findsOneWidget,
+      reason: 'they are told on the board\'s first figure',
     );
   });
 }
